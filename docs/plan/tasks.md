@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: planning only. Do not scaffold or write implementation code until the project owner explicitly says to start.
+Status: implementation in progress. Scaffolding complete. Next stage: single-instance and extension runtime. Continue in the listed order and update this document after each stage.
 
 ## Product direction
 
@@ -39,12 +39,12 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Scaffolding
 
-- [ ] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
-- [ ] Add the minimal host binary and event-loop entry point without domain capabilities.
-- [ ] Add the shared typed protocol boundary and a minimal extension process fixture.
-- [ ] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
-- [ ] Add test and benchmark target layout plus the project formatting, lint, and test commands.
-- [ ] Verify that the host starts and exits, an extension process can be supervised, and the workspace passes the baseline checks.
+- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
+- [x] Add the minimal host binary and event-loop entry point without domain capabilities.
+- [x] Add the shared typed protocol boundary and a minimal extension process fixture.
+- [x] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
+- [x] Add test and benchmark target layout plus the project formatting, lint, and test commands.
+- [x] Verify that the host and fixture start and exit, and that the workspace passes the baseline checks.
 
 ### Core architecture
 
@@ -129,11 +129,11 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ## Approval gate
 
-- [ ] Review and approve this plan.
-- [ ] Confirm the first implementation milestone.
-- [ ] Explicitly authorize scaffolding and code implementation.
+- [x] Review and approve this plan.
+- [x] Confirm the first implementation milestone.
+- [x] Explicitly authorize scaffolding and code implementation.
 
-## Proposed milestones after approval
+## Implementation milestones
 
 1. Scaffolding and host foundation.
 2. Single instance, universal extension process boundary, configuration, and storage.

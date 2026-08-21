@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 design. This document records the selected baseline and its boundaries. It does not authorize implementation. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Scaffolding is complete. This document records the selected stack and its boundaries. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 

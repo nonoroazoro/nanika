@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/nanika-core",
+    "crates/nanika-host",
+    "crates/nanika-platform",
+    "crates/nanika-protocol",
+    "extensions/nanika-extension-fixture",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
