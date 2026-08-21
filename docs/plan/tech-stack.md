@@ -36,6 +36,23 @@ Status: current pre-1.0 design. This document records the selected baseline and 
 
 Use the latest mutually compatible stable releases when implementation begins. Commit `Cargo.lock`. Do not use Git dependencies, wildcard versions, or pre-release versions by default. Review each non-standard-library dependency for necessity, features, transitive cost, maintenance, and platform support.
 
+## Rust workspace policy
+
+Use a virtual Cargo workspace with `resolver = "3"` and Rust 2024 edition. The root `Cargo.toml` is Cargo-required project metadata, not Nanika user configuration. Share package metadata through `workspace.package`, share dependency versions through `workspace.dependencies` only when feature requirements match, and keep platform-specific features local. Inherit `workspace.lints` in every member. Keep one root `Cargo.lock` and one root `target` directory.
+
+Initial layout:
+
+```text
+Cargo.toml
+crates/
+  nanika-core/
+  nanika-host/
+  nanika-platform/
+  nanika-protocol/
+extensions/
+  nanika-extension-fixture/
+```
+
 ## Core and extension boundary
 
 Core provides UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction. Core does not implement application launch, command execution, script execution, calculation, clipboard history, or agent communication.

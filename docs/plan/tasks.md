@@ -39,7 +39,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Scaffolding
 
-- [ ] Create the Rust workspace and package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
+- [ ] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
 - [ ] Add the minimal host binary and event-loop entry point without domain capabilities.
 - [ ] Add the shared typed protocol boundary and a minimal extension process fixture.
 - [ ] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
