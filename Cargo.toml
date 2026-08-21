@@ -23,6 +23,9 @@ directories = "6.0.0"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
 jsonc-parser = { version = "0.33.1", default-features = false, features = ["serde", "cst"] }
 uuid = { version = "1.24.1", default-features = false, features = ["serde", "v4"] }
+eframe = { version = "0.36.1", default-features = false, features = ["accesskit", "default_fonts", "wgpu_no_default_features"] }
+wgpu = { version = "30.0.0", default-features = false, features = ["dx12", "metal", "vulkan", "wgsl"] }
+global-hotkey = "0.8.0"
 
 [workspace.lints.rust]
 unsafe_code = "warn"

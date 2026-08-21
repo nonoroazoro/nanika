@@ -1,5 +1,9 @@
 //! Host-owned process supervision boundary.
 
+mod ui;
+
+pub use ui::HostApp;
+
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io::{self, BufReader, BufWriter, Read};

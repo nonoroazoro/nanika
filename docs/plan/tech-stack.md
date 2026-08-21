@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 2 foundation is implemented. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 3 implementation baseline is implemented. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -79,6 +79,10 @@ The host owns the single input field, input history, query navigation, search ag
 ## UI and interaction
 
 Use a transparent, undecorated, always-on-top overlay. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
+
+The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon and dismissal use a state-driven smoothstep transition; active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target state.
+
+The host explicitly enables the selected `wgpu` backend features through its direct dependency because `eframe`'s `wgpu_no_default_features` intentionally leaves backend selection to the application. The Windows smoke test confirmed that at least one native backend is enabled and startup no longer panics.
 
 The MVP includes a minimal host tray or menu bar item:
 

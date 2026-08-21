@@ -10,11 +10,15 @@ use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
+use global_hotkey::GlobalHotKeyManager;
+use global_hotkey::hotkey::HotKey;
+
 /// Platform-independent adapter error.
 #[derive(Debug)]
 pub enum PlatformError {
     Unsupported(&'static str),
     OsCode { operation: &'static str, code: u32 },
+    Hotkey(global_hotkey::Error),
 }
 
 impl std::fmt::Display for PlatformError {
@@ -26,6 +30,7 @@ impl std::fmt::Display for PlatformError {
             Self::OsCode { operation, code } => {
                 write!(formatter, "{operation} failed with OS error {code}")
             }
+            Self::Hotkey(error) => write!(formatter, "hotkey error: {error}"),
         }
     }
 }
@@ -40,6 +45,42 @@ pub const fn target_platform() -> &'static str {
         "macos"
     } else {
         "unsupported"
+    }
+}
+
+/// A registered global hotkey with replacement rollback.
+pub struct HotkeyRegistration {
+    manager: GlobalHotKeyManager,
+    hotkey: HotKey,
+}
+
+impl HotkeyRegistration {
+    pub fn register(hotkey: HotKey) -> Result<Self, PlatformError> {
+        let manager = GlobalHotKeyManager::new().map_err(PlatformError::Hotkey)?;
+        manager.register(hotkey).map_err(PlatformError::Hotkey)?;
+        Ok(Self { manager, hotkey })
+    }
+
+    pub fn id(&self) -> u32 {
+        self.hotkey.id()
+    }
+
+    pub fn replace(&mut self, replacement: HotKey) -> Result<(), PlatformError> {
+        self.manager
+            .register(replacement)
+            .map_err(PlatformError::Hotkey)?;
+        if let Err(error) = self.manager.unregister(self.hotkey) {
+            let _ = self.manager.unregister(replacement);
+            return Err(PlatformError::Hotkey(error));
+        }
+        self.hotkey = replacement;
+        Ok(())
+    }
+}
+
+impl Drop for HotkeyRegistration {
+    fn drop(&mut self) {
+        let _ = self.manager.unregister(self.hotkey);
     }
 }
 

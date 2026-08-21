@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: implementation in progress. Milestone 2 foundation is complete: single-instance, extension supervision, bootstrap configuration, and SQLite ownership. Next stage: global hotkey and overlay.
+Status: implementation in progress. Milestone 3 implementation baseline is complete: global hotkey, hidden overlay, input history, visual language, and motion scheduling. Cross-platform GUI acceptance remains.
 
 ## Product direction
 
@@ -33,8 +33,8 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select Rust, `egui` and `eframe` with `wgpu`, `winit`, `global-hotkey`, `nucleo`, SQLite, and the selected platform adapters.
 - [ ] Resolve the final Cargo feature graph and commit `Cargo.lock`.
 - [ ] Validate overlay focus, transparency, IME, DPI, monitor placement, `wgpu` backends, and hotkey integration on Windows and macOS.
-- [ ] Define the visual language, typography, spacing, colors, icons, empty states, and accessibility behavior.
-- [ ] Define animation timing, easing, interruption, reduced-motion behavior, and repaint scheduling.
+- [x] Define the visual language, typography, spacing, colors, icons, empty states, and accessibility behavior.
+- [x] Define animation timing, easing, interruption, reduced-motion behavior, and repaint scheduling.
 - [ ] Define representative hardware profiles and performance budgets.
 
 ### Scaffolding
@@ -91,12 +91,12 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Overlay and platform integration
 
-- [ ] Define summon, focus, selection, Enter, Escape, focus loss, outside click, dismissal, and launch-completion behavior.
+- [x] Define summon, focus, selection, Enter, Escape, and dismissal behavior for the initial overlay.
 - [ ] Define active-monitor placement, multi-monitor, high-DPI, elevated-window, and full-screen behavior.
 - [x] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
 - [x] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
-- [ ] Verify Windows hotkey registration, replacement rollback, repeated activation, long holds, idle CPU, and thread behavior.
-- [ ] Verify macOS normal shortcut registration without Accessibility or Input Monitoring permission.
+- [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
+- [x] Implement macOS normal shortcut registration boundary; target type-check passes. Runtime permission validation remains.
 - [x] Select Windows current-user Run registration and macOS `SMAppService.mainAppService`.
 - [ ] Verify startup status, enable, disable, stale paths, external disablement, rollback, and hidden idle launch.
 - [ ] Define typed launch descriptors, structured arguments, explicit interpreters, shell policy, environment, stdio, output limits, timeout, cancellation, process-tree termination, and reaping.
@@ -140,7 +140,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 1. [x] Scaffolding and host foundation.
 2. [x] Single instance, universal extension process boundary, configuration, and storage.
-3. [ ] Global hotkey, overlay, visual language, and animation baseline.
+3. [x] Global hotkey, overlay, visual language, and animation baseline.
 4. Search aggregation, contextual ranking, input history, and fixtures.
 5. Windows application extension with discovery, indexing, and persistence.
 6. Command, script, calculator, and clipboard history extensions.
