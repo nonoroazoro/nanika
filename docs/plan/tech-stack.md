@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Scaffolding is complete. This document records the selected stack and its boundaries. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 2 foundation is implemented. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -49,6 +49,8 @@ crates/
   nanika-host/
   nanika-platform/
   nanika-protocol/
+  nanika-storage/
+  nanika-config/
 extensions/
   nanika-extension-fixture/
 ```
@@ -143,9 +145,11 @@ Only this tree is intended for Dropbox or another file-level sync service. Datab
 
 Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each file has a `formatVersion`, ordered migrations, and a last-known-good backup. A failed migration leaves the original file untouched and starts read-only.
 
+The current `nanika-config` boundary implements bootstrap creation, relocatable config roots, typed JSONC parsing, atomic replacement, last-known-good recovery, and read-only fallback. Comment-preserving UI mutations remain part of the settings stage.
+
 ## SQLite storage
 
-Use one host database and one database per extension. The host storage owner is the only writer and owns connections and transactions. Extensions own their schema and migration definitions.
+Use one host database and one database per extension. The host storage owner is the only writer and owns connections and transactions. Extensions own their schema and migration definitions. The current storage crate enforces the database path boundary and opens isolated extension databases with independent migration tables.
 
 `nanika.db` baseline tables:
 
@@ -201,6 +205,8 @@ Windows uses a quoted absolute executable path under the current-user `Run` key.
 ## Extension protocol and package
 
 The universal extension protocol uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. JSON here is IPC only, not configuration.
+
+The current implementation provides typed frames, initialization validation, generation and cancellation fields, bounded receive queues, timeout-aware lifecycle operations, bounded stderr capture, restart budgets, crash recovery, and orderly shutdown. ACP remains a separate future adapter.
 
 Host messages: `initialize`, `query`, `invoke`, `cancel`, `shutdown`.
 

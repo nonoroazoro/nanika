@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: implementation in progress. Scaffolding complete. Next stage: single-instance and extension runtime. Continue in the listed order and update this document after each stage.
+Status: implementation in progress. Milestone 2 foundation is complete: single-instance, extension supervision, bootstrap configuration, and SQLite ownership. Next stage: global hotkey and overlay.
 
 ## Product direction
 
@@ -39,7 +39,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Scaffolding
 
-- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
+- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, protocol, platform adapters, storage, and extension executables.
 - [x] Add the minimal host binary and event-loop entry point without domain capabilities.
 - [x] Add the shared typed protocol boundary and a minimal extension process fixture.
 - [x] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
@@ -61,10 +61,11 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Require every built-in and external extension to run as a separate host-supervised child process.
 - [x] Use one extension contract for capability, lifecycle, settings, permissions, host services, and failure handling.
 - [x] Prohibit extension access to host memory, host databases, the global config root, and other extension processes.
+- [x] Implement the length-framed stdio handshake, bounded JSON frames, and orderly shutdown fixture.
 - [ ] Define extension and action identities that survive refreshes and updates.
 - [ ] Define manifest fields, activation events, contributions, permissions, dependencies, compatibility, and target entrypoints.
-- [ ] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
-- [ ] Define the extension supervisor, restart and crash recovery, resource budgets, and child reaping.
+- [x] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
+- [x] Define the extension supervisor, restart and crash recovery, resource budgets, and child reaping.
 - [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, atomic activation, path validation, and SHA-256 checks.
 - [x] Limit MVP installation to explicit local packages or development directories. No marketplace or background download.
 - [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
@@ -101,6 +102,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Define typed launch descriptors, structured arguments, explicit interpreters, shell policy, environment, stdio, output limits, timeout, cancellation, process-tree termination, and reaping.
 - [ ] Verify GUI, command, script, batch, and macOS bundle launches on both platforms.
 - [x] Select single-instance handoff: Windows `CreateMutexW` plus hidden-window activation; macOS `flock` plus a local Unix socket.
+- [x] Implement the Windows hidden message window and macOS lock/socket adapters; Windows tests and macOS target checks pass.
 - [ ] Test second-launch activation, stale lock recovery, shutdown cleanup, and per-user/session isolation.
 
 ### Configuration and storage
@@ -109,11 +111,12 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Separate relocatable user configuration from machine-local bootstrap metadata and generated data.
 - [x] Select JSONC for human-edited configuration and manifests, with typed Rust boundaries and CST-preserving edits.
 - [ ] Define host and extension settings models, schema validation, path scope, machine overrides, and secret handling.
-- [ ] Define bootstrap relocation, directory creation, permissions, malformed-file recovery, and last-known-good behavior.
+- [x] Implement bootstrap relocation, directory creation, malformed-file recovery, and last-known-good read-only fallback.
 - [x] Select one `nanika.db` plus one database per extension. Do not sync live SQLite files.
 - [x] Record the baseline host and application tables, ownership, pragmas, WAL policy, and migration boundary in `tech-stack.md`.
+- [x] Implement the resolved path boundary, host migration runner, and isolated extension database owner.
 - [ ] Implement and test ordered forward-only migrations, consistent snapshots, corruption handling, retention, reset, and interrupted scans.
-- [ ] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
+- [x] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
 - [ ] Define bounded local logs, diagnostic export, cache cleanup, and generated-data recovery.
 
 ### Quality and release
@@ -135,9 +138,9 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ## Implementation milestones
 
-1. Scaffolding and host foundation.
-2. Single instance, universal extension process boundary, configuration, and storage.
-3. Global hotkey, overlay, visual language, and animation baseline.
+1. [x] Scaffolding and host foundation.
+2. [x] Single instance, universal extension process boundary, configuration, and storage.
+3. [ ] Global hotkey, overlay, visual language, and animation baseline.
 4. Search aggregation, contextual ranking, input history, and fixtures.
 5. Windows application extension with discovery, indexing, and persistence.
 6. Command, script, calculator, and clipboard history extensions.

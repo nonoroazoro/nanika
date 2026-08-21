@@ -5,6 +5,8 @@ members = [
     "crates/nanika-host",
     "crates/nanika-platform",
     "crates/nanika-protocol",
+    "crates/nanika-storage",
+    "crates/nanika-config",
     "extensions/nanika-extension-fixture",
 ]
 
@@ -13,6 +15,14 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 publish = false
+
+[workspace.dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+directories = "6.0.0"
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
+jsonc-parser = { version = "0.33.1", default-features = false, features = ["serde", "cst"] }
+uuid = { version = "1.24.1", default-features = false, features = ["serde", "v4"] }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

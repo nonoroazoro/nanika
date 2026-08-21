@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 nanika-core = { path = "../nanika-core" }
+nanika-config = { path = "../nanika-config" }
 nanika-platform = { path = "../nanika-platform" }
 nanika-protocol = { path = "../nanika-protocol" }
+nanika-storage = { path = "../nanika-storage" }
 
 [lints]
 workspace = true
