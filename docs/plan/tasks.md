@@ -37,6 +37,15 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Define animation timing, easing, interruption, reduced-motion behavior, and repaint scheduling.
 - [ ] Define representative hardware profiles and performance budgets.
 
+### Scaffolding
+
+- [ ] Create the Rust workspace and package boundaries for the host, Core, universal extension protocol, platform adapters, and extension executables.
+- [ ] Add the minimal host binary and event-loop entry point without domain capabilities.
+- [ ] Add the shared typed protocol boundary and a minimal extension process fixture.
+- [ ] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
+- [ ] Add test and benchmark target layout plus the project formatting, lint, and test commands.
+- [ ] Verify that the host starts and exits, an extension process can be supervised, and the workspace passes the baseline checks.
+
 ### Core architecture
 
 - [x] Define Core as UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction.
@@ -126,11 +135,12 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ## Proposed milestones after approval
 
-1. Core host, single instance, universal extension process boundary, configuration, and storage.
-2. Global hotkey, overlay, visual language, and animation baseline.
-3. Search aggregation, contextual ranking, input history, and fixtures.
-4. Windows application extension with discovery, indexing, and persistence.
-5. Command, script, calculator, and clipboard history extensions.
-6. Settings, startup, and macOS adapters.
-7. Performance, packaging, release, and cross-platform acceptance.
-8. Post-MVP ACP extension.
+1. Scaffolding and host foundation.
+2. Single instance, universal extension process boundary, configuration, and storage.
+3. Global hotkey, overlay, visual language, and animation baseline.
+4. Search aggregation, contextual ranking, input history, and fixtures.
+5. Windows application extension with discovery, indexing, and persistence.
+6. Command, script, calculator, and clipboard history extensions.
+7. Settings, startup, and macOS adapters.
+8. Performance, packaging, release, and cross-platform acceptance.
+9. Post-MVP ACP extension.
