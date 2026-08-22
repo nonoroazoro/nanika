@@ -205,6 +205,74 @@ impl ExtensionProcess {
         self.invoke_cancellable(request_id, generation, entry_id, action_id, || false)
     }
 
+    pub fn refresh(
+        &mut self,
+        request_id: impl Into<String>,
+        generation: u64,
+        timeout: Duration,
+    ) -> Result<(), SupervisorError> {
+        self.refresh_cancellable(request_id, generation, timeout, || false)
+            .map(|_| ())
+    }
+
+    pub(crate) fn refresh_cancellable(
+        &mut self,
+        request_id: impl Into<String>,
+        generation: u64,
+        timeout: Duration,
+        mut should_cancel: impl FnMut() -> bool,
+    ) -> Result<bool, SupervisorError> {
+        self.ensure_initialized()?;
+        let request_id = request_id.into();
+        self.send(&Message::Refresh {
+            request_id: request_id.clone(),
+            generation,
+        })?;
+        let deadline = Instant::now() + timeout;
+        loop {
+            if should_cancel() {
+                self.send(&Message::Cancel {
+                    request_id: request_id.clone(),
+                    generation,
+                })?;
+                return Ok(false);
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                let _ = self.send(&Message::Cancel {
+                    request_id: request_id.clone(),
+                    generation,
+                });
+                return Err(SupervisorError::Timeout("extension refresh"));
+            }
+            let wait = remaining.min(Duration::from_millis(25));
+            let message = match self.receive_timeout(wait, "extension refresh") {
+                Ok(message) => message,
+                Err(SupervisorError::Timeout(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            match message {
+                Some(Message::Refreshed {
+                    request_id: response_id,
+                    generation: response_generation,
+                }) if response_id == request_id && response_generation == generation => {
+                    return Ok(true);
+                }
+                Some(Message::Error {
+                    request_id: response_id,
+                    code,
+                    message,
+                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
+                    return Err(SupervisorError::UnexpectedMessage(format!(
+                        "extension refresh failed with {code}: {message}"
+                    )));
+                }
+                Some(_) => {}
+                None => return Err(SupervisorError::ChannelClosed),
+            }
+        }
+    }
+
     pub(crate) fn invoke_cancellable(
         &mut self,
         request_id: impl Into<String>,

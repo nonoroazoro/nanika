@@ -1,0 +1,81 @@
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
+use nanika_storage::{ExtensionKind, NanikaPaths};
+
+use crate::{BuiltinExtensionSpec, ExtensionProcess, PendingExtension};
+
+pub(crate) const APPLICATION_EXTENSION_ID: &str = "com.nanika.application";
+
+const BUILTINS: [BuiltinExtensionSpec; 1] = [BuiltinExtensionSpec {
+    extension_id: APPLICATION_EXTENSION_ID,
+    binary_name: "nanika-extension-application",
+    kind: ExtensionKind::BuiltIn,
+}];
+
+pub(crate) fn spawn_builtin_extensions(
+    paths: &NanikaPaths,
+) -> (Vec<PendingExtension>, Vec<String>) {
+    let current_executable = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(error) => return (Vec::new(), vec![error.to_string()]),
+    };
+    let mut extensions = Vec::with_capacity(BUILTINS.len());
+    let mut errors = Vec::new();
+    for spec in BUILTINS {
+        let program = companion_executable(&current_executable, spec.binary_name);
+        if !program.is_file() {
+            errors.push(format!(
+                "built-in extension executable is missing: {}",
+                program.display()
+            ));
+            continue;
+        }
+        let arguments = [
+            path_argument("data-root", paths.app_data_root()),
+            path_argument("cache-root", paths.cache_root()),
+            path_argument("config-root", paths.config_root()),
+        ];
+        match ExtensionProcess::spawn_with(&program, arguments, Default::default()) {
+            Ok(process) => extensions.push(PendingExtension {
+                extension_id: spec.extension_id.to_owned(),
+                kind: spec.kind,
+                process,
+            }),
+            Err(error) => errors.push(format!(
+                "failed to spawn built-in extension {}: {error}",
+                spec.extension_id
+            )),
+        }
+    }
+    (extensions, errors)
+}
+
+fn companion_executable(current_executable: &Path, binary_name: &str) -> PathBuf {
+    current_executable.with_file_name(format!("{binary_name}{}", std::env::consts::EXE_SUFFIX))
+}
+
+fn path_argument(name: &str, path: &Path) -> OsString {
+    OsString::from(format!("--{name}={}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::companion_executable;
+    use std::path::Path;
+
+    #[test]
+    fn builtins_resolve_next_to_the_host_executable() {
+        let resolved = companion_executable(
+            Path::new("C:/nanika/nanika-host.exe"),
+            "nanika-extension-application",
+        );
+        assert_eq!(
+            resolved,
+            Path::new("C:/nanika").join(format!(
+                "nanika-extension-application{}",
+                std::env::consts::EXE_SUFFIX
+            ))
+        );
+    }
+}

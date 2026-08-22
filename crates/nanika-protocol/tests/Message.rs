@@ -21,3 +21,15 @@ fn invocation_identifies_the_selected_entry_and_action() {
     assert_eq!(encoded["entry_id"], "application.firefox");
     assert_eq!(encoded["action_id"], "application.open");
 }
+
+#[test]
+fn refresh_completion_preserves_request_identity_and_generation() {
+    let message = Message::Refreshed {
+        request_id: "refresh".to_owned(),
+        generation: 11,
+    };
+    let encoded = serde_json::to_value(message).expect("refresh should encode");
+    assert_eq!(encoded["type"], "refreshed");
+    assert_eq!(encoded["request_id"], "refresh");
+    assert_eq!(encoded["generation"], 11);
+}

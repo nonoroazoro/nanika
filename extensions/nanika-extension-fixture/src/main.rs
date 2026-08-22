@@ -33,6 +33,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .strip_prefix("--hang-invoke=")
             .map(std::path::PathBuf::from)
     });
+    let mark_refresh = arguments.iter().find_map(|argument| {
+        argument
+            .strip_prefix("--mark-refresh=")
+            .map(std::path::PathBuf::from)
+    });
     if arguments
         .iter()
         .any(|argument| argument == "--write-stderr")
@@ -134,8 +139,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 write_frame(&mut output, &response)?;
             }
             Message::Cancel { .. } => {}
+            Message::Refresh {
+                request_id,
+                generation,
+            } => {
+                if let Some(marker) = &mark_refresh {
+                    std::fs::write(marker, b"refreshed")?;
+                }
+                write_frame(
+                    &mut output,
+                    &Message::Refreshed {
+                        request_id,
+                        generation,
+                    },
+                )?;
+            }
             Message::Snapshot { .. }
             | Message::Result { .. }
+            | Message::Refreshed { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
             | Message::Error { .. } => write_frame(

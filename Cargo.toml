@@ -9,6 +9,7 @@ members = [
     "crates/nanika-config",
     "crates/nanika-search",
     "extensions/nanika-extension-fixture",
+    "extensions/nanika-extension-application",
 ]
 
 [workspace.package]
@@ -29,6 +30,13 @@ wgpu = { version = "30.0.0", default-features = false }
 global-hotkey = "0.8.0"
 nucleo-matcher = "0.3.1"
 criterion = { version = "0.8.2", default-features = false }
+walkdir = "2.5.0"
+plist = "1.10.0"
+icns = "0.4.0"
+sha2 = "0.11.0"
+png = "0.18.1"
+windows = { version = "0.62.2", default-features = false }
+windows-sys = "0.61.2"
 
 [workspace.lints.rust]
 unsafe_code = "warn"

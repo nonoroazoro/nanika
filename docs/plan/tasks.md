@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: implementation in progress. Milestone 4 is complete and reviewed: search aggregation, deterministic contextual ranking, extension snapshots, persistent input history, query coalescing, and lossless action completion are implemented. Windows workspace checks pass. Milestone 5 has not started.
+Status: implementation in progress. Milestone 5 is complete and reviewed: the Windows application extension provides native Shell discovery, executable validation, stable identity, generated indexing, icon caching, persistence, cancellable refresh, and searchable contributions. Windows workspace checks pass.
 
 ## Product direction
 
@@ -74,10 +74,10 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Application extension
 
-- [ ] Define Windows and macOS application roots, configured roots, exclusions, permission handling, and explicit rescan behavior.
-- [ ] Define stable application identity, metadata, executable validation, stale-entry cleanup, and duplicate handling.
-- [ ] Define icon extraction, cache keys, fallback icons, and high-DPI variants.
-- [ ] Define startup indexing, cancellation, transactional batches, failure recovery, and generated database schema tests.
+- [x] Define Windows and macOS application roots, configured roots, exclusions, permission handling, and explicit rescan behavior.
+- [x] Define stable application identity, metadata, executable validation, stale-entry cleanup, and duplicate handling.
+- [x] Define icon extraction, cache keys, fallback icons, and high-DPI variants.
+- [x] Define startup indexing, cancellation, transactional batches, failure recovery, and generated database schema tests.
 - [x] Use startup refresh plus explicit rescan. Do not add a filesystem watcher or periodic scan loop in the MVP.
 
 ### Search, ranking, and input history
@@ -151,7 +151,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 2. [x] Single instance, universal extension process boundary, configuration, and storage.
 3. [x] Global hotkey, overlay, visual language, and animation baseline.
 4. [x] Search aggregation, contextual ranking, input history, and fixtures.
-5. Windows application extension with discovery, indexing, and persistence.
+5. [x] Windows application extension with discovery, indexing, and persistence.
 6. Command, script, calculator, and clipboard history extensions.
 7. Settings, startup, and macOS adapters.
 8. Performance, packaging, release, and cross-platform acceptance.

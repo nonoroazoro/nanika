@@ -8,7 +8,7 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionSearchQuery, ExtensionSearchState, ExtensionWork, SupervisorError,
+    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionWork, SupervisorError,
     publish_extension_snapshot,
 };
 
@@ -84,6 +84,9 @@ impl ExtensionSearchWorker {
                                 result.map(|()| true)
                             }
                         }
+                        ExtensionWork::Refresh(refresh) => {
+                            run_refresh(&mut process, &worker_extension_id, refresh, &worker_state)
+                        }
                     };
                     match result {
                         Ok(true) => set_error(&worker_error, None),
@@ -112,6 +115,14 @@ impl ExtensionSearchWorker {
             generation,
             query: query.into(),
         });
+        ready.notify_one();
+    }
+
+    pub(crate) fn refresh(&self, generation: u64) {
+        let (lock, ready) = &*self.state;
+        lock.lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .refresh = Some(ExtensionRefresh { generation });
         ready.notify_one();
     }
 
@@ -166,7 +177,11 @@ impl Drop for ExtensionSearchWorker {
 fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<ExtensionWork> {
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-    while state.query.is_none() && state.invocations.is_empty() && !state.shutdown {
+    while state.query.is_none()
+        && state.refresh.is_none()
+        && state.invocations.is_empty()
+        && !state.shutdown
+    {
         state = ready.wait(state).unwrap_or_else(|error| error.into_inner());
     }
     if state.shutdown {
@@ -177,6 +192,41 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
         .pop_front()
         .map(ExtensionWork::Invoke)
         .or_else(|| state.query.take().map(ExtensionWork::Query))
+        .or_else(|| state.refresh.take().map(ExtensionWork::Refresh))
+}
+
+fn run_refresh(
+    process: &mut ExtensionProcess,
+    extension_id: &str,
+    refresh: ExtensionRefresh,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+) -> Result<bool, SupervisorError> {
+    recover_if_exited(process, extension_id, refresh.generation)?;
+    let result = process.refresh_cancellable(
+        format!("refresh-{extension_id}-{}", refresh.generation),
+        refresh.generation,
+        Duration::from_secs(30),
+        || {
+            let (lock, _) = &**state;
+            let state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            state.shutdown
+                || state.query.is_some()
+                || !state.invocations.is_empty()
+                || state.refresh.is_some()
+        },
+    );
+    if matches!(
+        &result,
+        Err(SupervisorError::ChannelClosed
+            | SupervisorError::Protocol(_)
+            | SupervisorError::Timeout(_))
+    ) {
+        restart_or_terminate(
+            process,
+            format!("restart-refresh-{extension_id}-{}", refresh.generation),
+        )?;
+    }
+    result
 }
 
 fn run_query(

@@ -40,6 +40,14 @@ pub enum Message {
         request_id: String,
         generation: u64,
     },
+    Refresh {
+        request_id: String,
+        generation: u64,
+    },
+    Refreshed {
+        request_id: String,
+        generation: u64,
+    },
     Shutdown {
         request_id: String,
     },

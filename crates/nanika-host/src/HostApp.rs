@@ -41,6 +41,7 @@ pub struct HostApp {
     search: Option<SearchHandle>,
     search_notifier_configured: bool,
     search_generation: u64,
+    refresh_generation: u64,
     search_snapshot: Option<Arc<SearchSnapshot>>,
     selected_index: usize,
     extension_search: ExtensionSearchCoordinator,
@@ -158,6 +159,7 @@ impl HostApp {
             search: None,
             search_notifier_configured: false,
             search_generation: 0,
+            refresh_generation: 1,
             search_snapshot: None,
             selected_index: 0,
             extension_search: ExtensionSearchCoordinator::default(),
@@ -340,6 +342,16 @@ impl HostApp {
         self.search = runtime.search;
         self.storage = runtime.storage;
         self.runtime_error = combine_errors(self.runtime_error.take(), runtime.error);
+        for extension in runtime.pending_extensions {
+            if let Err(error) = self.register_search_extension(
+                extension.extension_id,
+                extension.kind,
+                extension.process,
+            ) {
+                self.runtime_error =
+                    combine_errors(self.runtime_error.take(), Some(error.to_string()));
+            }
+        }
         self.runtime_receiver = None;
         if self.overlay_visible {
             self.begin_search();
@@ -376,6 +388,14 @@ impl HostApp {
             .register(extension_id, process, search)?;
         self.begin_search();
         Ok(())
+    }
+
+    pub fn refresh_applications(&mut self) -> Result<(), crate::SupervisorError> {
+        self.refresh_generation = self.refresh_generation.saturating_add(1);
+        self.extension_search.refresh(
+            crate::builtins::APPLICATION_EXTENSION_ID,
+            self.refresh_generation,
+        )
     }
 
     pub fn record_execution(
@@ -622,6 +642,7 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut usage = UsageMap::new();
     let mut config = None;
     let mut storage = None;
+    let mut pending_extensions = Vec::new();
     let mut error = None;
 
     match NanikaPaths::discover() {
@@ -663,6 +684,11 @@ fn initialize_search_runtime() -> HostRuntime {
                     error = combine_errors(error, Some(storage_error));
                 }
             }
+            let (extensions, extension_errors) = crate::builtins::spawn_builtin_extensions(&paths);
+            pending_extensions = extensions;
+            for extension_error in extension_errors {
+                error = combine_errors(error, Some(extension_error));
+            }
         }
         None => error = Some("platform data directories are unavailable".to_owned()),
     }
@@ -680,6 +706,7 @@ fn initialize_search_runtime() -> HostRuntime {
                 search_owner: Some(owner),
                 search: Some(handle),
                 storage,
+                pending_extensions,
                 error,
             }
         }
@@ -689,7 +716,8 @@ fn initialize_search_runtime() -> HostRuntime {
             search_owner: None,
             search: None,
             storage,
-            error: Some(search_error.to_string()),
+            pending_extensions,
+            error: combine_errors(error, Some(search_error.to_string())),
         },
     }
 }

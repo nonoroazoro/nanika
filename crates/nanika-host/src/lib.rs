@@ -1,5 +1,8 @@
 //! Host-owned UI and extension supervision boundaries.
 
+#[path = "BuiltinExtensionSpec.rs"]
+mod builtin_extension_spec;
+mod builtins;
 #[path = "ExtensionCommand.rs"]
 mod extension_command;
 #[path = "ExtensionInvocation.rs"]
@@ -12,6 +15,8 @@ mod extension_limits;
 mod extension_notifier;
 #[path = "ExtensionProcess.rs"]
 mod extension_process;
+#[path = "ExtensionRefresh.rs"]
+mod extension_refresh;
 #[path = "ExtensionSearchCoordinator.rs"]
 mod extension_search_coordinator;
 #[path = "ExtensionSearchQuery.rs"]
@@ -32,15 +37,19 @@ mod host_event;
 mod host_runtime;
 #[path = "OverlayMotion.rs"]
 mod overlay_motion;
+#[path = "PendingExtension.rs"]
+mod pending_extension;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
 
+pub(crate) use builtin_extension_spec::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_invocation::*;
 pub(crate) use extension_invocation_result::*;
 pub use extension_limits::*;
 pub(crate) use extension_notifier::*;
 pub use extension_process::*;
+pub(crate) use extension_refresh::*;
 pub use extension_search_coordinator::*;
 pub(crate) use extension_search_query::*;
 pub(crate) use extension_search_state::*;
@@ -51,6 +60,7 @@ pub use host_app::HostApp;
 pub(crate) use host_event::*;
 pub(crate) use host_runtime::*;
 pub(crate) use overlay_motion::*;
+pub(crate) use pending_extension::*;
 pub use supervisor_error::*;
 
 /// Publish one protocol snapshot into the shared search owner.

@@ -77,6 +77,51 @@ fn fixture_completes_a_generation_tagged_invocation() {
 }
 
 #[test]
+fn fixture_completes_a_generation_tagged_refresh() {
+    let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
+    extension
+        .initialize("initialize-refresh")
+        .expect("fixture should initialize");
+    extension
+        .refresh("refresh-1", 9, Duration::from_secs(1))
+        .expect("fixture refresh should complete");
+    extension
+        .shutdown("shutdown-refresh")
+        .expect("fixture should shut down");
+}
+
+#[test]
+fn coordinator_dispatches_refresh_off_the_caller_thread() {
+    let marker =
+        std::env::temp_dir().join(format!("nanika-extension-refresh-{}", std::process::id()));
+    let _ = std::fs::remove_file(&marker);
+    let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        [format!("--mark-refresh={}", marker.display()).into()],
+        ExtensionLimits::default(),
+    )
+    .expect("fixture should spawn");
+    let mut coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register("fixture.extension", extension, owner.handle())
+        .expect("worker should register");
+
+    coordinator
+        .refresh("fixture.extension", 9)
+        .expect("refresh should enqueue");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !marker.exists() {
+        assert!(Instant::now() < deadline, "refresh should reach extension");
+        std::thread::yield_now();
+    }
+    drop(coordinator);
+    owner.shutdown();
+    let _ = std::fs::remove_file(marker);
+}
+
+#[test]
 fn extension_snapshot_reaches_the_shared_search_owner() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();

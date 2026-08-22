@@ -65,6 +65,19 @@ impl ExtensionSearchCoordinator {
         }
     }
 
+    pub fn refresh(&self, extension_id: &str, generation: u64) -> Result<(), SupervisorError> {
+        self.workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .ok_or_else(|| {
+                SupervisorError::UnexpectedMessage(format!(
+                    "extension search worker does not exist: {extension_id}"
+                ))
+            })?
+            .refresh(generation);
+        Ok(())
+    }
+
     pub fn first_error(&self) -> Option<String> {
         self.workers
             .iter()

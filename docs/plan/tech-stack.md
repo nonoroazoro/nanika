@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 4 search aggregation, contextual ranking, extension snapshots, persistent input history, query coalescing, and lossless action completion are implemented and reviewed. Milestone 5 has not started. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 5 application discovery, indexing, persistence, icon caching, refresh, and host bootstrap are implemented and reviewed on Windows. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -15,8 +15,9 @@ Status: current pre-1.0 implementation baseline. Milestone 4 search aggregation,
 | Fuzzy matching | `nucleo-matcher` | One persistent matcher owned by the named search owner thread. |
 | Application paths | `directories` | Resolve roots once through `ProjectDirs`. |
 | Directory traversal | `walkdir` | Bounded recursive scans without a general parallel walker. |
-| Windows discovery | `windows-sys` and `lnk` | Known folders and Shell Links. |
+| Windows discovery | `windows` and `windows-sys` | Typed Shell COM plus direct known-folder, executable, and icon APIs. |
 | macOS discovery | `std::fs`, `plist`, and `icns` | Application bundles, `Info.plist`, and icons. |
+| Icon cache encoding | `png` | Deterministic RGBA PNG cache variants and fallback icons. |
 | Clipboard | `clipboard-rs` | Native Windows monitoring and measured macOS pasteboard polling. |
 | Calculator | `fend-core` | Deterministic, interruptible, arbitrary-precision local evaluation. |
 | Startup | `windows-registry` and `objc2-service-management` | Current-user Windows Run entry and macOS `SMAppService.mainAppService`. |
@@ -53,6 +54,7 @@ crates/
   nanika-config/
   nanika-search/
 extensions/
+  nanika-extension-application/
   nanika-extension-fixture/
 ```
 
@@ -157,7 +159,7 @@ The current `nanika-config` boundary implements bootstrap creation, absolute rel
 
 ## SQLite storage
 
-Use one host database and one database per extension. The host storage owner is the only writer and owns connections and transactions. Extensions own their schema and migration definitions. The current storage crate enforces the database path boundary and opens isolated extension databases with independent migration tables.
+Use one host database and one database per extension. Every database has exactly one writer that owns its connection and transactions. The host storage owner owns `nanika.db`; each extension owns its database through a named owner thread in its process. Connections never cross process boundaries. Extensions own their schema and migration definitions. The current storage crate enforces isolated database paths and migration tables.
 
 `nanika.db` baseline tables:
 
@@ -198,7 +200,13 @@ Use `global-hotkey` on the event-loop thread. Register only the configured short
 
 The application extension scans standard platform roots and user-configured roots with `walkdir`. Do not follow symlinks by default. Refresh at startup and on explicit rescan only. Persist generated metadata in the application extension database. Keep filesystem access out of the search hot path.
 
-Windows uses known-folder and Shell Link adapters. macOS scans `.app` bundles, reads `Info.plist`, and decodes `.icns`. Paths are refreshable metadata; bundle IDs and resolved executable identities provide stable identities.
+Windows uses known folders and native `IShellLinkW` resolution. macOS scans `.app` bundles, reads `Info.plist`, and decodes `.icns`. Paths are refreshable metadata; bundle IDs and resolved executable identities provide stable identities.
+
+The application extension runs as its own process with one discovery owner. The host registers it through the universal worker path; explicit refresh is cancellable and stays off the UI thread. Settings require `formatVersion`; only a missing file selects defaults, while read failures preserve the existing index.
+
+Windows discovery resolves every `.lnk` through Shell COM and validates PE targets before indexing. Validation is reused while canonical path, size, and modification time remain unchanged; benchmarks separate cold validation from warm refresh. Identity uses the canonical executable, effective working directory, and typed arguments, so equivalent shortcuts and direct executables deduplicate without merging different launch behavior. Complete scans stale missing entries and remove entries already stale; cancelled, failed, or partial scans preserve unseen data. SQLite commits each generation atomically. Snapshots below 5,000 entries remain complete; larger indexes use query-aware top-k preselection before host ranking.
+
+Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. The macOS adapter still requires runtime validation on macOS. Application launch remains deferred to the host launch service milestone.
 
 ### Clipboard
 
@@ -216,13 +224,13 @@ Windows uses a quoted absolute executable path under the current-user `Run` key.
 
 The universal extension protocol uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. JSON here is IPC only, not configuration.
 
-The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, a one-frame receive queue, query and action deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions are never replayed after an ambiguous crash because that could duplicate side effects. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
+The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query and action deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions are never replayed after an ambiguous crash because that could duplicate side effects. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
 
-Host messages: `initialize`, `query`, `invoke`, `cancel`, `shutdown`.
+Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `shutdown`.
 
-Extension messages: `initialized`, bounded `snapshot`, `result`, `error`, and `shutdownAck`.
+Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `error`, and `shutdownAck`.
 
-Every request carries an ID. Query and action messages carry a generation. The host drops stale generations, applies a 2-second handshake deadline, bounds action time, captures bounded stderr, and performs graceful shutdown before termination.
+Every request carries an ID. Query, action, and refresh messages carry a generation. The host drops stale generations, applies a 2-second handshake deadline, bounds action time, captures bounded stderr, and performs graceful shutdown before termination.
 
 External packages are ZIP archives with a `.nanika` suffix:
 
