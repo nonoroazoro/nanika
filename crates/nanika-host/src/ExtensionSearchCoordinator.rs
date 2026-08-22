@@ -6,7 +6,7 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionSearchWorker, HostServiceHandler, SupervisorError,
+    ExtensionSearchWorker, ExtensionSettingsResult, HostServiceHandler, SupervisorError,
 };
 
 const INVOCATION_RESULT_CAPACITY: usize = 16;
@@ -131,6 +131,30 @@ impl ExtensionSearchCoordinator {
         self.pending_invocations
             .fetch_sub(results.len(), Ordering::AcqRel);
         results
+    }
+
+    pub(crate) fn take_settings(&self) -> Vec<ExtensionSettingsResult> {
+        self.workers
+            .iter()
+            .filter_map(ExtensionSearchWorker::take_settings)
+            .collect()
+    }
+
+    pub(crate) fn update_settings(
+        &self,
+        extension_id: &str,
+        request_id: impl Into<String>,
+        updates: Vec<nanika_protocol::SettingUpdate>,
+    ) -> Result<(), SupervisorError> {
+        self.workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .ok_or_else(|| {
+                SupervisorError::UnexpectedMessage(format!(
+                    "extension search worker does not exist: {extension_id}"
+                ))
+            })?
+            .update_settings(request_id.into(), updates)
     }
 
     pub(crate) fn set_notifier(&self, notifier: Arc<dyn Fn() + Send + Sync>) {

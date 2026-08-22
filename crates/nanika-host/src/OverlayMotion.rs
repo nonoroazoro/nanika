@@ -41,6 +41,14 @@ impl OverlayMotion {
         self.started_at.is_some()
     }
 
+    pub(crate) fn set_reduced_motion(&mut self, reduced_motion: bool) {
+        self.reduced_motion = reduced_motion;
+        if reduced_motion {
+            self.value = self.target;
+            self.started_at = None;
+        }
+    }
+
     pub(crate) fn set_target_at(&mut self, visible: bool, now: Instant) {
         let target = if visible { 1.0 } else { 0.0 };
         if self.reduced_motion {

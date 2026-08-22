@@ -40,6 +40,24 @@ fn fixture_completes_handshake_and_shutdown() {
 }
 
 #[test]
+fn fixture_contributes_settings_through_the_supervised_protocol() {
+    let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
+    extension
+        .initialize("initialize-settings")
+        .expect("fixture should initialize");
+
+    let settings = extension
+        .settings("get-settings")
+        .expect("fixture settings should load");
+
+    assert_eq!(settings.title, "Fixture");
+    assert!(settings.fields.is_empty());
+    extension
+        .shutdown("shutdown-settings")
+        .expect("fixture should shut down");
+}
+
+#[test]
 fn protocol_operations_require_initialization() {
     let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
     let error = extension

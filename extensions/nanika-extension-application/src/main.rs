@@ -7,7 +7,8 @@ use std::sync::{Arc, RwLock};
 
 use nanika_config::ConfigStore;
 use nanika_extension_application::{
-    ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths, select_candidates,
+    ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
+    select_candidates,
 };
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
@@ -24,6 +25,7 @@ const MAX_CANDIDATES: usize = 5_000;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::resolve(std::env::args().skip(1))?;
     let config_store = ConfigStore::open(&paths.data_root, &paths.config_root)?;
+    let mut config = ApplicationConfig::load(&config_store)?;
     let database_path = paths.database_path();
     let icon_root = paths.icon_root();
     let entries = Arc::new(RwLock::new(Vec::<ApplicationEntry>::new()));
@@ -32,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let worker = DiscoveryWorker::spawn(
         database_path,
         icon_root,
-        config_store,
+        config_store.clone(),
         Arc::clone(&entries),
         event_sender,
     )?;
@@ -42,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending_query = None::<(String, u64, String)>;
     let mut refresh_requests = HashMap::<String, u64>::new();
     let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
+    let mut latest_generation = 1_u64;
     while let Ok(event) = events.recv() {
         match event {
             RuntimeEvent::Protocol(message) => match message {
@@ -75,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     generation,
                     query,
                 } => {
+                    latest_generation = latest_generation.max(generation);
                     let complete = active_scans == 0;
                     write_snapshot(
                         &mut output,
@@ -90,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                 } => {
+                    latest_generation = latest_generation.max(generation);
                     if !worker.refresh(Some(request_id.clone()), generation) {
                         write_error(
                             &mut output,
@@ -124,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     entry_id,
                     action_id,
                 } => {
+                    latest_generation = latest_generation.max(generation);
                     let descriptor = entries
                         .read()
                         .unwrap_or_else(|error| error.into_inner())
@@ -159,6 +165,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                Message::GetSettings { request_id } => {
+                    let contribution = config.settings();
+                    contribution.validate().map_err(std::io::Error::other)?;
+                    write_frame(
+                        &mut output,
+                        &Message::Settings {
+                            request_id,
+                            contribution,
+                        },
+                    )?;
+                }
+                Message::UpdateSettings {
+                    request_id,
+                    updates,
+                } => match config.update(&config_store, updates) {
+                    Ok(updated) => {
+                        config = updated;
+                        latest_generation = latest_generation.saturating_add(1);
+                        if worker.refresh(None, latest_generation) {
+                            active_scans = active_scans.saturating_add(1);
+                        } else {
+                            eprintln!(
+                                "application settings saved; automatic refresh queue is full"
+                            );
+                        }
+                        write_frame(
+                            &mut output,
+                            &Message::SettingsUpdated {
+                                request_id,
+                                contribution: config.settings(),
+                            },
+                        )?;
+                    }
+                    Err(error) => write_error(
+                        &mut output,
+                        Some(request_id),
+                        "invalid_settings",
+                        &error.to_string(),
+                    )?,
+                },
                 Message::HostResponse {
                     request_id,
                     parent_request_id,
@@ -347,6 +393,10 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
+        | Message::GetSettings { request_id }
+        | Message::Settings { request_id, .. }
+        | Message::UpdateSettings { request_id, .. }
+        | Message::SettingsUpdated { request_id, .. }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }

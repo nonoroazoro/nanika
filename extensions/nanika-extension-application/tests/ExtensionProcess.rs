@@ -46,6 +46,20 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     ));
     write_frame(
         &mut input,
+        &Message::GetSettings {
+            request_id: "application-settings".to_owned(),
+        },
+    )
+    .expect("settings request should write");
+    let Some(Message::Settings { contribution, .. }) =
+        read_frame(&mut output).expect("settings response")
+    else {
+        panic!("application extension should contribute settings");
+    };
+    assert_eq!(contribution.title, "Applications");
+    assert_eq!(contribution.fields.len(), 2);
+    write_frame(
+        &mut input,
         &Message::Query {
             request_id: "startup-query".to_owned(),
             generation: 1,

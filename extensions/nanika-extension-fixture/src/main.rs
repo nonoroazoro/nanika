@@ -200,6 +200,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )?;
             }
+            Message::GetSettings { request_id } => write_frame(
+                &mut output,
+                &Message::Settings {
+                    request_id,
+                    contribution: nanika_protocol::SettingsContribution {
+                        title: "Fixture".to_owned(),
+                        fields: Vec::new(),
+                    },
+                },
+            )?,
+            Message::UpdateSettings {
+                request_id,
+                updates,
+            } if updates.is_empty() => write_frame(
+                &mut output,
+                &Message::SettingsUpdated {
+                    request_id,
+                    contribution: nanika_protocol::SettingsContribution {
+                        title: "Fixture".to_owned(),
+                        fields: Vec::new(),
+                    },
+                },
+            )?,
             Message::Snapshot { .. }
             | Message::Result { .. }
             | Message::Refreshed { .. }
@@ -207,6 +230,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::HostResponse { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
+            | Message::Settings { .. }
+            | Message::SettingsUpdated { .. }
+            | Message::UpdateSettings { .. }
             | Message::Error { .. } => write_frame(
                 &mut output,
                 &Message::Error {

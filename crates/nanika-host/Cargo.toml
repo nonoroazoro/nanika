@@ -15,6 +15,8 @@ nanika-platform = { path = "../nanika-platform" }
 nanika-search = { path = "../nanika-search" }
 nanika-protocol = { path = "../nanika-protocol" }
 nanika-storage = { path = "../nanika-storage" }
+serde.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 wgpu = { workspace = true, features = ["dx12", "vulkan", "wgsl"] }

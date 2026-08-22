@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::{InstanceRole, PlatformError, SingleInstance};
+use crate::{InstanceRole, PlatformError, PlatformEvent, SingleInstance};
 
 const LOCK_FILE: &str = "nanika.instance.lock";
 const SOCKET_FILE: &str = "nanika.instance.sock";
@@ -34,13 +34,15 @@ pub(crate) fn acquire(app_data_root: &Path) -> Result<InstanceRole, PlatformErro
         std::fs::remove_file(&activation_path)?;
     }
     let listener = UnixListener::bind(&activation_path)?;
-    let (activations, activation_receiver) = mpsc::sync_channel(1);
+    let (events, event_receiver) = mpsc::sync_channel(8);
+    let event_sender = events.clone();
     let event_thread = std::thread::Builder::new()
         .name("nanika-instance-events".to_owned())
-        .spawn(move || run_event_loop(listener, activations))?;
+        .spawn(move || run_event_loop(listener, events))?;
 
     Ok(InstanceRole::Primary(SingleInstance {
-        activations: Some(activation_receiver),
+        events: Some(event_receiver),
+        event_sender,
         event_thread: Some(event_thread),
         lock_file,
         activation_path,
@@ -69,7 +71,7 @@ pub(crate) fn signal_activate(app_data_root: &Path) -> Result<(), PlatformError>
     }
 }
 
-fn run_event_loop(listener: UnixListener, activations: mpsc::SyncSender<()>) {
+fn run_event_loop(listener: UnixListener, events: mpsc::SyncSender<PlatformEvent>) {
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else {
             break;
@@ -86,7 +88,7 @@ fn run_event_loop(listener: UnixListener, activations: mpsc::SyncSender<()>) {
         };
         match request[0] {
             ACTIVATE_REQUEST => {
-                let _ = activations.try_send(());
+                let _ = events.try_send(PlatformEvent::Open);
             }
             STOP_REQUEST => break,
             _ => {}

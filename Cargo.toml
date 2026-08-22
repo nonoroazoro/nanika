@@ -43,6 +43,11 @@ windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
 fend-core = "1.5.8"
+windows-registry = "0.6.1"
+objc2-service-management = { version = "0.3.2", default-features = false }
+objc2 = { version = "0.6.4", default-features = false }
+objc2-app-kit = { version = "0.3.2", default-features = false }
+objc2-foundation = { version = "0.3.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use nanika_protocol::{FrameError, Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    FrameError, Message, PROTOCOL_NAME, SettingUpdate, SettingsContribution, read_frame,
+    write_frame,
+};
 
 use crate::{ExtensionCommand, ExtensionLimits, HostServiceHandler, SupervisorError};
 
@@ -226,6 +229,40 @@ impl ExtensionProcess {
     ) -> Result<(), SupervisorError> {
         self.refresh_cancellable(request_id, generation, timeout, || false)
             .map(|_| ())
+    }
+
+    pub fn settings(
+        &mut self,
+        request_id: impl Into<String>,
+    ) -> Result<SettingsContribution, SupervisorError> {
+        self.ensure_initialized()?;
+        let request_id = request_id.into();
+        self.send(&Message::GetSettings {
+            request_id: request_id.clone(),
+        })?;
+        let result = self.receive_settings(request_id, false);
+        if settings_transport_failed(&result) {
+            let _ = self.terminate();
+        }
+        result
+    }
+
+    pub fn update_settings(
+        &mut self,
+        request_id: impl Into<String>,
+        updates: Vec<SettingUpdate>,
+    ) -> Result<SettingsContribution, SupervisorError> {
+        self.ensure_initialized()?;
+        let request_id = request_id.into();
+        self.send(&Message::UpdateSettings {
+            request_id: request_id.clone(),
+            updates,
+        })?;
+        let result = self.receive_settings(request_id, true);
+        if settings_transport_failed(&result) {
+            let _ = self.terminate();
+        }
+        result
     }
 
     pub(crate) fn refresh_cancellable(
@@ -543,6 +580,51 @@ impl ExtensionProcess {
         }
     }
 
+    fn receive_settings(
+        &mut self,
+        request_id: String,
+        updated: bool,
+    ) -> Result<SettingsContribution, SupervisorError> {
+        let deadline = Instant::now() + self.limits.settings_timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(SupervisorError::Timeout("extension settings"));
+            }
+            match self.receive_timeout(remaining, "extension settings")? {
+                Some(Message::Settings {
+                    request_id: response_id,
+                    contribution,
+                }) if !updated && response_id == request_id => {
+                    contribution
+                        .validate()
+                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    return Ok(contribution);
+                }
+                Some(Message::SettingsUpdated {
+                    request_id: response_id,
+                    contribution,
+                }) if updated && response_id == request_id => {
+                    contribution
+                        .validate()
+                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    return Ok(contribution);
+                }
+                Some(Message::Error {
+                    request_id: response_id,
+                    code,
+                    message,
+                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
+                    return Err(SupervisorError::UnexpectedMessage(format!(
+                        "extension settings failed with {code}: {message}"
+                    )));
+                }
+                Some(_) => {}
+                None => return Err(SupervisorError::ChannelClosed),
+            }
+        }
+    }
+
     fn handle_host_request(
         &mut self,
         request_id: String,
@@ -622,4 +704,13 @@ fn drain_stderr(mut stderr: impl Read, output: &Arc<Mutex<VecDeque<u8>>>, byte_l
 fn cleanup_failed_spawn(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn settings_transport_failed<T>(result: &Result<T, SupervisorError>) -> bool {
+    matches!(
+        result,
+        Err(SupervisorError::ChannelClosed
+            | SupervisorError::Protocol(_)
+            | SupervisorError::Timeout(_))
+    )
 }

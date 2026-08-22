@@ -1,12 +1,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use jsonc_parser::{
+    ParseOptions,
+    cst::{CstInputValue, CstRootNode},
+};
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
     BootstrapConfig, CONFIG_FORMAT_VERSION, ConfigError, backup_path, copy_atomic, load_jsonc,
-    relative_config_path, save_jsonc, validate_bootstrap,
+    relative_config_path, save_jsonc, save_text_atomic, validate_bootstrap,
 };
 
 /// Store for bootstrap metadata and the effective user configuration root.
@@ -115,6 +120,73 @@ impl ConfigStore {
         relative_config_path(&self.config_root, path)?;
         let backup = backup_path(&self.machine_root, Some(&self.config_root), path)?;
         save_jsonc(path, value, Some(&backup))
+    }
+
+    /// Update top-level properties while preserving unrelated JSONC comments and formatting.
+    pub fn update<T: DeserializeOwned>(
+        &self,
+        path: impl AsRef<Path>,
+        updates: impl IntoIterator<Item = (String, Value)>,
+        validate: impl FnOnce(&T) -> Result<(), String>,
+    ) -> Result<T, ConfigError> {
+        if self.read_only {
+            return Err(ConfigError::Invalid(
+                "configuration is read-only after recovery".to_owned(),
+            ));
+        }
+        let path = path.as_ref();
+        if path == self.bootstrap_path {
+            return Err(ConfigError::Invalid(
+                "bootstrap updates require the relocation boundary".to_owned(),
+            ));
+        }
+        relative_config_path(&self.config_root, path)?;
+
+        let existing = if path.is_file() {
+            fs::read_to_string(path)?
+        } else {
+            "{}\n".to_owned()
+        };
+        let root = CstRootNode::parse(&existing, &ParseOptions::default())
+            .map_err(|error| ConfigError::Parse(error.to_string()))?;
+        let object = root.object_value_or_set();
+        for (key, value) in updates {
+            let value = cst_value(value)?;
+            if let Some(property) = object.get(&key) {
+                property.set_value(value);
+            } else {
+                object.append(&key, value);
+            }
+        }
+        let mut text = root.to_string();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        let typed = jsonc_parser::parse_to_serde_value(&text, &ParseOptions::default())
+            .map_err(|error| ConfigError::Parse(error.to_string()))?;
+        validate(&typed).map_err(ConfigError::Invalid)?;
+        let backup = backup_path(&self.machine_root, Some(&self.config_root), path)?;
+        save_text_atomic(path, &text, Some(&backup))?;
+        Ok(typed)
+    }
+}
+
+fn cst_value(value: Value) -> Result<CstInputValue, ConfigError> {
+    match value {
+        Value::Null => Ok(CstInputValue::Null),
+        Value::Bool(value) => Ok(CstInputValue::Bool(value)),
+        Value::Number(value) => Ok(CstInputValue::Number(value.to_string())),
+        Value::String(value) => Ok(CstInputValue::String(value)),
+        Value::Array(values) => values
+            .into_iter()
+            .map(cst_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(CstInputValue::Array),
+        Value::Object(values) => values
+            .into_iter()
+            .map(|(key, value)| Ok((key, cst_value(value)?)))
+            .collect::<Result<Vec<_>, ConfigError>>()
+            .map(CstInputValue::Object),
     }
 }
 

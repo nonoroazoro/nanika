@@ -13,7 +13,8 @@ use nanika_protocol::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::parse(std::env::args().skip(1))?;
     let store = ConfigStore::open(&paths.data_root, &paths.config_root)?;
-    let mut scripts = load_scripts(&store)?;
+    let mut config = ScriptConfig::load(&store)?;
+    let mut scripts = index_scripts(&config);
     let mut input = BufReader::new(stdin().lock());
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
@@ -84,9 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => match load_scripts(&store) {
+            } => match ScriptConfig::load(&store) {
                 Ok(updated) => {
-                    scripts = updated;
+                    config = updated;
+                    scripts = index_scripts(&config);
                     write_frame(
                         &mut output,
                         &Message::Refreshed {
@@ -97,6 +99,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(message) => {
                     write_error(&mut output, Some(request_id), "refresh_failed", &message)?
+                }
+            },
+            Message::GetSettings { request_id } => {
+                let contribution = config.settings();
+                if let Err(message) = contribution.validate() {
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "invalid_settings_schema",
+                        &message,
+                    )?;
+                } else {
+                    write_frame(
+                        &mut output,
+                        &Message::Settings {
+                            request_id,
+                            contribution,
+                        },
+                    )?;
+                }
+            }
+            Message::UpdateSettings {
+                request_id,
+                updates,
+            } => match config.update(&store, updates) {
+                Ok(updated) => {
+                    config = updated;
+                    scripts = index_scripts(&config);
+                    write_frame(
+                        &mut output,
+                        &Message::SettingsUpdated {
+                            request_id,
+                            contribution: config.settings(),
+                        },
+                    )?;
+                }
+                Err(message) => {
+                    write_error(&mut output, Some(request_id), "invalid_settings", &message)?
                 }
             },
             Message::Cancel { .. } => {}
@@ -115,14 +155,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_scripts(
-    store: &ConfigStore,
-) -> Result<BTreeMap<String, nanika_extension_script::ScriptEntry>, String> {
-    Ok(ScriptConfig::load(store)?
+fn index_scripts(config: &ScriptConfig) -> BTreeMap<String, nanika_extension_script::ScriptEntry> {
+    config
         .scripts
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|script| (format!("script.{}", script.id), script))
-        .collect())
+        .collect()
 }
 
 fn invoke_host(
@@ -201,6 +240,10 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
+        | Message::GetSettings { request_id }
+        | Message::Settings { request_id, .. }
+        | Message::UpdateSettings { request_id, .. }
+        | Message::SettingsUpdated { request_id, .. }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }

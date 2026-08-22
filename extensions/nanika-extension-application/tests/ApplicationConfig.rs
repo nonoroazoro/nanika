@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use nanika_config::ConfigStore;
+use nanika_protocol::{SettingUpdate, SettingValue};
 
 use crate::ApplicationConfig;
 
@@ -46,6 +47,40 @@ fn non_file_settings_paths_are_not_treated_as_missing() {
     std::fs::create_dir_all(&path).expect("settings directory should exist");
 
     assert!(ApplicationConfig::load(&store).is_err());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn shared_settings_updates_are_validated_and_persisted_by_the_extension() {
+    let root = test_root("shared-update");
+    let store = ConfigStore::open(root.join("data"), root.join("config"))
+        .expect("config store should open");
+    let config = ApplicationConfig::load(&store).expect("default config should load");
+    config
+        .settings()
+        .validate()
+        .expect("settings contribution should be valid");
+
+    let updated = config
+        .update(
+            &store,
+            vec![SettingUpdate {
+                key: "roots".to_owned(),
+                value: SettingValue::StringList {
+                    values: vec![root.to_string_lossy().into_owned()],
+                },
+            }],
+        )
+        .expect("extension should persist its update");
+
+    assert_eq!(updated.roots.as_slice(), std::slice::from_ref(&root));
+    assert_eq!(
+        ApplicationConfig::load(&store)
+            .expect("persisted settings should load")
+            .roots
+            .as_slice(),
+        std::slice::from_ref(&root)
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 

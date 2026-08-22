@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: implementation in progress. Milestone 6 is complete and post-review fixes are verified on Windows. The default capabilities run as built-in extension processes through common search, action, host service, deadline, and failure boundaries. The macOS platform crate also passes cross-target checks.
+Status: implementation in progress. Milestone 7 is complete and automated checks pass on Windows. Settings, startup, tray or menu integration, and common built-in extension settings are implemented. The macOS platform crate passes cross-target checks; signed-bundle runtime validation remains in Milestone 8.
 
 ## Product direction
 
@@ -20,7 +20,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - Built-in and external extension settings are loaded dynamically through the same contribution contract.
 - A user can install, enable, update, disable, and remove external extensions.
 - Missing, incompatible, or failed extensions do not prevent host startup.
-- A second Nanika launch activates the existing host instead of creating another UI or hotkey registration.
+- A foreground second launch activates the existing host; a background launch exits without disturbing it.
 - Startup integration works on Windows 10 and macOS 13 or later.
 - User configuration is in one relocatable tree; generated data remains machine-local.
 - Startup, indexing, search, launch, and permission failures produce actionable diagnostics.
@@ -69,7 +69,8 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, atomic activation, path validation, and SHA-256 checks.
 - [x] Limit MVP installation to explicit local packages or development directories. No marketplace or background download.
 - [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
-- [ ] Define extension-owned settings schema, semantic validation, storage, migrations, and reset behavior.
+- [x] Define extension-owned settings schema, semantic validation, and storage.
+- [ ] Add settings migrations and reset behavior before a format change requires them.
 - [x] Define the default extension implementations and their acceptance tests.
 
 ### Application extension
@@ -102,16 +103,19 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 - [x] Define summon, focus, selection, Enter, Escape, and dismissal behavior for the initial overlay.
 - [ ] Define active-monitor placement, multi-monitor, high-DPI, elevated-window, and full-screen behavior.
-- [ ] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
-- [ ] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
+- [x] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
+- [x] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
+- [x] Keep Settings read-only until runtime owners load and correlate extension updates by request ID.
 - [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
 - [x] Implement the macOS normal shortcut registration boundary. Runtime permission validation remains.
 - [x] Select Windows current-user Run registration and macOS `SMAppService.mainAppService`.
+- [x] Open macOS Login Items for approval-required startup registration.
 - [ ] Verify startup status, enable, disable, stale paths, external disablement, rollback, and hidden idle launch.
 - [ ] Define typed launch descriptors, structured arguments, explicit interpreters, shell policy, environment, stdio, output limits, timeout, cancellation, process-tree termination, and reaping.
 - [ ] Verify GUI, command, script, batch, and macOS bundle launches on both platforms.
 - [x] Select single-instance handoff: Windows `CreateMutexW` plus hidden-window activation; macOS `flock` plus a local Unix socket.
 - [x] Integrate startup-race-safe Windows hidden-window and macOS lock/socket activation with the host through bounded blocking event sources.
+- [x] Negotiate Windows notification callback version 4 and preserve background secondary-launch semantics.
 - [ ] Test second-launch activation, stale lock recovery, shutdown cleanup, and per-user/session isolation.
 
 ### Configuration and storage
@@ -119,7 +123,8 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select `ProjectDirs::from("com", "nanika", "nanika")` and macOS bundle ID `com.nanika.nanika` as the current pre-1.0 identity.
 - [x] Separate relocatable user configuration from machine-local bootstrap metadata and generated data.
 - [x] Select JSONC for human-edited configuration and manifests, with typed Rust boundaries and CST-preserving edits.
-- [ ] Define host and extension settings models, schema validation, path scope, machine overrides, and secret handling.
+- [x] Define host and extension settings models, schema validation, and path scope.
+- [ ] Define machine overrides and secret handling before a capability requires them.
 - [x] Implement bootstrap relocation, directory creation, malformed-file recovery, and last-known-good read-only fallback.
 - [x] Select one `nanika.db` plus one database per extension. Do not sync live SQLite files.
 - [x] Record the baseline host and application tables, ownership, pragmas, WAL policy, and migration boundary in `tech-stack.md`.
@@ -153,6 +158,6 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 4. [x] Search aggregation, contextual ranking, input history, and fixtures.
 5. [x] Windows application extension with discovery, indexing, and persistence.
 6. [x] Command, script, calculator, and clipboard history extensions.
-7. Settings, startup, and macOS adapters.
+7. [x] Settings, startup, and macOS adapters.
 8. Performance, packaging, release, and cross-platform acceptance.
 9. Post-MVP ACP extension.

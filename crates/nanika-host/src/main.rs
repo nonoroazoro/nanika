@@ -1,6 +1,11 @@
 //! Nanika host entry point.
 
 fn main() {
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let reduced_motion = arguments
+        .iter()
+        .any(|argument| argument == "--reduced-motion");
+    let background = arguments.iter().any(|argument| argument == "--background");
     let Some(paths) = nanika_storage::NanikaPaths::discover() else {
         eprintln!("Nanika failed to resolve platform data directories");
         return;
@@ -9,7 +14,10 @@ fn main() {
     let instance = match nanika_platform::acquire_instance(identity, paths.app_data_root()) {
         Ok(nanika_platform::InstanceRole::Primary(instance)) => instance,
         Ok(nanika_platform::InstanceRole::Secondary) => {
-            if let Err(error) = nanika_platform::signal_activate(identity, paths.app_data_root()) {
+            if should_activate_existing(background)
+                && let Err(error) =
+                    nanika_platform::signal_activate(identity, paths.app_data_root())
+            {
                 eprintln!("Nanika failed to activate the existing host: {error}");
             }
             return;
@@ -19,7 +27,6 @@ fn main() {
             return;
         }
     };
-    let reduced_motion = std::env::args().any(|argument| argument == "--reduced-motion");
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Nanika")
@@ -35,13 +42,33 @@ fn main() {
         "Nanika",
         options,
         Box::new(move |_creation_context| {
-            Ok(Box::new(nanika_host::HostApp::with_instance(
+            Ok(Box::new(nanika_host::HostApp::with_instance_background(
                 instance,
                 reduced_motion,
+                background,
             )))
         }),
     );
     if let Err(error) = result {
         eprintln!("Nanika failed to start: {error}");
+    }
+}
+
+fn should_activate_existing(background: bool) -> bool {
+    !background
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_activate_existing;
+
+    #[test]
+    fn foreground_secondary_activates_the_existing_host() {
+        assert!(should_activate_existing(false));
+    }
+
+    #[test]
+    fn background_secondary_exits_without_activation() {
+        assert!(!should_activate_existing(true));
     }
 }

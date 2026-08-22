@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -6,7 +7,9 @@ use eframe::egui;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use nanika_config::ConfigStore;
-use nanika_platform::{HotkeyRegistration, PlatformError, SingleInstance};
+use nanika_platform::{
+    HotkeyRegistration, NativeMenu, PlatformError, PlatformEvent, SingleInstance, StartupService,
+};
 use nanika_search::{
     InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap,
     UsageStat, normalize_history_key,
@@ -14,8 +17,8 @@ use nanika_search::{
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    ExtensionProcess, ExtensionSearchCoordinator, HistoryDirection, HostEvent, HostRuntime,
-    OverlayMotion,
+    ExtensionProcess, ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService,
+    HostEvent, HostRuntime, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
@@ -31,12 +34,18 @@ pub struct HostApp {
     events: mpsc::Receiver<HostEvent>,
     context_slot: Arc<Mutex<Option<egui::Context>>>,
     instance: Option<SingleInstance>,
+    native_menu: Option<NativeMenu>,
     instance_bridge: Option<JoinHandle<()>>,
     runtime_receiver: Option<mpsc::Receiver<HostRuntime>>,
     runtime_thread: Option<JoinHandle<()>>,
     query: String,
     history: InputHistory,
     config: Option<ConfigStore>,
+    config_service: Option<HostConfigService>,
+    host_config: HostConfig,
+    pending_host_settings: Option<PendingHostSettings>,
+    startup: Option<StartupService>,
+    settings: SettingsState,
     search_owner: Option<SearchOwner>,
     search: Option<SearchHandle>,
     search_notifier_configured: bool,
@@ -56,22 +65,31 @@ pub struct HostApp {
     motion: OverlayMotion,
     visuals_configured: bool,
     reveal_on_first_frame: bool,
+    forced_reduced_motion: bool,
 }
 
 impl HostApp {
     pub fn new() -> Self {
-        Self::build(None, false)
+        Self::build(None, false, false)
     }
 
     pub fn new_with_reduced_motion(reduced_motion: bool) -> Self {
-        Self::build(None, reduced_motion)
+        Self::build(None, reduced_motion, false)
     }
 
     pub fn with_instance(instance: SingleInstance, reduced_motion: bool) -> Self {
-        Self::build(Some(instance), reduced_motion)
+        Self::build(Some(instance), reduced_motion, false)
     }
 
-    fn build(mut instance: Option<SingleInstance>, reduced_motion: bool) -> Self {
+    pub fn with_instance_background(
+        instance: SingleInstance,
+        reduced_motion: bool,
+        background: bool,
+    ) -> Self {
+        Self::build(Some(instance), reduced_motion, background)
+    }
+
+    fn build(mut instance: Option<SingleInstance>, reduced_motion: bool, background: bool) -> Self {
         let (sender, events) = mpsc::sync_channel(16);
         let context_slot: Arc<Mutex<Option<egui::Context>>> = Arc::new(Mutex::new(None));
         let event_context = Arc::clone(&context_slot);
@@ -92,16 +110,25 @@ impl HostApp {
             Err(error) => (None, Some(platform_error_message(error))),
         };
 
-        let (instance_bridge, mut startup_error) = if let Some(instance) = instance.as_mut() {
-            match instance.take_activations() {
-                Ok(activations) => {
-                    let activation_events = sender;
+        let (native_menu, mut startup_error) = if let Some(instance) = instance.as_ref() {
+            match NativeMenu::new(instance.event_sender()) {
+                Ok(menu) => (Some(menu), None),
+                Err(error) => (None, Some(error.to_string())),
+            }
+        } else {
+            (None, None)
+        };
+
+        let instance_bridge = if let Some(instance) = instance.as_mut() {
+            match instance.take_events() {
+                Ok(platform_events) => {
+                    let host_events = sender;
                     let activation_context = Arc::clone(&context_slot);
                     match std::thread::Builder::new()
                         .name("nanika-instance-bridge".to_owned())
                         .spawn(move || {
-                            while activations.recv().is_ok() {
-                                let _ = activation_events.try_send(HostEvent::Activate);
+                            while let Ok(event) = platform_events.recv() {
+                                let _ = host_events.try_send(HostEvent::Platform(event));
                                 if let Some(context) = activation_context
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner())
@@ -111,14 +138,20 @@ impl HostApp {
                                 }
                             }
                         }) {
-                        Ok(thread) => (Some(thread), None),
-                        Err(error) => (None, Some(error.to_string())),
+                        Ok(thread) => Some(thread),
+                        Err(error) => {
+                            startup_error = combine_errors(startup_error, Some(error.to_string()));
+                            None
+                        }
                     }
                 }
-                Err(error) => (None, Some(error.to_string())),
+                Err(error) => {
+                    startup_error = combine_errors(startup_error, Some(error.to_string()));
+                    None
+                }
             }
         } else {
-            (None, None)
+            None
         };
 
         let (runtime_sender, runtime_receiver) = mpsc::sync_channel(1);
@@ -142,19 +175,26 @@ impl HostApp {
             }
         };
 
-        let reveal_on_first_frame = hotkey.is_none();
+        let reveal_on_first_frame = hotkey.is_none() && !background;
+        let host_config = HostConfig::default();
         Self {
             hotkey,
             hotkey_error,
             events,
             context_slot,
             instance,
+            native_menu,
             instance_bridge,
             runtime_receiver: Some(runtime_receiver),
             runtime_thread,
             query: String::new(),
             history: InputHistory::new(50),
             config: None,
+            config_service: None,
+            settings: SettingsState::new(&host_config),
+            host_config,
+            pending_host_settings: None,
+            startup: None,
             search_owner: None,
             search: None,
             search_notifier_configured: false,
@@ -174,6 +214,7 @@ impl HostApp {
             motion: OverlayMotion::new(reduced_motion),
             visuals_configured: false,
             reveal_on_first_frame,
+            forced_reduced_motion: reduced_motion,
         }
     }
 
@@ -181,7 +222,16 @@ impl HostApp {
         let mut activate = false;
         while let Ok(event) = self.events.try_recv() {
             match event {
-                HostEvent::Activate => activate = true,
+                HostEvent::Platform(PlatformEvent::Open) => activate = true,
+                HostEvent::Platform(PlatformEvent::Settings) => self.open_settings(context),
+                HostEvent::Platform(PlatformEvent::RescanApplications) => {
+                    if let Err(error) = self.refresh_applications() {
+                        self.operation_error = Some(error.to_string());
+                    }
+                }
+                HostEvent::Platform(PlatformEvent::Quit) => {
+                    context.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
                 HostEvent::Hotkey(event)
                     if event.state == HotKeyState::Pressed
                         && self
@@ -196,6 +246,28 @@ impl HostApp {
         }
         if activate {
             self.open_overlay(context);
+        }
+    }
+
+    fn open_settings(&mut self, context: &egui::Context) {
+        self.close_overlay(context);
+        self.settings.visible = true;
+        self.settings.error = None;
+        self.request_startup_status();
+        context.request_repaint();
+    }
+
+    fn request_startup_status(&mut self) {
+        if self.settings.startup_response.is_some() || !self.settings.runtime_ready {
+            return;
+        }
+        let Some(startup) = &self.startup else {
+            self.settings.error = Some("startup owner is unavailable".to_owned());
+            return;
+        };
+        match startup.query() {
+            Ok(response) => self.settings.startup_response = Some(response),
+            Err(error) => self.settings.error = Some(error.to_string()),
         }
     }
 
@@ -316,6 +388,48 @@ impl HostApp {
                 Err(error) => self.action_error = Some(error),
             }
         }
+        for result in self.extension_search.take_settings() {
+            let extension_id = result.extension_id;
+            let completed_update = match result.request_id {
+                Some(request_id) => {
+                    if !self
+                        .settings
+                        .finish_extension_update(&extension_id, &request_id)
+                    {
+                        continue;
+                    }
+                    true
+                }
+                None => false,
+            };
+            match result.result {
+                Ok(contribution) => {
+                    if completed_update {
+                        self.settings.dirty.remove(&extension_id);
+                    }
+                    self.settings.set_contribution(extension_id, contribution);
+                }
+                Err(error) => self.settings.error = Some(error),
+            }
+        }
+        if let Some(response) = &self.settings.startup_response {
+            match response.try_recv() {
+                Ok(Ok(status)) => {
+                    self.settings.startup_status = Some(status);
+                    self.settings.startup_response = None;
+                }
+                Ok(Err(error)) => {
+                    self.settings.error = Some(error.to_string());
+                    self.settings.startup_response = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.settings.error = Some("startup owner stopped before replying".to_owned());
+                    self.settings.startup_response = None;
+                }
+            }
+        }
+        self.poll_host_settings();
     }
 
     fn select_previous(&mut self) {
@@ -338,6 +452,13 @@ impl HostApp {
         };
         self.history = runtime.history;
         self.config = runtime.config;
+        self.config_service = runtime.config_service;
+        self.apply_runtime_host_config(runtime.host_config);
+        self.startup = runtime.startup;
+        self.settings.runtime_ready = true;
+        if self.settings.visible {
+            self.request_startup_status();
+        }
         self.search_owner = runtime.search_owner;
         self.search = runtime.search;
         self.storage = runtime.storage;
@@ -358,6 +479,76 @@ impl HostApp {
         self.runtime_receiver = None;
         if self.overlay_visible {
             self.begin_search();
+        }
+    }
+
+    fn apply_runtime_host_config(&mut self, config: HostConfig) {
+        match HotKey::from_str(&config.hotkey) {
+            Ok(hotkey) => {
+                let result = match &mut self.hotkey {
+                    Some(registration) if self.host_config.hotkey != config.hotkey => {
+                        registration.replace(hotkey)
+                    }
+                    Some(_) => Ok(()),
+                    None => HotkeyRegistration::register(hotkey).map(|registration| {
+                        self.hotkey = Some(registration);
+                    }),
+                };
+                if let Err(error) = result {
+                    self.hotkey_error = Some(platform_error_message(error));
+                } else {
+                    self.hotkey_error = None;
+                }
+            }
+            Err(error) => self.hotkey_error = Some(format!("Invalid global hotkey: {error}")),
+        }
+        self.motion
+            .set_reduced_motion(config.reduced_motion || self.forced_reduced_motion);
+        self.settings.hotkey = config.hotkey.clone();
+        self.settings.reduced_motion = config.reduced_motion;
+        self.host_config = config;
+    }
+
+    fn poll_host_settings(&mut self) {
+        let Some(pending) = &self.pending_host_settings else {
+            return;
+        };
+        match pending.response.try_recv() {
+            Ok(Ok(config)) => {
+                self.host_config = config;
+                self.motion.set_reduced_motion(
+                    self.host_config.reduced_motion || self.forced_reduced_motion,
+                );
+                self.settings.error = None;
+                self.settings.saving_host = false;
+                self.pending_host_settings = None;
+            }
+            Ok(Err(error)) => {
+                self.rollback_pending_hotkey();
+                self.settings.error = Some(error);
+                self.settings.saving_host = false;
+                self.pending_host_settings = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.rollback_pending_hotkey();
+                self.settings.error = Some("host config owner stopped before replying".to_owned());
+                self.settings.saving_host = false;
+                self.pending_host_settings = None;
+            }
+        }
+    }
+
+    fn rollback_pending_hotkey(&mut self) {
+        let Some(pending) = &self.pending_host_settings else {
+            return;
+        };
+        if pending.new_registration {
+            self.hotkey.take();
+        } else if let (Some(registration), Some(previous)) =
+            (&mut self.hotkey, pending.previous_hotkey)
+        {
+            let _ = registration.replace(previous);
         }
     }
 
@@ -430,6 +621,117 @@ impl HostApp {
             self.operation_error = Some(error.to_string());
         }
     }
+
+    fn handle_settings_actions(&mut self, context: &egui::Context, actions: Vec<SettingsAction>) {
+        for action in actions {
+            match action {
+                SettingsAction::SaveHost => self.save_host_settings(),
+                SettingsAction::SaveExtension {
+                    extension_id,
+                    updates,
+                } => {
+                    if self.settings.pending_extensions.contains_key(&extension_id) {
+                        self.settings.error =
+                            Some("extension settings update is already in progress".to_owned());
+                        continue;
+                    }
+                    self.refresh_generation = self.refresh_generation.saturating_add(1);
+                    let request_id =
+                        format!("settings-update-{extension_id}-{}", self.refresh_generation);
+                    match self.extension_search.update_settings(
+                        &extension_id,
+                        request_id.clone(),
+                        updates,
+                    ) {
+                        Ok(()) => {
+                            let started = self
+                                .settings
+                                .begin_extension_update(extension_id, request_id);
+                            debug_assert!(started);
+                        }
+                        Err(error) => self.settings.error = Some(error.to_string()),
+                    }
+                }
+                SettingsAction::SetStartup(enabled) => {
+                    let Some(startup) = &self.startup else {
+                        self.settings.error = Some("startup owner is unavailable".to_owned());
+                        continue;
+                    };
+                    match startup.set_enabled(enabled) {
+                        Ok(response) => self.settings.startup_response = Some(response),
+                        Err(error) => self.settings.error = Some(error.to_string()),
+                    }
+                }
+                SettingsAction::Close => self.settings.visible = false,
+            }
+        }
+        if self.settings.startup_response.is_some() || self.pending_host_settings.is_some() {
+            context.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+
+    fn save_host_settings(&mut self) {
+        if !self.settings.runtime_ready {
+            self.settings.error = Some("host runtime is still loading".to_owned());
+            return;
+        }
+        if self.pending_host_settings.is_some() {
+            self.settings.error = Some("host settings update is already in progress".to_owned());
+            return;
+        }
+        let Some(service) = &self.config_service else {
+            self.settings.error = Some("host config owner is unavailable".to_owned());
+            return;
+        };
+        let replacement = match HotKey::from_str(&self.settings.hotkey) {
+            Ok(hotkey) => hotkey,
+            Err(error) => {
+                self.settings.error = Some(format!("invalid global hotkey: {error}"));
+                return;
+            }
+        };
+        let changed_hotkey = self.host_config.hotkey != self.settings.hotkey;
+        let previous_hotkey = changed_hotkey
+            .then(|| HotKey::from_str(&self.host_config.hotkey).ok())
+            .flatten();
+        let mut new_registration = false;
+        if changed_hotkey {
+            let result = match &mut self.hotkey {
+                Some(registration) => registration.replace(replacement),
+                None => HotkeyRegistration::register(replacement).map(|registration| {
+                    self.hotkey = Some(registration);
+                    new_registration = true;
+                }),
+            };
+            if let Err(error) = result {
+                self.settings.error = Some(platform_error_message(error));
+                return;
+            }
+            self.hotkey_error = None;
+        }
+
+        match service.update(self.settings.hotkey.clone(), self.settings.reduced_motion) {
+            Ok(response) => {
+                self.pending_host_settings = Some(PendingHostSettings {
+                    response,
+                    previous_hotkey,
+                    new_registration,
+                });
+                self.settings.error = None;
+                self.settings.saving_host = true;
+            }
+            Err(error) => {
+                if new_registration {
+                    self.hotkey.take();
+                } else if let (Some(registration), Some(previous)) =
+                    (&mut self.hotkey, previous_hotkey)
+                {
+                    let _ = registration.replace(previous);
+                }
+                self.settings.error = Some(error);
+            }
+        }
+    }
 }
 
 impl Default for HostApp {
@@ -453,6 +755,13 @@ impl Drop for HostApp {
         if let Some(owner) = self.search_owner.take() {
             owner.shutdown();
         }
+        if let Some(service) = self.config_service.take() {
+            service.shutdown();
+        }
+        if let Some(startup) = self.startup.take() {
+            startup.shutdown();
+        }
+        self.native_menu.take();
         self.instance.take();
         if let Some(thread) = self.instance_bridge.take() {
             let _ = thread.join();
@@ -491,6 +800,11 @@ impl eframe::App for HostApp {
             self.search_notifier_configured = true;
         }
         self.refresh_search_snapshot();
+        if self.settings.startup_response.is_some() || self.pending_host_settings.is_some() {
+            context.request_repaint_after(Duration::from_millis(16));
+        }
+        let settings_actions = crate::settings_view::show_settings(&context, &mut self.settings);
+        self.handle_settings_actions(&context, settings_actions);
         let viewport_focused = context.input(|input| input.viewport().focused);
         if self.overlay_visible && viewport_focused == Some(true) {
             self.focus_observed = true;
@@ -644,6 +958,9 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut history_entries = Vec::new();
     let mut usage = UsageMap::new();
     let mut config = None;
+    let mut host_config = HostConfig::default();
+    let mut config_service = None;
+    let mut startup = None;
     let mut storage = None;
     let mut pending_extensions = Vec::new();
     let mut host_services = None;
@@ -658,6 +975,18 @@ fn initialize_search_runtime() -> HostRuntime {
                             error,
                             Some("configuration recovered from backup and is read-only".to_owned()),
                         );
+                    }
+                    match HostConfig::load(&store) {
+                        Ok(loaded) => host_config = loaded,
+                        Err(config_error) => {
+                            error = combine_errors(error, Some(config_error));
+                        }
+                    }
+                    match HostConfigService::spawn(store.clone()) {
+                        Ok(service) => config_service = Some(service),
+                        Err(config_error) => {
+                            error = combine_errors(error, Some(config_error.to_string()));
+                        }
                     }
                     config = Some(store);
                 }
@@ -698,6 +1027,16 @@ fn initialize_search_runtime() -> HostRuntime {
             for service_error in service_errors {
                 error = combine_errors(error, Some(service_error));
             }
+            match std::env::current_exe()
+                .map_err(|error| error.to_string())
+                .and_then(|executable| {
+                    StartupService::spawn(executable).map_err(|error| error.to_string())
+                }) {
+                Ok(service) => startup = Some(service),
+                Err(startup_error) => {
+                    error = combine_errors(error, Some(startup_error));
+                }
+            }
         }
         None => error = Some("platform data directories are unavailable".to_owned()),
     }
@@ -712,6 +1051,9 @@ fn initialize_search_runtime() -> HostRuntime {
             HostRuntime {
                 history,
                 config,
+                host_config,
+                config_service,
+                startup,
                 search_owner: Some(owner),
                 search: Some(handle),
                 storage,
@@ -723,6 +1065,9 @@ fn initialize_search_runtime() -> HostRuntime {
         Err(search_error) => HostRuntime {
             history,
             config,
+            host_config,
+            config_service,
+            startup,
             search_owner: None,
             search: None,
             storage,

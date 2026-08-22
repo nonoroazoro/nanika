@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
+use nanika_config::ConfigStore;
 use nanika_extension_script::{ScriptConfig, ScriptEntry};
+use nanika_protocol::SettingUpdate;
 
 #[test]
 fn script_settings_require_stable_ids_and_absolute_paths() {
@@ -40,4 +42,48 @@ fn script_settings_reject_more_than_the_protocol_candidate_limit() {
             .collect(),
     };
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn record_table_updates_round_trip_through_extension_validation() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-script-settings-update-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = ConfigStore::open(root.join("data"), root.join("config"))
+        .expect("config store should open");
+    let config = ScriptConfig {
+        format_version: 1,
+        scripts: vec![ScriptEntry {
+            id: "build-project".to_owned(),
+            title: "Build project".to_owned(),
+            aliases: vec!["build".to_owned()],
+            interpreter: root.join("pwsh.exe"),
+            script: root.join("build.ps1"),
+            arguments: vec!["--release".to_owned()],
+            working_directory: Some(root.clone()),
+        }],
+    };
+    let contribution = config.settings();
+    contribution
+        .validate()
+        .expect("record contribution should validate");
+
+    let updated = config
+        .update(
+            &store,
+            vec![SettingUpdate {
+                key: "scripts".to_owned(),
+                value: contribution.fields[0].value.clone(),
+            }],
+        )
+        .expect("record update should persist");
+
+    assert_eq!(updated, config);
+    assert_eq!(
+        ScriptConfig::load(&store).expect("persisted scripts should load"),
+        config
+    );
+    let _ = std::fs::remove_dir_all(root);
 }

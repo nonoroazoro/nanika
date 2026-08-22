@@ -38,6 +38,20 @@ fn script_process_loads_central_settings_and_requests_host_launch() {
     ));
     write_frame(
         &mut input,
+        &Message::GetSettings {
+            request_id: "script-settings".to_owned(),
+        },
+    )
+    .expect("settings request should write");
+    let Some(Message::Settings { contribution, .. }) =
+        read_frame(&mut output).expect("settings response")
+    else {
+        panic!("script extension should contribute settings");
+    };
+    assert_eq!(contribution.title, "Scripts");
+    assert_eq!(contribution.fields.len(), 1);
+    write_frame(
+        &mut input,
         &Message::Query {
             request_id: "query".to_owned(),
             generation: 1,

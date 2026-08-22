@@ -7,6 +7,9 @@ pub enum PlatformError {
     Timeout(&'static str),
     Hotkey(global_hotkey::Error),
     ActivationChannelClosed,
+    EventChannelClosed(&'static str),
+    QueueFull(&'static str),
+    Message(String),
 }
 
 impl std::fmt::Display for PlatformError {
@@ -22,6 +25,9 @@ impl std::fmt::Display for PlatformError {
             Self::Timeout(operation) => write!(formatter, "platform timed out during {operation}"),
             Self::Hotkey(error) => write!(formatter, "hotkey error: {error}"),
             Self::ActivationChannelClosed => write!(formatter, "activation channel closed"),
+            Self::EventChannelClosed(owner) => write!(formatter, "{owner} event channel closed"),
+            Self::QueueFull(owner) => write!(formatter, "{owner} queue is full"),
+            Self::Message(message) => formatter.write_str(message),
         }
     }
 }
@@ -34,7 +40,10 @@ impl std::error::Error for PlatformError {
             Self::Unsupported(_)
             | Self::OsCode { .. }
             | Self::Timeout(_)
-            | Self::ActivationChannelClosed => None,
+            | Self::ActivationChannelClosed
+            | Self::EventChannelClosed(_)
+            | Self::QueueFull(_)
+            | Self::Message(_) => None,
         }
     }
 }

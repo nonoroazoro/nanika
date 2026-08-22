@@ -20,6 +20,20 @@ mod launch_arguments;
 mod launch_descriptor;
 #[path = "Message.rs"]
 mod message;
+#[path = "SettingColumn.rs"]
+mod setting_column;
+#[path = "SettingColumnControl.rs"]
+mod setting_column_control;
+#[path = "SettingControl.rs"]
+mod setting_control;
+#[path = "SettingField.rs"]
+mod setting_field;
+#[path = "SettingUpdate.rs"]
+mod setting_update;
+#[path = "SettingValue.rs"]
+mod setting_value;
+#[path = "SettingsContribution.rs"]
+mod settings_contribution;
 
 pub use candidate::*;
 pub use clipboard_content::*;
@@ -31,3 +45,10 @@ pub use host_service_response::*;
 pub use launch_arguments::*;
 pub use launch_descriptor::*;
 pub use message::*;
+pub use setting_column::*;
+pub use setting_column_control::*;
+pub use setting_control::*;
+pub use setting_field::*;
+pub use setting_update::*;
+pub use setting_value::*;
+pub use settings_contribution::*;

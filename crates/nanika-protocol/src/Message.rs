@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Candidate, HostServiceRequest, HostServiceResponse};
+use crate::{
+    Candidate, HostServiceRequest, HostServiceResponse, SettingUpdate, SettingsContribution,
+};
 
 /// One request or response on the extension protocol.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -47,6 +49,21 @@ pub enum Message {
     Refreshed {
         request_id: String,
         generation: u64,
+    },
+    GetSettings {
+        request_id: String,
+    },
+    Settings {
+        request_id: String,
+        contribution: SettingsContribution,
+    },
+    UpdateSettings {
+        request_id: String,
+        updates: Vec<SettingUpdate>,
+    },
+    SettingsUpdated {
+        request_id: String,
+        contribution: SettingsContribution,
     },
     HostRequest {
         request_id: String,

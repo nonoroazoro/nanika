@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 6 capabilities and their typed host services are implemented and post-review fixes are verified on Windows. The macOS platform crate passes cross-target checks. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 7 is implemented and automated checks pass on Windows. The macOS platform crate passes cross-target checks; signed-bundle runtime validation remains. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -87,7 +87,7 @@ The host owns the single input field, input history, query navigation, search ag
 
 Use a transparent, undecorated, always-on-top overlay. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
 
-The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon and dismissal use frame-rate-independent smoothstep timelines of 140 ms and 110 ms. Interruption continues from the current value. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is available through `--reduced-motion` until Settings owns it.
+The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon and dismissal use frame-rate-independent smoothstep timelines of 140 ms and 110 ms. Interruption continues from the current value. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
 
 The host explicitly enables the selected `wgpu` backend features through its direct dependency because `eframe`'s `wgpu_no_default_features` intentionally leaves backend selection to the application. The Windows smoke test confirmed that at least one native backend is enabled and startup no longer panics.
 
@@ -98,6 +98,8 @@ The MVP includes a minimal host tray or menu bar item:
 - `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
 
 The Settings view contains host settings and dynamically contributed settings from every enabled extension. Built-in and external extensions use the same settings schema and validation path. JSONC remains available as an advanced editing path.
+
+Settings use a bounded declarative contract with toggle, text, string-list, and record-table controls. The host renders controls but does not interpret domain configuration. Each extension has one editable contribution and at most one request-correlated update in flight. Its draft is locked until validation and atomic JSONC persistence complete. Host controls remain read-only until their runtime owners load. Application path lists and script records use this same contract; extensions without configurable values contribute an empty section. Host settings contain the hotkey and reduced-motion preference. Startup state remains OS-owned.
 
 ## Search and ranking
 
@@ -158,9 +160,9 @@ The local layout is:
 
 Only this tree is intended for Dropbox or another file-level sync service. Databases, indexes, clipboard content, extension artifacts, logs, backups, and caches are machine-local generated data and are never synchronized. Never synchronize live SQLite files.
 
-Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each file has a `formatVersion`, ordered migrations, and a last-known-good backup. A failed migration leaves the original file untouched and starts read-only.
+Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each settings file has a `formatVersion`; add ordered migrations before changing that format. A failed future migration must leave the original file untouched and start read-only.
 
-The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, atomic replacement, refreshed last-known-good bootstrap backup, path-preserving backup names, bootstrap recovery, and read-only fallback. Comment-preserving UI mutations remain part of the settings stage.
+The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, comment-preserving targeted changes, atomic replacement, path-preserving backups, bootstrap recovery, and read-only fallback.
 
 ## SQLite storage
 
@@ -197,7 +199,7 @@ Only the host process launcher and extension supervisor may create child process
 
 ### Single instance
 
-Nanika runs one host instance per user session. Windows uses `Local\com.nanika.nanika` through `CreateMutexW`; a blocking platform event thread owns the hidden activation window. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns the local Unix socket under `<app-data-root>`. Both feed a bounded host activation channel and tolerate the primary's startup handoff race. A second launch sends the request, then exits.
+Nanika runs one host instance per user session. Windows uses `Local\com.nanika.nanika` through `CreateMutexW`; a blocking platform event thread owns the hidden activation window and notification icon. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns the local Unix socket under `<app-data-root>`. Both feed bounded platform events to the host and tolerate the primary's startup handoff race. A foreground second launch requests activation, then exits. A background second launch exits without activation.
 
 ### Global hotkey
 
@@ -231,15 +233,19 @@ The command extension contributes only for queries beginning with `>` and submit
 
 Windows uses a quoted absolute executable path under the current-user `Run` key. macOS uses `SMAppService.mainAppService` with a minimum supported version of macOS 13. Startup launches Nanika hidden and idle. The operating system remains the source of effective registration state.
 
+Startup status and mutations run through a bounded platform owner and report their effective state back to the host. Windows treats an unexpected existing Run value as needing repair. macOS preserves `RequiresApproval` and `NotFound` instead of collapsing them into a Boolean; approval opens Login Items rather than repeating registration.
+
+The native tray or menu bar emits only `Open Nanika`, `Settings`, `Rescan applications`, and `Quit` events. Windows owns its notification icon on the existing hidden-window thread and negotiates notification callback version 4. macOS creates `NSStatusItem` on the AppKit main thread. Neither adapter owns domain behavior.
+
 ## Extension protocol and package
 
 The universal extension protocol uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. JSON here is IPC only, not configuration.
 
-The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query and action deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions are never replayed after an ambiguous crash because that could duplicate side effects. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
+The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query, action, and settings deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, request-correlated extension settings results, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions and settings updates are never replayed after an ambiguous crash. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
 
-Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `hostResponse`, `error`, and `shutdown`.
+Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `getSettings`, `updateSettings`, `hostResponse`, `error`, and `shutdown`.
 
-Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `hostRequest`, `error`, and `shutdownAck`.
+Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `settings`, `settingsUpdated`, `hostRequest`, `error`, and `shutdownAck`.
 
 Each `hostRequest` is bound to its parent invocation and generation, and extensions validate matching `hostResponse` fields. The same router handles built-in and external extensions. Service owners have independent bounded queues and independent initialization failure, so one unavailable service does not disable the others. Host service waits remain inside the parent action deadline, and queued work expires before starting a side effect. Current services accept typed launch descriptors and typed clipboard writes; image writes are confined to the requesting extension's machine-local payload root and are read with encoded and decoded resource limits.
 

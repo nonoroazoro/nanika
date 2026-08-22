@@ -8,17 +8,20 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionWork,
-    HostServiceHandler, SupervisorError, publish_extension_snapshot,
+    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionSettingsResult,
+    ExtensionSettingsUpdate, ExtensionWork, HostServiceHandler, SupervisorError,
+    publish_extension_snapshot,
 };
 
 const MAX_PENDING_INVOCATIONS: usize = 16;
+const MAX_PENDING_SETTINGS: usize = 4;
 
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<String>>>,
+    settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -40,6 +43,9 @@ impl ExtensionSearchWorker {
         let worker_state = Arc::clone(&state);
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
+        let settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>> =
+            Arc::new(Mutex::new(None));
+        let worker_settings_result = Arc::clone(&settings_result);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
@@ -52,6 +58,17 @@ impl ExtensionSearchWorker {
                     notify(&notifier);
                     return;
                 }
+                let initial_settings = process
+                    .settings(format!("settings-{worker_extension_id}"))
+                    .map_err(|error| error.to_string());
+                *worker_settings_result
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Some(ExtensionSettingsResult {
+                    extension_id: worker_extension_id.clone(),
+                    request_id: None,
+                    result: initial_settings,
+                });
+                notify(&notifier);
                 loop {
                     let work = next_work(&worker_state);
                     let Some(work) = work else {
@@ -91,6 +108,23 @@ impl ExtensionSearchWorker {
                         ExtensionWork::Refresh(refresh) => {
                             run_refresh(&mut process, &worker_extension_id, refresh, &worker_state)
                         }
+                        ExtensionWork::UpdateSettings(update) => {
+                            let request_id = update.request_id.clone();
+                            let result =
+                                run_settings_update(&mut process, &worker_extension_id, update);
+                            let report = ExtensionSettingsResult {
+                                extension_id: worker_extension_id.clone(),
+                                request_id: Some(request_id),
+                                result: result
+                                    .as_ref()
+                                    .map(Clone::clone)
+                                    .map_err(ToString::to_string),
+                            };
+                            *worker_settings_result
+                                .lock()
+                                .unwrap_or_else(|error| error.into_inner()) = Some(report);
+                            result.map(|_| true)
+                        }
                     };
                     match result {
                         Ok(true) => set_error(&worker_error, None),
@@ -108,6 +142,7 @@ impl ExtensionSearchWorker {
             extension_id,
             state,
             last_error,
+            settings_result,
             thread: Some(thread),
         })
     }
@@ -141,6 +176,24 @@ impl ExtensionSearchWorker {
         Ok(())
     }
 
+    pub(crate) fn update_settings(
+        &self,
+        request_id: String,
+        updates: Vec<nanika_protocol::SettingUpdate>,
+    ) -> Result<(), SupervisorError> {
+        let (lock, ready) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        if state.settings.len() >= MAX_PENDING_SETTINGS {
+            return Err(SupervisorError::QueueFull);
+        }
+        state.settings.push_back(ExtensionSettingsUpdate {
+            request_id,
+            updates,
+        });
+        ready.notify_one();
+        Ok(())
+    }
+
     pub fn extension_id(&self) -> &str {
         &self.extension_id
     }
@@ -150,6 +203,13 @@ impl ExtensionSearchWorker {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()
+    }
+
+    pub(crate) fn take_settings(&self) -> Option<ExtensionSettingsResult> {
+        self.settings_result
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
     }
 
     fn stop(&mut self) {
@@ -184,6 +244,7 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
     while state.query.is_none()
         && state.refresh.is_none()
         && state.invocations.is_empty()
+        && state.settings.is_empty()
         && !state.shutdown
     {
         state = ready.wait(state).unwrap_or_else(|error| error.into_inner());
@@ -195,8 +256,32 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
         .invocations
         .pop_front()
         .map(ExtensionWork::Invoke)
+        .or_else(|| {
+            state
+                .settings
+                .pop_front()
+                .map(ExtensionWork::UpdateSettings)
+        })
         .or_else(|| state.query.take().map(ExtensionWork::Query))
         .or_else(|| state.refresh.take().map(ExtensionWork::Refresh))
+}
+
+fn run_settings_update(
+    process: &mut ExtensionProcess,
+    extension_id: &str,
+    update: ExtensionSettingsUpdate,
+) -> Result<nanika_protocol::SettingsContribution, SupervisorError> {
+    recover_if_exited(process, extension_id, 0)?;
+    let result = process.update_settings(update.request_id, update.updates);
+    if matches!(
+        &result,
+        Err(SupervisorError::ChannelClosed
+            | SupervisorError::Protocol(_)
+            | SupervisorError::Timeout(_))
+    ) {
+        restart_or_terminate(process, format!("restart-settings-{extension_id}"))?;
+    }
+    result
 }
 
 fn run_refresh(

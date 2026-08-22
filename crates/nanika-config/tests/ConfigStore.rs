@@ -149,3 +149,84 @@ fn loads_are_confined_to_configuration_paths() {
     assert!(matches!(result, Err(ConfigError::Invalid(_))));
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn targeted_updates_preserve_comments_and_validate_the_result() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-config-targeted-update-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = ConfigStore::open(&root, root.join("config")).expect("store should open");
+    let file = store.config_file();
+    std::fs::write(
+        &file,
+        "{\n  // retained\n  \"formatVersion\": 1,\n  \"hotkey\": \"Ctrl+Space\"\n}\n",
+    )
+    .expect("config should exist");
+
+    let value: serde_json::Value = store
+        .update(
+            &file,
+            [("hotkey".to_owned(), serde_json::json!("Alt+Space"))],
+            |_| Ok(()),
+        )
+        .expect("targeted update should succeed");
+
+    assert_eq!(value["hotkey"], "Alt+Space");
+    assert!(
+        std::fs::read_to_string(&file)
+            .expect("config should be readable")
+            .contains("// retained")
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn targeted_updates_create_missing_files() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-config-targeted-create-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = ConfigStore::open(&root, root.join("config")).expect("store should open");
+    let file = store.config_root().join("extensions/test/settings.jsonc");
+
+    let value: serde_json::Value = store
+        .update(
+            &file,
+            [("enabled".to_owned(), serde_json::json!(true))],
+            |_| Ok(()),
+        )
+        .expect("targeted update should create the file");
+
+    assert_eq!(value["enabled"], true);
+    assert!(file.is_file());
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn rejected_targeted_updates_leave_the_original_untouched() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-config-targeted-validation-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let store = ConfigStore::open(&root, root.join("config")).expect("store should open");
+    let file = store.config_file();
+    let original = "{\n  \"enabled\": false\n}\n";
+    std::fs::write(&file, original).expect("config should exist");
+
+    let result = store.update::<serde_json::Value>(
+        &file,
+        [("enabled".to_owned(), serde_json::json!(true))],
+        |_| Err("rejected".to_owned()),
+    );
+
+    assert!(matches!(result, Err(ConfigError::Invalid(_))));
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("config should remain readable"),
+        original
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

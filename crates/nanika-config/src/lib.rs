@@ -36,6 +36,18 @@ pub(crate) fn save_jsonc<T: Serialize>(
     }
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
+    save_text_atomic(path, &text, backup)
+}
+
+pub(crate) fn save_text_atomic(
+    path: impl AsRef<Path>,
+    text: &str,
+    backup: Option<&Path>,
+) -> Result<(), ConfigError> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let temporary = path.with_extension(format!(
         "tmp-{}-{}",
         std::process::id(),

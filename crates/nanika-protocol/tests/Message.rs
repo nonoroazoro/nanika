@@ -1,4 +1,7 @@
-use nanika_protocol::{HostServiceRequest, LaunchArguments, LaunchDescriptor, Message};
+use nanika_protocol::{
+    HostServiceRequest, LaunchArguments, LaunchDescriptor, Message, SettingControl, SettingField,
+    SettingValue, SettingsContribution,
+};
 
 #[test]
 fn snapshot_completion_defaults_for_older_frames() {
@@ -54,4 +57,29 @@ fn host_requests_are_bound_to_the_parent_invocation() {
     assert_eq!(encoded["type"], "hostRequest");
     assert_eq!(encoded["parent_request_id"], "invoke-1");
     assert_eq!(encoded["request"]["service"], "launch");
+}
+
+#[test]
+fn settings_contributions_are_typed_and_bounded() {
+    let contribution = SettingsContribution {
+        title: "Test".to_owned(),
+        fields: vec![SettingField {
+            key: "enabled".to_owned(),
+            title: "Enabled".to_owned(),
+            description: None,
+            control: SettingControl::Toggle,
+            value: SettingValue::Boolean { value: true },
+        }],
+    };
+    contribution.validate().expect("settings should validate");
+    let message = Message::Settings {
+        request_id: "settings".to_owned(),
+        contribution,
+    };
+    let encoded = serde_json::to_value(message).expect("settings should encode");
+    assert_eq!(encoded["type"], "settings");
+    assert_eq!(
+        encoded["contribution"]["fields"][0]["value"]["kind"],
+        "boolean"
+    );
 }

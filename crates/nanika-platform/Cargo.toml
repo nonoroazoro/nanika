@@ -16,10 +16,15 @@ nanika-protocol = { path = "../nanika-protocol" }
 png.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-registry.workspace = true
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2.189"
+objc2-service-management = { workspace = true, features = ["std", "objc2", "objc2-foundation", "SMAppService"] }
+objc2 = { workspace = true, features = ["std"] }
+objc2-app-kit = { workspace = true, features = ["std", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView"] }
+objc2-foundation = { workspace = true, features = ["std", "NSObject", "NSString"] }
 
 [[test]]
 name = "ProcessLauncher"

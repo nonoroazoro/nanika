@@ -4,7 +4,8 @@ use std::thread::JoinHandle;
 /// Platform-owned single-instance guard and activation source.
 #[derive(Debug)]
 pub struct SingleInstance {
-    pub(crate) activations: Option<Receiver<()>>,
+    pub(crate) events: Option<Receiver<crate::PlatformEvent>>,
+    pub(crate) event_sender: std::sync::mpsc::SyncSender<crate::PlatformEvent>,
     pub(crate) event_thread: Option<JoinHandle<()>>,
     #[cfg(windows)]
     pub(crate) mutex: isize,
@@ -18,10 +19,14 @@ pub struct SingleInstance {
 
 impl SingleInstance {
     /// Move the activation stream to the host event bridge.
-    pub fn take_activations(&mut self) -> Result<Receiver<()>, crate::PlatformError> {
-        self.activations
+    pub fn take_events(&mut self) -> Result<Receiver<crate::PlatformEvent>, crate::PlatformError> {
+        self.events
             .take()
             .ok_or(crate::PlatformError::ActivationChannelClosed)
+    }
+
+    pub fn event_sender(&self) -> std::sync::mpsc::SyncSender<crate::PlatformEvent> {
+        self.event_sender.clone()
     }
 }
 

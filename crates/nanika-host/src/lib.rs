@@ -25,12 +25,22 @@ mod extension_search_query;
 mod extension_search_state;
 #[path = "ExtensionSearchWorker.rs"]
 mod extension_search_worker;
+#[path = "ExtensionSettingsResult.rs"]
+mod extension_settings_result;
+#[path = "ExtensionSettingsUpdate.rs"]
+mod extension_settings_update;
 #[path = "ExtensionWork.rs"]
 mod extension_work;
 #[path = "HistoryDirection.rs"]
 mod history_direction;
 #[path = "HostApp.rs"]
 mod host_app;
+#[path = "HostConfig.rs"]
+mod host_config;
+#[path = "HostConfigCommand.rs"]
+mod host_config_command;
+#[path = "HostConfigService.rs"]
+mod host_config_service;
 #[path = "HostEvent.rs"]
 mod host_event;
 #[path = "HostRuntime.rs"]
@@ -43,6 +53,13 @@ mod host_service_router;
 mod overlay_motion;
 #[path = "PendingExtension.rs"]
 mod pending_extension;
+#[path = "PendingHostSettings.rs"]
+mod pending_host_settings;
+#[path = "SettingsAction.rs"]
+mod settings_action;
+#[path = "SettingsState.rs"]
+mod settings_state;
+mod settings_view;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
 
@@ -58,15 +75,23 @@ pub use extension_search_coordinator::*;
 pub(crate) use extension_search_query::*;
 pub(crate) use extension_search_state::*;
 pub(crate) use extension_search_worker::*;
+pub(crate) use extension_settings_result::*;
+pub(crate) use extension_settings_update::*;
 pub(crate) use extension_work::*;
 pub(crate) use history_direction::*;
 pub use host_app::HostApp;
+pub(crate) use host_config::*;
+pub(crate) use host_config_command::*;
+pub(crate) use host_config_service::*;
 pub(crate) use host_event::*;
 pub(crate) use host_runtime::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
 pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
+pub(crate) use pending_host_settings::*;
+pub(crate) use settings_action::*;
+pub(crate) use settings_state::*;
 pub use supervisor_error::*;
 
 /// Publish one protocol snapshot into the shared search owner.
@@ -95,5 +120,14 @@ pub fn publish_extension_snapshot(
 #[path = "../tests/HostApp.rs"]
 mod host_app_tests;
 #[cfg(test)]
+#[path = "../tests/HostConfigService.rs"]
+mod host_config_service_tests;
+#[cfg(test)]
 #[path = "../tests/OverlayMotion.rs"]
 mod overlay_motion_tests;
+#[cfg(test)]
+#[path = "../tests/SettingsState.rs"]
+mod settings_state_tests;
+#[cfg(test)]
+#[path = "../tests/settings_view.rs"]
+mod settings_view_tests;
