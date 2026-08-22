@@ -1,4 +1,5 @@
-pub(crate) fn is_valid_extension_id(value: &str) -> bool {
+/// Returns whether a value is a safe lowercase reverse-DNS extension identity.
+pub fn is_valid_extension_id(value: &str) -> bool {
     let mut segments = value.split('.');
     let Some(first) = segments.next() else {
         return false;

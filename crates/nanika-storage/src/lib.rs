@@ -25,6 +25,7 @@ mod stored_usage;
 mod time;
 
 pub use extension_database::*;
+pub use extension_id::*;
 pub use extension_kind::*;
 pub use host_database::*;
 pub use nanika_paths::*;

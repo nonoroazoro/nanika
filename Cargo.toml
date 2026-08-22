@@ -10,6 +10,10 @@ members = [
     "crates/nanika-search",
     "extensions/nanika-extension-fixture",
     "extensions/nanika-extension-application",
+    "extensions/nanika-extension-command",
+    "extensions/nanika-extension-script",
+    "extensions/nanika-extension-calculator",
+    "extensions/nanika-extension-clipboard",
 ]
 
 [workspace.package]
@@ -37,6 +41,8 @@ sha2 = "0.11.0"
 png = "0.18.1"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
+clipboard-rs = "0.3.5"
+fend-core = "1.5.8"
 
 [workspace.lints.rust]
 unsafe_code = "warn"

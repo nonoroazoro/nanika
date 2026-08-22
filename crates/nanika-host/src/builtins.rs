@@ -6,12 +6,38 @@ use nanika_storage::{ExtensionKind, NanikaPaths};
 use crate::{BuiltinExtensionSpec, ExtensionProcess, PendingExtension};
 
 pub(crate) const APPLICATION_EXTENSION_ID: &str = "com.nanika.application";
+pub(crate) const COMMAND_EXTENSION_ID: &str = "com.nanika.command";
+pub(crate) const SCRIPT_EXTENSION_ID: &str = "com.nanika.script";
+pub(crate) const CALCULATOR_EXTENSION_ID: &str = "com.nanika.calculator";
+pub(crate) const CLIPBOARD_EXTENSION_ID: &str = "com.nanika.clipboard";
 
-const BUILTINS: [BuiltinExtensionSpec; 1] = [BuiltinExtensionSpec {
-    extension_id: APPLICATION_EXTENSION_ID,
-    binary_name: "nanika-extension-application",
-    kind: ExtensionKind::BuiltIn,
-}];
+const BUILTINS: [BuiltinExtensionSpec; 5] = [
+    BuiltinExtensionSpec {
+        extension_id: APPLICATION_EXTENSION_ID,
+        binary_name: "nanika-extension-application",
+        kind: ExtensionKind::BuiltIn,
+    },
+    BuiltinExtensionSpec {
+        extension_id: COMMAND_EXTENSION_ID,
+        binary_name: "nanika-extension-command",
+        kind: ExtensionKind::BuiltIn,
+    },
+    BuiltinExtensionSpec {
+        extension_id: SCRIPT_EXTENSION_ID,
+        binary_name: "nanika-extension-script",
+        kind: ExtensionKind::BuiltIn,
+    },
+    BuiltinExtensionSpec {
+        extension_id: CALCULATOR_EXTENSION_ID,
+        binary_name: "nanika-extension-calculator",
+        kind: ExtensionKind::BuiltIn,
+    },
+    BuiltinExtensionSpec {
+        extension_id: CLIPBOARD_EXTENSION_ID,
+        binary_name: "nanika-extension-clipboard",
+        kind: ExtensionKind::BuiltIn,
+    },
+];
 
 pub(crate) fn spawn_builtin_extensions(
     paths: &NanikaPaths,

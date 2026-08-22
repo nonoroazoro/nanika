@@ -9,6 +9,14 @@ use nanika_host::{
 };
 use nanika_search::{SearchOwner, UsageMap};
 
+#[path = "support/BlockingHostServices.rs"]
+mod blocking_host_services;
+#[path = "support/TestHostServices.rs"]
+mod test_host_services;
+
+use blocking_host_services::BlockingHostServices;
+use test_host_services::TestHostServices;
+
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_nanika-extension-fixture"))
 }
@@ -74,6 +82,86 @@ fn fixture_completes_a_generation_tagged_invocation() {
     extension
         .shutdown("shutdown-invoke")
         .expect("fixture should shut down");
+}
+
+#[test]
+fn extension_invocation_uses_the_common_host_service_boundary() {
+    let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--request-launch-on-invoke".into()],
+        ExtensionLimits::default(),
+    )
+    .expect("fixture should spawn");
+    let services = Arc::new(TestHostServices::new());
+    let mut coordinator = ExtensionSearchCoordinator::default();
+    coordinator.set_host_services(services.clone());
+    coordinator
+        .register("fixture.extension", extension, owner.handle())
+        .expect("worker should register");
+    coordinator
+        .invoke(
+            "fixture.extension",
+            1,
+            "fixture.entry",
+            "fixture.run",
+            "fixture",
+        )
+        .expect("action should enqueue");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while services.request_count() == 0 {
+        assert!(Instant::now() < deadline, "host service should be called");
+        std::thread::yield_now();
+    }
+    drop(coordinator);
+    owner.shutdown();
+}
+
+#[test]
+fn host_service_wait_is_bounded_by_the_action_deadline() {
+    let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
+    let limits = ExtensionLimits {
+        action_timeout: Duration::from_millis(75),
+        ..ExtensionLimits::default()
+    };
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--request-launch-on-invoke".into()],
+        limits,
+    )
+    .expect("fixture should spawn");
+    let mut coordinator = ExtensionSearchCoordinator::default();
+    coordinator.set_host_services(Arc::new(BlockingHostServices::new()));
+    coordinator
+        .register("fixture.extension", extension, owner.handle())
+        .expect("worker should register");
+    coordinator
+        .invoke(
+            "fixture.extension",
+            1,
+            "fixture.entry",
+            "fixture.run",
+            "fixture",
+        )
+        .expect("action should enqueue");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        if coordinator
+            .first_error()
+            .is_some_and(|error| error.contains("extension timed out during host service"))
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "host service wait should time out"
+        );
+        std::thread::yield_now();
+    }
+    drop(coordinator);
+    owner.shutdown();
 }
 
 #[test]

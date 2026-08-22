@@ -1,4 +1,4 @@
-use nanika_protocol::Message;
+use nanika_protocol::{HostServiceRequest, LaunchArguments, LaunchDescriptor, Message};
 
 #[test]
 fn snapshot_completion_defaults_for_older_frames() {
@@ -32,4 +32,26 @@ fn refresh_completion_preserves_request_identity_and_generation() {
     assert_eq!(encoded["type"], "refreshed");
     assert_eq!(encoded["request_id"], "refresh");
     assert_eq!(encoded["generation"], 11);
+}
+
+#[test]
+fn host_requests_are_bound_to_the_parent_invocation() {
+    let message = Message::HostRequest {
+        request_id: "service-1".to_owned(),
+        parent_request_id: "invoke-1".to_owned(),
+        generation: 5,
+        request: HostServiceRequest::Launch {
+            descriptor: LaunchDescriptor::Program {
+                program: "tool".to_owned(),
+                arguments: LaunchArguments::Structured {
+                    values: vec!["--help".to_owned()],
+                },
+                working_directory: None,
+            },
+        },
+    };
+    let encoded = serde_json::to_value(message).expect("host request should encode");
+    assert_eq!(encoded["type"], "hostRequest");
+    assert_eq!(encoded["parent_request_id"], "invoke-1");
+    assert_eq!(encoded["request"]["service"], "launch");
 }

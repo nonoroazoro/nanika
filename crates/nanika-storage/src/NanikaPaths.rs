@@ -60,4 +60,8 @@ impl NanikaPaths {
     pub fn host_database(&self) -> PathBuf {
         self.database_dir().join("nanika.db")
     }
+
+    pub fn payload_dir(&self) -> PathBuf {
+        self.app_data_root.join("payloads")
+    }
 }

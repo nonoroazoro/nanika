@@ -342,6 +342,9 @@ impl HostApp {
         self.search = runtime.search;
         self.storage = runtime.storage;
         self.runtime_error = combine_errors(self.runtime_error.take(), runtime.error);
+        if let Some(host_services) = runtime.host_services {
+            self.extension_search.set_host_services(host_services);
+        }
         for extension in runtime.pending_extensions {
             if let Err(error) = self.register_search_extension(
                 extension.extension_id,
@@ -643,6 +646,7 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut config = None;
     let mut storage = None;
     let mut pending_extensions = Vec::new();
+    let mut host_services = None;
     let mut error = None;
 
     match NanikaPaths::discover() {
@@ -689,6 +693,11 @@ fn initialize_search_runtime() -> HostRuntime {
             for extension_error in extension_errors {
                 error = combine_errors(error, Some(extension_error));
             }
+            let (router, service_errors) = crate::HostServiceRouter::spawn(paths.app_data_root());
+            host_services = Some(Arc::new(router) as Arc<dyn crate::HostServiceHandler>);
+            for service_error in service_errors {
+                error = combine_errors(error, Some(service_error));
+            }
         }
         None => error = Some("platform data directories are unavailable".to_owned()),
     }
@@ -707,6 +716,7 @@ fn initialize_search_runtime() -> HostRuntime {
                 search: Some(handle),
                 storage,
                 pending_extensions,
+                host_services,
                 error,
             }
         }
@@ -717,6 +727,7 @@ fn initialize_search_runtime() -> HostRuntime {
             search: None,
             storage,
             pending_extensions,
+            host_services,
             error: combine_errors(error, Some(search_error.to_string())),
         },
     }

@@ -8,8 +8,8 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionWork, SupervisorError,
-    publish_extension_snapshot,
+    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionWork,
+    HostServiceHandler, SupervisorError, publish_extension_snapshot,
 };
 
 const MAX_PENDING_INVOCATIONS: usize = 16;
@@ -29,9 +29,13 @@ impl ExtensionSearchWorker {
         search: SearchHandle,
         invocation_results: SyncSender<ExtensionInvocationResult>,
         notifier: ExtensionNotifier,
+        host_services: Option<Arc<dyn HostServiceHandler>>,
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         let worker_extension_id = extension_id.clone();
+        if let Some(host_services) = host_services {
+            process.set_host_services(extension_id.clone(), host_services);
+        }
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
         let worker_state = Arc::clone(&state);
         let last_error = Arc::new(Mutex::new(None));

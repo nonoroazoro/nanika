@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: implementation in progress. Milestone 5 is complete and reviewed: the Windows application extension provides native Shell discovery, executable validation, stable identity, generated indexing, icon caching, persistence, cancellable refresh, and searchable contributions. Windows workspace checks pass.
+Status: implementation in progress. Milestone 6 is complete and post-review fixes are verified on Windows. The default capabilities run as built-in extension processes through common search, action, host service, deadline, and failure boundaries. The macOS platform crate also passes cross-target checks.
 
 ## Product direction
 
@@ -62,7 +62,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Define one extension contract for capability, lifecycle, settings, permissions, host services, and failure handling.
 - [x] Keep host APIs and IPC from exposing host memory, SQLite connections, global configuration, or another extension's state. The MVP does not claim an enforceable filesystem sandbox.
 - [x] Implement the off-UI-thread registration handshake, bounded JSON frames, and orderly shutdown fixture.
-- [ ] Define extension and action identities that survive refreshes and updates.
+- [x] Define extension and action identities that survive refreshes and updates.
 - [x] Define manifest fields, activation events, contributions, permissions, dependencies, compatibility, and target entrypoints.
 - [x] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
 - [x] Implement bounded protocol queues, deadlines, restart budgets, safe query retry, non-replayed action recovery, graceful shutdown, and child reaping.
@@ -70,7 +70,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Limit MVP installation to explicit local packages or development directories. No marketplace or background download.
 - [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
 - [ ] Define extension-owned settings schema, semantic validation, storage, migrations, and reset behavior.
-- [ ] Define the default extension implementations and their acceptance tests.
+- [x] Define the default extension implementations and their acceptance tests.
 
 ### Application extension
 
@@ -105,7 +105,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
 - [ ] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
 - [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
-- [x] Implement macOS normal shortcut registration boundary; target type-check passes. Runtime permission validation remains.
+- [x] Implement the macOS normal shortcut registration boundary. Runtime permission validation remains.
 - [x] Select Windows current-user Run registration and macOS `SMAppService.mainAppService`.
 - [ ] Verify startup status, enable, disable, stale paths, external disablement, rollback, and hidden idle launch.
 - [ ] Define typed launch descriptors, structured arguments, explicit interpreters, shell policy, environment, stdio, output limits, timeout, cancellation, process-tree termination, and reaping.
@@ -131,7 +131,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 ### Quality and release
 
 - [x] Run `cargo fmt`, `cargo clippy`, library and integration tests, and documentation tests.
-- [ ] Add domain tests for application identity, search ranking, calculator behavior, clipboard retention, config migration, and storage recovery.
+- [x] Add domain tests for application identity, search ranking, calculator behavior, clipboard retention, config migration, and storage recovery.
 - [ ] Add deterministic `criterion` benchmarks for query delivery, startup, indexing, extension activation, persistence, and rendering preparation.
 - [ ] Measure p50, p95, p99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed Windows and macOS machines.
 - [ ] Keep timing comparisons advisory on ordinary CI and require evidence before changing the selected stack.
@@ -152,7 +152,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 3. [x] Global hotkey, overlay, visual language, and animation baseline.
 4. [x] Search aggregation, contextual ranking, input history, and fixtures.
 5. [x] Windows application extension with discovery, indexing, and persistence.
-6. Command, script, calculator, and clipboard history extensions.
+6. [x] Command, script, calculator, and clipboard history extensions.
 7. Settings, startup, and macOS adapters.
 8. Performance, packaging, release, and cross-platform acceptance.
 9. Post-MVP ACP extension.

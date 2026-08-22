@@ -48,7 +48,7 @@ impl Drop for SingleInstance {
         use std::os::unix::net::UnixStream;
 
         if let Ok(mut stream) = UnixStream::connect(&self.activation_path) {
-            let _ = stream.write_all(&[b's']);
+            let _ = stream.write_all(b"s");
         }
         if let Some(thread) = self.event_thread.take() {
             let _ = thread.join();

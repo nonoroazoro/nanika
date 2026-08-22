@@ -35,6 +35,10 @@ mod host_app;
 mod host_event;
 #[path = "HostRuntime.rs"]
 mod host_runtime;
+#[path = "HostServiceHandler.rs"]
+mod host_service_handler;
+#[path = "HostServiceRouter.rs"]
+mod host_service_router;
 #[path = "OverlayMotion.rs"]
 mod overlay_motion;
 #[path = "PendingExtension.rs"]
@@ -59,6 +63,8 @@ pub(crate) use history_direction::*;
 pub use host_app::HostApp;
 pub(crate) use host_event::*;
 pub(crate) use host_runtime::*;
+pub use host_service_handler::*;
+pub(crate) use host_service_router::*;
 pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
 pub use supervisor_error::*;

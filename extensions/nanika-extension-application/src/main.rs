@@ -9,7 +9,14 @@ use nanika_config::ConfigStore;
 use nanika_extension_application::{
     ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths, select_candidates,
 };
-use nanika_protocol::{Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+};
+
+#[path = "PendingInvocation.rs"]
+mod pending_invocation;
+
+use pending_invocation::PendingInvocation;
 
 const EVENT_CAPACITY: usize = 8;
 const MAX_CANDIDATES: usize = 5_000;
@@ -34,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut active_scans = 1_usize;
     let mut pending_query = None::<(String, u64, String)>;
     let mut refresh_requests = HashMap::<String, u64>::new();
+    let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
     while let Ok(event) = events.recv() {
         match event {
             RuntimeEvent::Protocol(message) => match message {
@@ -110,12 +118,83 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         worker.cancel(generation);
                     }
                 }
-                Message::Invoke { request_id, .. } => write_error(
-                    &mut output,
-                    Some(request_id),
-                    "launch_service_unavailable",
-                    "application launch requires the host launch service",
-                )?,
+                Message::Invoke {
+                    request_id,
+                    generation,
+                    entry_id,
+                    action_id,
+                } => {
+                    let descriptor = entries
+                        .read()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .iter()
+                        .find(|entry| entry.entry_id == entry_id)
+                        .filter(|_| action_id == nanika_extension_application::RUN_ACTION_ID)
+                        .ok_or_else(|| "application entry or action does not exist".to_owned())
+                        .and_then(|entry| {
+                            entry.launch_descriptor().map_err(|error| error.to_string())
+                        });
+                    match descriptor {
+                        Ok(descriptor) => {
+                            let service_request_id = format!("host-{request_id}");
+                            write_frame(
+                                &mut output,
+                                &Message::HostRequest {
+                                    request_id: service_request_id.clone(),
+                                    parent_request_id: request_id.clone(),
+                                    generation,
+                                    request: HostServiceRequest::Launch { descriptor },
+                                },
+                            )?;
+                            pending_invocations.insert(
+                                service_request_id,
+                                PendingInvocation {
+                                    request_id,
+                                    generation,
+                                },
+                            );
+                        }
+                        Err(message) => {
+                            write_error(&mut output, Some(request_id), "unknown_action", &message)?
+                        }
+                    }
+                }
+                Message::HostResponse {
+                    request_id,
+                    parent_request_id,
+                    generation: response_generation,
+                    response: HostServiceResponse::Launched,
+                } => {
+                    if let Some(pending) = pending_invocations.remove(&request_id) {
+                        if parent_request_id == pending.request_id
+                            && response_generation == pending.generation
+                        {
+                            write_frame(
+                                &mut output,
+                                &Message::Result {
+                                    request_id: pending.request_id,
+                                    generation: pending.generation,
+                                },
+                            )?;
+                        } else {
+                            write_error(
+                                &mut output,
+                                Some(pending.request_id),
+                                "invalid_host_response",
+                                "host response does not match the pending application invocation",
+                            )?;
+                        }
+                    }
+                }
+                Message::Error {
+                    request_id: Some(service_request_id),
+                    code,
+                    message,
+                } if pending_invocations.contains_key(&service_request_id) => {
+                    if let Some(pending) = pending_invocations.remove(&service_request_id) {
+                        write_error(&mut output, Some(pending.request_id), &code, &message)?;
+                    }
+                }
                 Message::Shutdown { request_id } => {
                     write_frame(&mut output, &Message::ShutdownAck { request_id })?;
                     break;
@@ -268,6 +347,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
+        | Message::HostRequest { request_id, .. }
+        | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Initialized { request_id, .. } => Some(request_id.clone()),

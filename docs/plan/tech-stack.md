@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 5 application discovery, indexing, persistence, icon caching, refresh, and host bootstrap are implemented and reviewed on Windows. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 6 capabilities and their typed host services are implemented and post-review fixes are verified on Windows. The macOS platform crate passes cross-target checks. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -41,7 +41,7 @@ Use the latest mutually compatible stable releases when adding or updating depen
 
 Use a virtual Cargo workspace with `resolver = "3"` and Rust 2024 edition. The root `Cargo.toml` is Cargo-required project metadata, not Nanika user configuration. Share package metadata through `workspace.package`, share dependency versions through `workspace.dependencies` only when feature requirements match, and keep platform-specific features local. Inherit `workspace.lints` in every member. Keep one root `Cargo.lock` and one root `target` directory.
 
-Initial layout:
+Workspace layout:
 
 ```text
 Cargo.toml
@@ -55,12 +55,16 @@ crates/
   nanika-search/
 extensions/
   nanika-extension-application/
+  nanika-extension-command/
+  nanika-extension-script/
+  nanika-extension-calculator/
+  nanika-extension-clipboard/
   nanika-extension-fixture/
 ```
 
 ## Host and extension boundary
 
-The host foundation provides UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction. It does not implement application launch, command execution, script execution, calculation, clipboard history, or agent communication.
+The host foundation provides UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction. It exposes typed platform services but contributes no application, command, script, calculator, clipboard history, or agent capability.
 
 Every domain capability is an extension. This follows the relevant VS Code model. There is no first-party capability class.
 
@@ -136,6 +140,7 @@ The local layout is:
   backups/config/
   backups/databases/
   logs/
+  payloads/<extension-id>/
 <cache-root>/
   icons/
   metadata/
@@ -178,13 +183,15 @@ Application extension baseline tables:
 
 Clipboard extension owns its content, hash, timestamp, pin, retention, and payload fields. Calculator is stateless in the MVP.
 
+The clipboard schema stores typed text, file-list, or image references with content hashes, byte size, capture and last-use timestamps, and pin state. Unpinned history is retained for 30 days and capped at 500 entries. Image PNG payloads live under `<app-data-root>/payloads/com.nanika.clipboard`, outside synchronized configuration and SQLite.
+
 Every database uses embedded, ordered, forward-only migrations in a transaction. The host rejects newer or non-contiguous migration histories. Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, and `busy_timeout=100 ms`. Checkpoint WAL before maintenance and create a consistent snapshot with `VACUUM INTO` before destructive migrations. A failed extension migration disables only that extension and never deletes old data.
 
 ## Threads and process execution
 
 Use named owner threads for storage, application discovery, search aggregation, and platform event sources. Runtime configuration and storage initialization stay off the UI thread. The search owner reuses one `nucleo-matcher` instance. Do not create a thread per query, action, or database operation. Fixed extension workers publish typed snapshots and carry generation IDs. Shutdown stops extension workers, storage, search, and platform events in that order.
 
-Only the host process launcher and extension supervisor may create child processes. Extensions submit typed launch descriptors. The default path passes a program and arguments separately and never invokes a shell. Shell mode is explicit, selects the platform interpreter, requires confirmation policy, drains stdout and stderr concurrently, bounds output, applies timeouts, terminates process trees through platform adapters, and always reaps children.
+Only the host process launcher and extension supervisor may create child processes. Extensions submit typed `Program`, `Shell`, or `MacApplication` descriptors. `Program` keeps structured arguments separate, with an explicit Windows raw-argument representation for Shell Links. `Shell` selects `cmd.exe` on Windows and `/bin/zsh` on macOS. MVP launches are detached with null stdio, and action success means the process was accepted. One bounded launcher owner serializes spawn work. Windows releases detached process handles; macOS reaps children through `kqueue` `NOTE_EXIT` events without polling. Captured execution and process-tree cancellation remain a later descriptor mode.
 
 ## Platform adapters
 
@@ -206,15 +213,19 @@ The application extension runs as its own process with one discovery owner. The 
 
 Windows discovery resolves every `.lnk` through Shell COM and validates PE targets before indexing. Validation is reused while canonical path, size, and modification time remain unchanged; benchmarks separate cold validation from warm refresh. Identity uses the canonical executable, effective working directory, and typed arguments, so equivalent shortcuts and direct executables deduplicate without merging different launch behavior. Complete scans stale missing entries and remove entries already stale; cancelled, failed, or partial scans preserve unseen data. SQLite commits each generation atomically. Snapshots below 5,000 entries remain complete; larger indexes use query-aware top-k preselection before host ranking.
 
-Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. The macOS adapter still requires runtime validation on macOS. Application launch remains deferred to the host launch service milestone.
+Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. Application actions now submit persisted typed launch metadata to the common host service. The macOS adapter still requires runtime validation on macOS.
 
 ### Clipboard
 
-The clipboard extension captures permitted text, file URI lists, and images. Windows uses native change delivery. macOS polls `NSPasteboard.changeCount` through `clipboard-rs` at a 250 ms default interval. The watcher only sends bounded events; a worker performs capture, normalization, deduplication, retention, and persistence. Clipboard content never enters diagnostics or synchronized configuration.
+The clipboard extension captures permitted text, file lists, and images. Windows uses native change delivery. macOS polls `NSPasteboard.changeCount` through `clipboard-rs` at a 250 ms interval. The watcher only sends bounded events; one owner performs capture, deduplication, retention, payload cleanup, and SQLite persistence. Oversized content is skipped, never truncated: text and encoded file lists are limited to 1 MiB, file lists to 256 paths, and PNG images to 16 MiB, 8,192 pixels per dimension, and 16,777,216 pixels. Explicit refresh completes only after capture and persistence; worker errors are reported through the protocol. Restore uses the common host clipboard service. Clipboard content never enters diagnostics or synchronized configuration.
 
 ### Calculator
 
-The calculator extension uses `fend-core` with `evaluate_preview_with_interrupt`. Evaluation runs off the UI thread with input limits, deadlines, and generation cancellation. The MVP context is deterministic and stateless. Successful results copy through the host clipboard service.
+The calculator extension uses `fend-core` with `evaluate_preview_with_interrupt`. Evaluation runs in its extension process with a 4,096-character input limit and a 50 ms interrupt deadline. The MVP context is deterministic and stateless. Successful results copy through the common host clipboard service.
+
+### Command and script
+
+The command extension contributes only for queries beginning with `>` and submits the remaining text as an explicit `Shell` descriptor. The script extension loads stable entries from `extensions/com.nanika.script/settings.jsonc`; every entry names an absolute interpreter, script path, structured arguments, and optional working directory. A missing script settings file means an empty contribution. Neither extension creates child processes directly.
 
 ### Startup
 
@@ -226,9 +237,11 @@ The universal extension protocol uses stdin and stdout with a 4-byte little-endi
 
 The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query and action deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions are never replayed after an ambiguous crash because that could duplicate side effects. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
 
-Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `shutdown`.
+Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `hostResponse`, `error`, and `shutdown`.
 
-Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `error`, and `shutdownAck`.
+Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `hostRequest`, `error`, and `shutdownAck`.
+
+Each `hostRequest` is bound to its parent invocation and generation, and extensions validate matching `hostResponse` fields. The same router handles built-in and external extensions. Service owners have independent bounded queues and independent initialization failure, so one unavailable service does not disable the others. Host service waits remain inside the parent action deadline, and queued work expires before starting a side effect. Current services accept typed launch descriptors and typed clipboard writes; image writes are confined to the requesting extension's machine-local payload root and are read with encoded and decoded resource limits.
 
 Every request carries an ID. Query, action, and refresh messages carry a generation. The host drops stale generations, applies a 2-second handshake deadline, bounds action time, captures bounded stderr, and performs graceful shutdown before termination.
 

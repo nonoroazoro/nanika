@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use nanika_protocol::Candidate;
+use nanika_protocol::{Candidate, LaunchArguments, LaunchDescriptor};
 
-use crate::RUN_ACTION_ID;
+use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
 /// Persisted application metadata plus transient icon extraction input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,5 +39,22 @@ impl ApplicationEntry {
                 .map(str::to_owned)
                 .collect(),
         }
+    }
+
+    pub fn launch_descriptor(&self) -> Result<LaunchDescriptor, ApplicationError> {
+        if self.launch_kind == "macos-bundle" {
+            return Ok(LaunchDescriptor::MacApplication {
+                bundle_path: self.target_path.clone(),
+            });
+        }
+        let arguments = match serde_json::from_str::<ApplicationArguments>(&self.arguments_json)? {
+            ApplicationArguments::Structured { values } => LaunchArguments::Structured { values },
+            ApplicationArguments::WindowsRaw { value } => LaunchArguments::WindowsRaw { value },
+        };
+        Ok(LaunchDescriptor::Program {
+            program: self.target_path.clone(),
+            arguments,
+            working_directory: self.working_directory.clone(),
+        })
     }
 }

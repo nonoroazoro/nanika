@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_extension_application::ApplicationConfig;
-use nanika_protocol::{Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
 
 #[test]
 fn process_refreshes_a_configured_root_and_contributes_candidates() {
@@ -85,6 +85,80 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         panic!("application extension should return a snapshot");
     };
     assert!(entries.iter().any(|entry| entry.title == "Nanika Sample"));
+    let entry = entries
+        .into_iter()
+        .find(|entry| entry.title == "Nanika Sample")
+        .expect("sample application candidate");
+    write_frame(
+        &mut input,
+        &Message::Invoke {
+            request_id: "invoke-application".to_owned(),
+            generation: 3,
+            entry_id: entry.entry_id.clone(),
+            action_id: entry.action_id.clone(),
+        },
+    )
+    .expect("invoke should write");
+    let Some(Message::HostRequest {
+        request_id: service_request_id,
+        parent_request_id,
+        generation,
+        ..
+    }) = read_frame(&mut output).expect("host request")
+    else {
+        panic!("application extension should request host launch");
+    };
+    write_frame(
+        &mut input,
+        &Message::HostResponse {
+            request_id: service_request_id,
+            parent_request_id,
+            generation,
+            response: HostServiceResponse::Launched,
+        },
+    )
+    .expect("host response should write");
+    assert!(matches!(
+        read_frame(&mut output).expect("invoke result"),
+        Some(Message::Result { generation: 3, .. })
+    ));
+    write_frame(
+        &mut input,
+        &Message::Invoke {
+            request_id: "invoke-application-invalid".to_owned(),
+            generation: 4,
+            entry_id: entry.entry_id,
+            action_id: entry.action_id,
+        },
+    )
+    .expect("second invoke should write");
+    let Some(Message::HostRequest {
+        request_id: service_request_id,
+        parent_request_id,
+        generation,
+        ..
+    }) = read_frame(&mut output).expect("second host request")
+    else {
+        panic!("application extension should request host launch");
+    };
+    write_frame(
+        &mut input,
+        &Message::HostResponse {
+            request_id: service_request_id,
+            parent_request_id,
+            generation: generation + 1,
+            response: HostServiceResponse::Launched,
+        },
+    )
+    .expect("invalid host response should write");
+    assert!(matches!(
+        read_frame(&mut output).expect("invalid invoke result"),
+        Some(Message::Error {
+            request_id: Some(request_id),
+            code,
+            ..
+        }) if request_id == "invoke-application-invalid" && code == "invalid_host_response"
+    ));
     write_frame(
         &mut input,
         &Message::Shutdown {

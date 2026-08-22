@@ -6,7 +6,7 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionSearchWorker, SupervisorError,
+    ExtensionSearchWorker, HostServiceHandler, SupervisorError,
 };
 
 const INVOCATION_RESULT_CAPACITY: usize = 16;
@@ -18,6 +18,7 @@ pub struct ExtensionSearchCoordinator {
     result_sender: SyncSender<ExtensionInvocationResult>,
     pending_invocations: AtomicUsize,
     notifier: ExtensionNotifier,
+    host_services: Option<Arc<dyn HostServiceHandler>>,
 }
 
 impl ExtensionSearchCoordinator {
@@ -29,7 +30,12 @@ impl ExtensionSearchCoordinator {
             result_sender,
             pending_invocations: AtomicUsize::new(0),
             notifier: Arc::new(Mutex::new(None)),
+            host_services: None,
         }
+    }
+
+    pub fn set_host_services(&mut self, host_services: Arc<dyn HostServiceHandler>) {
+        self.host_services = Some(host_services);
     }
 
     pub fn register(
@@ -55,6 +61,7 @@ impl ExtensionSearchCoordinator {
             search,
             self.result_sender.clone(),
             Arc::clone(&self.notifier),
+            self.host_services.clone(),
         )?);
         Ok(())
     }

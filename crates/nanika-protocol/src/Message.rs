@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::Candidate;
+use crate::{Candidate, HostServiceRequest, HostServiceResponse};
 
 /// One request or response on the extension protocol.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -47,6 +47,18 @@ pub enum Message {
     Refreshed {
         request_id: String,
         generation: u64,
+    },
+    HostRequest {
+        request_id: String,
+        parent_request_id: String,
+        generation: u64,
+        request: HostServiceRequest,
+    },
+    HostResponse {
+        request_id: String,
+        parent_request_id: String,
+        generation: u64,
+        response: HostServiceResponse,
     },
     Shutdown {
         request_id: String,

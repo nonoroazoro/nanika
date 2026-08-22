@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use nanika_protocol::{FrameError, Message, PROTOCOL_NAME, read_frame, write_frame};
 
-use crate::{ExtensionCommand, ExtensionLimits, SupervisorError};
+use crate::{ExtensionCommand, ExtensionLimits, HostServiceHandler, SupervisorError};
 
 /// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
@@ -24,6 +24,8 @@ pub struct ExtensionProcess {
     stderr_tail: Arc<Mutex<VecDeque<u8>>>,
     reader_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
+    extension_id: Option<String>,
+    host_services: Option<Arc<dyn HostServiceHandler>>,
 }
 
 impl ExtensionProcess {
@@ -118,7 +120,18 @@ impl ExtensionProcess {
             stderr_tail,
             reader_thread: Some(reader_thread),
             stderr_thread: Some(stderr_thread),
+            extension_id: None,
+            host_services: None,
         })
+    }
+
+    pub(crate) fn set_host_services(
+        &mut self,
+        extension_id: String,
+        host_services: Arc<dyn HostServiceHandler>,
+    ) {
+        self.extension_id = Some(extension_id);
+        self.host_services = Some(host_services);
     }
 
     fn send(&mut self, message: &Message) -> Result<(), SupervisorError> {
@@ -297,6 +310,7 @@ impl ExtensionProcess {
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
+                self.terminate()?;
                 return Err(SupervisorError::Timeout("action result"));
             }
             let wait = remaining.min(Duration::from_millis(25));
@@ -311,6 +325,21 @@ impl ExtensionProcess {
                     generation: response_generation,
                 }) if response_id == request_id && response_generation == generation => {
                     return Ok(());
+                }
+                Some(Message::HostRequest {
+                    request_id: service_request_id,
+                    parent_request_id,
+                    generation: service_generation,
+                    request,
+                }) if parent_request_id == request_id && service_generation == generation => {
+                    self.handle_host_request(
+                        service_request_id,
+                        parent_request_id,
+                        service_generation,
+                        request,
+                        deadline,
+                        &mut should_cancel,
+                    )?;
                 }
                 Some(Message::Error {
                     request_id: response_id,
@@ -403,12 +432,16 @@ impl ExtensionProcess {
         if self.restart_count >= self.limits.max_restarts {
             return Err(SupervisorError::RestartLimit);
         }
+        let extension_id = self.extension_id.clone();
+        let host_services = self.host_services.clone();
         self.terminate()?;
-        let replacement = Self::start(
+        let mut replacement = Self::start(
             self.command.clone(),
             self.limits.clone(),
             self.restart_count + 1,
         )?;
+        replacement.extension_id = extension_id;
+        replacement.host_services = host_services;
         *self = replacement;
         self.initialize(request_id)
     }
@@ -507,6 +540,57 @@ impl ExtensionProcess {
             Err(SupervisorError::UnexpectedMessage(
                 "extension is not initialized".to_owned(),
             ))
+        }
+    }
+
+    fn handle_host_request(
+        &mut self,
+        request_id: String,
+        parent_request_id: String,
+        generation: u64,
+        request: nanika_protocol::HostServiceRequest,
+        deadline: Instant,
+        should_cancel: &mut impl FnMut() -> bool,
+    ) -> Result<(), SupervisorError> {
+        let receiver = self
+            .extension_id
+            .as_deref()
+            .zip(self.host_services.as_deref())
+            .ok_or_else(|| "host services are unavailable".to_owned())
+            .and_then(|(extension_id, services)| services.submit(extension_id, request, deadline));
+        let result = match receiver {
+            Ok(receiver) => loop {
+                if should_cancel() {
+                    self.terminate()?;
+                    return Err(SupervisorError::Cancelled("host service"));
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    self.terminate()?;
+                    return Err(SupervisorError::Timeout("host service"));
+                }
+                match receiver.recv_timeout(remaining.min(Duration::from_millis(25))) {
+                    Ok(result) => break result,
+                    Err(RecvTimeoutError::Timeout) => continue,
+                    Err(RecvTimeoutError::Disconnected) => {
+                        break Err("host service closed before replying".to_owned());
+                    }
+                }
+            },
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(response) => self.send(&Message::HostResponse {
+                request_id,
+                parent_request_id,
+                generation,
+                response,
+            }),
+            Err(message) => self.send(&Message::Error {
+                request_id: Some(request_id),
+                code: "host_service_failed".to_owned(),
+                message,
+            }),
         }
     }
 }

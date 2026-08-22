@@ -2,7 +2,10 @@
 
 use std::io::{self, stdin, stdout};
 
-use nanika_protocol::{Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    HostServiceRequest, HostServiceResponse, LaunchArguments, LaunchDescriptor, Message,
+    PROTOCOL_NAME, read_frame, write_frame,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -38,6 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .strip_prefix("--mark-refresh=")
             .map(std::path::PathBuf::from)
     });
+    let request_launch_on_invoke = arguments
+        .iter()
+        .any(|argument| argument == "--request-launch-on-invoke");
     if arguments
         .iter()
         .any(|argument| argument == "--write-stderr")
@@ -124,6 +130,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::write(marker, b"hung")?;
                     std::thread::sleep(std::time::Duration::from_secs(60));
                 }
+                if request_launch_on_invoke
+                    && entry_id == "fixture.entry"
+                    && action_id == "fixture.run"
+                {
+                    let service_request_id = format!("host-{request_id}");
+                    write_frame(
+                        &mut output,
+                        &Message::HostRequest {
+                            request_id: service_request_id.clone(),
+                            parent_request_id: request_id.clone(),
+                            generation,
+                            request: HostServiceRequest::Launch {
+                                descriptor: LaunchDescriptor::Program {
+                                    program: "fixture-program".to_owned(),
+                                    arguments: LaunchArguments::default(),
+                                    working_directory: None,
+                                },
+                            },
+                        },
+                    )?;
+                    match read_frame(&mut input)? {
+                        Some(Message::HostResponse {
+                            request_id: response_id,
+                            response: HostServiceResponse::Launched,
+                            ..
+                        }) if response_id == service_request_id => {}
+                        Some(Message::Error { code, message, .. }) => {
+                            write_frame(
+                                &mut output,
+                                &Message::Error {
+                                    request_id: Some(request_id),
+                                    code,
+                                    message,
+                                },
+                            )?;
+                            continue;
+                        }
+                        _ => continue,
+                    }
+                }
                 let response = if entry_id == "fixture.entry" && action_id == "fixture.run" {
                     Message::Result {
                         request_id,
@@ -157,6 +203,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Snapshot { .. }
             | Message::Result { .. }
             | Message::Refreshed { .. }
+            | Message::HostRequest { .. }
+            | Message::HostResponse { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
             | Message::Error { .. } => write_frame(
