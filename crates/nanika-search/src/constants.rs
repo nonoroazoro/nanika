@@ -1,0 +1,9 @@
+pub(crate) const MAX_USAGE_COUNT: u32 = 100;
+pub(crate) const RECENCY_HALF_LIFE_DAYS: u64 = 7;
+pub(crate) const MIN_FUZZY_SCORE_PER_CHARACTER: u32 = 12;
+pub(crate) const MAX_RESULTS: usize = 100;
+pub(crate) const MAX_EXTENSION_CANDIDATES: usize = 5_000;
+pub(crate) const SEARCH_QUEUE_CAPACITY: usize = 16;
+pub const MAX_QUERY_CHARS: usize = 4_096;
+pub const MAX_USAGE_ROWS: usize = 10_000;
+pub const USAGE_RETENTION_DAYS: u64 = 180;

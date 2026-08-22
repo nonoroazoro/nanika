@@ -8,5 +8,9 @@ publish.workspace = true
 [dependencies]
 nanika-protocol = { path = "../../crates/nanika-protocol" }
 
+[dev-dependencies]
+nanika-host = { path = "../../crates/nanika-host" }
+nanika-search = { path = "../../crates/nanika-search" }
+
 [lints]
 workspace = true

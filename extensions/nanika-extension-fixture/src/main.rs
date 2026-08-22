@@ -12,6 +12,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exit_after_initialize = arguments
         .iter()
         .any(|argument| argument == "--exit-after-initialize");
+    let delay_first_query = arguments
+        .iter()
+        .any(|argument| argument == "--delay-first-query");
+    let incremental_query = arguments
+        .iter()
+        .any(|argument| argument == "--incremental-query");
+    let crash_query_once = arguments.iter().find_map(|argument| {
+        argument
+            .strip_prefix("--crash-query-once=")
+            .map(std::path::PathBuf::from)
+    });
+    let hang_query_once = arguments.iter().find_map(|argument| {
+        argument
+            .strip_prefix("--hang-query-once=")
+            .map(std::path::PathBuf::from)
+    });
+    let hang_invoke = arguments.iter().find_map(|argument| {
+        argument
+            .strip_prefix("--hang-invoke=")
+            .map(std::path::PathBuf::from)
+    });
     if arguments
         .iter()
         .any(|argument| argument == "--write-stderr")
@@ -20,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut input = stdin().lock();
     let mut output = stdout().lock();
+    let mut query_count = 0_u32;
 
     while let Some(message) = read_frame(&mut input)? {
         match message {
@@ -42,11 +64,78 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 write_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 return Ok(());
             }
-            Message::Query { .. }
-            | Message::Snapshot { .. }
-            | Message::Invoke { .. }
+            Message::Query {
+                request_id,
+                generation,
+                query,
+            } => {
+                query_count = query_count.saturating_add(1);
+                if let Some(marker) = &crash_query_once
+                    && !marker.exists()
+                {
+                    std::fs::write(marker, b"crashed")?;
+                    return Ok(());
+                }
+                if let Some(marker) = &hang_query_once
+                    && !marker.exists()
+                {
+                    std::fs::write(marker, b"hung")?;
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                }
+                if delay_first_query && query_count == 1 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                if incremental_query {
+                    write_frame(
+                        &mut output,
+                        &Message::Snapshot {
+                            request_id: request_id.clone(),
+                            generation,
+                            complete: false,
+                            entries: vec![candidate("fixture.partial", "Partial")],
+                        },
+                    )?;
+                }
+                write_frame(
+                    &mut output,
+                    &Message::Snapshot {
+                        request_id,
+                        generation,
+                        complete: true,
+                        entries: vec![candidate(
+                            "fixture.entry",
+                            if query.is_empty() { "Fixture" } else { &query },
+                        )],
+                    },
+                )?;
+            }
+            Message::Invoke {
+                request_id,
+                generation,
+                entry_id,
+                action_id,
+            } => {
+                if let Some(marker) = &hang_invoke {
+                    std::fs::write(marker, b"hung")?;
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                }
+                let response = if entry_id == "fixture.entry" && action_id == "fixture.run" {
+                    Message::Result {
+                        request_id,
+                        generation,
+                    }
+                } else {
+                    Message::Error {
+                        request_id: Some(request_id),
+                        code: "unknown_action".to_owned(),
+                        message: "fixture entry or action does not exist".to_owned(),
+                    }
+                };
+                write_frame(&mut output, &response)?;
+            }
+            Message::Cancel { .. } => {}
+            Message::Snapshot { .. }
             | Message::Result { .. }
-            | Message::Cancel { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
             | Message::Error { .. } => write_frame(
@@ -54,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &Message::Error {
                     request_id: None,
                     code: "unsupported_message".to_owned(),
-                    message: "fixture accepts only initialize and shutdown".to_owned(),
+                    message: "fixture received an unsupported message type".to_owned(),
                 },
             )?,
         }
@@ -62,4 +151,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _ = io::Write::flush(&mut output);
     Ok(())
+}
+
+fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
+    nanika_protocol::Candidate {
+        entry_id: entry_id.to_owned(),
+        title: title.to_owned(),
+        action_id: "fixture.run".to_owned(),
+        aliases: vec!["fixture alias".to_owned()],
+    }
 }

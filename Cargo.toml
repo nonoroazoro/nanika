@@ -7,6 +7,7 @@ members = [
     "crates/nanika-protocol",
     "crates/nanika-storage",
     "crates/nanika-config",
+    "crates/nanika-search",
     "extensions/nanika-extension-fixture",
 ]
 
@@ -24,8 +25,10 @@ rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"
 jsonc-parser = { version = "0.33.1", default-features = false, features = ["serde", "cst"] }
 uuid = { version = "1.24.1", default-features = false, features = ["serde", "v4"] }
 eframe = { version = "0.36.1", default-features = false, features = ["accesskit", "default_fonts", "wgpu_no_default_features"] }
-wgpu = { version = "30.0.0", default-features = false, features = ["dx12", "metal", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false }
 global-hotkey = "0.8.0"
+nucleo-matcher = "0.3.1"
+criterion = { version = "0.8.2", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

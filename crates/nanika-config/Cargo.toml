@@ -7,7 +7,6 @@ publish.workspace = true
 
 [dependencies]
 jsonc-parser.workspace = true
-nanika-storage = { path = "../nanika-storage" }
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

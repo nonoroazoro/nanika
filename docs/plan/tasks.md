@@ -1,10 +1,10 @@
 # Nanika Tasks
 
-Status: implementation in progress. Milestone 3 implementation baseline is complete: global hotkey, hidden overlay, input history, visual language, and motion scheduling. Cross-platform GUI acceptance remains.
+Status: implementation in progress. Milestone 4 is complete and reviewed: search aggregation, deterministic contextual ranking, extension snapshots, persistent input history, query coalescing, and lossless action completion are implemented. Windows workspace checks pass. Milestone 5 has not started.
 
 ## Product direction
 
-Nanika is a native, keyboard-driven capability host for Windows 10 and macOS 13 or later. Core supplies only shared infrastructure. Every domain capability is an extension, including the default command, application, script, calculator, and clipboard history capabilities.
+Nanika is a native, keyboard-driven capability host for Windows 10 and macOS 13 or later. The host foundation supplies only shared infrastructure. Every domain capability is an extension, including the default command, application, script, calculator, and clipboard history capabilities.
 
 Built-in extensions are shipped and enabled by default. External extensions are installed separately. Both run as independent host-supervised processes and use the same contract, settings, permissions, and failure policy. Built-in status grants no privilege and only prevents uninstall from the default distribution.
 
@@ -30,7 +30,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 ### Baseline and quality
 
 - [x] Record the selected stack and rejected directions in `tech-stack.md`.
-- [x] Select Rust, `egui` and `eframe` with `wgpu`, `winit`, `global-hotkey`, `nucleo`, SQLite, and the selected platform adapters.
+- [x] Select Rust, `egui` and `eframe` with `wgpu`, `winit`, `global-hotkey`, `nucleo-matcher`, SQLite, and the selected platform adapters.
 - [ ] Resolve the final Cargo feature graph and commit `Cargo.lock`.
 - [ ] Validate overlay focus, transparency, IME, DPI, monitor placement, `wgpu` backends, and hotkey integration on Windows and macOS.
 - [x] Define the visual language, typography, spacing, colors, icons, empty states, and accessibility behavior.
@@ -39,33 +39,33 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Scaffolding
 
-- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, Core, protocol, platform adapters, storage, and extension executables.
+- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, shared Core types, protocol, platform adapters, storage, and extension executables.
 - [x] Add the minimal host binary and event-loop entry point without domain capabilities.
 - [x] Add the shared typed protocol boundary and a minimal extension process fixture.
-- [x] Add Windows and macOS platform adapter modules with explicit unsupported-operation errors where implementation is not ready.
+- [x] Add Windows and macOS platform adapter modules with explicit unsupported-platform errors.
 - [x] Add test and benchmark target layout plus the project formatting, lint, and test commands.
 - [x] Verify that the host and fixture start and exit, and that the workspace passes the baseline checks.
 
-### Core architecture
+### Host architecture
 
-- [x] Define Core as UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction.
-- [x] Keep all domain capabilities in extensions. Keep shared search aggregation, ranking, and input history in Core.
+- [x] Define the host foundation as UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction.
+- [x] Keep all domain capabilities in extensions. Keep shared search aggregation, ranking, and input history in the host foundation.
 - [ ] Define typed host boundaries and error categories, redaction, source chaining, and user-facing diagnostics.
 - [ ] Define tracing fields, log levels, redaction, bounded queues, rotation, retention, and flush behavior.
-- [ ] Define named owner threads for storage, discovery, search, and platform event sources.
-- [ ] Define bounded queues, cancellation, generation handling, ordered shutdown, and worker failure recovery.
-- [ ] Define the platform boundary for window, hotkey, discovery, launch, startup, tray, and single-instance behavior.
+- [ ] Complete named owner threads for storage, discovery, search, and platform event sources.
+- [ ] Complete bounded queues, cancellation, generation handling, ordered shutdown, and worker failure recovery across all MVP capabilities.
+- [ ] Complete platform adapters for window, hotkey, discovery, launch, startup, tray, and single-instance behavior.
 
 ### Extensions
 
 - [x] Require every built-in and external extension to run as a separate host-supervised child process.
-- [x] Use one extension contract for capability, lifecycle, settings, permissions, host services, and failure handling.
-- [x] Prohibit extension access to host memory, host databases, the global config root, and other extension processes.
-- [x] Implement the length-framed stdio handshake, bounded JSON frames, and orderly shutdown fixture.
+- [ ] Define one extension contract for capability, lifecycle, settings, permissions, host services, and failure handling.
+- [x] Keep host APIs and IPC from exposing host memory, SQLite connections, global configuration, or another extension's state. The MVP does not claim an enforceable filesystem sandbox.
+- [x] Implement the off-UI-thread registration handshake, bounded JSON frames, and orderly shutdown fixture.
 - [ ] Define extension and action identities that survive refreshes and updates.
-- [ ] Define manifest fields, activation events, contributions, permissions, dependencies, compatibility, and target entrypoints.
+- [x] Define manifest fields, activation events, contributions, permissions, dependencies, compatibility, and target entrypoints.
 - [x] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
-- [x] Define the extension supervisor, restart and crash recovery, resource budgets, and child reaping.
+- [x] Implement bounded protocol queues, deadlines, restart budgets, safe query retry, non-replayed action recovery, graceful shutdown, and child reaping.
 - [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, atomic activation, path validation, and SHA-256 checks.
 - [x] Limit MVP installation to explicit local packages or development directories. No marketplace or background download.
 - [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
@@ -82,19 +82,28 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Search, ranking, and input history
 
-- [ ] Define normalization, case folding, punctuation, whitespace, aliases, and localized names.
-- [ ] Define exact, prefix, token, fuzzy, empty-query, and no-result behavior.
-- [ ] Define contextual frequency, recency decay, caps, cold start, privacy, retention, and reset.
-- [ ] Define deterministic ranking fixtures and tie-breakers.
-- [ ] Define input-history navigation, deduplication, ordering, limits, persistence, and current-query preservation.
-- [ ] Keep usage writes asynchronous and outside the summon and query hot paths.
+- [x] Define Unicode lowercase, punctuation, whitespace, and identity-preserving behavior.
+- [x] Implement consistent aliases, including localized names supplied as aliases.
+- [x] Define exact, prefix, token, fuzzy, and empty-query behavior.
+- [x] Implement the fuzzy relevance cutoff and no-result policy.
+- [x] Define and implement contextual frequency, recency decay, caps, cold start, local-only privacy, 180-day retention, and reset.
+- [x] Align usage identity with the persisted extension, entry, action, and query-context schema.
+- [x] Define deterministic ranking fixtures and tie-breakers.
+- [x] Implement bounded in-memory input-history navigation, deduplication, ordering, and limits.
+- [x] Preserve the draft query during navigation and persist history.
+- [x] Integrate empty-query and incremental search snapshots with the host and extension contributions.
+- [x] Coalesce query bursts without dropping the latest input or accepting stale results.
+- [x] Bound outstanding actions so accepted completion messages are never dropped.
+- [x] Recover from timeout and ignore late protocol frames without poisoning later requests.
+- [x] Make committed storage usage authoritative for in-memory ranking.
+- [x] Keep usage writes asynchronous and outside the summon and query hot paths.
 
 ### Overlay and platform integration
 
 - [x] Define summon, focus, selection, Enter, Escape, and dismissal behavior for the initial overlay.
 - [ ] Define active-monitor placement, multi-monitor, high-DPI, elevated-window, and full-screen behavior.
-- [x] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
-- [x] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
+- [ ] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
+- [ ] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
 - [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
 - [x] Implement macOS normal shortcut registration boundary; target type-check passes. Runtime permission validation remains.
 - [x] Select Windows current-user Run registration and macOS `SMAppService.mainAppService`.
@@ -102,7 +111,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Define typed launch descriptors, structured arguments, explicit interpreters, shell policy, environment, stdio, output limits, timeout, cancellation, process-tree termination, and reaping.
 - [ ] Verify GUI, command, script, batch, and macOS bundle launches on both platforms.
 - [x] Select single-instance handoff: Windows `CreateMutexW` plus hidden-window activation; macOS `flock` plus a local Unix socket.
-- [x] Implement the Windows hidden message window and macOS lock/socket adapters; Windows tests and macOS target checks pass.
+- [x] Integrate startup-race-safe Windows hidden-window and macOS lock/socket activation with the host through bounded blocking event sources.
 - [ ] Test second-launch activation, stale lock recovery, shutdown cleanup, and per-user/session isolation.
 
 ### Configuration and storage
@@ -121,7 +130,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 ### Quality and release
 
-- [ ] Run `cargo fmt`, `cargo clippy`, library and integration tests, and documentation tests.
+- [x] Run `cargo fmt`, `cargo clippy`, library and integration tests, and documentation tests.
 - [ ] Add domain tests for application identity, search ranking, calculator behavior, clipboard retention, config migration, and storage recovery.
 - [ ] Add deterministic `criterion` benchmarks for query delivery, startup, indexing, extension activation, persistence, and rendering preparation.
 - [ ] Measure p50, p95, p99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed Windows and macOS machines.
@@ -141,7 +150,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 1. [x] Scaffolding and host foundation.
 2. [x] Single instance, universal extension process boundary, configuration, and storage.
 3. [x] Global hotkey, overlay, visual language, and animation baseline.
-4. Search aggregation, contextual ranking, input history, and fixtures.
+4. [x] Search aggregation, contextual ranking, input history, and fixtures.
 5. Windows application extension with discovery, indexing, and persistence.
 6. Command, script, calculator, and clipboard history extensions.
 7. Settings, startup, and macOS adapters.
