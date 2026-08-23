@@ -30,6 +30,10 @@ macOS local package:
 
 An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`. The script signs child executables first, signs the app with hardened runtime and a secure timestamp, verifies it, submits the ZIP through `notarytool`, staples the app, validates the ticket, and recreates the archive.
 
+## Current validation
+
+The 2026-08-23 local Windows validation passed the workspace quality gate, release build, archive content check, SHA-256 verification, and foreground secondary-launch smoke test. Signing, clean-profile installation, physical platform acceptance, and macOS packaging remain release gates.
+
 ## Checklist
 
 1. Confirm a clean tree, the intended version, and committed `Cargo.lock`.

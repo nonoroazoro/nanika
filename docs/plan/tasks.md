@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: Milestone 8 implementation and Windows automation are complete. Physical macOS runtime, signing, notarization, and performance acceptance remain.
+Status: Milestone 8 local Windows checks, packaging, and single-instance smoke pass. Fixed-machine performance, physical platform acceptance, signing, and notarization remain.
 
 ## Product direction
 
@@ -165,5 +165,5 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 5. [x] Windows application extension with discovery, indexing, and persistence.
 6. [x] Command, script, calculator, and clipboard history extensions.
 7. [x] Settings, startup, and macOS adapters.
-8. [ ] Performance, packaging, release, and cross-platform acceptance. Implementation and Windows automation are complete; fixed-machine performance and physical macOS acceptance remain.
+8. [ ] Performance, packaging, release, and cross-platform acceptance. Local Windows checks, packaging, and single-instance smoke pass; fixed-machine performance and physical platform acceptance remain.
 9. Post-MVP ACP extension.

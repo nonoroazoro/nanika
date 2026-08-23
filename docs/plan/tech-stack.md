@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 8 implementation and Windows automation are complete. Fixed-machine performance acceptance plus physical macOS runtime, signing, and notarization validation remain. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 8 local Windows checks, packaging, and single-instance smoke pass. Fixed-machine performance, physical platform acceptance, signing, and notarization remain. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
