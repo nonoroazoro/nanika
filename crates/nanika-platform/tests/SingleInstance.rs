@@ -16,12 +16,17 @@ fn second_launch_signals_the_primary() {
         InstanceRole::Secondary
     ));
     signal_activate(&identity, &root).expect("second launch should signal activation");
-    assert_eq!(
-        events
-            .recv_timeout(std::time::Duration::from_secs(1))
-            .expect("primary should receive activation"),
-        nanika_platform::PlatformEvent::Open
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        let event = events
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("primary should receive activation");
+        match event {
+            nanika_platform::PlatformEvent::Open => break,
+            nanika_platform::PlatformEvent::Failure { .. } => {}
+            event => panic!("unexpected platform event: {event:?}"),
+        }
+    }
     drop(events);
     drop(instance);
 

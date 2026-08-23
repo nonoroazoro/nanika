@@ -340,7 +340,7 @@ fn coordinator_cancels_an_acp_invocation_and_keeps_the_extension_usable() {
             );
             std::thread::yield_now();
         }
-        assert_eq!(coordinator.first_error(), None);
+        assert!(coordinator.first_error().is_none());
     }
     drop(coordinator);
     owner.shutdown();

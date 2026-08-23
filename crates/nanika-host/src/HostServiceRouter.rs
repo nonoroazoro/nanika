@@ -8,7 +8,7 @@ use nanika_platform::{ClipboardService, ProcessLauncher};
 use nanika_protocol::{ClipboardContent, HostServiceRequest, HostServiceResponse};
 use nanika_storage::is_valid_extension_id;
 
-use crate::HostServiceHandler;
+use crate::{DiagnosticCode, HostDiagnostic, HostServiceHandler};
 
 /// Routes typed extension requests to host-owned platform services.
 pub struct HostServiceRouter {
@@ -86,6 +86,13 @@ impl HostServiceRouter {
         {
             return Ok(());
         }
+        HostDiagnostic::new(
+            DiagnosticCode::PermissionDenied,
+            "authorize extension host service",
+            "An extension requested a host service without permission.",
+        )
+        .with_safe_context(extension_id)
+        .record_warning();
         Err(format!(
             "extension {extension_id} lacks permission {permission}"
         ))
@@ -100,6 +107,13 @@ impl HostServiceHandler for HostServiceRouter {
         deadline: Instant,
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         if !is_valid_extension_id(extension_id) {
+            HostDiagnostic::new(
+                DiagnosticCode::PermissionDenied,
+                "validate host service caller",
+                "An invalid extension identity requested a host service.",
+            )
+            .with_safe_context("invalid-extension-id")
+            .record_warning();
             return Err("host service request has an invalid extension id".to_owned());
         }
         match request {

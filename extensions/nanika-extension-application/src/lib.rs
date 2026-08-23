@@ -15,6 +15,8 @@ mod application_index;
 mod candidate_selection;
 #[path = "DiscoveryCommand.rs"]
 mod discovery_command;
+#[path = "DiscoveryServices.rs"]
+mod discovery_services;
 #[path = "DiscoveryState.rs"]
 mod discovery_state;
 #[path = "DiscoveryWorker.rs"]
@@ -43,6 +45,7 @@ pub use application_error::*;
 pub use application_index::*;
 pub use candidate_selection::*;
 pub(crate) use discovery_command::*;
+pub(crate) use discovery_services::*;
 pub(crate) use discovery_state::*;
 pub use discovery_worker::*;
 pub use icon_cache::*;
@@ -62,6 +65,9 @@ mod application_config_tests;
 #[cfg(test)]
 #[path = "../tests/ApplicationDatabase.rs"]
 mod application_database_tests;
+#[cfg(test)]
+#[path = "../tests/ApplicationError.rs"]
+mod application_error_tests;
 #[cfg(test)]
 #[path = "../tests/ApplicationIndex.rs"]
 mod application_index_tests;

@@ -4,7 +4,7 @@ use std::sync::mpsc::Receiver;
 use nanika_platform::{PlatformError, StartupStatus};
 use nanika_protocol::SettingsContribution;
 
-use crate::HostConfig;
+use crate::{HostConfig, HostDiagnostic};
 
 pub(crate) struct SettingsState {
     pub(crate) visible: bool,
@@ -17,7 +17,7 @@ pub(crate) struct SettingsState {
     pub(crate) drafts: BTreeMap<String, SettingsContribution>,
     pub(crate) dirty: BTreeSet<String>,
     pub(crate) pending_extensions: BTreeMap<String, String>,
-    pub(crate) error: Option<String>,
+    pub(crate) error: Option<HostDiagnostic>,
 }
 
 impl SettingsState {

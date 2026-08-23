@@ -36,6 +36,17 @@ impl ApplicationIndex {
         self.database.load_active_entries()
     }
 
+    pub(crate) fn rebuild_database(self, database_path: &Path) -> Result<Self, ApplicationError> {
+        let Self {
+            database,
+            icon_cache,
+            ..
+        } = self;
+        drop(database);
+        let database = ApplicationDatabase::rebuild(database_path)?;
+        Ok(Self::new(database, icon_cache))
+    }
+
     pub fn scan(
         &mut self,
         config: &ApplicationConfig,
@@ -192,7 +203,12 @@ impl ApplicationIndex {
         Ok((report, self.database.load_active_entries()?))
     }
 
-    pub fn populate_icons(&mut self, cancelled_through: &AtomicU64, generation: u64) -> usize {
+    pub fn populate_icons(
+        &mut self,
+        cancelled_through: &AtomicU64,
+        generation: u64,
+        prune_unused: bool,
+    ) -> Result<usize, ApplicationError> {
         let mut failures = 0_usize;
         for entry in &mut self.pending_icons {
             if is_cancelled(cancelled_through, generation) {
@@ -202,8 +218,12 @@ impl ApplicationIndex {
                 failures = failures.saturating_add(1);
             }
         }
+        let prune_result = prune_unused
+            .then(|| self.icon_cache.prune(&self.pending_icons))
+            .transpose();
         self.pending_icons.clear();
-        failures
+        prune_result?;
+        Ok(failures)
     }
 }
 

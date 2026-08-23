@@ -18,10 +18,10 @@ use nanika_search::{
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HistoryDirection,
-    HostConfig, HostConfigService, HostEvent, HostRuntime, InvocationPresentation,
-    MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS, OverlayMotion,
-    PendingHostSettings, SettingsAction, SettingsState,
+    DiagnosticCode, ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator,
+    HistoryDirection, HostConfig, HostConfigService, HostDiagnostic, HostEvent, HostRuntime,
+    InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS,
+    OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
@@ -32,7 +32,7 @@ fn default_hotkey() -> HotKey {
 
 pub struct HostApp {
     hotkey: Option<HotkeyRegistration>,
-    hotkey_error: Option<String>,
+    hotkey_error: Option<HostDiagnostic>,
     events: mpsc::Receiver<HostEvent>,
     context_slot: Arc<Mutex<Option<egui::Context>>>,
     instance: Option<SingleInstance>,
@@ -57,10 +57,11 @@ pub struct HostApp {
     selected_index: usize,
     extension_search: ExtensionSearchCoordinator,
     storage: Option<SearchStorageWorker>,
-    runtime_error: Option<String>,
-    search_error: Option<String>,
-    operation_error: Option<String>,
-    action_error: Option<String>,
+    runtime_errors: Vec<HostDiagnostic>,
+    search_error: Option<HostDiagnostic>,
+    operation_error: Option<HostDiagnostic>,
+    action_error: Option<HostDiagnostic>,
+    last_storage_failure_sequence: u64,
     invocation_output: Option<InvocationPresentation>,
     pending_invocation_id: Option<u64>,
     pending_invocation_extension_id: Option<String>,
@@ -115,13 +116,21 @@ impl HostApp {
             Err(error) => (None, Some(platform_error_message(error))),
         };
 
-        let (native_menu, mut startup_error) = if let Some(instance) = instance.as_ref() {
+        let (native_menu, mut startup_errors) = if let Some(instance) = instance.as_ref() {
             match NativeMenu::new(instance.event_sender()) {
-                Ok(menu) => (Some(menu), None),
-                Err(error) => (None, Some(error.to_string())),
+                Ok(menu) => (Some(menu), Vec::new()),
+                Err(error) => (
+                    None,
+                    vec![diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        "initialize native menu",
+                        "Nanika could not initialize its tray or menu bar controls.",
+                        error.to_string(),
+                    )],
+                ),
             }
         } else {
-            (None, None)
+            (None, Vec::new())
         };
 
         let instance_bridge = if let Some(instance) = instance.as_mut() {
@@ -145,13 +154,23 @@ impl HostApp {
                         }) {
                         Ok(thread) => Some(thread),
                         Err(error) => {
-                            startup_error = combine_errors(startup_error, Some(error.to_string()));
+                            startup_errors.push(diagnostic_message(
+                                DiagnosticCode::InternalFailure,
+                                "start instance event bridge",
+                                "Nanika could not start its instance event bridge.",
+                                error.to_string(),
+                            ));
                             None
                         }
                     }
                 }
                 Err(error) => {
-                    startup_error = combine_errors(startup_error, Some(error.to_string()));
+                    startup_errors.push(diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        "take instance events",
+                        "Nanika could not receive instance activation events.",
+                        error.to_string(),
+                    ));
                     None
                 }
             }
@@ -175,7 +194,12 @@ impl HostApp {
             }) {
             Ok(thread) => Some(thread),
             Err(error) => {
-                startup_error = Some(error.to_string());
+                startup_errors.push(diagnostic_message(
+                    DiagnosticCode::InternalFailure,
+                    "start runtime initializer",
+                    "Nanika could not start its runtime initializer.",
+                    error.to_string(),
+                ));
                 None
             }
         };
@@ -209,10 +233,11 @@ impl HostApp {
             selected_index: 0,
             extension_search: ExtensionSearchCoordinator::default(),
             storage: None,
-            runtime_error: startup_error,
+            runtime_errors: startup_errors,
             search_error: None,
             operation_error: None,
             action_error: None,
+            last_storage_failure_sequence: 0,
             invocation_output: None,
             pending_invocation_id: None,
             pending_invocation_extension_id: None,
@@ -234,11 +259,27 @@ impl HostApp {
                 HostEvent::Platform(PlatformEvent::Settings) => self.open_settings(context),
                 HostEvent::Platform(PlatformEvent::RescanApplications) => {
                     if let Err(error) = self.refresh_applications() {
-                        self.operation_error = Some(error.to_string());
+                        self.operation_error = Some(diagnostic_message(
+                            DiagnosticCode::ExtensionUnavailable,
+                            "refresh applications",
+                            "Application refresh failed. Try again or restart the application extension.",
+                            error.to_string(),
+                        ));
                     }
                 }
                 HostEvent::Platform(PlatformEvent::Quit) => {
                     context.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                HostEvent::Platform(PlatformEvent::Failure { operation, message }) => {
+                    let diagnostic = diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        operation,
+                        "Native platform integration is partially unavailable.",
+                        message,
+                    );
+                    self.runtime_errors
+                        .retain(|existing| existing.operation() != operation);
+                    self.runtime_errors.push(diagnostic);
                 }
                 HostEvent::Hotkey(event)
                     if event.state == HotKeyState::Pressed
@@ -270,12 +311,23 @@ impl HostApp {
             return;
         }
         let Some(startup) = &self.startup else {
-            self.settings.error = Some("startup owner is unavailable".to_owned());
+            self.settings.error = Some(diagnostic_notice(
+                DiagnosticCode::PlatformUnavailable,
+                "query startup status",
+                "Startup integration is unavailable. Restart Nanika and try again.",
+            ));
             return;
         };
         match startup.query() {
             Ok(response) => self.settings.startup_response = Some(response),
-            Err(error) => self.settings.error = Some(error.to_string()),
+            Err(error) => {
+                self.settings.error = Some(diagnostic_message(
+                    DiagnosticCode::PlatformUnavailable,
+                    "query startup status",
+                    "Nanika could not read startup status. Check system startup settings.",
+                    error.to_string(),
+                ));
+            }
         }
     }
 
@@ -293,11 +345,10 @@ impl HostApp {
             native_scale_factor,
         ) {
             Ok(position) => {
-                if self
-                    .operation_error
-                    .as_deref()
-                    .is_some_and(|error| error.starts_with("Active monitor placement failed:"))
-                {
+                if self.operation_error.as_ref().is_some_and(|error| {
+                    error.user_message()
+                        == "Nanika could not place the overlay on the active monitor."
+                }) {
                     self.operation_error = None;
                 }
                 let pixels_per_point = context.pixels_per_point();
@@ -307,7 +358,12 @@ impl HostApp {
                 )));
             }
             Err(error) => {
-                self.operation_error = Some(format!("Active monitor placement failed: {error}"));
+                self.operation_error = Some(diagnostic_message(
+                    DiagnosticCode::PlatformUnavailable,
+                    "place overlay on active monitor",
+                    "Nanika could not place the overlay on the active monitor.",
+                    error.to_string(),
+                ));
             }
         }
         context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -327,7 +383,12 @@ impl HostApp {
             .extension_search
             .cancel_invocation(extension_id, invocation_id)
         {
-            self.action_error = Some(error.to_string());
+            self.action_error = Some(diagnostic_message(
+                DiagnosticCode::ExtensionUnavailable,
+                "cancel extension invocation",
+                "The active extension action could not be cancelled.",
+                error.to_string(),
+            ));
         }
         self.motion.set_target(false);
         context.request_repaint();
@@ -358,7 +419,11 @@ impl HostApp {
             .and_then(|snapshot| snapshot.results.get(self.selected_index))
             .map(|result| result.candidate.clone());
         let Some(candidate) = selected else {
-            self.operation_error = Some("no action is ready".to_owned());
+            self.operation_error = Some(HostDiagnostic::new(
+                DiagnosticCode::InternalFailure,
+                "resolve selected action",
+                "No action is ready.",
+            ));
             return;
         };
         let extension_id = candidate.extension_id().to_owned();
@@ -370,7 +435,12 @@ impl HostApp {
                 unix_timestamp_millis(),
             )
         {
-            self.operation_error = Some(error.to_string());
+            self.operation_error = Some(diagnostic_message(
+                DiagnosticCode::StorageUnavailable,
+                "record input history",
+                "Input history could not be saved.",
+                error.to_string(),
+            ));
         }
         match self.extension_search.invoke(
             &extension_id,
@@ -384,7 +454,14 @@ impl HostApp {
                 self.pending_invocation_extension_id = Some(extension_id);
                 context.request_repaint();
             }
-            Err(error) => self.action_error = Some(error.to_string()),
+            Err(error) => {
+                self.action_error = Some(diagnostic_message(
+                    DiagnosticCode::ExtensionUnavailable,
+                    "invoke extension action",
+                    "The selected extension action could not start.",
+                    error.to_string(),
+                ));
+            }
         }
     }
 
@@ -403,7 +480,12 @@ impl HostApp {
                 self.search_generation = 0;
                 self.search_snapshot = None;
                 self.selected_index = 0;
-                self.operation_error = Some(error.to_string());
+                self.operation_error = Some(diagnostic_message(
+                    DiagnosticCode::InternalFailure,
+                    "start search query",
+                    "Search is temporarily unavailable. Try again.",
+                    error.to_string(),
+                ));
             }
         }
     }
@@ -423,11 +505,25 @@ impl HostApp {
                         maximum_visible_result_index(snapshot.results.len())
                     }));
         }
-        self.search_error = self
+        let storage_diagnostic = self
             .storage
             .as_ref()
-            .and_then(SearchStorageWorker::last_error)
-            .or_else(|| self.extension_search.first_error());
+            .and_then(SearchStorageWorker::last_failure)
+            .map(|failure| {
+                let diagnostic = HostDiagnostic::from_message(
+                    DiagnosticCode::StorageUnavailable,
+                    failure.operation(),
+                    "History and usage storage are temporarily unavailable.",
+                    failure.source(),
+                )
+                .with_safe_context("nanika.db");
+                if failure.sequence() != self.last_storage_failure_sequence {
+                    diagnostic.record_warning();
+                    self.last_storage_failure_sequence = failure.sequence();
+                }
+                diagnostic
+            });
+        self.search_error = storage_diagnostic.or_else(|| self.extension_search.first_error());
         for output in self.extension_search.take_invocation_outputs() {
             if let Some(presentation) = &mut self.invocation_output {
                 presentation.append(output);
@@ -478,7 +574,12 @@ impl HostApp {
                         output.complete = true;
                     }
                     if is_pending {
-                        self.action_error = Some(error);
+                        self.action_error = Some(diagnostic_message(
+                            DiagnosticCode::ExtensionUnavailable,
+                            "complete extension invocation",
+                            "The selected extension action failed.",
+                            error,
+                        ));
                     }
                 }
             }
@@ -504,7 +605,14 @@ impl HostApp {
                     }
                     self.settings.set_contribution(extension_id, contribution);
                 }
-                Err(error) => self.settings.error = Some(error),
+                Err(error) => {
+                    self.settings.error = Some(diagnostic_message(
+                        DiagnosticCode::ConfigurationUnavailable,
+                        "load extension settings",
+                        "Extension settings could not be loaded or saved.",
+                        error,
+                    ));
+                }
             }
         }
         if let Some(response) = &self.settings.startup_response {
@@ -514,12 +622,21 @@ impl HostApp {
                     self.settings.startup_response = None;
                 }
                 Ok(Err(error)) => {
-                    self.settings.error = Some(error.to_string());
+                    self.settings.error = Some(diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        "read startup status",
+                        "Nanika could not read startup status. Check system startup settings.",
+                        error.to_string(),
+                    ));
                     self.settings.startup_response = None;
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    self.settings.error = Some("startup owner stopped before replying".to_owned());
+                    self.settings.error = Some(diagnostic_notice(
+                        DiagnosticCode::PlatformUnavailable,
+                        "read startup status",
+                        "Startup integration stopped unexpectedly. Restart Nanika and try again.",
+                    ));
                     self.settings.startup_response = None;
                 }
             }
@@ -557,7 +674,7 @@ impl HostApp {
         self.search_owner = runtime.search_owner;
         self.search = runtime.search;
         self.storage = runtime.storage;
-        self.runtime_error = combine_errors(self.runtime_error.take(), runtime.error);
+        self.runtime_errors.extend(runtime.errors);
         if let Some(host_services) = runtime.host_services {
             self.extension_search.set_host_services(host_services);
         }
@@ -567,8 +684,12 @@ impl HostApp {
                 extension.kind,
                 extension.runtime,
             ) {
-                self.runtime_error =
-                    combine_errors(self.runtime_error.take(), Some(error.to_string()));
+                self.runtime_errors.push(diagnostic_message(
+                    DiagnosticCode::ExtensionUnavailable,
+                    "register extension search",
+                    "An extension could not join search. Restart Nanika or inspect diagnostics.",
+                    error.to_string(),
+                ));
             }
         }
         self.runtime_receiver = None;
@@ -595,7 +716,14 @@ impl HostApp {
                     self.hotkey_error = None;
                 }
             }
-            Err(error) => self.hotkey_error = Some(format!("Invalid global hotkey: {error}")),
+            Err(error) => {
+                self.hotkey_error = Some(diagnostic_message(
+                    DiagnosticCode::ConfigurationUnavailable,
+                    "parse global hotkey",
+                    "The configured global hotkey is invalid. Choose another shortcut in Settings.",
+                    error.to_string(),
+                ));
+            }
         }
         self.motion
             .set_reduced_motion(config.reduced_motion || self.forced_reduced_motion);
@@ -620,14 +748,23 @@ impl HostApp {
             }
             Ok(Err(error)) => {
                 self.rollback_pending_hotkey();
-                self.settings.error = Some(error);
+                self.settings.error = Some(diagnostic_message(
+                    DiagnosticCode::ConfigurationUnavailable,
+                    "persist host settings",
+                    "Host settings could not be saved.",
+                    error,
+                ));
                 self.settings.saving_host = false;
                 self.pending_host_settings = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.rollback_pending_hotkey();
-                self.settings.error = Some("host config owner stopped before replying".to_owned());
+                self.settings.error = Some(diagnostic_notice(
+                    DiagnosticCode::ConfigurationUnavailable,
+                    "persist host settings",
+                    "The configuration owner stopped unexpectedly. Restart Nanika and try again.",
+                ));
                 self.settings.saving_host = false;
                 self.pending_host_settings = None;
             }
@@ -705,7 +842,12 @@ impl HostApp {
                 executed_at,
             )
         {
-            self.operation_error = Some(error.to_string());
+            self.operation_error = Some(diagnostic_message(
+                DiagnosticCode::StorageUnavailable,
+                "record action usage",
+                "Action usage could not be saved.",
+                error.to_string(),
+            ));
         }
     }
 
@@ -713,7 +855,12 @@ impl HostApp {
         if let Some(storage) = &self.storage
             && let Err(error) = storage.reset_usage()
         {
-            self.operation_error = Some(error.to_string());
+            self.operation_error = Some(diagnostic_message(
+                DiagnosticCode::StorageUnavailable,
+                "reset action usage",
+                "Action usage could not be reset.",
+                error.to_string(),
+            ));
         }
     }
 
@@ -726,8 +873,11 @@ impl HostApp {
                     updates,
                 } => {
                     if self.settings.pending_extensions.contains_key(&extension_id) {
-                        self.settings.error =
-                            Some("extension settings update is already in progress".to_owned());
+                        self.settings.error = Some(HostDiagnostic::new(
+                            DiagnosticCode::ConfigurationUnavailable,
+                            "update extension settings",
+                            "An extension settings update is already in progress.",
+                        ));
                         continue;
                     }
                     self.refresh_generation = self.refresh_generation.saturating_add(1);
@@ -744,17 +894,35 @@ impl HostApp {
                                 .begin_extension_update(extension_id, request_id);
                             debug_assert!(started);
                         }
-                        Err(error) => self.settings.error = Some(error.to_string()),
+                        Err(error) => {
+                            self.settings.error = Some(diagnostic_message(
+                                DiagnosticCode::ConfigurationUnavailable,
+                                "update extension settings",
+                                "Extension settings could not be updated.",
+                                error.to_string(),
+                            ));
+                        }
                     }
                 }
                 SettingsAction::SetStartup(enabled) => {
                     let Some(startup) = &self.startup else {
-                        self.settings.error = Some("startup owner is unavailable".to_owned());
+                        self.settings.error = Some(diagnostic_notice(
+                            DiagnosticCode::PlatformUnavailable,
+                            "update startup status",
+                            "Startup integration is unavailable. Restart Nanika and try again.",
+                        ));
                         continue;
                     };
                     match startup.set_enabled(enabled) {
                         Ok(response) => self.settings.startup_response = Some(response),
-                        Err(error) => self.settings.error = Some(error.to_string()),
+                        Err(error) => {
+                            self.settings.error = Some(diagnostic_message(
+                                DiagnosticCode::PlatformUnavailable,
+                                "update startup status",
+                                "Nanika could not update startup status. Check system startup settings.",
+                                error.to_string(),
+                            ));
+                        }
                     }
                 }
                 SettingsAction::Close => self.settings.visible = false,
@@ -767,21 +935,38 @@ impl HostApp {
 
     fn save_host_settings(&mut self) {
         if !self.settings.runtime_ready {
-            self.settings.error = Some("host runtime is still loading".to_owned());
+            self.settings.error = Some(HostDiagnostic::new(
+                DiagnosticCode::ConfigurationUnavailable,
+                "persist host settings",
+                "Host runtime is still loading.",
+            ));
             return;
         }
         if self.pending_host_settings.is_some() {
-            self.settings.error = Some("host settings update is already in progress".to_owned());
+            self.settings.error = Some(HostDiagnostic::new(
+                DiagnosticCode::ConfigurationUnavailable,
+                "persist host settings",
+                "A host settings update is already in progress.",
+            ));
             return;
         }
         let Some(service) = &self.config_service else {
-            self.settings.error = Some("host config owner is unavailable".to_owned());
+            self.settings.error = Some(diagnostic_notice(
+                DiagnosticCode::ConfigurationUnavailable,
+                "persist host settings",
+                "Host settings are unavailable. Restart Nanika and try again.",
+            ));
             return;
         };
         let replacement = match HotKey::from_str(&self.settings.hotkey) {
             Ok(hotkey) => hotkey,
             Err(error) => {
-                self.settings.error = Some(format!("invalid global hotkey: {error}"));
+                self.settings.error = Some(diagnostic_message(
+                    DiagnosticCode::ConfigurationUnavailable,
+                    "parse global hotkey",
+                    "The global hotkey is invalid. Choose another shortcut.",
+                    error.to_string(),
+                ));
                 return;
             }
         };
@@ -823,7 +1008,12 @@ impl HostApp {
                 {
                     let _ = registration.replace(previous);
                 }
-                self.settings.error = Some(error);
+                self.settings.error = Some(diagnostic_message(
+                    DiagnosticCode::ConfigurationUnavailable,
+                    "queue host settings update",
+                    "Host settings could not be queued for saving.",
+                    error,
+                ));
             }
         }
     }
@@ -1000,9 +1190,18 @@ impl eframe::App for HostApp {
                     }
 
                     ui.add_space(16.0);
-                    if let Some(error) = self.hotkey_error.as_ref().or(self.runtime_error.as_ref())
-                    {
-                        ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error);
+                    if let Some(error) = self.hotkey_error.as_ref() {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(242, 145, 145),
+                            error.user_message(),
+                        );
+                    } else {
+                        for error in &self.runtime_errors {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(242, 145, 145),
+                                error.user_message(),
+                            );
+                        }
                     }
                     if let Some(output) = &self.invocation_output {
                         ui.horizontal(|ui| {
@@ -1089,23 +1288,46 @@ impl eframe::App for HostApp {
                         .or(self.search_error.as_ref())
                     {
                         ui.add_space(8.0);
-                        ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error);
+                        ui.colored_label(
+                            egui::Color32::from_rgb(242, 145, 145),
+                            error.user_message(),
+                        );
                     }
                 });
             });
     }
 }
 
-fn platform_error_message(error: PlatformError) -> String {
-    format!("Global hotkey unavailable: {error}")
+fn platform_error_message(error: PlatformError) -> HostDiagnostic {
+    let diagnostic = HostDiagnostic::from_error(
+        DiagnosticCode::PlatformUnavailable,
+        "register global hotkey",
+        "The global hotkey is unavailable. Choose another shortcut in Settings.",
+        error,
+    );
+    diagnostic.record_warning();
+    diagnostic
 }
 
-fn combine_errors(first: Option<String>, second: Option<String>) -> Option<String> {
-    match (first, second) {
-        (Some(first), Some(second)) => Some(format!("{first}; {second}")),
-        (Some(error), None) | (None, Some(error)) => Some(error),
-        (None, None) => None,
-    }
+fn diagnostic_message(
+    code: DiagnosticCode,
+    operation: &'static str,
+    user_message: &'static str,
+    source: impl Into<String>,
+) -> HostDiagnostic {
+    let diagnostic = HostDiagnostic::from_message(code, operation, user_message, source);
+    diagnostic.record_warning();
+    diagnostic
+}
+
+fn diagnostic_notice(
+    code: DiagnosticCode,
+    operation: &'static str,
+    user_message: &'static str,
+) -> HostDiagnostic {
+    let diagnostic = HostDiagnostic::new(code, operation, user_message);
+    diagnostic.record_warning();
+    diagnostic
 }
 
 fn initialize_search_runtime() -> HostRuntime {
@@ -1120,40 +1342,61 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut installed_extensions = Vec::new();
     let mut pending_extensions = Vec::new();
     let mut host_services = None;
-    let mut error = None;
+    let mut errors = Vec::new();
 
     match NanikaPaths::discover() {
         Some(paths) => {
             match ConfigStore::open(paths.app_data_root(), paths.config_root()) {
                 Ok(store) => {
                     if store.is_read_only() {
-                        error = combine_errors(
-                            error,
-                            Some("configuration recovered from backup and is read-only".to_owned()),
-                        );
+                        errors.push(diagnostic_notice(
+                            DiagnosticCode::ConfigurationUnavailable,
+                            "recover configuration",
+                            "Configuration was recovered from backup and is read-only.",
+                        ));
                     }
                     match HostConfig::load(&store) {
                         Ok(loaded) => host_config = loaded,
                         Err(config_error) => {
-                            error = combine_errors(error, Some(config_error));
+                            errors.push(diagnostic_message(
+                                DiagnosticCode::ConfigurationUnavailable,
+                                "load host configuration",
+                                "Host configuration could not be loaded. Defaults are active.",
+                                config_error,
+                            ));
                         }
                     }
                     match ExtensionRegistryConfig::load(&store) {
                         Ok(loaded) => extension_registry = loaded,
                         Err(config_error) => {
-                            error = combine_errors(error, Some(config_error));
+                            errors.push(diagnostic_message(
+                                DiagnosticCode::ConfigurationUnavailable,
+                                "load extension registry",
+                                "The extension registry could not be loaded. Built-in defaults are active.",
+                                config_error,
+                            ));
                         }
                     }
                     match HostConfigService::spawn(store.clone()) {
                         Ok(service) => config_service = Some(service),
                         Err(config_error) => {
-                            error = combine_errors(error, Some(config_error.to_string()));
+                            errors.push(diagnostic_message(
+                                DiagnosticCode::ConfigurationUnavailable,
+                                "start configuration owner",
+                                "Settings cannot be saved because the configuration owner did not start.",
+                                config_error.to_string(),
+                            ));
                         }
                     }
                     config = Some(store);
                 }
                 Err(config_error) => {
-                    error = combine_errors(error, Some(config_error.to_string()));
+                    errors.push(diagnostic_message(
+                        DiagnosticCode::ConfigurationUnavailable,
+                        "open configuration store",
+                        "Configuration could not be opened. Check config directory permissions.",
+                        config_error.to_string(),
+                    ));
                 }
             }
             match SearchStorageWorker::spawn(paths.host_database(), 50) {
@@ -1161,7 +1404,12 @@ fn initialize_search_runtime() -> HostRuntime {
                     history_entries = state.input_history;
                     installed_extensions = state.extensions;
                     for extension_error in state.extension_errors {
-                        error = combine_errors(error, Some(extension_error));
+                        errors.push(diagnostic_message(
+                            DiagnosticCode::StorageUnavailable,
+                            "load extension metadata",
+                            "Some extension metadata was ignored because it is invalid.",
+                            extension_error,
+                        ));
                     }
                     usage.extend(state.usage.into_iter().map(|stored| {
                         (
@@ -1180,7 +1428,12 @@ fn initialize_search_runtime() -> HostRuntime {
                     storage = Some(worker);
                 }
                 Err(storage_error) => {
-                    error = combine_errors(error, Some(storage_error));
+                    errors.push(diagnostic_message(
+                        DiagnosticCode::StorageUnavailable,
+                        "start host storage owner",
+                        "History and usage storage are unavailable. Check diagnostics and app-data permissions.",
+                        storage_error,
+                    ));
                 }
             }
             let (extensions, extension_errors) = crate::builtins::spawn_extensions(
@@ -1190,7 +1443,12 @@ fn initialize_search_runtime() -> HostRuntime {
             );
             pending_extensions = extensions;
             for extension_error in extension_errors {
-                error = combine_errors(error, Some(extension_error));
+                errors.push(diagnostic_message(
+                    DiagnosticCode::ExtensionUnavailable,
+                    "start extension",
+                    "An extension could not start. Other extensions remain available.",
+                    extension_error,
+                ));
             }
             let (router, service_errors) = crate::HostServiceRouter::spawn(paths.app_data_root());
             for extension in &pending_extensions {
@@ -1201,7 +1459,12 @@ fn initialize_search_runtime() -> HostRuntime {
             }
             host_services = Some(Arc::new(router) as Arc<dyn crate::HostServiceHandler>);
             for service_error in service_errors {
-                error = combine_errors(error, Some(service_error));
+                errors.push(diagnostic_message(
+                    DiagnosticCode::InternalFailure,
+                    "start host service",
+                    "A host service is unavailable. Related extension actions may fail.",
+                    service_error,
+                ));
             }
             match std::env::current_exe()
                 .map_err(|error| error.to_string())
@@ -1210,11 +1473,22 @@ fn initialize_search_runtime() -> HostRuntime {
                 }) {
                 Ok(service) => startup = Some(service),
                 Err(startup_error) => {
-                    error = combine_errors(error, Some(startup_error));
+                    errors.push(diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        "start startup integration owner",
+                        "Startup integration is unavailable. Nanika can still run normally.",
+                        startup_error,
+                    ));
                 }
             }
         }
-        None => error = Some("platform data directories are unavailable".to_owned()),
+        None => {
+            errors.push(diagnostic_notice(
+                DiagnosticCode::PlatformUnavailable,
+                "resolve runtime data directories",
+                "Runtime data directories are unavailable. Check the current user profile.",
+            ));
+        }
     }
 
     let history = InputHistory::from_entries(50, history_entries);
@@ -1235,22 +1509,30 @@ fn initialize_search_runtime() -> HostRuntime {
                 storage,
                 pending_extensions,
                 host_services,
-                error,
+                errors,
             }
         }
-        Err(search_error) => HostRuntime {
-            history,
-            config,
-            host_config,
-            config_service,
-            startup,
-            search_owner: None,
-            search: None,
-            storage,
-            pending_extensions,
-            host_services,
-            error: combine_errors(error, Some(search_error.to_string())),
-        },
+        Err(search_error) => {
+            errors.push(diagnostic_message(
+                DiagnosticCode::InternalFailure,
+                "start search owner",
+                "Search is unavailable because its owner did not start.",
+                search_error.to_string(),
+            ));
+            HostRuntime {
+                history,
+                config,
+                host_config,
+                config_service,
+                startup,
+                search_owner: None,
+                search: None,
+                storage,
+                pending_extensions,
+                host_services,
+                errors,
+            }
+        }
     }
 }
 

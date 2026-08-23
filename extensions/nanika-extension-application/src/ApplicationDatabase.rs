@@ -11,6 +11,32 @@ pub struct ApplicationDatabase {
 }
 
 impl ApplicationDatabase {
+    pub fn open_recovering(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
+        let path = path.as_ref();
+        match Self::open(path) {
+            Ok(database) => match database.is_healthy() {
+                Ok(true) => Ok(database),
+                Ok(false) => {
+                    drop(database);
+                    Self::rebuild(path)
+                }
+                Err(error) if error.is_corrupt_database() => {
+                    drop(database);
+                    Self::rebuild(path)
+                }
+                Err(error) => Err(error),
+            },
+            Err(error) if error.is_corrupt_database() => Self::rebuild(path),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn rebuild(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
+        let path = path.as_ref();
+        remove_database_files(path)?;
+        Self::open(path)
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -37,6 +63,13 @@ impl ApplicationDatabase {
             [],
             |row| row.get(0),
         )?)
+    }
+
+    fn is_healthy(&self) -> Result<bool, ApplicationError> {
+        let result = self
+            .connection
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))?;
+        Ok(result == "ok")
     }
 
     pub fn load_active_entries(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
@@ -142,6 +175,27 @@ impl ApplicationDatabase {
             .optional()?
             .unwrap_or_else(|| "missing".to_owned()))
     }
+}
+
+fn remove_database_files(path: &Path) -> Result<(), ApplicationError> {
+    for candidate in [
+        path.to_path_buf(),
+        database_sidecar(path, "-wal"),
+        database_sidecar(path, "-shm"),
+    ] {
+        if let Err(error) = std::fs::remove_file(candidate)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(error.into());
+        }
+    }
+    Ok(())
+}
+
+fn database_sidecar(path: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(suffix);
+    sidecar.into()
 }
 
 fn apply_migrations(connection: &mut Connection) -> Result<(), ApplicationError> {

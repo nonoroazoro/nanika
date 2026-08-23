@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 8 physical acceptance and removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify rewriting the baseline with updated validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 8 fixed-machine, physical-platform, and release-credential acceptance plus removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify rewriting the baseline with updated validation notes.
 
 ## Selected baseline
 
@@ -29,7 +29,7 @@ Status: current pre-1.0 implementation baseline. Milestone 8 physical acceptance
 | Background work | Standard-library threads and channels | Named owner threads; no project-wide async runtime or pool. |
 | Process launch | `std::process::Command` behind platform adapters | Structured arguments by default; explicit shell mode only. |
 | Errors | `thiserror` and standard error traits | Typed errors at crate and host boundaries. |
-| Diagnostics | `tracing`, `tracing-subscriber`, and `tracing-appender` | Bounded non-blocking local logs; no content-bearing query or clipboard fields. |
+| Diagnostics | `tracing`, `tracing-subscriber`, and `tracing-appender` | Non-blocking local logs with duplicate suppression and a hard byte cap; no content-bearing query or clipboard fields. |
 | Benchmarks | `criterion` as a dev dependency | Default features disabled; targets stay outside runtime crates. |
 | Extension runtime | Host-supervised child processes | Every extension uses the same lifecycle and failure boundary; a versioned schema selects its wire adapter. |
 | ACP | Official `agent-client-protocol` SDK with `async-io`, `async-channel`, `async-process`, `futures`, and `futures-lite` | Stable ACP v1 only. One isolated supervisor thread drives each ACP process; `rustix` terminates the macOS process group. No project-wide executor. |
@@ -164,13 +164,17 @@ The local layout is:
 
 Only this tree is intended for Dropbox or another file-level sync service. Databases, indexes, clipboard content, extension artifacts, logs, backups, and caches are machine-local generated data and are never synchronized. Never synchronize live SQLite files.
 
+Cleanup follows data ownership. A complete application scan prunes unreferenced icon cache entries and reports cleanup failures through the refresh boundary. The application index runs `quick_check` at startup and rebuilds once when open, load, or scan detects SQLite corruption. Incompatible schemas and access failures remain errors. Clipboard retention removes unreferenced managed payloads. Recovery never deletes `nanika.db`, clipboard history, configuration, installed extension artifacts, or logs.
+
 Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each settings file has a `formatVersion`. Before the first release, format changes rewrite the baseline. Released formats require ordered migrations, and a failed migration must leave the original file untouched and start read-only.
 
 The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, comment-preserving top-level and nested-object changes, atomic replacement, path-preserving backups, bootstrap recovery, and read-only fallback. The extension registry selects defaults only for an explicit missing file; other metadata and access failures remain errors.
 
 ## Diagnostics
 
-The host writes non-blocking INFO-and-higher lifecycle and fatal events under `<app-data-root>/logs`. The queue is lossy and bounded to 256 lines so diagnostics cannot stall the UI. Logs rotate daily, retain at most eight files, and flush during orderly shutdown. Query text, clipboard content, settings values, and extension payloads are not logged.
+The host uses stable diagnostic codes and categories. `HostDiagnostic` keeps a safe user message separate from a cloneable technical source chain retained by active UI error state. Operational logs contain only the code, category, operation, and explicitly safe context such as a validated extension ID. Raw worker errors never enter the UI. Debug formatting redacts messages and sources. Query text, clipboard content, settings values, extension payloads, and external error text are never logged.
+
+The primary host is the only log owner. It writes non-blocking INFO-and-higher lifecycle and failure events under `<app-data-root>/logs`. The queue is lossy and bounded to 256 lines. Identical code, operation, context, and level combinations are recorded at most once per 30 seconds, with at most 256 active keys. Startup removes the oldest owned logs above 32 MiB, and the writer stops at the remaining byte budget. Logs rotate daily, retain at most eight files, and flush during orderly shutdown.
 
 `nanika-cli diagnostics <output.zip>` exports version and platform metadata plus at most eight Nanika-owned daily log files and 32 MiB. It rejects symlinks and unrelated files, enforces the byte limit while copying, publishes through a same-directory atomic no-clobber hard link, and can run while the host is active.
 
@@ -225,7 +229,7 @@ The application extension runs as its own process with one discovery owner. The 
 
 Windows discovery resolves every `.lnk` through Shell COM and validates PE targets before indexing. Validation is reused while canonical path, size, and modification time remain unchanged; benchmarks separate cold validation from warm refresh. Identity uses the canonical executable, effective working directory, and typed arguments, so equivalent shortcuts and direct executables deduplicate without merging different launch behavior. Complete scans stale missing entries and remove entries already stale; cancelled, failed, or partial scans preserve unseen data. SQLite commits each generation atomically. Snapshots below 5,000 entries remain complete; larger indexes use query-aware top-k preselection before host ranking.
 
-Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. Application actions now submit persisted typed launch metadata to the common host service. The macOS adapter still requires runtime validation on macOS.
+Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Complete scans prune unreferenced cache entries; extraction failures increase scan warnings and prune failures fail the refresh. SQLite corruption or a non-database file rebuilds only the derived application index, with one retry; incompatible schemas and access failures remain visible errors. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. Application actions now submit persisted typed launch metadata to the common host service. The macOS adapter still requires runtime validation on macOS.
 
 ### Clipboard
 

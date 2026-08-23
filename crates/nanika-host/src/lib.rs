@@ -7,9 +7,15 @@ mod acp_extension_command;
 #[path = "AcpExtensionProcess.rs"]
 mod acp_extension_process;
 mod acp_transport;
+#[path = "BoundedLogWriter.rs"]
+mod bounded_log_writer;
 #[path = "BuiltinExtensionSpec.rs"]
 mod builtin_extension_spec;
 mod builtins;
+#[path = "DiagnosticRecordKey.rs"]
+mod diagnostic_record_key;
+#[path = "DiagnosticSource.rs"]
+mod diagnostic_source;
 #[path = "Diagnostics.rs"]
 mod diagnostics;
 #[path = "ExtensionCommand.rs"]
@@ -64,6 +70,8 @@ mod host_config;
 mod host_config_command;
 #[path = "HostConfigService.rs"]
 mod host_config_service;
+#[path = "HostDiagnostic.rs"]
+mod host_diagnostic;
 #[path = "HostEvent.rs"]
 mod host_event;
 #[path = "HostRuntime.rs"]
@@ -93,7 +101,10 @@ pub(crate) use acp_connection_context::*;
 pub(crate) use acp_extension_command::*;
 pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
+pub(crate) use bounded_log_writer::*;
 pub(crate) use builtin_extension_spec::*;
+pub(crate) use diagnostic_record_key::*;
+pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_invocation::*;
@@ -121,11 +132,13 @@ pub use host_app::HostApp;
 pub(crate) use host_config::*;
 pub(crate) use host_config_command::*;
 pub(crate) use host_config_service::*;
+pub use host_diagnostic::*;
 pub(crate) use host_event::*;
 pub(crate) use host_runtime::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
 pub(crate) use invocation_presentation::*;
+pub use nanika_core::{DiagnosticCategory, DiagnosticCode};
 pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
 pub(crate) use pending_host_settings::*;
@@ -160,6 +173,12 @@ pub fn publish_extension_snapshot(
 #[path = "../tests/acp_transport.rs"]
 mod acp_transport_tests;
 #[cfg(test)]
+#[path = "../tests/BoundedLogWriter.rs"]
+mod bounded_log_writer_tests;
+#[cfg(test)]
+#[path = "../tests/Diagnostics.rs"]
+mod diagnostics_tests;
+#[cfg(test)]
 #[path = "../tests/ExtensionInvocationOutputState.rs"]
 mod extension_invocation_output_state_tests;
 #[cfg(test)]
@@ -171,6 +190,9 @@ mod host_app_tests;
 #[cfg(test)]
 #[path = "../tests/HostConfigService.rs"]
 mod host_config_service_tests;
+#[cfg(test)]
+#[path = "../tests/HostDiagnostic.rs"]
+mod host_diagnostic_tests;
 #[cfg(test)]
 #[path = "../tests/InvocationPresentation.rs"]
 mod invocation_presentation_tests;

@@ -43,7 +43,8 @@ fn configured_windows_root_is_discovered_and_persisted() {
     assert_eq!(entries[0].display_name, "Sample Tool");
     assert_eq!(entries[0].launch_kind, "executable");
     assert_eq!(index.load().expect("persisted entries").len(), 1);
-    let _ = std::fs::remove_dir_all(root);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[cfg(windows)]
@@ -70,7 +71,8 @@ fn cancellation_does_not_stale_the_previous_snapshot() {
         .expect("cancelled scan should commit its state");
     assert!(report.cancelled);
     assert_eq!(entries.len(), 1);
-    let _ = std::fs::remove_dir_all(root);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[cfg(windows)]
@@ -95,7 +97,8 @@ fn standard_windows_roots_produce_valid_application_metadata() {
             && !entry.display_name.is_empty()
             && PathBuf::from(&entry.target_path).is_file()
     }));
-    let _ = std::fs::remove_dir_all(root);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[cfg(windows)]
@@ -131,7 +134,8 @@ fn argument_free_shortcuts_deduplicate_with_their_direct_executable() {
         .expect("application scan should complete");
 
     assert_eq!(entries.len(), 1);
-    let _ = std::fs::remove_dir_all(root);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[cfg(windows)]
@@ -202,7 +206,9 @@ fn failed_index_transactions_leave_a_failed_scan_state() {
         })
         .expect("scan status should read");
     assert_eq!(status, "failed");
-    let _ = std::fs::remove_dir_all(root);
+    drop(observer);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[cfg(windows)]

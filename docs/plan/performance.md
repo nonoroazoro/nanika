@@ -23,21 +23,27 @@ The first Windows baseline used Windows 10 22H2 build 19045, Ryzen 7 5800X, 32 G
 
 Run `scripts/benchmark.ps1`. Criterion covers ranking, query delivery, runtime foundation startup, application indexing and preselection, extension process activation, calculator evaluation, clipboard persistence, and render preparation. Use `-Baseline <name>` only for comparisons on the same reference machine.
 
-Latest full Windows development-machine run from 2026-08-23:
+Windows development-machine measurements for commit `2d00bd3` from 2026-08-23:
 
 | Benchmark | Criterion estimate interval |
 | --- | --- |
-| Query delivery, 1,000 candidates | 424.36 to 431.89 us |
-| Runtime foundation startup | 21.98 to 27.27 ms |
-| Fixture extension process activation | 4.74 to 4.83 ms |
-| Ranking, 1,000 candidates | 104.65 to 106.21 us |
-| Ranking, 20,000 candidates | 2.51 to 2.57 ms |
-| Warm application index, 500 entries | 76.51 to 78.02 ms |
-| Application preselection, 10,000 entries | 2.13 to 2.21 ms |
-| Clipboard load, 500 entries | 667.30 to 683.37 us |
-| Render preparation, 100 rows | 8.36 to 8.48 ns |
+| Query delivery, 1,000 candidates | 353.35 to 356.63 us |
+| Runtime foundation startup | 19.12 to 19.65 ms |
+| Fixture extension ready | 35.55 to 36.48 ms |
+| Fixture extension shutdown | 1.34 to 1.44 ms |
+| Fixture extension lifecycle | 36.94 to 37.22 ms |
+| Ranking, 1,000 candidates | 91.08 to 92.68 us |
+| Ranking, 20,000 candidates | 2.22 to 2.26 ms |
+| Warm application index, 500 entries | 65.51 to 66.51 ms |
+| Application preselection, 10,000 entries | 1.65 to 1.68 ms |
+| Clipboard load, 500 entries | 522.87 to 533.08 us |
+| Render preparation, 100 rows | 8.02 to 8.08 ns |
 
-Immediate reruns produced inconsistent relative changes, so this run is diagnostic evidence rather than a regression baseline. Criterion intervals are not request percentiles. Platform acceptance must separately record P50, P95, P99, frame-time variance, dropped frames, idle CPU, working set, database size, and thread count.
+The extension benchmark separates ready, shutdown, and full lifecycle timing. Windows ready time includes suspended creation, Job Object containment, and handshake. The previous 4.8 ms result predates startup containment and is not comparable. Immediate reruns still vary with background load, so these results are diagnostic evidence rather than a fixed regression baseline. Criterion intervals are not request percentiles. Platform acceptance must separately record P50, P95, P99, frame-time variance, dropped frames, idle CPU, working set, database size, and thread count.
+
+A later current-head run was invalid for comparison because a game was active, CPU load reached 70%, and the machine used the balanced power plan. Do not use its Criterion changes as a regression baseline.
+
+The commit `2d00bd3` packaged clean-profile smoke recorded a 15-second hidden-idle sample with the host and five built-in extension processes: 1.458% of one logical core, 175.09 MiB combined working set, 77 threads, and 110,688 bytes of database files. On the 16-thread reference machine this is about 0.091% of total logical CPU capacity. Treat it as diagnostic evidence until repeated under the fixed idle conditions above.
 
 ## Platform acceptance
 

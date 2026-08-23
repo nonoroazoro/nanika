@@ -91,6 +91,38 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
 }
 
 #[test]
+fn asynchronous_failures_keep_typed_operation_and_source() {
+    let database =
+        std::env::temp_dir().join(format!("nanika-storage-failure-{}.db", std::process::id()));
+    cleanup(&database);
+    let (worker, _) =
+        SearchStorageWorker::spawn(&database, 50).expect("storage owner should start");
+    let connection = rusqlite::Connection::open(&database).expect("database should reopen");
+    connection
+        .execute("DROP TABLE input_history", [])
+        .expect("history table should be removed");
+    drop(connection);
+    worker
+        .record_history("query", "query", unix_timestamp())
+        .expect("history write should enqueue");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let failure = loop {
+        if let Some(failure) = worker.last_failure() {
+            break failure;
+        }
+        assert!(Instant::now() < deadline, "storage failure should surface");
+        std::thread::yield_now();
+    };
+
+    assert_eq!(failure.operation(), "record input history");
+    assert!(failure.source().contains("input_history"));
+    assert!(failure.sequence() > 0);
+    worker.shutdown();
+    cleanup(&database);
+}
+
+#[test]
 fn usage_retention_and_reset_remove_persisted_rows() {
     let database = std::env::temp_dir().join(format!(
         "nanika-storage-retention-{}.db",

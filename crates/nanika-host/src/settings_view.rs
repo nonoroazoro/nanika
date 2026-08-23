@@ -116,7 +116,10 @@ pub(crate) fn show_settings(
 
                         if let Some(error) = &state.error {
                             ui.add_space(16.0);
-                            ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error);
+                            ui.colored_label(
+                                egui::Color32::from_rgb(242, 145, 145),
+                                error.user_message(),
+                            );
                         }
                     });
                 });

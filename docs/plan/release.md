@@ -32,7 +32,7 @@ An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`.
 
 ## Current validation
 
-The current Windows source passes the workspace quality gate. The existing package and secondary-launch smoke result predates the latest protocol and process-supervision changes, so current-head packaging must be rerun. Signing, clean-profile installation, physical platform acceptance, and macOS packaging remain release gates.
+The current working tree passes the Windows workspace quality gate. Commit `2d00bd3` produced a portable ZIP with a verified SHA-256, the expected binary inventory, clean-profile startup, five isolated built-in extension processes, foreground and background second-launch behavior, and packaged diagnostics export. That artifact predates the current changes and is unsigned because no code-signing certificate is available. Current packaging, signing, physical platform acceptance, and macOS packaging remain release gates.
 
 ## Checklist
 

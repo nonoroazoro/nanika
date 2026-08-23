@@ -81,7 +81,8 @@ fn indexing(criterion: &mut Criterion) {
     criterion.bench_function("application_preselection_10000", |bencher| {
         bencher.iter(|| select_candidates(&large_entries, "application 9999", 5_000));
     });
-    let _ = std::fs::remove_dir_all(root);
+    drop(index);
+    std::fs::remove_dir_all(root).expect("benchmark directory should be removable");
 }
 
 fn create_executables(root: &Path) {

@@ -9,20 +9,13 @@ fn main() {
         .any(|argument| argument == "--reduced-motion");
     let background = arguments.iter().any(|argument| argument == "--background");
     let Some(paths) = nanika_storage::NanikaPaths::discover() else {
-        nanika_platform::report_fatal_error("Nanika failed to resolve platform data directories");
+        report_fatal(nanika_host::HostDiagnostic::new(
+            nanika_host::DiagnosticCode::PlatformUnavailable,
+            "resolve platform data directories",
+            "Nanika could not resolve its data directories. Check the current user profile.",
+        ));
         return;
     };
-    let _diagnostics =
-        match nanika_host::Diagnostics::initialize(&paths.app_data_root().join("logs")) {
-            Ok(diagnostics) => Some(diagnostics),
-            Err(error) => {
-                nanika_platform::report_fatal_error(&format!(
-                    "Nanika diagnostics are unavailable: {error}"
-                ));
-                None
-            }
-        };
-    tracing::info!(background, "host starting");
     let identity = nanika_core::PROJECT_IDENTITY.bundle_id;
     let instance = match nanika_platform::acquire_instance(identity, paths.app_data_root()) {
         Ok(nanika_platform::InstanceRole::Primary(instance)) => instance,
@@ -31,19 +24,41 @@ fn main() {
                 && let Err(error) =
                     nanika_platform::signal_activate(identity, paths.app_data_root())
             {
-                report_fatal(&format!(
-                    "Nanika failed to activate the existing host: {error}"
+                report_fatal(nanika_host::HostDiagnostic::from_error(
+                    nanika_host::DiagnosticCode::PlatformUnavailable,
+                    "activate existing host",
+                    "Nanika could not activate the existing window. Quit the running instance and try again.",
+                    error,
                 ));
             }
             return;
         }
         Err(error) => {
-            report_fatal(&format!(
-                "Nanika failed to acquire the host instance: {error}"
+            report_fatal(nanika_host::HostDiagnostic::from_error(
+                nanika_host::DiagnosticCode::PlatformUnavailable,
+                "acquire host instance",
+                "Nanika could not acquire instance ownership. Restart Nanika and try again.",
+                error,
             ));
             return;
         }
     };
+    let _diagnostics =
+        match nanika_host::Diagnostics::initialize(&paths.app_data_root().join("logs")) {
+            Ok(diagnostics) => Some(diagnostics),
+            Err(error) => {
+                let diagnostic = nanika_host::HostDiagnostic::from_message(
+                    nanika_host::DiagnosticCode::DiagnosticsUnavailable,
+                    "initialize diagnostic logging",
+                    "Nanika started without diagnostic logging. Check app-data permissions.",
+                    error,
+                );
+                diagnostic.record_warning();
+                nanika_platform::report_fatal_error(diagnostic.user_message());
+                None
+            }
+        };
+    tracing::info!(background, "host starting");
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Nanika")
@@ -70,14 +85,19 @@ fn main() {
         }),
     );
     if let Err(error) = result {
-        report_fatal(&format!("Nanika failed to start: {error}"));
+        report_fatal(nanika_host::HostDiagnostic::from_message(
+            nanika_host::DiagnosticCode::PlatformUnavailable,
+            "create host window",
+            "Nanika could not create its window. Check graphics drivers and diagnostics.",
+            error.to_string(),
+        ));
     }
     tracing::info!("host stopped");
 }
 
-fn report_fatal(message: &str) {
-    tracing::error!(message, "fatal host error");
-    nanika_platform::report_fatal_error(message);
+fn report_fatal(diagnostic: nanika_host::HostDiagnostic) {
+    diagnostic.record_error();
+    nanika_platform::report_fatal_error(diagnostic.user_message());
 }
 
 fn should_activate_existing(background: bool) -> bool {

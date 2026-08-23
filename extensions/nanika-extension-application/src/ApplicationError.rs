@@ -9,6 +9,19 @@ pub enum ApplicationError {
     Serialization(serde_json::Error),
 }
 
+impl ApplicationError {
+    pub(crate) fn is_corrupt_database(&self) -> bool {
+        matches!(
+            self,
+            Self::Database(rusqlite::Error::SqliteFailure(error, _))
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+                )
+        )
+    }
+}
+
 impl Display for ApplicationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -20,7 +33,16 @@ impl Display for ApplicationError {
     }
 }
 
-impl std::error::Error for ApplicationError {}
+impl std::error::Error for ApplicationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            Self::Io(error) => Some(error),
+            Self::Serialization(error) => Some(error),
+            Self::Configuration(_) => None,
+        }
+    }
+}
 
 impl From<rusqlite::Error> for ApplicationError {
     fn from(error: rusqlite::Error) -> Self {

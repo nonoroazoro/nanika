@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -94,6 +95,34 @@ impl IconCache {
             return Err(error.into());
         }
         entry.icon_key = key;
+        Ok(())
+    }
+
+    pub(crate) fn prune(&self, entries: &[ApplicationEntry]) -> Result<(), ApplicationError> {
+        let mut retained = entries
+            .iter()
+            .map(|entry| entry.icon_key.as_str())
+            .filter(|key| !key.is_empty())
+            .collect::<HashSet<_>>();
+        retained.insert(FALLBACK_KEY);
+        let children = match fs::read_dir(&self.root) {
+            Ok(children) => children,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        for child in children {
+            let child = child?;
+            let name = child.file_name();
+            if name.to_str().is_some_and(|name| retained.contains(name)) {
+                continue;
+            }
+            let file_type = child.file_type()?;
+            if file_type.is_dir() {
+                fs::remove_dir_all(child.path())?;
+            } else {
+                fs::remove_file(child.path())?;
+            }
+        }
         Ok(())
     }
 

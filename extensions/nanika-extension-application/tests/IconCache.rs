@@ -66,6 +66,60 @@ fn fallback_icons_are_valid_png_files() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn prune_removes_only_unreferenced_cache_entries() {
+    let root = test_root("prune");
+    let cache = IconCache::new(&root);
+    let retained = root.join("retained");
+    let stale = root.join("stale");
+    std::fs::create_dir_all(&retained).expect("retained cache should exist");
+    std::fs::create_dir_all(&stale).expect("stale cache should exist");
+    std::fs::write(root.join("orphan.tmp"), []).expect("orphan should exist");
+    let entry = crate::ApplicationEntry {
+        entry_id: "app.retained".to_owned(),
+        source_key: "retained".to_owned(),
+        display_name: "Retained".to_owned(),
+        normalized_name: "retained".to_owned(),
+        normalized_tokens: "retained".to_owned(),
+        launch_kind: "executable".to_owned(),
+        target_path: "retained".to_owned(),
+        working_directory: None,
+        arguments_json: ApplicationArguments::empty()
+            .to_json()
+            .expect("arguments should encode"),
+        bundle_id: None,
+        icon_key: "retained".to_owned(),
+        file_identity: "retained".to_owned(),
+        last_seen_at: 1,
+        stale: false,
+        icon_source: None,
+        icon_index: 0,
+        priority: 0,
+    };
+
+    cache.prune(&[entry]).expect("cache should prune");
+
+    assert!(retained.is_dir());
+    assert!(!stale.exists());
+    assert!(!root.join("orphan.tmp").exists());
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
+fn prune_reports_an_invalid_cache_root() {
+    let root = test_root("invalid-prune-root");
+    let cache_path = root.join("icons");
+    std::fs::write(&cache_path, []).expect("invalid cache root should exist");
+    let cache = IconCache::new(&cache_path);
+
+    let error = cache
+        .prune(&[])
+        .expect_err("invalid cache root should be reported");
+
+    assert!(matches!(error, crate::ApplicationError::Io(_)));
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
 #[cfg(windows)]
 #[test]
 fn failed_icon_extraction_is_retried_for_the_same_cache_key() {

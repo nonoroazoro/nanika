@@ -8,7 +8,7 @@ use nanika_config::ConfigStore;
 
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationIndex, DiscoveryCommand,
-    IconCache, RuntimeEvent,
+    DiscoveryServices, IconCache, RuntimeEvent,
 };
 
 const COMMAND_CAPACITY: usize = 4;
@@ -34,8 +34,8 @@ impl DiscoveryWorker {
         let thread = std::thread::Builder::new()
             .name("nanika-application-discovery".to_owned())
             .spawn(move || {
-                let mut index = match ApplicationDatabase::open(database_path)
-                    .map(|database| ApplicationIndex::new(database, IconCache::new(icon_root)))
+                let mut index = match ApplicationDatabase::open_recovering(&database_path)
+                    .map(|database| ApplicationIndex::new(database, IconCache::new(&icon_root)))
                 {
                     Ok(index) => index,
                     Err(error) => {
@@ -47,32 +47,41 @@ impl DiscoveryWorker {
                         return;
                     }
                 };
-                if let Ok(loaded) = index.load() {
-                    replace_entries(&entries, loaded);
+                match index.load() {
+                    Ok(loaded) => replace_entries(&entries, loaded),
+                    Err(error) if error.is_corrupt_database() => {
+                        index = match index.rebuild_database(&database_path) {
+                            Ok(index) => index,
+                            Err(error) => {
+                                send_failure(&events, None, 1, &error);
+                                return;
+                            }
+                        };
+                    }
+                    Err(_) => {}
                 }
-                run_scan(
-                    &mut index,
-                    &config_store,
-                    &entries,
-                    &events,
-                    &worker_cancellation,
-                    None,
-                    1,
-                );
+                let services = DiscoveryServices {
+                    database_path: &database_path,
+                    config_store: &config_store,
+                    entries: &entries,
+                    events: &events,
+                    cancelled_through: &worker_cancellation,
+                };
+                index = match run_scan(index, &services, None, 1) {
+                    Some(index) => index,
+                    None => return,
+                };
                 while let Ok(command) = receiver.recv() {
                     match command {
                         DiscoveryCommand::Refresh {
                             request_id,
                             generation,
-                        } => run_scan(
-                            &mut index,
-                            &config_store,
-                            &entries,
-                            &events,
-                            &worker_cancellation,
-                            request_id,
-                            generation,
-                        ),
+                        } => {
+                            index = match run_scan(index, &services, request_id, generation) {
+                                Some(index) => index,
+                                None => return,
+                            };
+                        }
                         DiscoveryCommand::Shutdown => break,
                     }
                 }
@@ -108,34 +117,62 @@ impl DiscoveryWorker {
 }
 
 fn run_scan(
-    index: &mut ApplicationIndex,
-    config_store: &ConfigStore,
-    entries: &RwLock<Vec<ApplicationEntry>>,
-    events: &SyncSender<RuntimeEvent>,
-    cancelled_through: &AtomicU64,
+    mut index: ApplicationIndex,
+    services: &DiscoveryServices<'_>,
     request_id: Option<String>,
     generation: u64,
-) {
-    let result = ApplicationConfig::load(config_store)
-        .and_then(|config| index.scan(&config, generation, cancelled_through));
-    match result {
-        Ok((report, discovered)) => {
-            replace_entries(entries, discovered);
-            let _ = events.send(RuntimeEvent::ScanFinished {
-                request_id,
-                response_generation: generation,
-                result: Ok(report),
-            });
-            index.populate_icons(cancelled_through, generation);
-        }
+) -> Option<ApplicationIndex> {
+    let config = match ApplicationConfig::load(services.config_store) {
+        Ok(config) => config,
         Err(error) => {
-            let _ = events.send(RuntimeEvent::ScanFinished {
-                request_id,
-                response_generation: generation,
-                result: Err(error.to_string()),
-            });
+            send_failure(services.events, request_id, generation, &error);
+            return Some(index);
         }
+    };
+    let result = match index.scan(&config, generation, services.cancelled_through) {
+        Err(error) if error.is_corrupt_database() => {
+            index = match index.rebuild_database(services.database_path) {
+                Ok(index) => index,
+                Err(error) => {
+                    send_failure(services.events, request_id, generation, &error);
+                    return None;
+                }
+            };
+            index.scan(&config, generation, services.cancelled_through)
+        }
+        result => result,
+    };
+    match result {
+        Ok((mut report, discovered)) => {
+            replace_entries(services.entries, discovered);
+            match index.populate_icons(services.cancelled_through, generation, report.complete) {
+                Ok(icon_failures) => {
+                    report.warnings = report.warnings.saturating_add(icon_failures);
+                    let _ = services.events.send(RuntimeEvent::ScanFinished {
+                        request_id,
+                        response_generation: generation,
+                        result: Ok(report),
+                    });
+                }
+                Err(error) => send_failure(services.events, request_id, generation, &error),
+            }
+        }
+        Err(error) => send_failure(services.events, request_id, generation, &error),
     }
+    Some(index)
+}
+
+fn send_failure(
+    events: &SyncSender<RuntimeEvent>,
+    request_id: Option<String>,
+    generation: u64,
+    error: &crate::ApplicationError,
+) {
+    let _ = events.send(RuntimeEvent::ScanFinished {
+        request_id,
+        response_generation: generation,
+        result: Err(error.to_string()),
+    });
 }
 
 fn replace_entries(entries: &RwLock<Vec<ApplicationEntry>>, replacement: Vec<ApplicationEntry>) {

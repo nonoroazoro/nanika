@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: Milestone 8 still requires physical acceptance. Milestone 9 is complete. The temporary ACP dummy remains a required pre-1.0 cleanup item.
+Status: Milestone 8 still requires fixed-machine performance, signing, physical Windows acceptance, and macOS validation. Milestone 9 is complete. The temporary ACP dummy remains a required pre-1.0 cleanup item.
 
 ## Product direction
 
@@ -50,9 +50,9 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 
 - [x] Define the host foundation as UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction.
 - [x] Keep all domain capabilities in extensions. Keep shared search aggregation, ranking, and input history in the host foundation.
-- [ ] Define typed host boundaries and error categories, redaction, source chaining, and user-facing diagnostics.
-- [x] Implement bounded non-blocking host logs, daily rotation, eight-file retention, shutdown flush, bounded export, and atomic no-clobber publication.
-- [ ] Expand structured operational events and redaction coverage across all failure boundaries.
+- [x] Define typed host boundaries and error categories, redaction, source chaining, and user-facing diagnostics.
+- [x] Implement non-blocking host logs, duplicate suppression, a 32 MiB directory cap, daily rotation, eight-file retention, shutdown flush, bounded export, and atomic no-clobber publication.
+- [x] Expand structured operational events and redaction coverage across all failure boundaries.
 - [x] Complete named owner threads for storage, discovery, search, and platform event sources.
 - [x] Complete bounded queues, cancellation, generation handling, ordered shutdown, and worker failure recovery across all MVP capabilities.
 - [x] Complete platform adapters for window, hotkey, discovery, launch, startup, tray, and single-instance behavior.
@@ -149,7 +149,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [ ] Add maintenance snapshots and corruption recovery before the first post-release destructive database migration.
 - [x] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
 - [x] Implement bounded local logs and diagnostic export.
-- [ ] Define cache cleanup and generated-data recovery.
+- [x] Implement complete-scan cache pruning, visible cleanup failures, integrity checks, and one-shot recovery for the derived application index.
 
 ### Quality and release
 
@@ -177,5 +177,5 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 5. [x] Windows application extension with discovery, indexing, and persistence.
 6. [x] Command, script, calculator, and clipboard history extensions.
 7. [x] Settings, startup, and macOS adapters.
-8. [ ] Performance, packaging, release, and cross-platform acceptance. Local Windows source checks pass; current-head packaging, fixed-machine performance, and physical platform acceptance remain.
+8. [ ] Performance, packaging, release, and cross-platform acceptance. Current Windows source checks pass. Commit `2d00bd3` passed packaging, checksum, inventory, clean-profile process, single-instance, diagnostics export, and advisory hidden-idle checks. Current packaging, fixed-machine performance, signing, physical Windows acceptance, and macOS validation remain.
 9. [x] ACP extension protocol.

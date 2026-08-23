@@ -89,7 +89,7 @@ impl ExtensionSearchCoordinator {
         Ok(())
     }
 
-    pub fn first_error(&self) -> Option<String> {
+    pub fn first_error(&self) -> Option<crate::HostDiagnostic> {
         self.workers
             .iter()
             .find_map(ExtensionSearchWorker::last_error)

@@ -12,6 +12,8 @@ mod migrations;
 mod nanika_paths;
 #[path = "SearchStorageCommand.rs"]
 mod search_storage_command;
+#[path = "SearchStorageFailure.rs"]
+mod search_storage_failure;
 #[path = "SearchStorageState.rs"]
 mod search_storage_state;
 #[path = "SearchStorageWorker.rs"]
@@ -31,6 +33,7 @@ pub use extension_kind::*;
 pub use host_database::*;
 pub use nanika_paths::*;
 pub(crate) use search_storage_command::*;
+pub use search_storage_failure::*;
 pub use search_storage_state::*;
 pub use search_storage_worker::*;
 pub use storage_queue_error::*;

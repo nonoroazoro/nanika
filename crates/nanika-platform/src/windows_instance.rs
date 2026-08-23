@@ -143,7 +143,10 @@ fn run_event_loop(
     let tray_added = match add_tray_icon(window) {
         Ok(()) => true,
         Err(error) => {
-            eprintln!("Nanika tray icon unavailable: {error}");
+            let _ = events.try_send(PlatformEvent::Failure {
+                operation: "initialize system tray",
+                message: error.to_string(),
+            });
             false
         }
     };
@@ -172,7 +175,12 @@ fn run_event_loop(
                         let _ = events.try_send(event);
                     }
                     Ok(None) => {}
-                    Err(error) => eprintln!("Nanika tray menu failed: {error}"),
+                    Err(error) => {
+                        let _ = events.try_send(PlatformEvent::Failure {
+                            operation: "open system tray menu",
+                            message: error.to_string(),
+                        });
+                    }
                 },
                 _ => {}
             }

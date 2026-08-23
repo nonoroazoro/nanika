@@ -8,7 +8,7 @@ use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, w
 
 #[test]
 fn process_refreshes_a_configured_root_and_contributes_candidates() {
-    let root = test_root();
+    let root = test_root("refresh");
     let data_root = root.join("data");
     let cache_root = root.join("cache");
     let config_root = root.join("config");
@@ -186,7 +186,88 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     ));
     drop(input);
     assert!(child.wait().expect("child should exit").success());
-    let _ = std::fs::remove_dir_all(root);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
+fn process_reports_startup_cache_failure_after_handshake() {
+    let root = test_root("startup-cache-failure");
+    let data_root = root.join("data");
+    let cache_root = root.join("cache");
+    let config_root = root.join("config");
+    let applications = root.join("applications");
+    std::fs::create_dir_all(&applications).expect("application root should exist");
+    create_executable(&applications.join("Nanika Sample.exe"));
+    write_settings(&config_root, &applications);
+    std::fs::create_dir_all(cache_root.join("icons")).expect("icon parent should exist");
+    std::fs::write(cache_root.join("icons/application"), [])
+        .expect("invalid icon root should exist");
+
+    let mut child = Command::new(PathBuf::from(env!(
+        "CARGO_BIN_EXE_nanika-extension-application"
+    )))
+    .args([
+        argument("data-root", &data_root),
+        argument("cache-root", &cache_root),
+        argument("config-root", &config_root),
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("application extension should spawn");
+    let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
+    let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
+    write_frame(
+        &mut input,
+        &Message::Initialize {
+            request_id: "initialize-application-failure".to_owned(),
+            protocol: PROTOCOL_NAME.to_owned(),
+        },
+    )
+    .expect("initialize should write");
+    assert!(matches!(
+        read_frame(&mut output).expect("initialize response"),
+        Some(Message::Initialized { .. })
+    ));
+    write_frame(
+        &mut input,
+        &Message::GetSettings {
+            request_id: "application-settings-failure".to_owned(),
+        },
+    )
+    .expect("settings request should write");
+    let mut saw_failure = false;
+    for _ in 0..2 {
+        match read_frame(&mut output).expect("startup response") {
+            Some(Message::Error {
+                request_id: None,
+                code,
+                ..
+            }) if code == "startup_refresh_failed" => saw_failure = true,
+            Some(Message::Settings { .. }) => {}
+            message => panic!("unexpected startup response: {message:?}"),
+        }
+    }
+    assert!(saw_failure);
+    write_frame(
+        &mut input,
+        &Message::Shutdown {
+            request_id: "shutdown-application-failure".to_owned(),
+        },
+    )
+    .expect("shutdown should write");
+    loop {
+        if matches!(
+            read_frame(&mut output).expect("shutdown response"),
+            Some(Message::ShutdownAck { .. })
+        ) {
+            break;
+        }
+    }
+    drop(input);
+    assert!(child.wait().expect("child should exit").success());
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 fn read_complete_snapshot(output: &mut impl std::io::Read) -> Vec<nanika_protocol::Candidate> {
@@ -229,9 +310,11 @@ fn create_executable(target: &Path) {
         .expect("test executable should exist");
 }
 
-fn test_root() -> PathBuf {
-    let root =
-        std::env::temp_dir().join(format!("nanika-application-process-{}", std::process::id()));
+fn test_root(name: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-application-process-{name}-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("test root should exist");
     root

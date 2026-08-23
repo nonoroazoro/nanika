@@ -4,7 +4,7 @@ use nanika_storage::SearchStorageWorker;
 
 use std::sync::Arc;
 
-use crate::{HostConfig, HostConfigService, HostServiceHandler, PendingExtension};
+use crate::{HostConfig, HostConfigService, HostDiagnostic, HostServiceHandler, PendingExtension};
 
 pub(crate) struct HostRuntime {
     pub(crate) history: InputHistory,
@@ -17,5 +17,5 @@ pub(crate) struct HostRuntime {
     pub(crate) storage: Option<SearchStorageWorker>,
     pub(crate) pending_extensions: Vec<PendingExtension>,
     pub(crate) host_services: Option<Arc<dyn HostServiceHandler>>,
-    pub(crate) error: Option<String>,
+    pub(crate) errors: Vec<HostDiagnostic>,
 }

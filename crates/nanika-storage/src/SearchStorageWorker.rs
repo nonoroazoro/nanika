@@ -6,14 +6,14 @@ use std::thread::JoinHandle;
 use nanika_search::{SearchHandle, UsageKey};
 
 use crate::{
-    ExtensionKind, HostDatabase, SearchStorageCommand, SearchStorageState, StorageQueueError,
-    extension_id::is_valid_extension_id, unix_timestamp,
+    ExtensionKind, HostDatabase, SearchStorageCommand, SearchStorageFailure, SearchStorageState,
+    StorageQueueError, extension_id::is_valid_extension_id, unix_timestamp,
 };
 
 /// Bounded asynchronous owner for search-related host database writes.
 pub struct SearchStorageWorker {
     commands: SyncSender<SearchStorageCommand>,
-    last_error: Arc<Mutex<Option<String>>>,
+    last_failure: Arc<Mutex<Option<SearchStorageFailure>>>,
     search: Arc<Mutex<Option<SearchHandle>>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -25,8 +25,8 @@ impl SearchStorageWorker {
     ) -> Result<(Self, SearchStorageState), String> {
         let (commands, receiver) = mpsc::sync_channel(64);
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
-        let last_error = Arc::new(Mutex::new(None));
-        let owner_error = Arc::clone(&last_error);
+        let last_failure = Arc::new(Mutex::new(None));
+        let owner_failure = Arc::clone(&last_failure);
         let search = Arc::new(Mutex::new(None::<SearchHandle>));
         let owner_search = Arc::clone(&search);
         let database_path = database_path.into();
@@ -60,22 +60,29 @@ impl SearchStorageWorker {
                     return;
                 }
 
+                let mut failure_sequence = 0_u64;
                 while let Ok(command) = receiver.recv() {
-                    let result = match command {
+                    let (operation, result) = match command {
                         SearchStorageCommand::RegisterExtension {
                             extension_id,
                             kind,
                             updated_at,
-                        } => database.register_extension(&extension_id, kind, updated_at),
+                        } => (
+                            "register extension metadata",
+                            database.register_extension(&extension_id, kind, updated_at),
+                        ),
                         SearchStorageCommand::RecordHistory {
                             history_key,
                             display_query,
                             used_at,
-                        } => database.record_input_history(
-                            &history_key,
-                            &display_query,
-                            used_at,
-                            history_limit,
+                        } => (
+                            "record input history",
+                            database.record_input_history(
+                                &history_key,
+                                &display_query,
+                                used_at,
+                                history_limit,
+                            ),
                         ),
                         SearchStorageCommand::RecordUsage {
                             extension_id,
@@ -83,54 +90,64 @@ impl SearchStorageWorker {
                             action_id,
                             query_context,
                             executed_at,
-                        } => database
-                            .record_usage(
-                                &extension_id,
-                                &entry_id,
-                                &action_id,
-                                &query_context,
-                                executed_at,
-                            )
-                            .and_then(|()| {
+                        } => (
+                            "record action usage",
+                            database
+                                .record_usage(
+                                    &extension_id,
+                                    &entry_id,
+                                    &action_id,
+                                    &query_context,
+                                    executed_at,
+                                )
+                                .and_then(|()| {
+                                    if let Some(search) = owner_search
+                                        .lock()
+                                        .unwrap_or_else(|error| error.into_inner())
+                                        .clone()
+                                    {
+                                        search
+                                            .apply_persisted_execution(
+                                                UsageKey::new(
+                                                    &extension_id,
+                                                    &entry_id,
+                                                    &action_id,
+                                                    &query_context,
+                                                ),
+                                                executed_at,
+                                            )
+                                            .map_err(|error| {
+                                                rusqlite::Error::ToSqlConversionFailure(Box::new(
+                                                    error,
+                                                ))
+                                            })?;
+                                    }
+                                    Ok(())
+                                }),
+                        ),
+                        SearchStorageCommand::ResetUsage => (
+                            "reset action usage",
+                            database.reset_usage().and_then(|()| {
                                 if let Some(search) = owner_search
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner())
                                     .clone()
                                 {
-                                    search
-                                        .apply_persisted_execution(
-                                            UsageKey::new(
-                                                &extension_id,
-                                                &entry_id,
-                                                &action_id,
-                                                &query_context,
-                                            ),
-                                            executed_at,
-                                        )
-                                        .map_err(|error| {
-                                            rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-                                        })?;
+                                    search.reset_persisted_usage().map_err(|error| {
+                                        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                                    })?;
                                 }
                                 Ok(())
                             }),
-                        SearchStorageCommand::ResetUsage => database.reset_usage().and_then(|()| {
-                            if let Some(search) = owner_search
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .clone()
-                            {
-                                search.reset_persisted_usage().map_err(|error| {
-                                    rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-                                })?;
-                            }
-                            Ok(())
-                        }),
+                        ),
                         SearchStorageCommand::Shutdown => break,
                     };
-                    *owner_error
+                    *owner_failure
                         .lock()
-                        .unwrap_or_else(|error| error.into_inner()) =
-                        result.err().map(|error| error.to_string());
+                        .unwrap_or_else(|error| error.into_inner()) = result.err().map(|error| {
+                        failure_sequence = failure_sequence.saturating_add(1);
+                        SearchStorageFailure::new(failure_sequence, operation, error.to_string())
+                    });
                 }
             })
             .map_err(|error| error.to_string())?;
@@ -140,7 +157,7 @@ impl SearchStorageWorker {
         Ok((
             Self {
                 commands,
-                last_error,
+                last_failure,
                 search,
                 thread: Some(thread),
             },
@@ -206,8 +223,8 @@ impl SearchStorageWorker {
         self.try_send(SearchStorageCommand::ResetUsage)
     }
 
-    pub fn last_error(&self) -> Option<String> {
-        self.last_error
+    pub fn last_failure(&self) -> Option<SearchStorageFailure> {
+        self.last_failure
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()

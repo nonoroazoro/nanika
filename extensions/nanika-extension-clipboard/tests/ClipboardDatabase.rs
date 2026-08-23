@@ -28,7 +28,8 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].title, "second");
     assert_eq!(loaded[0].captured_at, 20);
-    let _ = std::fs::remove_dir_all(root);
+    drop(database);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[test]
@@ -52,7 +53,8 @@ fn clipboard_retention_removes_expired_unpinned_entries() {
         .expect("old capture");
     database.prune(31 * 86_400).expect("retention");
     assert!(database.load().expect("history").is_empty());
-    let _ = std::fs::remove_dir_all(root);
+    drop(database);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[test]
@@ -100,5 +102,6 @@ fn clipboard_payload_cleanup_removes_only_unreferenced_managed_files() {
     assert!(!temporary.exists());
     assert!(unrelated_png.is_file());
     assert!(unrelated_temporary.is_file());
-    let _ = std::fs::remove_dir_all(root);
+    drop(database);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
 }

@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
+    let mut startup_error = None::<String>;
     let mut active_scans = 1_usize;
     let mut pending_query = None::<(String, u64, String)>;
     let mut refresh_requests = HashMap::<String, u64>::new();
@@ -60,6 +61,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             protocol: PROTOCOL_NAME.to_owned(),
                         },
                     )?;
+                    if let Some(message) = startup_error.take() {
+                        write_error(&mut output, None, "startup_refresh_failed", &message)?;
+                    }
                 }
                 Message::Initialize { request_id, .. } => write_error(
                     &mut output,
@@ -290,7 +294,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 active_scans = active_scans.saturating_sub(1);
                 complete_pending_query(&mut output, &entries, active_scans, &mut pending_query)?;
-                eprintln!("application startup refresh failed: {message}");
+                if initialized {
+                    write_error(&mut output, None, "startup_refresh_failed", &message)?;
+                } else {
+                    startup_error = Some(message);
+                }
             }
             RuntimeEvent::ScanFinished { request_id, .. } => {
                 active_scans = active_scans.saturating_sub(1);

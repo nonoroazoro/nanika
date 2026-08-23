@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -166,10 +167,16 @@ fn host_service_wait_is_bounded_by_the_action_deadline() {
 
     let deadline = Instant::now() + Duration::from_secs(1);
     loop {
-        if coordinator
-            .first_error()
-            .is_some_and(|error| error.contains("extension timed out during host service"))
-        {
+        if let Some(error) = coordinator.first_error() {
+            assert_eq!(
+                error.user_message(),
+                "The extension operation failed. Extension: fixture.extension."
+            );
+            assert!(
+                error
+                    .source()
+                    .is_some_and(|source| source.to_string().contains("host service"))
+            );
             break;
         }
         assert!(

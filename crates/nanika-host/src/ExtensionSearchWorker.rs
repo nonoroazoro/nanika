@@ -7,11 +7,11 @@ use std::time::Duration;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput,
+    DiagnosticCode, ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput,
     ExtensionInvocationOutputState, ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh,
     ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
-    ExtensionSettingsResult, ExtensionSettingsUpdate, ExtensionWork, HostServiceHandler,
-    SupervisorError, publish_extension_snapshot,
+    ExtensionSettingsResult, ExtensionSettingsUpdate, ExtensionWork, HostDiagnostic,
+    HostServiceHandler, SupervisorError, publish_extension_snapshot,
 };
 
 const MAX_PENDING_INVOCATIONS: usize = 16;
@@ -21,7 +21,7 @@ const MAX_PENDING_SETTINGS: usize = 4;
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-    last_error: Arc<Mutex<Option<String>>>,
+    last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
     settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>>,
     thread: Option<JoinHandle<()>>,
@@ -57,14 +57,31 @@ impl ExtensionSearchWorker {
                 {
                     set_error(
                         &worker_error,
-                        Some(format!("extension {worker_extension_id}: {error}")),
+                        Some(extension_failure(
+                            &worker_extension_id,
+                            "initialize extension",
+                            "The extension could not start.",
+                            error,
+                        )),
                     );
                     notify(&notifier);
                     return;
                 }
-                let initial_settings = runtime
-                    .settings(format!("settings-{worker_extension_id}"))
-                    .map_err(|error| error.to_string());
+                let initial_settings =
+                    match runtime.settings(format!("settings-{worker_extension_id}")) {
+                        Ok(settings) => Ok(settings),
+                        Err(error) => {
+                            let diagnostic = extension_failure(
+                                &worker_extension_id,
+                                "load initial extension settings",
+                                "The extension could not load its settings.",
+                                error,
+                            );
+                            let user_message = diagnostic.user_message().to_owned();
+                            set_error(&worker_error, Some(diagnostic));
+                            Err(user_message)
+                        }
+                    };
                 *worker_settings_result
                     .lock()
                     .unwrap_or_else(|error| error.into_inner()) = Some(ExtensionSettingsResult {
@@ -141,12 +158,26 @@ impl ExtensionSearchWorker {
                         Ok(false) => {}
                         Err(error) => set_error(
                             &worker_error,
-                            Some(format!("extension {worker_extension_id}: {error}")),
+                            Some(extension_failure(
+                                &worker_extension_id,
+                                "run extension work",
+                                "The extension operation failed.",
+                                error,
+                            )),
                         ),
                     }
                     notify(&notifier);
                 }
-                let _ = runtime.shutdown(format!("shutdown-{worker_extension_id}"));
+                if let Err(error) = runtime.shutdown(format!("shutdown-{worker_extension_id}")) {
+                    HostDiagnostic::from_error(
+                        DiagnosticCode::ExtensionUnavailable,
+                        "shut down extension",
+                        "An extension did not shut down cleanly.",
+                        error,
+                    )
+                    .with_safe_context(&worker_extension_id)
+                    .record_warning();
+                }
             })?;
         Ok(Self {
             extension_id,
@@ -225,7 +256,7 @@ impl ExtensionSearchWorker {
         &self.extension_id
     }
 
-    pub fn last_error(&self) -> Option<String> {
+    pub fn last_error(&self) -> Option<HostDiagnostic> {
         self.last_error
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -499,8 +530,26 @@ fn recover_if_exited(
         .map(|_| ())
 }
 
-fn set_error(error: &Mutex<Option<String>>, value: Option<String>) {
+fn set_error(error: &Mutex<Option<HostDiagnostic>>, value: Option<HostDiagnostic>) {
+    if let Some(diagnostic) = value.as_ref() {
+        diagnostic.record_warning();
+    }
     *error.lock().unwrap_or_else(|error| error.into_inner()) = value;
+}
+
+fn extension_failure(
+    extension_id: &str,
+    operation: &'static str,
+    user_message: &'static str,
+    source: SupervisorError,
+) -> HostDiagnostic {
+    HostDiagnostic::from_error(
+        DiagnosticCode::ExtensionUnavailable,
+        operation,
+        format!("{user_message} Extension: {extension_id}."),
+        source,
+    )
+    .with_safe_context(extension_id)
 }
 
 fn notify(notifier: &ExtensionNotifier) {
