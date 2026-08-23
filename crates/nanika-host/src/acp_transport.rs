@@ -8,6 +8,8 @@ use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufRe
 use futures::{Sink, Stream};
 use futures_lite::future;
 
+use crate::ExtensionProcessTree;
+
 pub(crate) const ACP_FRAME_LIMIT: usize = 8 * 1024 * 1024;
 pub(crate) const ACP_STDERR_LIMIT: usize = 64 * 1024;
 
@@ -53,12 +55,17 @@ pub(crate) async fn drain_stderr(mut stderr: ChildStderr, tail: Arc<Mutex<VecDeq
     }
 }
 
-pub(crate) async fn terminate_child(child: &mut Child, timeout: Duration) -> io::Result<()> {
-    terminate_process_group(child.id());
+pub(crate) async fn terminate_child(
+    child: &mut Child,
+    process_tree: &ExtensionProcessTree,
+    timeout: Duration,
+) -> io::Result<()> {
+    let mut first_error = process_tree.terminate(child.id()).err();
     match child.kill() {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
-        Err(error) => return Err(error),
+        Err(error) if first_error.is_none() => first_error = Some(error),
+        Err(_) => {}
     }
     let wait = child.status();
     future::race(wait, async move {
@@ -68,8 +75,8 @@ pub(crate) async fn terminate_child(child: &mut Child, timeout: Duration) -> io:
             "ACP child did not exit after termination",
         ))
     })
-    .await
-    .map(|_| ())
+    .await?;
+    first_error.map_or(Ok(()), Err)
 }
 
 pub(crate) async fn read_bounded_line<R: AsyncRead + Unpin>(
@@ -115,13 +122,3 @@ fn decode_line(mut bytes: Vec<u8>) -> io::Result<String> {
     }
     String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
-
-#[cfg(target_os = "macos")]
-fn terminate_process_group(process_id: u32) {
-    if let Some(process_id) = rustix::process::Pid::from_raw(process_id.cast_signed()) {
-        let _ = rustix::process::kill_process_group(process_id, rustix::process::Signal::KILL);
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn terminate_process_group(_process_id: u32) {}

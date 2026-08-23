@@ -18,14 +18,13 @@ use agent_client_protocol::schema::{
     },
 };
 use agent_client_protocol::util::MatchDispatch;
-use agent_client_protocol::{
-    AcpAgent, AcpAgentConfig, ActiveSession, Agent, Client, ConnectionTo, Lines, SessionMessage,
-};
+use agent_client_protocol::{ActiveSession, Agent, Client, ConnectionTo, Lines, SessionMessage};
 use futures_lite::future;
 
 use crate::{
-    AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionLimits, SupervisorError,
-    drain_stderr, incoming_lines, outgoing_lines, terminate_child,
+    AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionLimits,
+    ExtensionProcessTree, SupervisorError, configure_extension_command, drain_stderr,
+    incoming_lines, outgoing_lines, terminate_child,
 };
 
 const ACP_OUTPUT_LIMIT: usize = 256 * 1024;
@@ -220,7 +219,7 @@ impl AcpExtensionProcess {
     }
 
     pub fn recover_if_exited(&mut self) -> Result<bool, SupervisorError> {
-        if self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
+        if self.thread.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
             self.restart()?;
             return Ok(true);
         }
@@ -231,11 +230,22 @@ impl AcpExtensionProcess {
         if self.restart_count >= self.limits.max_restarts {
             return Err(SupervisorError::RestartLimit);
         }
+        self.restart_with_count(self.restart_count + 1)
+    }
+
+    pub(crate) fn recover_after_cancellation(&mut self) -> Result<bool, SupervisorError> {
+        if self.thread.is_some() && !self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
+            return Ok(false);
+        }
+        self.restart_with_count(self.restart_count)?;
+        Ok(true)
+    }
+
+    fn restart_with_count(&mut self, restart_count: u32) -> Result<(), SupervisorError> {
         let extension_id = self.extension_id.clone();
         let command = self.command.clone();
         let working_directory = self.working_directory.clone();
         let limits = self.limits.clone();
-        let restart_count = self.restart_count + 1;
         self.terminate()?;
         let mut replacement = Self::start(
             extension_id,
@@ -305,8 +315,35 @@ impl Drop for AcpExtensionProcess {
 }
 
 async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol::Result<()> {
-    let agent = AcpAgent::new(AcpAgentConfig::new(context.command.program).args(context.arguments));
-    let (stdin, stdout, stderr, mut child) = agent.spawn_process()?;
+    let mut command = std::process::Command::new(context.command.program);
+    command.args(context.arguments);
+    configure_extension_command(&mut command);
+    let mut command = async_process::Command::from(command);
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| agent_client_protocol::util::internal_error(error.to_string()))?;
+    let process_tree = match ExtensionProcessTree::attach_async(&child) {
+        Ok(process_tree) => process_tree,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.status().await;
+            return Err(agent_client_protocol::util::internal_error(format!(
+                "failed to contain ACP extension process: {error}"
+            )));
+        }
+    };
+    let (Some(stdin), Some(stdout), Some(stderr)) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take())
+    else {
+        let _ = terminate_child(&mut child, &process_tree, context.shutdown_timeout).await;
+        return Err(agent_client_protocol::util::internal_error(
+            "ACP extension stdio was not piped",
+        ));
+    };
     let shutdown = context.shutdown.clone();
     let shutdown_timeout = context.shutdown_timeout;
     let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
@@ -393,7 +430,7 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
         future::pending::<agent_client_protocol::Result<()>>().await
     })
     .await;
-    let cleanup = terminate_child(&mut child, shutdown_timeout).await;
+    let cleanup = terminate_child(&mut child, &process_tree, shutdown_timeout).await;
     match (result, cleanup) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) => {

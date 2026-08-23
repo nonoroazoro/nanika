@@ -192,6 +192,16 @@ impl ExtensionRuntime {
         }
     }
 
+    pub(crate) fn recover_after_cancellation(
+        &mut self,
+        request_id: impl Into<String>,
+    ) -> Result<bool, SupervisorError> {
+        match self {
+            Self::Nanika(process) => process.recover_after_cancellation(request_id),
+            Self::Acp(process) => process.recover_after_cancellation(),
+        }
+    }
+
     pub fn restart(&mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.restart(request_id),

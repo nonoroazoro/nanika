@@ -18,9 +18,10 @@ use nanika_search::{
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    ExtensionRuntime, ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService,
-    HostEvent, HostRuntime, InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS,
-    OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
+    ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HistoryDirection,
+    HostConfig, HostConfigService, HostEvent, HostRuntime, InvocationPresentation,
+    MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS, OverlayMotion,
+    PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
@@ -62,6 +63,7 @@ pub struct HostApp {
     action_error: Option<String>,
     invocation_output: Option<InvocationPresentation>,
     pending_invocation_id: Option<u64>,
+    pending_invocation_extension_id: Option<String>,
     overlay_visible: bool,
     focus_pending: bool,
     focus_observed: bool,
@@ -213,6 +215,7 @@ impl HostApp {
             action_error: None,
             invocation_output: None,
             pending_invocation_id: None,
+            pending_invocation_extension_id: None,
             overlay_visible: false,
             focus_pending: false,
             focus_observed: false,
@@ -317,6 +320,15 @@ impl HostApp {
     }
 
     fn close_overlay(&mut self, context: &egui::Context) {
+        if let (Some(extension_id), Some(invocation_id)) = (
+            self.pending_invocation_extension_id.as_deref(),
+            self.pending_invocation_id,
+        ) && let Err(error) = self
+            .extension_search
+            .cancel_invocation(extension_id, invocation_id)
+        {
+            self.action_error = Some(error.to_string());
+        }
         self.motion.set_target(false);
         context.request_repaint();
     }
@@ -369,6 +381,7 @@ impl HostApp {
         ) {
             Ok(invocation_id) => {
                 self.pending_invocation_id = Some(invocation_id);
+                self.pending_invocation_extension_id = Some(extension_id);
                 context.request_repaint();
             }
             Err(error) => self.action_error = Some(error.to_string()),
@@ -426,9 +439,10 @@ impl HostApp {
             let is_pending = self.pending_invocation_id == Some(result.invocation_id);
             if is_pending {
                 self.pending_invocation_id = None;
+                self.pending_invocation_extension_id = None;
             }
             match result.result {
-                Ok(has_output) => {
+                Ok(ExtensionInvocationOutcome::Completed { has_output }) => {
                     self.record_execution(
                         &result.extension_id,
                         &result.entry_id,
@@ -448,6 +462,13 @@ impl HostApp {
                         }
                     } else if is_pending {
                         self.close_overlay(context);
+                    }
+                }
+                Ok(ExtensionInvocationOutcome::Cancelled) => {
+                    if let Some(output) = &self.invocation_output
+                        && output.invocation_id == result.invocation_id
+                    {
+                        self.invocation_output = None;
                     }
                 }
                 Err(error) => {

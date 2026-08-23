@@ -2257,8 +2257,10 @@ dependencies = [
  "nanika-config",
  "nanika-extension-package",
  "nanika-host",
+ "nanika-search",
  "nanika-storage",
  "serde_json",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -2378,6 +2380,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "wgpu",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

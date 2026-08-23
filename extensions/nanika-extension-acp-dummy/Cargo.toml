@@ -16,9 +16,13 @@ futures-lite.workspace = true
 nanika-config = { path = "../../crates/nanika-config" }
 nanika-extension-package = { path = "../../crates/nanika-extension-package" }
 nanika-host = { path = "../../crates/nanika-host" }
+nanika-search = { path = "../../crates/nanika-search" }
 nanika-storage = { path = "../../crates/nanika-storage" }
 serde_json.workspace = true
 zip.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
 
 [lints]
 workspace = true

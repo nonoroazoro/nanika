@@ -16,6 +16,8 @@ mod diagnostics;
 mod extension_command;
 #[path = "ExtensionInvocation.rs"]
 mod extension_invocation;
+#[path = "ExtensionInvocationOutcome.rs"]
+mod extension_invocation_outcome;
 #[path = "ExtensionInvocationOutput.rs"]
 mod extension_invocation_output;
 #[path = "ExtensionInvocationOutputState.rs"]
@@ -28,6 +30,10 @@ mod extension_limits;
 mod extension_notifier;
 #[path = "ExtensionProcess.rs"]
 mod extension_process;
+mod extension_process_command;
+#[allow(unsafe_code)]
+#[path = "ExtensionProcessTree.rs"]
+mod extension_process_tree;
 #[path = "ExtensionRefresh.rs"]
 mod extension_refresh;
 #[path = "ExtensionRuntime.rs"]
@@ -91,12 +97,15 @@ pub(crate) use builtin_extension_spec::*;
 pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_invocation::*;
+pub(crate) use extension_invocation_outcome::*;
 pub(crate) use extension_invocation_output::*;
 pub(crate) use extension_invocation_output_state::*;
 pub(crate) use extension_invocation_result::*;
 pub use extension_limits::*;
 pub(crate) use extension_notifier::*;
 pub use extension_process::*;
+pub(crate) use extension_process_command::*;
+pub(crate) use extension_process_tree::*;
 pub(crate) use extension_refresh::*;
 pub use extension_runtime::*;
 pub use extension_runtime_invocation::*;

@@ -13,7 +13,10 @@ use nanika_protocol::{
     write_frame,
 };
 
-use crate::{ExtensionCommand, ExtensionLimits, HostServiceHandler, SupervisorError};
+use crate::{
+    ExtensionCommand, ExtensionLimits, ExtensionProcessTree, HostServiceHandler, SupervisorError,
+    configure_extension_command,
+};
 
 /// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
@@ -22,6 +25,7 @@ pub struct ExtensionProcess {
     restart_count: u32,
     initialized: bool,
     child: Child,
+    process_tree: ExtensionProcessTree,
     input: Option<BufWriter<ChildStdin>>,
     output: Option<Receiver<Result<Option<Message>, FrameError>>>,
     stderr_tail: Arc<Mutex<VecDeque<u8>>>,
@@ -57,12 +61,21 @@ impl ExtensionProcess {
         limits: ExtensionLimits,
         restart_count: u32,
     ) -> io::Result<Self> {
-        let mut child = Command::new(&command.program)
+        let mut process = Command::new(&command.program);
+        process
             .args(&command.arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+        configure_extension_command(&mut process);
+        let mut child = process.spawn()?;
+        let process_tree = match ExtensionProcessTree::attach_std(&child) {
+            Ok(process_tree) => process_tree,
+            Err(error) => {
+                cleanup_failed_spawn(&mut child);
+                return Err(error);
+            }
+        };
         let Some(input) = child.stdin.take() else {
             cleanup_failed_spawn(&mut child);
             return Err(io::Error::other("extension stdin was not piped"));
@@ -118,6 +131,7 @@ impl ExtensionProcess {
             restart_count,
             initialized: false,
             child,
+            process_tree,
             input: Some(BufWriter::new(input)),
             output: Some(receiver),
             stderr_tail,
@@ -469,14 +483,30 @@ impl ExtensionProcess {
         if self.restart_count >= self.limits.max_restarts {
             return Err(SupervisorError::RestartLimit);
         }
+        self.restart_with_count(request_id, self.restart_count + 1)
+    }
+
+    pub(crate) fn recover_after_cancellation(
+        &mut self,
+        request_id: impl Into<String>,
+    ) -> Result<bool, SupervisorError> {
+        if self.child.try_wait()?.is_none() {
+            return Ok(false);
+        }
+        self.restart_with_count(request_id, self.restart_count)?;
+        Ok(true)
+    }
+
+    fn restart_with_count(
+        &mut self,
+        request_id: impl Into<String>,
+        restart_count: u32,
+    ) -> Result<(), SupervisorError> {
         let extension_id = self.extension_id.clone();
         let host_services = self.host_services.clone();
         self.terminate()?;
-        let mut replacement = Self::start(
-            self.command.clone(),
-            self.limits.clone(),
-            self.restart_count + 1,
-        )?;
+        let mut replacement =
+            Self::start(self.command.clone(), self.limits.clone(), restart_count)?;
         replacement.extension_id = extension_id;
         replacement.host_services = host_services;
         *self = replacement;
@@ -507,10 +537,16 @@ impl ExtensionProcess {
         self.input.take();
         self.output.take();
         let mut first_error = None;
+        if let Err(error) = self.process_tree.terminate(self.child.id()) {
+            first_error = Some(error);
+        }
         match self.child.try_wait() {
             Ok(Some(_)) => {}
             Ok(None) => {
-                if let Err(error) = self.child.kill() {
+                if let Err(error) = self.child.kill()
+                    && error.kind() != io::ErrorKind::InvalidInput
+                    && first_error.is_none()
+                {
                     first_error = Some(error);
                 }
             }

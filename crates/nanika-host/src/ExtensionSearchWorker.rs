@@ -7,9 +7,9 @@ use std::time::Duration;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationOutput, ExtensionInvocationOutputState,
-    ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh, ExtensionRuntime,
-    ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
+    ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput,
+    ExtensionInvocationOutputState, ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh,
+    ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
     ExtensionSettingsResult, ExtensionSettingsUpdate, ExtensionWork, HostServiceHandler,
     SupervisorError, publish_extension_snapshot,
 };
@@ -110,7 +110,9 @@ impl ExtensionSearchWorker {
                             if invocation_results.send(report).is_err() {
                                 Err(SupervisorError::ChannelClosed)
                             } else {
-                                result.map(|_| true)
+                                result.map(|outcome| {
+                                    matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
+                                })
                             }
                         }
                         ExtensionWork::Refresh(refresh) => {
@@ -183,6 +185,22 @@ impl ExtensionSearchWorker {
         state.invocations.push_back(invocation);
         ready.notify_one();
         Ok(())
+    }
+
+    pub(crate) fn cancel_invocation(&self, invocation_id: u64) -> bool {
+        let (lock, ready) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        if state.active_invocation_id != Some(invocation_id)
+            && !state
+                .invocations
+                .iter()
+                .any(|invocation| invocation.invocation_id == invocation_id)
+        {
+            return false;
+        }
+        state.cancelled_invocations.insert(invocation_id);
+        ready.notify_one();
+        true
     }
 
     pub(crate) fn update_settings(
@@ -269,16 +287,14 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
     if state.shutdown {
         return None;
     }
+    if let Some(invocation) = state.invocations.pop_front() {
+        state.active_invocation_id = Some(invocation.invocation_id);
+        return Some(ExtensionWork::Invoke(invocation));
+    }
     state
-        .invocations
+        .settings
         .pop_front()
-        .map(ExtensionWork::Invoke)
-        .or_else(|| {
-            state
-                .settings
-                .pop_front()
-                .map(ExtensionWork::UpdateSettings)
-        })
+        .map(ExtensionWork::UpdateSettings)
         .or_else(|| state.query.take().map(ExtensionWork::Query))
         .or_else(|| state.refresh.take().map(ExtensionWork::Refresh))
 }
@@ -388,7 +404,7 @@ fn run_invocation(
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     invocation_output: &Arc<Mutex<ExtensionInvocationOutputState>>,
     notifier: &ExtensionNotifier,
-) -> Result<bool, SupervisorError> {
+) -> Result<ExtensionInvocationOutcome, SupervisorError> {
     recover_if_exited(runtime, extension_id, invocation.generation)?;
     let output_state = Arc::clone(invocation_output);
     let output_notifier = Arc::clone(notifier);
@@ -420,23 +436,44 @@ fn run_invocation(
         publish,
         || {
             let (lock, _) = &**state;
-            lock.lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .shutdown
+            let state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            state.shutdown
+                || state
+                    .cancelled_invocations
+                    .contains(&invocation.invocation_id)
         },
     );
-    if matches!(
-        &result,
-        Err(SupervisorError::ChannelClosed
-            | SupervisorError::Protocol(_)
-            | SupervisorError::Timeout(_))
-    ) {
+    let (lock, _) = &**state;
+    let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+    let shutting_down = state.shutdown;
+    let user_cancelled = state
+        .cancelled_invocations
+        .remove(&invocation.invocation_id);
+    state.active_invocation_id = None;
+    drop(state);
+    if matches!(&result, Err(SupervisorError::Cancelled(_))) {
+        if user_cancelled && !shutting_down {
+            runtime.recover_after_cancellation(format!(
+                "recover-cancelled-{extension_id}-{}",
+                invocation.generation
+            ))?;
+        }
+        return Ok(ExtensionInvocationOutcome::Cancelled);
+    }
+    if !shutting_down
+        && matches!(
+            &result,
+            Err(SupervisorError::ChannelClosed
+                | SupervisorError::Protocol(_)
+                | SupervisorError::Timeout(_))
+        )
+    {
         restart_or_terminate(
             runtime,
             format!("restart-invoke-{extension_id}-{}", invocation.generation),
         )?;
     }
-    result
+    result.map(|has_output| ExtensionInvocationOutcome::Completed { has_output })
 }
 
 fn restart_or_terminate(

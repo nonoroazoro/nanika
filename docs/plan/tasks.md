@@ -81,10 +81,10 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Add manifest v2 with a required versioned runtime protocol declaration. Preserve manifest v1 as implicit Nanika protocol v1.
 - [x] Add a temporary, unprivileged ACP v1 dummy extension with version negotiation, unique sessions, cancellation, and `Hello World` prompts.
 - [x] Route ACP extensions through the common runtime lifecycle, permissions boundary, failure policy, and `.nanika` package path.
-- [x] Enforce bounded transport frames, stderr, prompt output, handshake and action deadlines, cooperative cancellation, and forced termination.
+- [x] Enforce bounded transport frames, stderr, prompt output, deadlines, typed invocation outcomes, cancellation recovery, shutdown without relaunch, and process-tree termination.
 - [x] Require explicit `@<extension-id> <prompt>` activation so ACP does not pollute ordinary search.
 - [x] Correlate streamed output by invocation ID and present bounded deltas through generic extension UI without ACP-specific privileges.
-- [x] Test non-cooperative prompt timeout and cancellation through the ordinary dummy extension path.
+- [x] Test non-cooperative timeout, repeated cancellation, shutdown, recovery, startup containment, and descendant termination through the ordinary dummy extension path.
 - [ ] Remove the dummy extension before 1.0 packaging.
 
 ### Application extension
@@ -126,7 +126,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Open macOS Login Items for approval-required startup registration.
 - [ ] Verify startup status, enable, disable, stale paths, external disablement, rollback, and hidden idle launch.
 - [x] Implement typed MVP launch descriptors, structured arguments, explicit interpreters, shell policy, detached null stdio, deadlines, and child reaping.
-- [ ] Add captured output and process-tree cancellation when a future capability requires them.
+- [ ] Add captured output and launched-action process-tree cancellation when a future capability requires them.
 - [ ] Verify GUI, command, script, batch, and macOS bundle launches on both platforms.
 - [x] Select single-instance handoff: Windows `CreateMutexW` plus hidden-window activation; macOS `flock` plus a local Unix socket.
 - [x] Integrate startup-race-safe Windows hidden-window and macOS lock/socket activation with the host through bounded blocking event sources.

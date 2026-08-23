@@ -132,6 +132,24 @@ impl ExtensionSearchCoordinator {
         Ok(invocation_id)
     }
 
+    pub fn cancel_invocation(
+        &self,
+        extension_id: &str,
+        invocation_id: u64,
+    ) -> Result<(), SupervisorError> {
+        let worker = self
+            .workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .ok_or_else(|| {
+                SupervisorError::UnexpectedMessage(format!(
+                    "extension search worker does not exist: {extension_id}"
+                ))
+            })?;
+        worker.cancel_invocation(invocation_id);
+        Ok(())
+    }
+
     pub(crate) fn take_results(&self) -> Vec<ExtensionInvocationResult> {
         let results = self.results.try_iter().collect::<Vec<_>>();
         self.pending_invocations
