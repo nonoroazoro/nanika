@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
@@ -11,8 +11,8 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    ActiveExtension, ExtensionManifest, ExtensionPackageError, ExtensionTarget, StagedPackage,
-    StagingDirectory,
+    ActiveExtension, ExtensionManifest, ExtensionPackageError, ExtensionTarget, PackageOperation,
+    PackageTransaction, StagedPackage, StagingDirectory,
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -29,9 +29,28 @@ pub fn install_package(
     paths: &NanikaPaths,
     store: &ConfigStore,
 ) -> Result<ActiveExtension, ExtensionPackageError> {
+    apply_package(package_path, paths, store, PackageOperation::Install)
+}
+
+/// Validate and activate a newer local `.nanika` package for an installed extension.
+pub fn update_package(
+    package_path: &Path,
+    paths: &NanikaPaths,
+    store: &ConfigStore,
+) -> Result<ActiveExtension, ExtensionPackageError> {
+    apply_package(package_path, paths, store, PackageOperation::Update)
+}
+
+fn apply_package(
+    package_path: &Path,
+    paths: &NanikaPaths,
+    store: &ConfigStore,
+    operation: PackageOperation,
+) -> Result<ActiveExtension, ExtensionPackageError> {
     validate_package_path(package_path)?;
     let extension_root = paths.app_data_root().join("extensions");
     fs::create_dir_all(&extension_root)?;
+    recover_package_artifacts(paths)?;
     let staged_package = StagedPackage::create(
         package_path,
         extension_root.join(format!(".package-{}.partial", Uuid::new_v4())),
@@ -66,6 +85,7 @@ pub fn install_package(
             "an external package cannot replace a built-in extension".to_owned(),
         ));
     }
+    validate_package_operation(operation, &manifest.version, previous.as_ref())?;
     let mut registry =
         ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
     let registry_existed = store.extensions_file().is_file();
@@ -76,6 +96,7 @@ pub fn install_package(
 
     let extension_id_root = prepare_extension_root(&extension_root, &manifest.id)?;
     let version_root = extension_id_root.join(&manifest.version);
+    let mut replacement_transaction = None;
     let replaced_root = if version_root.exists() {
         validate_version_directory(&extension_root, &version_root)?;
         let existing_digest = fs::read_to_string(version_root.join(".package.sha256"))?;
@@ -87,14 +108,32 @@ pub fn install_package(
         }
         let replaced =
             extension_id_root.join(format!(".replaced-{}-{}", manifest.version, Uuid::new_v4()));
-        fs::rename(&version_root, &replaced)?;
+        let transaction = PackageTransaction::replacement(
+            &manifest.id,
+            &manifest.version,
+            replaced
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    ExtensionPackageError::Manifest(
+                        "replacement backup name is not valid UTF-8".to_owned(),
+                    )
+                })?,
+        );
+        transaction.save(&extension_root)?;
+        if let Err(error) = fs::rename(&version_root, &replaced) {
+            PackageTransaction::clear(&extension_root)?;
+            return Err(error.into());
+        }
+        replacement_transaction = Some(transaction);
         Some(replaced)
     } else {
         None
     };
     if let Err(error) = fs::rename(stage.path(), &version_root) {
         if let Some(replaced) = &replaced_root {
-            let _ = fs::rename(replaced, &version_root);
+            fs::rename(replaced, &version_root)?;
+            PackageTransaction::clear(&extension_root)?;
         }
         return Err(error.into());
     }
@@ -103,6 +142,9 @@ pub fn install_package(
     registry.set_enabled(&manifest.id, enabled);
     if let Err(error) = registry.save(store) {
         rollback_version(&version_root, replaced_root.as_deref())?;
+        if replacement_transaction.is_some() {
+            PackageTransaction::clear(&extension_root)?;
+        }
         return Err(ExtensionPackageError::Config(error));
     }
     if let Err(error) = database.install_external_extension(
@@ -121,10 +163,16 @@ pub fn install_package(
             )));
         }
         artifact_rollback?;
+        if replacement_transaction.is_some() {
+            PackageTransaction::clear(&extension_root)?;
+        }
         return Err(error.into());
     }
     if let Some(replaced) = replaced_root {
         let _ = fs::remove_dir_all(replaced);
+    }
+    if replacement_transaction.is_some() {
+        PackageTransaction::clear(&extension_root)?;
     }
 
     Ok(ActiveExtension {
@@ -146,6 +194,7 @@ pub fn set_extension_enabled(
             "invalid extension id".to_owned(),
         ));
     }
+    recover_package_artifacts(paths)?;
     let database = HostDatabase::open(paths.host_database())?;
     let installed = database
         .extension(extension_id)?
@@ -195,6 +244,7 @@ pub fn remove_extension(
             "invalid extension id".to_owned(),
         ));
     }
+    recover_package_artifacts(paths)?;
     let database = HostDatabase::open(paths.host_database())?;
     let installed = database
         .extension(extension_id)?
@@ -213,8 +263,25 @@ pub fn remove_extension(
     validate_managed_path(&extensions_root, &extension_root)?;
     let removed_root =
         extensions_root.join(format!(".removed-{}-{}", extension_id, Uuid::new_v4()));
+    let mut removal_transaction = None;
     if extension_root.exists() {
-        fs::rename(&extension_root, &removed_root)?;
+        let transaction = PackageTransaction::removal(
+            extension_id,
+            removed_root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    ExtensionPackageError::Manifest(
+                        "removal backup name is not valid UTF-8".to_owned(),
+                    )
+                })?,
+        );
+        transaction.save(&extensions_root)?;
+        if let Err(error) = fs::rename(&extension_root, &removed_root) {
+            PackageTransaction::clear(&extensions_root)?;
+            return Err(error.into());
+        }
+        removal_transaction = Some(transaction);
     }
     registry.remove(extension_id);
     if let Err(error) = registry.save(store) {
@@ -224,6 +291,9 @@ pub fn remove_extension(
                     "{error}; artifact rollback failed: {rollback}"
                 ))
             })?;
+        }
+        if removal_transaction.is_some() {
+            PackageTransaction::clear(&extensions_root)?;
         }
         return Err(ExtensionPackageError::Config(error));
     }
@@ -245,6 +315,9 @@ pub fn remove_extension(
                 "extension removal failed; artifact rollback failed: {rollback}"
             )));
         }
+        if removal_transaction.is_some() {
+            PackageTransaction::clear(&extensions_root)?;
+        }
         return match database_result {
             Ok(false) => Err(ExtensionPackageError::Manifest(
                 "extension is not removable".to_owned(),
@@ -255,6 +328,9 @@ pub fn remove_extension(
     }
     if removed_root.exists() {
         let _ = fs::remove_dir_all(removed_root);
+    }
+    if removal_transaction.is_some() {
+        PackageTransaction::clear(&extensions_root)?;
     }
     Ok(())
 }
@@ -267,6 +343,9 @@ pub fn resolve_active_extensions(
 ) -> (Vec<ActiveExtension>, Vec<String>) {
     let mut active = Vec::new();
     let mut errors = Vec::new();
+    if let Err(error) = recover_package_artifacts(paths) {
+        errors.push(format!("package recovery failed: {error}"));
+    }
     for extension in installed
         .iter()
         .filter(|extension| extension.kind == ExtensionKind::External)
@@ -321,6 +400,105 @@ fn resolve_active_extension(
     })
 }
 
+fn validate_package_operation(
+    operation: PackageOperation,
+    package_version: &str,
+    previous: Option<&StoredExtension>,
+) -> Result<(), ExtensionPackageError> {
+    let Some(previous) = previous else {
+        return if operation == PackageOperation::Install {
+            Ok(())
+        } else {
+            Err(ExtensionPackageError::Manifest(
+                "update requires an installed external extension".to_owned(),
+            ))
+        };
+    };
+    let current = previous
+        .active_version
+        .as_deref()
+        .or(previous.installed_version.as_deref())
+        .ok_or_else(|| {
+            ExtensionPackageError::Manifest("installed extension has no current version".to_owned())
+        })?;
+    let current = Version::parse(current)
+        .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
+    let package = Version::parse(package_version)
+        .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
+    match operation {
+        PackageOperation::Install if package != current => Err(ExtensionPackageError::Manifest(
+            "extension is already installed; use update for a different version".to_owned(),
+        )),
+        PackageOperation::Update if package < current => Err(ExtensionPackageError::Manifest(
+            format!("update cannot downgrade extension from {current} to {package}"),
+        )),
+        PackageOperation::Install | PackageOperation::Update => Ok(()),
+    }
+}
+
+fn recover_package_artifacts(paths: &NanikaPaths) -> Result<(), ExtensionPackageError> {
+    let extensions_root = paths.app_data_root().join("extensions");
+    fs::create_dir_all(&extensions_root)?;
+    let Some(transaction) = PackageTransaction::load(&extensions_root)? else {
+        return Ok(());
+    };
+    transaction.validate()?;
+    let extension_root = extensions_root.join(&transaction.extension_id);
+    validate_managed_path(&extensions_root, &extension_root)?;
+    match transaction.operation.as_str() {
+        "replace" => {
+            let version = transaction.version.as_deref().ok_or_else(|| {
+                ExtensionPackageError::Manifest(
+                    "replacement recovery journal has no version".to_owned(),
+                )
+            })?;
+            let version_root = extension_root.join(version);
+            let backup_root = extension_root.join(&transaction.backup_name);
+            validate_managed_path(&extension_root, &version_root)?;
+            validate_managed_path(&extension_root, &backup_root)?;
+            let expected_prefix = format!(".replaced-{version}-");
+            if !transaction.backup_name.starts_with(&expected_prefix) {
+                return Err(ExtensionPackageError::Manifest(
+                    "replacement recovery journal has an unexpected backup name".to_owned(),
+                ));
+            }
+            if version_root.exists() {
+                if backup_root.exists() {
+                    fs::remove_dir_all(backup_root)?;
+                }
+            } else if backup_root.exists() {
+                fs::rename(backup_root, version_root)?;
+            } else {
+                return Err(ExtensionPackageError::Manifest(
+                    "replacement recovery artifacts are missing".to_owned(),
+                ));
+            }
+        }
+        "remove" => {
+            let backup_root = extensions_root.join(&transaction.backup_name);
+            validate_managed_path(&extensions_root, &backup_root)?;
+            let expected_prefix = format!(".removed-{}-", transaction.extension_id);
+            if !transaction.backup_name.starts_with(&expected_prefix) {
+                return Err(ExtensionPackageError::Manifest(
+                    "removal recovery journal has an unexpected backup name".to_owned(),
+                ));
+            }
+            if backup_root.exists() {
+                let installed = HostDatabase::open(paths.host_database())?
+                    .extension(&transaction.extension_id)?
+                    .is_some();
+                if installed && !extension_root.exists() {
+                    fs::rename(backup_root, extension_root)?;
+                } else {
+                    fs::remove_dir_all(backup_root)?;
+                }
+            }
+        }
+        _ => unreachable!("validated package transaction operation"),
+    }
+    PackageTransaction::clear(&extensions_root)
+}
+
 fn validate_package_path(path: &Path) -> Result<(), ExtensionPackageError> {
     if path.extension().and_then(|value| value.to_str()) != Some("nanika") {
         return Err(ExtensionPackageError::Manifest(
@@ -345,6 +523,7 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
     }
     let mut expanded = 0_u64;
     let mut names = HashSet::new();
+    let mut directories = HashSet::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
         if !matches!(
@@ -395,15 +574,55 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
         }
         let output = destination.join(&relative);
         if entry.is_dir() {
-            fs::create_dir_all(output)?;
+            ensure_package_directories(destination, &relative, &mut directories)?;
             continue;
         }
-        if let Some(parent) = output.parent() {
-            fs::create_dir_all(parent)?;
+        if let Some(parent) = relative.parent() {
+            ensure_package_directories(destination, parent, &mut directories)?;
         }
-        let mut file = File::create(output)?;
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(output)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    ExtensionPackageError::Manifest(
+                        "package contains filesystem-colliding paths".to_owned(),
+                    )
+                } else {
+                    error.into()
+                }
+            })?;
         std::io::copy(&mut entry, &mut file)?;
         file.flush()?;
+    }
+    Ok(())
+}
+
+fn ensure_package_directories(
+    root: &Path,
+    relative: &Path,
+    directories: &mut HashSet<PathBuf>,
+) -> Result<(), ExtensionPackageError> {
+    let mut current = PathBuf::new();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(ExtensionPackageError::Manifest(
+                "package contains an unsafe directory path".to_owned(),
+            ));
+        };
+        current.push(component);
+        if directories.insert(current.clone()) {
+            fs::create_dir(root.join(&current)).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    ExtensionPackageError::Manifest(
+                        "package contains filesystem-colliding paths".to_owned(),
+                    )
+                } else {
+                    error.into()
+                }
+            })?;
+        }
     }
     Ok(())
 }
@@ -453,6 +672,35 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
             "manifest has no target entrypoints".to_owned(),
         ));
     }
+    for (target, entrypoint) in &manifest.targets {
+        if !matches!(
+            target.as_str(),
+            "x86_64-pc-windows-msvc" | "aarch64-apple-darwin" | "x86_64-apple-darwin"
+        ) {
+            return Err(ExtensionPackageError::Manifest(format!(
+                "unsupported extension target: {target}"
+            )));
+        }
+        validate_target_entrypoint(target, entrypoint)?;
+    }
+    if !manifest.capabilities.is_empty() {
+        return Err(ExtensionPackageError::Manifest(
+            "extension capabilities are reserved for a future manifest version".to_owned(),
+        ));
+    }
+    let mut permissions = HashSet::new();
+    for permission in &manifest.permissions {
+        if !matches!(permission.as_str(), "process.launch" | "clipboard.write") {
+            return Err(ExtensionPackageError::Manifest(format!(
+                "unsupported extension permission: {permission}"
+            )));
+        }
+        if !permissions.insert(permission) {
+            return Err(ExtensionPackageError::Manifest(format!(
+                "duplicate extension permission: {permission}"
+            )));
+        }
+    }
     let mut dependencies = HashSet::new();
     for dependency in &manifest.dependencies {
         if !nanika_storage::is_valid_extension_id(dependency) {
@@ -476,6 +724,22 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
             "extension dependencies require a future dependency resolver".to_owned(),
         ));
     }
+    if !manifest.activation_events.is_empty() {
+        return Err(ExtensionPackageError::Manifest(
+            "extension activation events are reserved for a future manifest version".to_owned(),
+        ));
+    }
+    if !manifest.contributions.is_null()
+        && !manifest
+            .contributions
+            .as_object()
+            .is_some_and(|contributions| contributions.is_empty())
+    {
+        return Err(ExtensionPackageError::Manifest(
+            "extension manifest contributions are reserved for a future manifest version"
+                .to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -483,18 +747,30 @@ fn target_entrypoint(
     manifest: &ExtensionManifest,
     target: &str,
 ) -> Result<PathBuf, ExtensionPackageError> {
-    let ExtensionTarget { entrypoint } = manifest.targets.get(target).ok_or_else(|| {
+    let target_entrypoint = manifest.targets.get(target).ok_or_else(|| {
         ExtensionPackageError::Manifest(format!("package does not support target {target}"))
     })?;
+    validate_target_entrypoint(target, target_entrypoint)?;
+    Ok(PathBuf::from(&target_entrypoint.entrypoint))
+}
+
+fn validate_target_entrypoint(
+    target: &str,
+    target_entrypoint: &ExtensionTarget,
+) -> Result<(), ExtensionPackageError> {
+    let ExtensionTarget { entrypoint } = target_entrypoint;
     let path = PathBuf::from(entrypoint);
     validate_relative_path(&path)?;
     let expected = Path::new("bin").join(target);
-    if !path.starts_with(expected) {
+    let relative_entrypoint = path.strip_prefix(&expected).map_err(|_| {
+        ExtensionPackageError::Manifest("entrypoint must be under bin/<target>".to_owned())
+    })?;
+    if relative_entrypoint.as_os_str().is_empty() {
         return Err(ExtensionPackageError::Manifest(
             "entrypoint must be under bin/<target>".to_owned(),
         ));
     }
-    Ok(path)
+    Ok(())
 }
 
 fn validate_relative_path(path: &Path) -> Result<(), ExtensionPackageError> {

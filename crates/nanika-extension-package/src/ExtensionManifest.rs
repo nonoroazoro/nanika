@@ -6,7 +6,7 @@ use crate::ExtensionTarget;
 
 /// Typed root manifest for one external extension version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionManifest {
     pub format: String,
     pub manifest_version: u32,

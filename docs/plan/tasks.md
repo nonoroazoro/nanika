@@ -64,12 +64,12 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Keep host APIs and IPC from exposing host memory, SQLite connections, global configuration, or another extension's state. The MVP does not claim an enforceable filesystem sandbox.
 - [x] Implement the off-UI-thread registration handshake, bounded JSON frames, and orderly shutdown fixture.
 - [x] Define extension and action identities that survive refreshes and updates.
-- [x] Define and validate manifest fields, activation events, contributions, permissions, dependencies, compatibility, and target entrypoints. Reject non-empty dependencies until a resolver exists.
+- [x] Enforce a strict versioned manifest schema, supported permissions and targets, compatibility, and safe entrypoints. Reject unknown fields and reserved MVP fields until their semantics exist.
 - [x] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
 - [x] Implement bounded protocol queues, deadlines, restart budgets, safe query retry, non-replayed action recovery, graceful shutdown, and child reaping.
-- [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, atomic activation, path validation, and SHA-256 checks.
+- [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, no-clobber extraction, recoverable activation, path validation, and SHA-256 checks.
 - [x] Limit MVP installation to explicit local `.nanika` packages. No development-directory install, marketplace, or background download.
-- [x] Implement local package install, state-preserving update, enable, disable, recoverable removal, compatibility checks, and built-in protection through `nanika-cli`.
+- [x] Implement local package install, monotonic state-preserving update, same-version repair, enable, disable, recoverable removal, compatibility checks, and built-in protection through `nanika-cli`.
 - [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
 - [x] Define extension-owned settings schema, semantic validation, and storage.
 - [ ] Add settings migrations and reset behavior before a format change requires them.
@@ -133,7 +133,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select one `nanika.db` plus one database per extension. Do not sync live SQLite files.
 - [x] Record the baseline host and application tables, ownership, pragmas, WAL policy, and migration boundary in `tech-stack.md`.
 - [x] Implement the resolved path boundary, host migration runner, and isolated extension database owner.
-- [x] Implement and test ordered forward-only migrations, retention, reset, interrupted scan recovery, and isolation of malformed extension metadata.
+- [x] Implement and test ordered forward-only migrations, retention, reset, interrupted scan recovery, and per-row isolation of malformed extension metadata.
 - [ ] Add consistent maintenance snapshots and corruption recovery before destructive migrations are introduced.
 - [x] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
 - [x] Implement bounded local logs and diagnostic export.

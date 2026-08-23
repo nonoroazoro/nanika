@@ -135,14 +135,47 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
             [],
         )
         .expect("invalid fixture should be inserted");
+    connection
+        .execute(
+            "INSERT INTO extensions (
+                extension_id, kind, state, health, updated_at
+             ) VALUES ('com.example.invalid-state', 'external', 1, 'healthy', 1)",
+            [],
+        )
+        .expect("invalid state fixture should be inserted");
+    connection
+        .execute(
+            "INSERT INTO extensions (
+                extension_id, kind, state, health, updated_at
+             ) VALUES ('../escape', 'external', 'enabled', 'healthy', 1)",
+            [],
+        )
+        .expect("invalid id fixture should be inserted");
     drop(connection);
 
     let (worker, state) =
         SearchStorageWorker::spawn(&database, 50).expect("storage owner should still start");
     assert_eq!(state.extensions.len(), 1);
     assert_eq!(state.extensions[0].extension_id, "com.example.valid");
-    assert_eq!(state.extension_errors.len(), 1);
-    assert!(state.extension_errors[0].contains("com.example.invalid"));
+    assert_eq!(state.extension_errors.len(), 3);
+    assert!(
+        state
+            .extension_errors
+            .iter()
+            .any(|error| error.contains("com.example.invalid"))
+    );
+    assert!(
+        state
+            .extension_errors
+            .iter()
+            .any(|error| error.contains("com.example.invalid-state"))
+    );
+    assert!(
+        state
+            .extension_errors
+            .iter()
+            .any(|error| error.contains("../escape"))
+    );
     worker.shutdown();
     let _ = std::fs::remove_dir_all(root);
 }

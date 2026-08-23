@@ -11,6 +11,10 @@ mod extension_package_error;
 #[path = "ExtensionTarget.rs"]
 mod extension_target;
 mod package;
+#[path = "PackageOperation.rs"]
+mod package_operation;
+#[path = "PackageTransaction.rs"]
+mod package_transaction;
 #[path = "StagedPackage.rs"]
 mod staged_package;
 #[path = "StagingDirectory.rs"]
@@ -21,5 +25,7 @@ pub use extension_manifest::*;
 pub use extension_package_error::*;
 pub use extension_target::*;
 pub use package::*;
+pub(crate) use package_operation::*;
+pub(crate) use package_transaction::*;
 pub(crate) use staged_package::*;
 pub(crate) use staging_directory::*;

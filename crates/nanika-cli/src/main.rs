@@ -13,7 +13,9 @@ use std::{
 
 use command::Command;
 use nanika_config::ConfigStore;
-use nanika_extension_package::{install_package, remove_extension, set_extension_enabled};
+use nanika_extension_package::{
+    install_package, remove_extension, set_extension_enabled, update_package,
+};
 use nanika_platform::InstanceRole;
 
 const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 32 * 1024 * 1024;
@@ -62,7 +64,7 @@ fn run() -> Result<String, String> {
         }
         Command::Update(package) => {
             let installed =
-                install_package(&package, &paths, &store).map_err(|error| error.to_string())?;
+                update_package(&package, &paths, &store).map_err(|error| error.to_string())?;
             Ok(format!(
                 "updated {} from {}",
                 installed.extension_id,

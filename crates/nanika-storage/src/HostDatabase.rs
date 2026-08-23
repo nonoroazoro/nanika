@@ -93,26 +93,32 @@ impl HostDatabase {
             "SELECT extension_id, kind, installed_version, active_version, install_path,
                     package_digest, state, health, last_error
              FROM extensions
-             WHERE kind IN ('built-in', 'external')
              ORDER BY extension_id",
         )?;
-        let extensions = statement
-            .query_map([], stored_extension_from_row)?
-            .collect::<SqlResult<Vec<_>>>()?;
-        let mut invalid = self.connection.prepare(
-            "SELECT CAST(extension_id AS TEXT), CAST(kind AS TEXT) FROM extensions
-             WHERE kind NOT IN ('built-in', 'external')
-             ORDER BY extension_id",
-        )?;
-        let errors = invalid
-            .query_map([], |row| {
-                Ok(format!(
-                    "extension {} has invalid kind {} and was skipped",
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?
-                ))
-            })?
-            .collect::<SqlResult<Vec<_>>>()?;
+        let mut rows = statement.query([])?;
+        let mut extensions = Vec::new();
+        let mut errors = Vec::new();
+        let mut row_number = 0_usize;
+        while let Some(row) = rows.next()? {
+            row_number += 1;
+            let identity = row
+                .get_ref(0)
+                .ok()
+                .and_then(|value| value.as_str().ok())
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("row {row_number}"));
+            match stored_extension_from_row(row) {
+                Ok(extension) => match validate_stored_extension_metadata(&extension) {
+                    Ok(()) => extensions.push(extension),
+                    Err(error) => errors.push(format!(
+                        "extension {identity} has invalid metadata ({error}) and was skipped"
+                    )),
+                },
+                Err(error) => errors.push(format!(
+                    "extension {identity} has invalid metadata ({error}) and was skipped"
+                )),
+            }
+        }
         Ok(StoredExtensionLoad { extensions, errors })
     }
 
@@ -348,6 +354,19 @@ fn stored_extension_from_row(row: &rusqlite::Row<'_>) -> SqlResult<StoredExtensi
         health: row.get(7)?,
         last_error: row.get(8)?,
     })
+}
+
+fn validate_stored_extension_metadata(extension: &StoredExtension) -> Result<(), &'static str> {
+    if !is_valid_extension_id(&extension.extension_id) {
+        return Err("invalid extension id");
+    }
+    if !matches!(extension.state.as_str(), "enabled" | "disabled") {
+        return Err("invalid extension state");
+    }
+    if extension.health.trim().is_empty() {
+        return Err("empty extension health");
+    }
+    Ok(())
 }
 
 fn validate_migration_history(connection: &Connection) -> SqlResult<i64> {

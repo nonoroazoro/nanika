@@ -14,6 +14,9 @@ Manage local external extensions while Nanika is stopped:
     nanika-cli disable <extension-id>
     nanika-cli remove <extension-id>
 
+Install creates an extension or repairs the same immutable version. Update
+requires an installed extension and never downgrades it.
+
 Export bounded local diagnostics while Nanika is running or stopped:
 
     nanika-cli diagnostics <output.zip>
