@@ -58,7 +58,7 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
 }
 
 #[test]
-fn manifest_version_two_preserves_acp_protocol_version() {
+fn manifest_preserves_acp_protocol_version() {
     let root = temporary_root("acp-runtime");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
@@ -75,7 +75,7 @@ fn manifest_version_two_preserves_acp_protocol_version() {
         "1.2.3",
         false,
         false,
-        2,
+        1,
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 1
@@ -94,8 +94,8 @@ fn manifest_version_two_preserves_acp_protocol_version() {
 }
 
 #[test]
-fn manifest_version_two_preserves_nanika_protocol_version() {
-    let root = temporary_root("nanika-runtime-v2");
+fn manifest_preserves_nanika_protocol_version() {
+    let root = temporary_root("nanika-runtime");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
         root.join("data"),
@@ -111,7 +111,7 @@ fn manifest_version_two_preserves_nanika_protocol_version() {
         "1.2.3",
         false,
         false,
-        2,
+        1,
         Some(serde_json::json!({
             "protocol": "nanika",
             "protocolVersion": 1
@@ -130,8 +130,8 @@ fn manifest_version_two_preserves_nanika_protocol_version() {
 }
 
 #[test]
-fn manifest_version_two_requires_runtime_protocol() {
-    let root = temporary_root("missing-runtime-v2");
+fn manifest_requires_runtime_protocol() {
+    let root = temporary_root("missing-runtime");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
         root.join("data"),
@@ -140,17 +140,17 @@ fn manifest_version_two_requires_runtime_protocol() {
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("missing-runtime.nanika");
-    create_package_definition_with_runtime(&package, false, &[], "1.2.3", false, false, 2, None);
+    create_package_definition_with_runtime(&package, false, &[], "1.2.3", false, false, 1, None);
 
     let error = install_package(&package, &paths, &store)
-        .expect_err("manifest version 2 without a runtime must fail");
+        .expect_err("manifest without a runtime must fail");
 
-    assert!(error.to_string().contains("requires a runtime protocol"));
+    assert!(error.to_string().contains("missing field `runtime`"));
     cleanup(&root);
 }
 
 #[test]
-fn manifest_version_two_rejects_unsupported_acp_protocol_version() {
+fn manifest_rejects_unsupported_acp_protocol_version() {
     let root = temporary_root("unsupported-acp-runtime");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
@@ -167,7 +167,7 @@ fn manifest_version_two_rejects_unsupported_acp_protocol_version() {
         "1.2.3",
         false,
         false,
-        2,
+        1,
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 2
@@ -186,8 +186,8 @@ fn manifest_version_two_rejects_unsupported_acp_protocol_version() {
 }
 
 #[test]
-fn manifest_version_one_rejects_runtime_protocol_declarations() {
-    let root = temporary_root("legacy-runtime");
+fn unsupported_manifest_version_is_rejected() {
+    let root = temporary_root("unsupported-manifest");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
         root.join("data"),
@@ -195,7 +195,7 @@ fn manifest_version_one_rejects_runtime_protocol_declarations() {
         root.join("config-default"),
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
-    let package = root.join("legacy.nanika");
+    let package = root.join("unsupported.nanika");
     create_package_definition_with_runtime(
         &package,
         false,
@@ -203,7 +203,7 @@ fn manifest_version_one_rejects_runtime_protocol_declarations() {
         "1.2.3",
         false,
         false,
-        1,
+        2,
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 1
@@ -211,9 +211,9 @@ fn manifest_version_one_rejects_runtime_protocol_declarations() {
     );
 
     let error = install_package(&package, &paths, &store)
-        .expect_err("legacy manifest runtime declaration must fail");
+        .expect_err("unsupported manifest version must fail");
 
-    assert!(error.to_string().contains("version 1 cannot declare"));
+    assert!(error.to_string().contains("unsupported manifest format"));
     cleanup(&root);
 }
 
@@ -538,7 +538,10 @@ fn create_package_definition(
         unknown_field,
         unicode_collision,
         1,
-        None,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
     );
 }
 

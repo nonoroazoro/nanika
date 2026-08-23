@@ -72,13 +72,13 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Implement local package install, monotonic state-preserving update, same-version repair, enable, disable, recoverable removal, compatibility checks, and built-in protection through `nanika-cli`.
 - [x] Reserve ACP as a separate child-process protocol adapter with separate wire messages.
 - [x] Define extension-owned settings schema, semantic validation, and storage.
-- [ ] Add settings migrations and reset behavior before a format change requires them.
+- [ ] Add settings migrations and reset behavior only after a released format requires compatibility.
 - [x] Define the default extension implementations and their acceptance tests.
 
 ### ACP extension protocol
 
 - [x] Select stable ACP v1 and the official Rust SDK. Keep draft ACP v2 disabled.
-- [x] Add manifest v2 with a required versioned runtime protocol declaration. Preserve manifest v1 as implicit Nanika protocol v1.
+- [x] Define manifest v1 with a required versioned runtime protocol declaration for Nanika v1 or ACP v1.
 - [x] Add a temporary, unprivileged ACP v1 dummy extension with version negotiation, unique sessions, cancellation, and `Hello World` prompts.
 - [x] Route ACP extensions through the common runtime lifecycle, permissions boundary, failure policy, and `.nanika` package path.
 - [x] Enforce bounded transport frames, stderr, prompt output, deadlines, typed invocation outcomes, cancellation recovery, shutdown without relaunch, and process-tree termination.
@@ -145,8 +145,8 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select one `nanika.db` plus one database per extension. Do not sync live SQLite files.
 - [x] Record the baseline host and application tables, ownership, pragmas, WAL policy, and migration boundary in `tech-stack.md`.
 - [x] Implement the resolved path boundary, host migration runner, and isolated extension database owner.
-- [x] Implement and test ordered forward-only migrations, retention, reset, interrupted scan recovery, and per-row isolation of malformed extension metadata.
-- [ ] Add consistent maintenance snapshots and corruption recovery before destructive migrations are introduced.
+- [x] Consolidate the host, application, and clipboard schemas as baseline version 1; test initialization, retention, reset, interrupted scan recovery, and per-row isolation of malformed extension metadata.
+- [ ] Add maintenance snapshots and corruption recovery before the first post-release destructive database migration.
 - [x] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
 - [x] Implement bounded local logs and diagnostic export.
 - [ ] Define cache cleanup and generated-data recovery.
@@ -177,5 +177,5 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 5. [x] Windows application extension with discovery, indexing, and persistence.
 6. [x] Command, script, calculator, and clipboard history extensions.
 7. [x] Settings, startup, and macOS adapters.
-8. [ ] Performance, packaging, release, and cross-platform acceptance. Local Windows checks, packaging, and single-instance smoke pass; fixed-machine performance and physical platform acceptance remain.
+8. [ ] Performance, packaging, release, and cross-platform acceptance. Local Windows source checks pass; current-head packaging, fixed-machine performance, and physical platform acceptance remain.
 9. [x] ACP extension protocol.

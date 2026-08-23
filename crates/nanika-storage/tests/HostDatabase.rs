@@ -1,74 +1,68 @@
-use crate::{ExtensionKind, HostDatabase, migrations::MIGRATIONS};
+use crate::{ExtensionKind, HostDatabase};
 
 #[test]
-fn migrations_apply_once() {
+fn baseline_applies_once() {
     let database =
         std::env::temp_dir().join(format!("nanika-storage-test-{}.db", std::process::id()));
     cleanup(&database);
     let first = HostDatabase::open(&database).expect("database should open");
-    assert_eq!(first.schema_version().expect("schema version"), 3);
+    assert_eq!(first.schema_version().expect("schema version"), 1);
     drop(first);
     let second = HostDatabase::open(&database).expect("database should reopen");
-    assert_eq!(second.schema_version().expect("schema version"), 3);
+    assert_eq!(second.schema_version().expect("schema version"), 1);
     drop(second);
     cleanup(&database);
 }
 
 #[test]
-fn usage_schema_migrates_entry_identity_forward() {
+fn baseline_schema_contains_entry_identity_and_retention_index() {
     let database = std::env::temp_dir().join(format!(
-        "nanika-storage-usage-migration-{}.db",
+        "nanika-storage-baseline-schema-{}.db",
         std::process::id()
     ));
     cleanup(&database);
-    let legacy = rusqlite::Connection::open(&database).expect("legacy database should open");
-    legacy
-        .execute_batch(
-            "CREATE TABLE schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at INTEGER NOT NULL
-             );",
-        )
-        .expect("migration table should exist");
-    legacy
-        .execute_batch(MIGRATIONS[0].1)
-        .expect("legacy schema should exist");
-    legacy
-        .execute(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (1, 1)",
-            [],
-        )
-        .expect("legacy version should exist");
-    legacy
-        .execute(
-            "INSERT INTO extensions (
-                extension_id, kind, state, health, updated_at
-             ) VALUES ('test.extension', 'external', 'enabled', 'healthy', 1)",
-            [],
-        )
-        .expect("legacy extension should exist");
-    legacy
-        .execute(
-            "INSERT INTO usage_stats (
-                extension_id, action_id, query_context, execution_count, last_executed_at
-             ) VALUES ('test.extension', 'open', 'tool', 2, 10)",
-            [],
-        )
-        .expect("legacy usage should exist");
-    drop(legacy);
+    let host = HostDatabase::open(&database).expect("database should open");
+    assert_eq!(host.schema_version().expect("schema version"), 1);
+    drop(host);
 
-    let migrated = HostDatabase::open(&database).expect("database should migrate");
-    assert_eq!(migrated.schema_version().expect("schema version"), 3);
-    let usage = migrated.load_usage().expect("usage should migrate");
-    assert_eq!(usage[0].entry_id, "open");
-    assert_eq!(usage[0].execution_count, 2);
-    drop(migrated);
+    let connection = rusqlite::Connection::open(&database).expect("database should reopen");
+    let columns = connection
+        .prepare("SELECT name FROM pragma_table_info('usage_stats') ORDER BY cid")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .expect("usage columns should load");
+    assert_eq!(
+        columns,
+        [
+            "extension_id",
+            "entry_id",
+            "action_id",
+            "query_context",
+            "execution_count",
+            "last_executed_at",
+        ]
+    );
+    let retention_index: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_schema
+                WHERE type = 'index' AND name = 'usage_stats_last_executed_at'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("retention index should load");
+    assert!(retention_index);
+    drop(connection);
     cleanup(&database);
 }
 
 #[test]
-fn newer_or_gapped_migration_history_is_rejected() {
-    for (suffix, versions) in [("newer", vec![99_i64]), ("gapped", vec![1_i64, 3_i64])] {
+fn unsupported_migration_history_is_rejected() {
+    for (suffix, versions) in [("newer", vec![2_i64]), ("unexpected", vec![0_i64])] {
         let database =
             std::env::temp_dir().join(format!("nanika-storage-{suffix}-{}.db", std::process::id()));
         cleanup(&database);

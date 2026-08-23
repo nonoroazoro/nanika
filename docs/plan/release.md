@@ -32,7 +32,7 @@ An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`.
 
 ## Current validation
 
-The 2026-08-23 local Windows validation passed the workspace quality gate, release build, archive content check, SHA-256 verification, and foreground secondary-launch smoke test. Signing, clean-profile installation, physical platform acceptance, and macOS packaging remain release gates.
+The current Windows source passes the workspace quality gate. The existing package and secondary-launch smoke result predates the latest protocol and process-supervision changes, so current-head packaging must be rerun. Signing, clean-profile installation, physical platform acceptance, and macOS packaging remain release gates.
 
 ## Checklist
 
@@ -46,4 +46,4 @@ The 2026-08-23 local Windows validation passed the workspace quality gate, relea
 
 ## Update and rollback
 
-Updates replace the application files only while Nanika is stopped. User configuration and generated data stay outside the application directory. Retain at least the previous signed artifact and its checksum. Rollback stops Nanika and restores that complete artifact; never mix host and built-in extension binaries from different versions. Database migrations are forward-only, so a release that changes persistent schemas must document its minimum rollback version and backup requirements.
+Updates replace the application files only while Nanika is stopped. User configuration and generated data stay outside the application directory. Retain at least the previous signed artifact and its checksum. Rollback stops Nanika and restores that complete artifact; never mix host and built-in extension binaries from different versions. After the first release, database migrations are forward-only, so a release that changes persistent schemas must document its minimum rollback version and backup requirements.

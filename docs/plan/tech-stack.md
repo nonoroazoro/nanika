@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 8 physical acceptance and removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 8 physical acceptance and removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify rewriting the baseline with updated validation notes.
 
 ## Selected baseline
 
@@ -164,7 +164,7 @@ The local layout is:
 
 Only this tree is intended for Dropbox or another file-level sync service. Databases, indexes, clipboard content, extension artifacts, logs, backups, and caches are machine-local generated data and are never synchronized. Never synchronize live SQLite files.
 
-Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each settings file has a `formatVersion`; add ordered migrations before changing that format. A failed future migration must leave the original file untouched and start read-only.
+Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each settings file has a `formatVersion`. Before the first release, format changes rewrite the baseline. Released formats require ordered migrations, and a failed migration must leave the original file untouched and start read-only.
 
 The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, comment-preserving top-level and nested-object changes, atomic replacement, path-preserving backups, bootstrap recovery, and read-only fallback. The extension registry selects defaults only for an explicit missing file; other metadata and access failures remain errors.
 
@@ -176,7 +176,7 @@ The host writes non-blocking INFO-and-higher lifecycle and fatal events under `<
 
 ## SQLite storage
 
-Use one host database and one database per extension. Every database has exactly one writer that owns its connection and transactions. The host storage owner owns `nanika.db`; each extension owns its database through a named owner thread in its process. Connections never cross process boundaries. Extensions own their schema and migration definitions. The current storage crate enforces isolated database paths and migration tables.
+Use one host database and one database per extension. Every database has exactly one writer that owns its connection and transactions. The host storage owner owns `nanika.db`; each extension owns its database through a named owner thread in its process. Connections never cross process boundaries. Extensions resolve their database path from the host-supplied data root and own their schema and migration definitions.
 
 `nanika.db` baseline tables:
 
@@ -185,7 +185,7 @@ Use one host database and one database per extension. Every database has exactly
 - `input_history(id, normalized_query, display_query, use_count, first_used_at, last_used_at)`
 - `usage_stats(extension_id, entry_id, action_id, query_context, execution_count, last_executed_at)`
 
-The current host schema version is 3. Migration 2 adds stable entry identity to `usage_stats` through a transactional table rebuild. Migration 3 adds the usage-retention index. Startup parses and validates extension metadata one row at a time, reports malformed rows, and continues with valid extensions.
+The host, application, and clipboard schemas each start from the current baseline version 1. Host usage identity includes extension, entry, action, and query context, with an index for retention cleanup. Startup parses and validates extension metadata one row at a time, reports malformed rows, and continues with valid extensions.
 
 Application extension baseline tables:
 
@@ -197,7 +197,7 @@ Clipboard extension owns its content, hash, timestamp, pin, retention, and paylo
 
 The clipboard schema stores typed text, file-list, or image references with content hashes, byte size, capture and last-use timestamps, and pin state. Unpinned history is retained for 30 days and capped at 500 entries. Image PNG payloads live under `<app-data-root>/payloads/com.nanika.clipboard`, outside synchronized configuration and SQLite.
 
-Every database uses embedded, ordered, forward-only migrations in a transaction. The host rejects newer or non-contiguous migration histories. Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, and `busy_timeout=100 ms`. Checkpoint WAL before maintenance and create a consistent snapshot with `VACUUM INTO` before destructive migrations. A failed extension migration disables only that extension and never deletes old data.
+Every database uses an embedded baseline and an ordered forward-only migration runner. Before the first release, schema changes rewrite version 1 and old development databases must be reset. Released schemas increment versions transactionally; the host rejects newer or non-contiguous histories. Enable `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, and `busy_timeout=100 ms`. Before a post-release destructive migration, checkpoint WAL and create a consistent snapshot with `VACUUM INTO`. A failed extension migration disables only that extension and never deletes old data.
 
 ## Threads and process execution
 
@@ -275,7 +275,7 @@ README.md
 LICENSE
 ```
 
-Manifest version 1 remains valid and implicitly selects Nanika protocol v1. Manifest version 2 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols and versions are rejected. Both versions reject unknown fields, unknown targets, unsupported or duplicate permissions, and unsafe entrypoints. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Capabilities, dependencies, activation events, and manifest contributions remain reserved.
+Manifest version 1 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols, versions, fields, targets, unsupported or duplicate permissions, and unsafe entrypoints are rejected. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Capabilities, dependencies, activation events, and manifest contributions remain reserved.
 
 `nanika-cli` installs, updates, enables, disables, and removes external extensions while the host is stopped. `install` creates a missing extension or repairs the same immutable version; a different installed version requires `update`. `update` requires an installed extension, preserves enablement, and rejects downgrades. Archives are limited to 128 MiB, 4,096 entries, and 512 MiB expanded content. Traversal, symlinks, cross-platform name collisions, filesystem collisions, unsupported compression, and excessive compression ratios are rejected. Extraction never overwrites an existing path. The package is copied and hashed once, then extraction uses that immutable staged copy. The target entrypoint is made executable on macOS. Destructive artifact mutations write a recovery journal before rename; host startup and later CLI operations finish or roll back an interrupted replacement or removal. Configuration, database state, and artifacts use ordered mutations with compensation, and generated cleanup is best-effort after logical commit. Built-in IDs cannot be replaced or removed. No marketplace, development-directory install, or background download service is included.
 

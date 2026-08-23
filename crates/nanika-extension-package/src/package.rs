@@ -16,8 +16,7 @@ use crate::{
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
-const LEGACY_MANIFEST_VERSION: u32 = 1;
-const MANIFEST_VERSION: u32 = 2;
+const MANIFEST_VERSION: u32 = 1;
 const MAX_PACKAGE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
@@ -645,33 +644,15 @@ fn load_manifest(path: PathBuf) -> Result<ExtensionManifest, ExtensionPackageErr
 }
 
 fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackageError> {
-    if manifest.format != MANIFEST_FORMAT
-        || !matches!(
-            manifest.manifest_version,
-            LEGACY_MANIFEST_VERSION | MANIFEST_VERSION
-        )
-    {
+    if manifest.format != MANIFEST_FORMAT || manifest.manifest_version != MANIFEST_VERSION {
         return Err(ExtensionPackageError::Manifest(
             "unsupported manifest format".to_owned(),
         ));
     }
-    match (manifest.manifest_version, manifest.runtime) {
-        (LEGACY_MANIFEST_VERSION, None) => {}
-        (LEGACY_MANIFEST_VERSION, Some(_)) => {
-            return Err(ExtensionPackageError::Manifest(
-                "manifest version 1 cannot declare a runtime protocol".to_owned(),
-            ));
-        }
-        (MANIFEST_VERSION, Some(protocol)) => protocol
-            .validate()
-            .map_err(ExtensionPackageError::Manifest)?,
-        (MANIFEST_VERSION, None) => {
-            return Err(ExtensionPackageError::Manifest(
-                "manifest version 2 requires a runtime protocol".to_owned(),
-            ));
-        }
-        _ => unreachable!("manifest version was validated above"),
-    }
+    manifest
+        .runtime
+        .validate()
+        .map_err(ExtensionPackageError::Manifest)?;
     if !nanika_storage::is_valid_extension_id(&manifest.id) {
         return Err(ExtensionPackageError::Manifest(
             "invalid extension id".to_owned(),

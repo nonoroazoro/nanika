@@ -1,5 +1,10 @@
 # Nanika Project Instructions
 
+## Development
+
+- Before the first release, treat the current design as the only baseline. Rewrite unpublished schemas and formats instead of preserving compatibility or migrations.
+- Do not complete a stage with stale design, dead compatibility paths, or known technical debt.
+
 ## Performance
 
 - Performance is a first-class requirement: keep the UI responsive and measure latency, frame pacing, and resource use.

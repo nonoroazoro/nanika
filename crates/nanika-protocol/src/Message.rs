@@ -24,7 +24,6 @@ pub enum Message {
     Snapshot {
         request_id: String,
         generation: u64,
-        #[serde(default = "snapshot_complete_by_default")]
         complete: bool,
         entries: Vec<Candidate>,
     },
@@ -88,8 +87,4 @@ pub enum Message {
         code: String,
         message: String,
     },
-}
-
-const fn snapshot_complete_by_default() -> bool {
-    true
 }

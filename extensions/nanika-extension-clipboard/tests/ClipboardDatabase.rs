@@ -3,7 +3,7 @@ use nanika_protocol::ClipboardContent;
 use crate::{ClipboardDatabase, ClipboardEntry};
 
 #[test]
-fn clipboard_database_migrates_deduplicates_and_loads_content() {
+fn clipboard_database_initializes_deduplicates_and_loads_content() {
     let root =
         std::env::temp_dir().join(format!("nanika-clipboard-database-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

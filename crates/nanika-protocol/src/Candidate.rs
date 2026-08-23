@@ -6,6 +6,5 @@ pub struct Candidate {
     pub entry_id: String,
     pub title: String,
     pub action_id: String,
-    #[serde(default)]
     pub aliases: Vec<String>,
 }

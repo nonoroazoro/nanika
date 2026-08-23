@@ -415,7 +415,7 @@ fn create_package(path: &Path, executable: &Path) {
     let entrypoint = format!("bin/{target}/acp-dummy{}", std::env::consts::EXE_SUFFIX);
     let manifest = serde_json::json!({
         "format": "nanika-extension",
-        "manifestVersion": 2,
+        "manifestVersion": 1,
         "id": "com.example.acp-dummy",
         "version": "0.1.0",
         "hostApi": "^0.1",

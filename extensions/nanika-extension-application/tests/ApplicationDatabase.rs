@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::{ApplicationArguments, ApplicationDatabase, ApplicationEntry, ScanReport};
 
 #[test]
-fn database_migrates_and_recovers_an_interrupted_scan() {
+fn database_initializes_and_recovers_an_interrupted_scan() {
     let root = test_root("migration");
     let path = root.join("application.db");
     let database = ApplicationDatabase::open(&path).expect("database should open");

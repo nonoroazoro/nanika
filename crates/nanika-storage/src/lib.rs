@@ -2,8 +2,6 @@
 
 #![forbid(unsafe_code)]
 
-#[path = "ExtensionDatabase.rs"]
-mod extension_database;
 mod extension_id;
 #[path = "ExtensionKind.rs"]
 mod extension_kind;
@@ -28,7 +26,6 @@ mod stored_extension_load;
 mod stored_usage;
 mod time;
 
-pub use extension_database::*;
 pub use extension_id::*;
 pub use extension_kind::*;
 pub use host_database::*;
@@ -42,9 +39,6 @@ pub use stored_extension_load::*;
 pub use stored_usage::*;
 pub(crate) use time::*;
 
-#[cfg(test)]
-#[path = "../tests/ExtensionDatabase.rs"]
-mod extension_database_tests;
 #[cfg(test)]
 #[path = "../tests/HostDatabase.rs"]
 mod host_database_tests;

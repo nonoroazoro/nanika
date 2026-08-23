@@ -4,12 +4,11 @@ use nanika_protocol::{
 };
 
 #[test]
-fn snapshot_completion_defaults_for_older_frames() {
-    let message: Message = serde_json::from_str(
+fn snapshot_completion_is_required_by_protocol_v1() {
+    let message = serde_json::from_str::<Message>(
         r#"{"type":"snapshot","request_id":"query","generation":1,"entries":[]}"#,
-    )
-    .expect("snapshot should decode");
-    assert!(matches!(message, Message::Snapshot { complete: true, .. }));
+    );
+    assert!(message.is_err());
 }
 
 #[test]
