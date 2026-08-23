@@ -169,6 +169,53 @@ impl ConfigStore {
         save_text_atomic(path, &text, Some(&backup))?;
         Ok(typed)
     }
+
+    /// Replace selected members of one object while preserving unrelated CST nodes.
+    pub fn update_object<T: DeserializeOwned>(
+        &self,
+        path: impl AsRef<Path>,
+        object_name: &str,
+        updates: impl IntoIterator<Item = (String, Option<Value>)>,
+        validate: impl FnOnce(&T) -> Result<(), String>,
+    ) -> Result<T, ConfigError> {
+        if self.read_only {
+            return Err(ConfigError::Invalid(
+                "configuration is read-only after recovery".to_owned(),
+            ));
+        }
+        let path = path.as_ref();
+        if path == self.bootstrap_path {
+            return Err(ConfigError::Invalid(
+                "bootstrap updates require the relocation boundary".to_owned(),
+            ));
+        }
+        relative_config_path(&self.config_root, path)?;
+
+        let existing = fs::read_to_string(path)?;
+        let root = CstRootNode::parse(&existing, &ParseOptions::default())
+            .map_err(|error| ConfigError::Parse(error.to_string()))?;
+        let object = root.object_value_or_set().object_value_or_set(object_name);
+        for (key, value) in updates {
+            match (object.get(&key), value) {
+                (Some(property), Some(value)) => property.set_value(cst_value(value)?),
+                (None, Some(value)) => {
+                    object.append(&key, cst_value(value)?);
+                }
+                (Some(property), None) => property.remove(),
+                (None, None) => {}
+            }
+        }
+        let mut text = root.to_string();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        let typed = jsonc_parser::parse_to_serde_value(&text, &ParseOptions::default())
+            .map_err(|error| ConfigError::Parse(error.to_string()))?;
+        validate(&typed).map_err(ConfigError::Invalid)?;
+        let backup = backup_path(&self.machine_root, Some(&self.config_root), path)?;
+        save_text_atomic(path, &text, Some(&backup))?;
+        Ok(typed)
+    }
 }
 
 fn cst_value(value: Value) -> Result<CstInputValue, ConfigError> {

@@ -13,10 +13,13 @@ mod bootstrap_config;
 mod config_error;
 #[path = "ConfigStore.rs"]
 mod config_store;
+#[path = "ExtensionRegistryConfig.rs"]
+mod extension_registry_config;
 
 pub use bootstrap_config::*;
 pub use config_error::*;
 pub use config_store::*;
+pub use extension_registry_config::*;
 
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
 

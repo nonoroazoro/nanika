@@ -20,6 +20,10 @@ mod search_storage_state;
 mod search_storage_worker;
 #[path = "StorageQueueError.rs"]
 mod storage_queue_error;
+#[path = "StoredExtension.rs"]
+mod stored_extension;
+#[path = "StoredExtensionLoad.rs"]
+mod stored_extension_load;
 #[path = "StoredUsage.rs"]
 mod stored_usage;
 mod time;
@@ -33,6 +37,8 @@ pub(crate) use search_storage_command::*;
 pub use search_storage_state::*;
 pub use search_storage_worker::*;
 pub use storage_queue_error::*;
+pub use stored_extension::*;
+pub use stored_extension_load::*;
 pub use stored_usage::*;
 pub(crate) use time::*;
 

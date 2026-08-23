@@ -3,6 +3,8 @@
 #[path = "BuiltinExtensionSpec.rs"]
 mod builtin_extension_spec;
 mod builtins;
+#[path = "Diagnostics.rs"]
+mod diagnostics;
 #[path = "ExtensionCommand.rs"]
 mod extension_command;
 #[path = "ExtensionInvocation.rs"]
@@ -55,6 +57,7 @@ mod overlay_motion;
 mod pending_extension;
 #[path = "PendingHostSettings.rs"]
 mod pending_host_settings;
+mod render_preparation;
 #[path = "SettingsAction.rs"]
 mod settings_action;
 #[path = "SettingsState.rs"]
@@ -64,6 +67,7 @@ mod settings_view;
 mod supervisor_error;
 
 pub(crate) use builtin_extension_spec::*;
+pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_invocation::*;
 pub(crate) use extension_invocation_result::*;
@@ -90,6 +94,7 @@ pub(crate) use host_service_router::*;
 pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
 pub(crate) use pending_host_settings::*;
+pub use render_preparation::*;
 pub(crate) use settings_action::*;
 pub(crate) use settings_state::*;
 pub use supervisor_error::*;
@@ -125,6 +130,9 @@ mod host_config_service_tests;
 #[cfg(test)]
 #[path = "../tests/OverlayMotion.rs"]
 mod overlay_motion_tests;
+#[cfg(test)]
+#[path = "../tests/render_preparation.rs"]
+mod render_preparation_tests;
 #[cfg(test)]
 #[path = "../tests/SettingsState.rs"]
 mod settings_state_tests;

@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 7 is implemented and automated checks pass on Windows. The macOS platform crate passes cross-target checks; signed-bundle runtime validation remains. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 8 implementation and Windows automation are complete. Fixed-machine performance acceptance plus physical macOS runtime, signing, and notarization validation remain. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -29,7 +29,7 @@ Status: current pre-1.0 implementation baseline. Milestone 7 is implemented and 
 | Background work | Standard-library threads and channels | Named owner threads; no async runtime or project-wide pool. |
 | Process launch | `std::process::Command` behind platform adapters | Structured arguments by default; explicit shell mode only. |
 | Errors | `thiserror` and standard error traits | Typed errors at crate and host boundaries. |
-| Diagnostics | `tracing` and `tracing-subscriber` | Structured events and spans with redaction. |
+| Diagnostics | `tracing`, `tracing-subscriber`, and `tracing-appender` | Bounded non-blocking local logs; no content-bearing query or clipboard fields. |
 | Benchmarks | `criterion` as a dev dependency | Default features disabled; targets stay outside runtime crates. |
 | Extension runtime | Host-supervised child processes | Every extension uses the same protocol and failure boundary. |
 | Extension package | ZIP with `.nanika` suffix | `zip` default features disabled; only `deflate-flate2-zlib-rs`. |
@@ -53,6 +53,8 @@ crates/
   nanika-storage/
   nanika-config/
   nanika-search/
+  nanika-extension-package/
+  nanika-cli/
 extensions/
   nanika-extension-application/
   nanika-extension-command/
@@ -85,7 +87,7 @@ The host owns the single input field, input history, query navigation, search ag
 
 ## UI and interaction
 
-Use a transparent, undecorated, always-on-top overlay. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
+Use a transparent, undecorated, always-on-top overlay. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Windows placement uses target-monitor physical pixels; macOS placement uses global AppKit points converted with the current window scale expected by `winit`. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
 
 The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon and dismissal use frame-rate-independent smoothstep timelines of 140 ms and 110 ms. Interruption continues from the current value. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
 
@@ -162,7 +164,13 @@ Only this tree is intended for Dropbox or another file-level sync service. Datab
 
 Use JSONC for human-edited configuration and manifests. Parse through `serde` and `jsonc-parser`, keep CST types private, and convert to typed Rust values at the boundary. UI edits use targeted CST changes, preserve comments and formatting, reparse and validate, then replace files atomically. Each settings file has a `formatVersion`; add ordered migrations before changing that format. A failed future migration must leave the original file untouched and start read-only.
 
-The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, comment-preserving targeted changes, atomic replacement, path-preserving backups, bootstrap recovery, and read-only fallback.
+The current `nanika-config` boundary implements bootstrap creation, absolute relocatable config roots, typed JSONC parsing, comment-preserving top-level and nested-object changes, atomic replacement, path-preserving backups, bootstrap recovery, and read-only fallback. The extension registry selects defaults only for an explicit missing file; other metadata and access failures remain errors.
+
+## Diagnostics
+
+The host writes non-blocking INFO-and-higher lifecycle and fatal events under `<app-data-root>/logs`. The queue is lossy and bounded to 256 lines so diagnostics cannot stall the UI. Logs rotate daily, retain at most eight files, and flush during orderly shutdown. Query text, clipboard content, settings values, and extension payloads are not logged.
+
+`nanika-cli diagnostics <output.zip>` exports version and platform metadata plus at most eight Nanika-owned daily log files and 32 MiB. It rejects symlinks and unrelated files, enforces the byte limit while copying, publishes through a same-directory atomic no-clobber hard link, and can run while the host is active.
 
 ## SQLite storage
 
@@ -175,7 +183,7 @@ Use one host database and one database per extension. Every database has exactly
 - `input_history(id, normalized_query, display_query, use_count, first_used_at, last_used_at)`
 - `usage_stats(extension_id, entry_id, action_id, query_context, execution_count, last_executed_at)`
 
-The current host schema version is 3. Migration 2 adds stable entry identity to `usage_stats` through a transactional table rebuild. Migration 3 adds the usage-retention index.
+The current host schema version is 3. Migration 2 adds stable entry identity to `usage_stats` through a transactional table rebuild. Migration 3 adds the usage-retention index. Startup isolates malformed extension metadata rows, reports them, and continues with valid extensions.
 
 Application extension baseline tables:
 
@@ -261,7 +269,9 @@ README.md
 LICENSE
 ```
 
-The manifest contains `format`, `manifestVersion`, `id`, `version`, `hostApi`, target entrypoints, capabilities, permissions, activation events, and contributions. IDs are lowercase reverse-DNS segments. Package versions use Semantic Versioning. Installed versions are immutable and staged before an atomic rename. Validate safe paths, collisions, size and compression limits, executable permissions, and SHA-256 before activation. MVP installation is an explicit local path or development directory. No marketplace or background download service is included.
+The manifest contains `format`, `manifestVersion`, `id`, `version`, `hostApi`, target entrypoints, capabilities, permissions, dependencies, activation events, and contributions. IDs and dependency IDs are lowercase reverse-DNS segments. Package versions use Semantic Versioning. Self and duplicate dependencies are invalid. The MVP has no dependency resolver and rejects non-empty dependencies instead of ignoring them. It starts every enabled extension; activation metadata is reserved for later use.
+
+`nanika-cli` installs, updates, enables, disables, and removes external extensions while the host is stopped. Installation accepts an explicit local `.nanika` path. Archives are limited to 128 MiB, 4,096 entries, and 512 MiB expanded content; traversal, symlinks, case-folded collisions, unsupported compression, and excessive compression ratios are rejected. The package is copied and hashed once, then extraction uses that immutable staged copy. The target entrypoint is made executable on macOS. Versions are immutable by digest and activated by rename; reinstalling identical bytes repairs the installed version from staging. Updates preserve enablement. Configuration, database state, and artifacts use ordered mutations with compensation, and generated cleanup is best-effort after logical commit. Built-in IDs cannot be replaced or removed. No marketplace, development-directory install, or background download service is included.
 
 ACP remains a future extension protocol. It will reuse the child-process boundary and stdio transport through a separate adapter. ACP messages will not mix with Nanika control frames.
 
@@ -276,6 +286,8 @@ Initial targets:
 - No filesystem, SQLite, or blocking extension work on the UI thread.
 
 Measure p50, p95, p99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed representative Windows and macOS machines. Benchmark query delivery, startup, indexing, extension activation, persistence, and rendering separately. Use `criterion` for deterministic in-process benchmarks and platform measurements for launch, focus, and frame pacing. Performance changes require evidence.
+
+Release builds use thin LTO and one codegen unit. Windows ships a signed portable x86-64 ZIP. macOS ships a Developer ID signed, hardened, notarized, and stapled `.app` ZIP for Apple silicon or Intel. Every artifact is immutable, versioned, and paired with SHA-256. The MVP has no installer or updater framework; update and rollback replace the complete stopped application from a verified artifact while preserving external user data.
 
 ## Deferred or rejected
 

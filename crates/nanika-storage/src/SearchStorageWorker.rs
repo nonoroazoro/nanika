@@ -44,9 +44,15 @@ impl SearchStorageWorker {
                     .prune_usage(unix_timestamp())
                     .and_then(|()| database.load_input_history(history_limit))
                     .and_then(|input_history| {
-                        database.load_usage().map(|usage| SearchStorageState {
-                            input_history,
-                            usage,
+                        database.load_usage().and_then(|usage| {
+                            database.load_extensions_isolated().map(|extension_load| {
+                                SearchStorageState {
+                                    input_history,
+                                    usage,
+                                    extensions: extension_load.extensions,
+                                    extension_errors: extension_load.errors,
+                                }
+                            })
                         })
                     })
                     .map_err(|error| error.to_string());

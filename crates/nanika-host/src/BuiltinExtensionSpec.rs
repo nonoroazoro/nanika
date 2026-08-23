@@ -5,4 +5,5 @@ pub(crate) struct BuiltinExtensionSpec {
     pub(crate) extension_id: &'static str,
     pub(crate) binary_name: &'static str,
     pub(crate) kind: ExtensionKind,
+    pub(crate) permissions: &'static [&'static str],
 }

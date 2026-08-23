@@ -8,6 +8,8 @@ members = [
     "crates/nanika-storage",
     "crates/nanika-config",
     "crates/nanika-search",
+    "crates/nanika-extension-package",
+    "crates/nanika-cli",
     "extensions/nanika-extension-fixture",
     "extensions/nanika-extension-application",
     "extensions/nanika-extension-command",
@@ -34,10 +36,16 @@ wgpu = { version = "30.0.0", default-features = false }
 global-hotkey = "0.8.0"
 nucleo-matcher = "0.3.1"
 criterion = { version = "0.8.2", default-features = false }
+semver = "1.0.27"
+sha2 = "0.11.0"
+thiserror = "2.0.20"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
+zip = { version = "8.4.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 walkdir = "2.5.0"
 plist = "1.10.0"
 icns = "0.4.0"
-sha2 = "0.11.0"
 png = "0.18.1"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
@@ -55,3 +63,7 @@ unused_must_use = "deny"
 
 [workspace.lints.clippy]
 all = "warn"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

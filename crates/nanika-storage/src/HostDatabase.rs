@@ -2,10 +2,11 @@ use std::fs;
 use std::path::Path;
 
 use nanika_search::{MAX_USAGE_ROWS, USAGE_RETENTION_DAYS};
-use rusqlite::{Connection, Result as SqlResult, params};
+use rusqlite::{Connection, OptionalExtension, Result as SqlResult, params};
 
 use crate::{
-    ExtensionKind, StoredUsage, extension_id::is_valid_extension_id, migrations::MIGRATIONS,
+    ExtensionKind, StoredExtension, StoredExtensionLoad, StoredUsage,
+    extension_id::is_valid_extension_id, migrations::MIGRATIONS,
 };
 
 /// Host-owned SQLite database with embedded forward-only migrations.
@@ -81,6 +82,131 @@ impl HostDatabase {
                 })
             })?
             .collect()
+    }
+
+    pub fn load_extensions(&self) -> SqlResult<Vec<StoredExtension>> {
+        Ok(self.load_extensions_isolated()?.extensions)
+    }
+
+    pub fn load_extensions_isolated(&self) -> SqlResult<StoredExtensionLoad> {
+        let mut statement = self.connection.prepare(
+            "SELECT extension_id, kind, installed_version, active_version, install_path,
+                    package_digest, state, health, last_error
+             FROM extensions
+             WHERE kind IN ('built-in', 'external')
+             ORDER BY extension_id",
+        )?;
+        let extensions = statement
+            .query_map([], stored_extension_from_row)?
+            .collect::<SqlResult<Vec<_>>>()?;
+        let mut invalid = self.connection.prepare(
+            "SELECT CAST(extension_id AS TEXT), CAST(kind AS TEXT) FROM extensions
+             WHERE kind NOT IN ('built-in', 'external')
+             ORDER BY extension_id",
+        )?;
+        let errors = invalid
+            .query_map([], |row| {
+                Ok(format!(
+                    "extension {} has invalid kind {} and was skipped",
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?
+                ))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+        Ok(StoredExtensionLoad { extensions, errors })
+    }
+
+    pub fn extension(&self, extension_id: &str) -> SqlResult<Option<StoredExtension>> {
+        if !is_valid_extension_id(extension_id) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "invalid extension id".to_owned(),
+            ));
+        }
+        self.connection
+            .query_row(
+                "SELECT extension_id, kind, installed_version, active_version, install_path,
+                        package_digest, state, health, last_error
+                 FROM extensions WHERE extension_id = ?1",
+                params![extension_id],
+                stored_extension_from_row,
+            )
+            .optional()
+    }
+
+    pub fn install_external_extension(
+        &self,
+        extension_id: &str,
+        version: &str,
+        install_path: &Path,
+        package_digest: &str,
+        enabled: bool,
+        updated_at: u64,
+    ) -> SqlResult<()> {
+        if !is_valid_extension_id(extension_id) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "invalid extension id".to_owned(),
+            ));
+        }
+        self.connection.execute(
+            "INSERT INTO extensions (
+                extension_id, kind, installed_version, active_version, install_path,
+                package_digest, state, health, last_error, updated_at
+             ) VALUES (?1, 'external', ?2, ?2, ?3, ?4, ?5, 'healthy', NULL, ?6)
+             ON CONFLICT(extension_id) DO UPDATE SET
+                installed_version = excluded.installed_version,
+                active_version = excluded.active_version,
+                install_path = excluded.install_path,
+                package_digest = excluded.package_digest,
+                state = excluded.state,
+                health = 'healthy',
+                last_error = NULL,
+                updated_at = excluded.updated_at
+             WHERE extensions.kind = 'external'",
+            params![
+                extension_id,
+                version,
+                install_path.to_string_lossy(),
+                package_digest,
+                if enabled { "enabled" } else { "disabled" },
+                i64::try_from(updated_at).unwrap_or(i64::MAX),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_external_extension_enabled(
+        &self,
+        extension_id: &str,
+        enabled: bool,
+        updated_at: u64,
+    ) -> SqlResult<bool> {
+        if !is_valid_extension_id(extension_id) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "invalid extension id".to_owned(),
+            ));
+        }
+        let changed = self.connection.execute(
+            "UPDATE extensions SET state = ?2, updated_at = ?3
+             WHERE extension_id = ?1 AND kind = 'external'",
+            params![
+                extension_id,
+                if enabled { "enabled" } else { "disabled" },
+                i64::try_from(updated_at).unwrap_or(i64::MAX),
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn remove_external_extension(&self, extension_id: &str) -> SqlResult<bool> {
+        if !is_valid_extension_id(extension_id) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "invalid extension id".to_owned(),
+            ));
+        }
+        Ok(self.connection.execute(
+            "DELETE FROM extensions WHERE extension_id = ?1 AND kind = 'external'",
+            params![extension_id],
+        )? == 1)
     }
 
     pub(crate) fn record_input_history(
@@ -204,6 +330,24 @@ impl HostDatabase {
         self.connection.execute("DELETE FROM usage_stats", [])?;
         Ok(())
     }
+}
+
+fn stored_extension_from_row(row: &rusqlite::Row<'_>) -> SqlResult<StoredExtension> {
+    let kind = row.get::<_, String>(1)?;
+    let kind = ExtensionKind::parse(&kind).ok_or_else(|| {
+        rusqlite::Error::InvalidColumnType(1, "kind".to_owned(), rusqlite::types::Type::Text)
+    })?;
+    Ok(StoredExtension {
+        extension_id: row.get(0)?,
+        kind,
+        installed_version: row.get(2)?,
+        active_version: row.get(3)?,
+        install_path: row.get::<_, Option<String>>(4)?.map(Into::into),
+        package_digest: row.get(5)?,
+        state: row.get(6)?,
+        health: row.get(7)?,
+        last_error: row.get(8)?,
+    })
 }
 
 fn validate_migration_history(connection: &Connection) -> SqlResult<i64> {

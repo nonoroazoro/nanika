@@ -14,6 +14,8 @@ mod instance_role;
 mod launcher_command;
 #[path = "NativeMenu.rs"]
 mod native_menu;
+#[path = "OverlayPosition.rs"]
+mod overlay_position;
 #[path = "PlatformError.rs"]
 mod platform_error;
 #[path = "PlatformEvent.rs"]
@@ -31,6 +33,9 @@ mod startup_service;
 #[path = "StartupStatus.rs"]
 mod startup_status;
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod fatal_error_windows;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 #[path = "MacMenuTarget.rs"]
@@ -46,6 +51,12 @@ mod mac_native_menu;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos_instance;
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod overlay_position_macos;
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod overlay_position_windows;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod process_launcher_macos;
@@ -70,6 +81,7 @@ pub(crate) use mac_menu_target_ivars::*;
 #[cfg(target_os = "macos")]
 pub(crate) use mac_native_menu::*;
 pub use native_menu::*;
+pub use overlay_position::*;
 pub use platform_error::*;
 pub use platform_event::*;
 pub use process_launcher::*;
@@ -116,6 +128,14 @@ pub const fn target_platform() -> &'static str {
     }
 }
 
+/// Report a fatal host startup error through a platform-visible fallback.
+pub fn report_fatal_error(message: &str) {
+    #[cfg(windows)]
+    fatal_error_windows::report(message);
+    #[cfg(not(windows))]
+    eprintln!("{message}");
+}
+
 /// Acquire the current user's Nanika host instance.
 pub fn acquire_instance(
     identity: &str,
@@ -154,6 +174,31 @@ pub fn signal_activate(identity: &str, app_data_root: &Path) -> Result<(), Platf
     {
         let _ = (identity, app_data_root);
         Err(PlatformError::Unsupported("instance activation"))
+    }
+}
+
+/// Center the overlay in the work area containing the pointer.
+pub fn active_overlay_position(
+    width_points: f32,
+    height_points: f32,
+    current_scale_factor: f32,
+) -> Result<OverlayPosition, PlatformError> {
+    #[cfg(windows)]
+    return overlay_position_windows::active_overlay_position(
+        width_points,
+        height_points,
+        current_scale_factor,
+    );
+    #[cfg(target_os = "macos")]
+    return overlay_position_macos::active_overlay_position(
+        width_points,
+        height_points,
+        current_scale_factor,
+    );
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = (width_points, height_points, current_scale_factor);
+        Err(PlatformError::Unsupported("active monitor placement"))
     }
 }
 

@@ -1,5 +1,7 @@
 //! Nanika host entry point.
 
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 fn main() {
     let arguments = std::env::args().collect::<Vec<_>>();
     let reduced_motion = arguments
@@ -7,9 +9,20 @@ fn main() {
         .any(|argument| argument == "--reduced-motion");
     let background = arguments.iter().any(|argument| argument == "--background");
     let Some(paths) = nanika_storage::NanikaPaths::discover() else {
-        eprintln!("Nanika failed to resolve platform data directories");
+        nanika_platform::report_fatal_error("Nanika failed to resolve platform data directories");
         return;
     };
+    let _diagnostics =
+        match nanika_host::Diagnostics::initialize(&paths.app_data_root().join("logs")) {
+            Ok(diagnostics) => Some(diagnostics),
+            Err(error) => {
+                nanika_platform::report_fatal_error(&format!(
+                    "Nanika diagnostics are unavailable: {error}"
+                ));
+                None
+            }
+        };
+    tracing::info!(background, "host starting");
     let identity = nanika_core::PROJECT_IDENTITY.bundle_id;
     let instance = match nanika_platform::acquire_instance(identity, paths.app_data_root()) {
         Ok(nanika_platform::InstanceRole::Primary(instance)) => instance,
@@ -18,19 +31,26 @@ fn main() {
                 && let Err(error) =
                     nanika_platform::signal_activate(identity, paths.app_data_root())
             {
-                eprintln!("Nanika failed to activate the existing host: {error}");
+                report_fatal(&format!(
+                    "Nanika failed to activate the existing host: {error}"
+                ));
             }
             return;
         }
         Err(error) => {
-            eprintln!("Nanika failed to acquire the host instance: {error}");
+            report_fatal(&format!(
+                "Nanika failed to acquire the host instance: {error}"
+            ));
             return;
         }
     };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Nanika")
-            .with_inner_size([720.0, 480.0])
+            .with_inner_size([
+                nanika_host::OVERLAY_WIDTH_POINTS,
+                nanika_host::OVERLAY_HEIGHT_POINTS,
+            ])
             .with_min_inner_size([480.0, 240.0])
             .with_decorations(false)
             .with_transparent(true)
@@ -50,8 +70,14 @@ fn main() {
         }),
     );
     if let Err(error) = result {
-        eprintln!("Nanika failed to start: {error}");
+        report_fatal(&format!("Nanika failed to start: {error}"));
     }
+    tracing::info!("host stopped");
+}
+
+fn report_fatal(message: &str) {
+    tracing::error!(message, "fatal host error");
+    nanika_platform::report_fatal_error(message);
 }
 
 fn should_activate_existing(background: bool) -> bool {

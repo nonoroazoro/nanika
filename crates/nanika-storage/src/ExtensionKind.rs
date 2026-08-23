@@ -12,4 +12,12 @@ impl ExtensionKind {
             Self::External => "external",
         }
     }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "built-in" => Some(Self::BuiltIn),
+            "external" => Some(Self::External),
+            _ => None,
+        }
+    }
 }

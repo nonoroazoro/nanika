@@ -6,9 +6,10 @@ use std::time::Duration;
 use eframe::egui;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
-use nanika_config::ConfigStore;
+use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_platform::{
     HotkeyRegistration, NativeMenu, PlatformError, PlatformEvent, SingleInstance, StartupService,
+    active_overlay_position,
 };
 use nanika_search::{
     InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap,
@@ -18,11 +19,11 @@ use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
     ExtensionProcess, ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService,
-    HostEvent, HostRuntime, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
+    HostEvent, HostRuntime, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS,
+    OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
-const MAX_VISIBLE_RESULTS: usize = 8;
 
 fn default_hotkey() -> HotKey {
     HotKey::new(Some(Modifiers::CONTROL), Code::Space)
@@ -276,6 +277,32 @@ impl HostApp {
         self.focus_pending = true;
         self.focus_observed = false;
         self.motion.set_target(true);
+        let native_scale_factor = context
+            .native_pixels_per_point()
+            .unwrap_or_else(|| context.pixels_per_point());
+        match active_overlay_position(
+            OVERLAY_WIDTH_POINTS,
+            OVERLAY_HEIGHT_POINTS,
+            native_scale_factor,
+        ) {
+            Ok(position) => {
+                if self
+                    .operation_error
+                    .as_deref()
+                    .is_some_and(|error| error.starts_with("Active monitor placement failed:"))
+                {
+                    self.operation_error = None;
+                }
+                let pixels_per_point = context.pixels_per_point();
+                context.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+                    position.x / pixels_per_point,
+                    position.y / pixels_per_point,
+                )));
+            }
+            Err(error) => {
+                self.operation_error = Some(format!("Active monitor placement failed: {error}"));
+            }
+        }
         context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         context.send_viewport_cmd(egui::ViewportCommand::Focus);
         self.begin_search();
@@ -905,15 +932,14 @@ impl eframe::App for HostApp {
                         && snapshot.generation == self.search_generation
                         && !snapshot.results.is_empty()
                     {
-                        for (index, result) in snapshot
-                            .results
-                            .iter()
-                            .take(MAX_VISIBLE_RESULTS)
-                            .enumerate()
-                        {
+                        for (index, result, selected) in crate::prepare_visible_results(
+                            snapshot,
+                            self.search_generation,
+                            self.selected_index,
+                        ) {
                             if ui
                                 .selectable_label(
-                                    index == self.selected_index,
+                                    selected,
                                     egui::RichText::new(result.candidate.title())
                                         .color(egui::Color32::from_rgb(224, 228, 238)),
                                 )
@@ -959,9 +985,11 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut usage = UsageMap::new();
     let mut config = None;
     let mut host_config = HostConfig::default();
+    let mut extension_registry = ExtensionRegistryConfig::default();
     let mut config_service = None;
     let mut startup = None;
     let mut storage = None;
+    let mut installed_extensions = Vec::new();
     let mut pending_extensions = Vec::new();
     let mut host_services = None;
     let mut error = None;
@@ -982,6 +1010,12 @@ fn initialize_search_runtime() -> HostRuntime {
                             error = combine_errors(error, Some(config_error));
                         }
                     }
+                    match ExtensionRegistryConfig::load(&store) {
+                        Ok(loaded) => extension_registry = loaded,
+                        Err(config_error) => {
+                            error = combine_errors(error, Some(config_error));
+                        }
+                    }
                     match HostConfigService::spawn(store.clone()) {
                         Ok(service) => config_service = Some(service),
                         Err(config_error) => {
@@ -997,6 +1031,10 @@ fn initialize_search_runtime() -> HostRuntime {
             match SearchStorageWorker::spawn(paths.host_database(), 50) {
                 Ok((worker, state)) => {
                     history_entries = state.input_history;
+                    installed_extensions = state.extensions;
+                    for extension_error in state.extension_errors {
+                        error = combine_errors(error, Some(extension_error));
+                    }
                     usage.extend(state.usage.into_iter().map(|stored| {
                         (
                             UsageKey::new(
@@ -1017,12 +1055,22 @@ fn initialize_search_runtime() -> HostRuntime {
                     error = combine_errors(error, Some(storage_error));
                 }
             }
-            let (extensions, extension_errors) = crate::builtins::spawn_builtin_extensions(&paths);
+            let (extensions, extension_errors) = crate::builtins::spawn_extensions(
+                &paths,
+                &extension_registry,
+                &installed_extensions,
+            );
             pending_extensions = extensions;
             for extension_error in extension_errors {
                 error = combine_errors(error, Some(extension_error));
             }
             let (router, service_errors) = crate::HostServiceRouter::spawn(paths.app_data_root());
+            for extension in &pending_extensions {
+                router.register_permissions(
+                    &extension.extension_id,
+                    extension.permissions.iter().cloned(),
+                );
+            }
             host_services = Some(Arc::new(router) as Arc<dyn crate::HostServiceHandler>);
             for service_error in service_errors {
                 error = combine_errors(error, Some(service_error));

@@ -6,5 +6,6 @@ use crate::ExtensionProcess;
 pub(crate) struct PendingExtension {
     pub(crate) extension_id: String,
     pub(crate) kind: ExtensionKind,
+    pub(crate) permissions: Vec<String>,
     pub(crate) process: ExtensionProcess,
 }

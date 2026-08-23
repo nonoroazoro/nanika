@@ -114,6 +114,39 @@ fn usage_retention_and_reset_remove_persisted_rows() {
     cleanup(&database);
 }
 
+#[test]
+fn malformed_extension_metadata_is_isolated_from_storage_startup() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-storage-isolated-extension-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let database = root.join("nanika.db");
+    let host = HostDatabase::open(&database).expect("database should open");
+    host.register_extension("com.example.valid", ExtensionKind::External, 1)
+        .expect("valid extension should register");
+    drop(host);
+    let connection = rusqlite::Connection::open(&database).expect("raw database should open");
+    connection
+        .execute(
+            "INSERT INTO extensions (
+                extension_id, kind, state, health, updated_at
+             ) VALUES ('com.example.invalid', 'corrupt', 'enabled', 'healthy', 1)",
+            [],
+        )
+        .expect("invalid fixture should be inserted");
+    drop(connection);
+
+    let (worker, state) =
+        SearchStorageWorker::spawn(&database, 50).expect("storage owner should still start");
+    assert_eq!(state.extensions.len(), 1);
+    assert_eq!(state.extensions[0].extension_id, "com.example.valid");
+    assert_eq!(state.extension_errors.len(), 1);
+    assert!(state.extension_errors[0].contains("com.example.invalid"));
+    worker.shutdown();
+    let _ = std::fs::remove_dir_all(root);
+}
+
 fn cleanup(database: &std::path::Path) {
     let _ = std::fs::remove_file(database);
     let _ = std::fs::remove_file(database.with_extension("db-wal"));

@@ -1,4 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
@@ -13,6 +15,7 @@ pub struct HostServiceRouter {
     launcher: Result<ProcessLauncher, String>,
     clipboard: Result<ClipboardService, String>,
     payload_root: Result<PathBuf, String>,
+    permissions: RwLock<HashMap<String, HashSet<String>>>,
 }
 
 impl HostServiceRouter {
@@ -40,6 +43,7 @@ impl HostServiceRouter {
                 launcher,
                 clipboard,
                 payload_root,
+                permissions: RwLock::new(HashMap::new()),
             },
             errors,
         )
@@ -60,6 +64,32 @@ impl HostServiceRouter {
     fn extension_payload_root(&self, extension_id: &str) -> Result<PathBuf, String> {
         Ok(self.payload_root()?.join(extension_id))
     }
+
+    pub(crate) fn register_permissions(
+        &self,
+        extension_id: impl Into<String>,
+        permissions: impl IntoIterator<Item = String>,
+    ) {
+        self.permissions
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(extension_id.into(), permissions.into_iter().collect());
+    }
+
+    fn require_permission(&self, extension_id: &str, permission: &str) -> Result<(), String> {
+        if self
+            .permissions
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(extension_id)
+            .is_some_and(|permissions| permissions.contains(permission))
+        {
+            return Ok(());
+        }
+        Err(format!(
+            "extension {extension_id} lacks permission {permission}"
+        ))
+    }
 }
 
 impl HostServiceHandler for HostServiceRouter {
@@ -74,9 +104,11 @@ impl HostServiceHandler for HostServiceRouter {
         }
         match request {
             HostServiceRequest::Launch { descriptor } => {
+                self.require_permission(extension_id, "process.launch")?;
                 self.launcher()?.submit(descriptor, deadline)
             }
             HostServiceRequest::WriteClipboard { content } => {
+                self.require_permission(extension_id, "clipboard.write")?;
                 let payload_root = match &content {
                     ClipboardContent::PngFile { .. } => {
                         Some(self.extension_payload_root(extension_id)?)
@@ -103,7 +135,9 @@ mod tests {
             launcher: Ok(ProcessLauncher::spawn().expect("launcher")),
             clipboard: Err("clipboard unavailable".to_owned()),
             payload_root: Err("payload unavailable".to_owned()),
+            permissions: Default::default(),
         };
+        router.register_permissions("com.nanika.test", ["process.launch".to_owned()]);
         let result = router
             .submit(
                 "com.nanika.test",
@@ -128,6 +162,7 @@ mod tests {
             launcher: Err("launcher unavailable".to_owned()),
             clipboard: Err("clipboard unavailable".to_owned()),
             payload_root: Ok(std::env::temp_dir()),
+            permissions: Default::default(),
         };
         let result = router.submit(
             "../escape",
@@ -143,5 +178,27 @@ mod tests {
                 .expect_err("invalid id should fail")
                 .contains("invalid")
         );
+    }
+
+    #[test]
+    fn host_services_enforce_manifest_permissions() {
+        let router = HostServiceRouter {
+            launcher: Err("launcher unavailable".to_owned()),
+            clipboard: Err("clipboard unavailable".to_owned()),
+            payload_root: Ok(std::env::temp_dir()),
+            permissions: Default::default(),
+        };
+        let error = router
+            .submit(
+                "com.nanika.test",
+                HostServiceRequest::WriteClipboard {
+                    content: ClipboardContent::Text {
+                        value: "value".to_owned(),
+                    },
+                },
+                std::time::Instant::now() + std::time::Duration::from_secs(1),
+            )
+            .expect_err("missing permission should fail");
+        assert!(error.contains("clipboard.write"));
     }
 }
