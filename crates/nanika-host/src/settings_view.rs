@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use eframe::egui;
 use nanika_platform::StartupStatus;
 use nanika_protocol::{
     SettingColumn, SettingColumnControl, SettingControl, SettingField, SettingUpdate, SettingValue,
@@ -10,121 +9,105 @@ use crate::{SettingsAction, SettingsState};
 
 const RECORDS_PER_PAGE: usize = 20;
 
-pub(crate) fn show_settings(
-    context: &egui::Context,
-    state: &mut SettingsState,
-) -> Vec<SettingsAction> {
+pub(crate) fn show_settings(root: &mut egui::Ui, state: &mut SettingsState) -> Vec<SettingsAction> {
     if !state.visible {
         return Vec::new();
     }
     let mut actions = Vec::new();
-    context.show_viewport_immediate(
-        egui::ViewportId::from_hash_of("nanika.settings"),
-        egui::ViewportBuilder::default()
-            .with_title("Nanika Settings")
-            .with_inner_size([760.0, 680.0])
-            .with_min_inner_size([560.0, 420.0]),
-        |child, _class| {
-            egui::CentralPanel::default()
-                .frame(egui::Frame::new().inner_margin(egui::Margin::same(24)))
-                .show(child, |ui| {
-                    if ui.input(|input| input.viewport().close_requested()) {
-                        actions.push(SettingsAction::Close);
-                        return;
+    egui::CentralPanel::default()
+        .frame(egui::Frame::new().inner_margin(egui::Margin::same(24)))
+        .show(root, |ui| {
+            if ui.input(|input| input.viewport().close_requested()) {
+                actions.push(SettingsAction::Close);
+                return;
+            }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.heading("Nanika Settings");
+                ui.add_space(16.0);
+                ui.strong("Host");
+                ui.add_enabled_ui(state.runtime_ready && !state.saving_host, |ui| {
+                    ui.label("Global hotkey");
+                    ui.text_edit_singleline(&mut state.hotkey);
+                    ui.checkbox(&mut state.reduced_motion, "Reduced motion");
+                });
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            state.runtime_ready && !state.saving_host,
+                            egui::Button::new("Save host settings"),
+                        )
+                        .clicked()
+                    {
+                        actions.push(SettingsAction::SaveHost);
                     }
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.heading("Nanika Settings");
-                        ui.add_space(16.0);
-                        ui.strong("Host");
-                        ui.add_enabled_ui(state.runtime_ready && !state.saving_host, |ui| {
-                            ui.label("Global hotkey");
-                            ui.text_edit_singleline(&mut state.hotkey);
-                            ui.checkbox(&mut state.reduced_motion, "Reduced motion");
-                        });
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add_enabled(
-                                    state.runtime_ready && !state.saving_host,
-                                    egui::Button::new("Save host settings"),
-                                )
-                                .clicked()
-                            {
-                                actions.push(SettingsAction::SaveHost);
-                            }
-                            if state.saving_host {
-                                ui.spinner();
-                            }
-                        });
+                    if state.saving_host {
+                        ui.spinner();
+                    }
+                });
 
-                        ui.add_space(16.0);
-                        ui.strong("Start at login");
-                        ui.horizontal(|ui| {
-                            let loading = !state.runtime_ready || state.startup_response.is_some();
-                            ui.label(startup_label(state.startup_status, loading));
-                            if loading {
-                                ui.spinner();
-                            } else if let Some((label, enabled)) =
-                                startup_action(state.startup_status)
-                                && ui.button(label).clicked()
-                            {
-                                actions.push(SettingsAction::SetStartup(enabled));
-                            }
-                        });
+                ui.add_space(16.0);
+                ui.strong("Start at login");
+                ui.horizontal(|ui| {
+                    let loading = !state.runtime_ready || state.startup_response.is_some();
+                    ui.label(startup_label(state.startup_status, loading));
+                    if loading {
+                        ui.spinner();
+                    } else if let Some((label, enabled)) = startup_action(state.startup_status)
+                        && ui.button(label).clicked()
+                    {
+                        actions.push(SettingsAction::SetStartup(enabled));
+                    }
+                });
 
-                        for (extension_id, contribution) in &mut state.drafts {
-                            if contribution.fields.is_empty() {
-                                continue;
-                            }
-                            ui.add_space(24.0);
-                            ui.separator();
+                for (extension_id, contribution) in &mut state.drafts {
+                    if contribution.fields.is_empty() {
+                        continue;
+                    }
+                    ui.add_space(24.0);
+                    ui.separator();
+                    ui.add_space(12.0);
+                    ui.heading(&contribution.title);
+                    let saving = state.pending_extensions.contains_key(extension_id);
+                    let mut changed = false;
+                    ui.add_enabled_ui(!saving, |ui| {
+                        for field in &mut contribution.fields {
                             ui.add_space(12.0);
-                            ui.heading(&contribution.title);
-                            let saving = state.pending_extensions.contains_key(extension_id);
-                            let mut changed = false;
-                            ui.add_enabled_ui(!saving, |ui| {
-                                for field in &mut contribution.fields {
-                                    ui.add_space(12.0);
-                                    changed |= render_field(ui, extension_id, field);
-                                }
-                            });
-                            if changed {
-                                state.dirty.insert(extension_id.clone());
-                            }
-                            if ui
-                                .add_enabled(
-                                    state.dirty.contains(extension_id) && !saving,
-                                    egui::Button::new("Apply"),
-                                )
-                                .clicked()
-                            {
-                                actions.push(SettingsAction::SaveExtension {
-                                    extension_id: extension_id.clone(),
-                                    updates: contribution
-                                        .fields
-                                        .iter()
-                                        .map(|field| SettingUpdate {
-                                            key: field.key.clone(),
-                                            value: field.value.clone(),
-                                        })
-                                        .collect(),
-                                });
-                            }
-                            if saving {
-                                ui.spinner();
-                            }
-                        }
-
-                        if let Some(error) = &state.error {
-                            ui.add_space(16.0);
-                            ui.colored_label(
-                                egui::Color32::from_rgb(242, 145, 145),
-                                error.user_message(),
-                            );
+                            changed |= render_field(ui, extension_id, field);
                         }
                     });
-                });
-        },
-    );
+                    if changed {
+                        state.dirty.insert(extension_id.clone());
+                    }
+                    if ui
+                        .add_enabled(
+                            state.dirty.contains(extension_id) && !saving,
+                            egui::Button::new("Apply"),
+                        )
+                        .clicked()
+                    {
+                        actions.push(SettingsAction::SaveExtension {
+                            extension_id: extension_id.clone(),
+                            updates: contribution
+                                .fields
+                                .iter()
+                                .map(|field| SettingUpdate {
+                                    key: field.key.clone(),
+                                    value: field.value.clone(),
+                                })
+                                .collect(),
+                        });
+                    }
+                    if saving {
+                        ui.spinner();
+                    }
+                }
+
+                if let Some(error) = &state.error {
+                    ui.add_space(16.0);
+                    ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error.user_message());
+                }
+            });
+        });
     actions
 }
 

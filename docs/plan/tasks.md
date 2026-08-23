@@ -30,9 +30,9 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 ### Baseline and quality
 
 - [x] Record the selected stack and rejected directions in `tech-stack.md`.
-- [x] Select Rust, `egui` and `eframe` with `wgpu`, `winit`, `global-hotkey`, `nucleo-matcher`, SQLite, and the selected platform adapters.
+- [x] Select Rust, direct `egui-winit` and `egui-wgpu` integration, `wgpu`, `winit`, `global-hotkey`, `nucleo-matcher`, SQLite, and the selected platform adapters.
 - [x] Resolve the final Cargo feature graph and commit `Cargo.lock`.
-- [ ] Validate overlay focus, transparency, IME, DPI, monitor placement, `wgpu` backends, and hotkey integration on Windows and macOS.
+- [ ] Validate overlay focus, IME, DPI, monitor placement, `wgpu` backends, and hotkey integration on Windows and macOS.
 - [x] Define the visual language, typography, spacing, colors, icons, empty states, and accessibility behavior.
 - [x] Define animation timing, easing, interruption, reduced-motion behavior, and repaint scheduling.
 - [x] Define representative hardware profiles and performance budgets.
@@ -118,6 +118,7 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Define summon, focus, selection, Enter, Escape, and dismissal behavior for the initial overlay.
 - [x] Define pointer-monitor work-area placement and mixed-DPI coordinate handling without mixing current-window and target-monitor scales. Validate physical behavior, elevated windows, and full-screen applications during platform acceptance.
 - [x] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
+- [x] Start with only the tray or menu-bar visible. Show the overlay only after hotkey or menu activation, and keep it out of the Windows taskbar and macOS Dock.
 - [x] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
 - [x] Keep Settings read-only until runtime owners load and correlate extension updates by request ID.
 - [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
@@ -156,6 +157,8 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Run `cargo fmt`, `cargo clippy`, library and integration tests, and documentation tests.
 - [x] Add domain tests for application identity, search ranking, calculator behavior, clipboard retention, config recovery, database migrations, and storage recovery.
 - [x] Add deterministic `criterion` benchmarks for query delivery, startup, indexing, extension activation, persistence, and rendering preparation.
+- [x] Add a Windows native release harness for startup visibility, hidden idle, repeated summon and dismissal, latency percentiles, resource use, JSON reports, and process cleanup.
+- [ ] Add and run the equivalent native UI report on a physical Mac.
 - [ ] Measure p50, p95, p99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed Windows and macOS machines.
 - [x] Keep timing comparisons advisory on ordinary CI and require evidence before changing the selected stack.
 - [x] Define and verify Windows portable packaging, checksums, and optional Authenticode signing.

@@ -39,10 +39,11 @@ The current working tree passes the Windows workspace quality gate. Commit `2d00
 1. Confirm a clean tree, the intended version, and committed `Cargo.lock`.
 2. Run `scripts/check.ps1` on Windows and `scripts/check.sh` on macOS.
 3. Run deterministic benchmarks and compare them on the same reference machine.
-4. Complete the platform acceptance list in `performance.md` on physical Windows and macOS machines.
-5. Build with release credentials and verify signatures, notarization, archive contents, and SHA-256 files.
-6. Install each artifact on a clean user profile and verify startup, summon, settings, actions, and removal.
-7. Publish the versioned archives, checksums, and release notes together.
+4. Run the native UI benchmark on fixed Windows and macOS reference machines and retain the schema-versioned reports.
+5. Complete the platform acceptance list in `performance.md` on physical Windows and macOS machines.
+6. Build with release credentials and verify signatures, notarization, archive contents, and SHA-256 files.
+7. Install each artifact on a clean user profile and verify startup, summon, settings, actions, and removal.
+8. Publish the versioned archives, checksums, and release notes together.
 
 ## Update and rollback
 

@@ -3,32 +3,51 @@ use std::time::{Duration, Instant};
 use crate::OverlayMotion;
 
 #[test]
-fn transition_uses_a_fixed_timeline() {
-    let start = Instant::now();
+fn summon_is_ready_immediately() {
     let mut motion = OverlayMotion::new(false);
-    motion.set_target_at(true, start);
-    assert!(motion.advance_at(start + Duration::from_millis(70)));
-    assert!((motion.value() - 0.5).abs() < 0.001);
-    assert!(!motion.advance_at(start + Duration::from_millis(140)));
+    motion.show();
+
     assert_eq!(motion.value(), 1.0);
+    assert!(motion.target_visible());
+    assert!(!motion.is_active());
 }
 
 #[test]
-fn interrupted_transition_continues_from_the_current_value() {
+fn dismissal_uses_a_fixed_timeline() {
     let start = Instant::now();
     let mut motion = OverlayMotion::new(false);
-    motion.set_target_at(true, start);
-    motion.set_target_at(false, start + Duration::from_millis(70));
+    motion.show();
+    motion.hide_at(start);
+
+    assert!(motion.advance_at(start + Duration::from_millis(55)));
     assert!((motion.value() - 0.5).abs() < 0.001);
-    assert!(motion.advance_at(start + Duration::from_millis(125)));
-    assert!((motion.value() - 0.25).abs() < 0.001);
+    assert!(!motion.advance_at(start + Duration::from_millis(110)));
+    assert_eq!(motion.value(), 0.0);
+}
+
+#[test]
+fn summon_interrupts_dismissal_immediately() {
+    let start = Instant::now();
+    let mut motion = OverlayMotion::new(false);
+    motion.show();
+    motion.hide_at(start);
+    assert!(motion.advance_at(start + Duration::from_millis(55)));
+    assert!((motion.value() - 0.5).abs() < 0.001);
+
+    motion.show();
+    assert_eq!(motion.value(), 1.0);
+    assert!(!motion.is_active());
 }
 
 #[test]
 fn reduced_motion_jumps_without_a_repaint_loop() {
     let mut motion = OverlayMotion::new(true);
-    motion.set_target(true);
+    motion.show();
     assert!(!motion.advance());
     assert_eq!(motion.value(), 1.0);
+    assert!(!motion.is_active());
+
+    motion.hide();
+    assert_eq!(motion.value(), 0.0);
     assert!(!motion.is_active());
 }

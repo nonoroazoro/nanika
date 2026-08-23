@@ -23,6 +23,12 @@ The first Windows baseline used Windows 10 22H2 build 19045, Ryzen 7 5800X, 32 G
 
 Run `scripts/benchmark.ps1`. Criterion covers ranking, query delivery, runtime foundation startup, application indexing and preselection, extension process activation, calculator evaluation, clipboard persistence, and render preparation. Use `-Baseline <name>` only for comparisons on the same reference machine.
 
+## Native UI benchmark
+
+Build `nanika-host` in release mode, then run `scripts/benchmark-native-windows.ps1`. The harness verifies hidden startup, hidden-idle CPU, working set, thread count, repeated summon and dismissal, and warm activation P50, P95, P99, maximum, and raw samples. It writes a schema-versioned JSON report under `target/performance` with the commit, worktree state, executable and lockfile hashes, machine profile, parameters, thresholds, and result.
+
+The default 200-sample run is a Windows pre-release gate. Shorter runs only validate the harness. The equivalent report must be implemented and run on a physical Mac before 1.0.
+
 Windows development-machine measurements for commit `2d00bd3` from 2026-08-23:
 
 | Benchmark | Criterion estimate interval |
@@ -47,9 +53,9 @@ The commit `2d00bd3` packaged clean-profile smoke recorded a 15-second hidden-id
 
 ## Platform acceptance
 
-Use a release build and collect at least 200 warm summons and 1,000 query updates. Record raw samples and the exact machine profile. Validate:
+Use a release build and collect at least 200 warm summons and 1,000 query updates. Keep the native JSON report and record the exact machine profile. Validate:
 
-- focus, IME, transparency, pointer-monitor placement, mixed DPI, full-screen applications, and elevated foreground windows;
+- focus, IME, pointer-monitor placement, mixed DPI, full-screen applications, and elevated foreground windows;
 - global hotkey replacement and conflicts;
 - foreground and background second launches;
 - startup enable, disable, repair, approval, and hidden idle launch;

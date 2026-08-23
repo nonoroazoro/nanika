@@ -74,6 +74,10 @@ mod host_config_service;
 mod host_diagnostic;
 #[path = "HostEvent.rs"]
 mod host_event;
+#[path = "HostRunner.rs"]
+mod host_runner;
+#[path = "HostRunnerEvent.rs"]
+mod host_runner_event;
 #[path = "HostRuntime.rs"]
 mod host_runtime;
 #[path = "HostServiceHandler.rs"]
@@ -134,6 +138,8 @@ pub(crate) use host_config_command::*;
 pub(crate) use host_config_service::*;
 pub use host_diagnostic::*;
 pub(crate) use host_event::*;
+pub use host_runner::*;
+pub(crate) use host_runner_event::*;
 pub(crate) use host_runtime::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;

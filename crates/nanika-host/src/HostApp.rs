@@ -1,9 +1,8 @@
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use eframe::egui;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
@@ -70,38 +69,33 @@ pub struct HostApp {
     focus_observed: bool,
     motion: OverlayMotion,
     visuals_configured: bool,
-    reveal_on_first_frame: bool,
     forced_reduced_motion: bool,
+    activation_started_at: Option<Instant>,
 }
 
 impl HostApp {
     pub fn new() -> Self {
-        Self::build(None, false, false)
+        Self::build(None, false)
     }
 
     pub fn new_with_reduced_motion(reduced_motion: bool) -> Self {
-        Self::build(None, reduced_motion, false)
+        Self::build(None, reduced_motion)
     }
 
     pub fn with_instance(instance: SingleInstance, reduced_motion: bool) -> Self {
-        Self::build(Some(instance), reduced_motion, false)
+        Self::build(Some(instance), reduced_motion)
     }
 
-    pub fn with_instance_background(
-        instance: SingleInstance,
-        reduced_motion: bool,
-        background: bool,
-    ) -> Self {
-        Self::build(Some(instance), reduced_motion, background)
-    }
-
-    fn build(mut instance: Option<SingleInstance>, reduced_motion: bool, background: bool) -> Self {
+    fn build(mut instance: Option<SingleInstance>, reduced_motion: bool) -> Self {
         let (sender, events) = mpsc::sync_channel(16);
         let context_slot: Arc<Mutex<Option<egui::Context>>> = Arc::new(Mutex::new(None));
         let event_context = Arc::clone(&context_slot);
         let hotkey_events = sender.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |event| {
-            let _ = hotkey_events.try_send(HostEvent::Hotkey(event));
+            let _ = hotkey_events.try_send(HostEvent::Hotkey {
+                event,
+                received_at: Instant::now(),
+            });
             if let Some(context) = event_context
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
@@ -142,7 +136,10 @@ impl HostApp {
                         .name("nanika-instance-bridge".to_owned())
                         .spawn(move || {
                             while let Ok(event) = platform_events.recv() {
-                                let _ = host_events.try_send(HostEvent::Platform(event));
+                                let _ = host_events.try_send(HostEvent::Platform {
+                                    event,
+                                    received_at: Instant::now(),
+                                });
                                 if let Some(context) = activation_context
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner())
@@ -204,7 +201,6 @@ impl HostApp {
             }
         };
 
-        let reveal_on_first_frame = hotkey.is_none() && !background;
         let host_config = HostConfig::default();
         Self {
             hotkey,
@@ -246,18 +242,27 @@ impl HostApp {
             focus_observed: false,
             motion: OverlayMotion::new(reduced_motion),
             visuals_configured: false,
-            reveal_on_first_frame,
             forced_reduced_motion: reduced_motion,
+            activation_started_at: None,
         }
     }
 
     fn handle_events(&mut self, context: &egui::Context) {
-        let mut activate = false;
+        let mut activation_started_at = None;
         while let Ok(event) = self.events.try_recv() {
             match event {
-                HostEvent::Platform(PlatformEvent::Open) => activate = true,
-                HostEvent::Platform(PlatformEvent::Settings) => self.open_settings(context),
-                HostEvent::Platform(PlatformEvent::RescanApplications) => {
+                HostEvent::Platform {
+                    event: PlatformEvent::Open,
+                    received_at,
+                } => activation_started_at = Some(received_at),
+                HostEvent::Platform {
+                    event: PlatformEvent::Settings,
+                    ..
+                } => self.open_settings(context),
+                HostEvent::Platform {
+                    event: PlatformEvent::RescanApplications,
+                    ..
+                } => {
                     if let Err(error) = self.refresh_applications() {
                         self.operation_error = Some(diagnostic_message(
                             DiagnosticCode::ExtensionUnavailable,
@@ -267,10 +272,16 @@ impl HostApp {
                         ));
                     }
                 }
-                HostEvent::Platform(PlatformEvent::Quit) => {
+                HostEvent::Platform {
+                    event: PlatformEvent::Quit,
+                    ..
+                } => {
                     context.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                HostEvent::Platform(PlatformEvent::Failure { operation, message }) => {
+                HostEvent::Platform {
+                    event: PlatformEvent::Failure { operation, message },
+                    ..
+                } => {
                     let diagnostic = diagnostic_message(
                         DiagnosticCode::PlatformUnavailable,
                         operation,
@@ -281,28 +292,47 @@ impl HostApp {
                         .retain(|existing| existing.operation() != operation);
                     self.runtime_errors.push(diagnostic);
                 }
-                HostEvent::Hotkey(event)
+                HostEvent::Hotkey { event, received_at }
                     if event.state == HotKeyState::Pressed
                         && self
                             .hotkey
                             .as_ref()
                             .is_some_and(|hotkey| hotkey.id() == event.id) =>
                 {
-                    activate = true;
+                    activation_started_at = Some(received_at);
                 }
-                HostEvent::Hotkey(_) => {}
+                HostEvent::Hotkey { .. } => {}
             }
         }
-        if activate {
+        if let Some(started_at) = activation_started_at {
+            self.activation_started_at = Some(started_at);
             self.open_overlay(context);
         }
     }
 
+    pub(crate) fn take_activation_started_at(&mut self) -> Option<Instant> {
+        self.activation_started_at.take()
+    }
+
     fn open_settings(&mut self, context: &egui::Context) {
         self.close_overlay(context);
+        self.motion.hide_immediately();
+        self.overlay_visible = false;
         self.settings.visible = true;
         self.settings.error = None;
         self.request_startup_status();
+        context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika Settings".to_owned()));
+        context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(760.0, 680.0)));
+        context.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+            560.0, 420.0,
+        )));
+        context.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+        context.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+        context.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+            egui::WindowLevel::Normal,
+        ));
+        context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        context.send_viewport_cmd(egui::ViewportCommand::Focus);
         context.request_repaint();
     }
 
@@ -332,10 +362,24 @@ impl HostApp {
     }
 
     fn open_overlay(&mut self, context: &egui::Context) {
+        self.settings.visible = false;
         self.overlay_visible = true;
         self.focus_pending = true;
         self.focus_observed = false;
-        self.motion.set_target(true);
+        self.motion.show();
+        context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika".to_owned()));
+        context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+            OVERLAY_WIDTH_POINTS,
+            OVERLAY_HEIGHT_POINTS,
+        )));
+        context.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+            480.0, 240.0,
+        )));
+        context.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+        context.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+        context.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+            egui::WindowLevel::AlwaysOnTop,
+        ));
         let native_scale_factor = context
             .native_pixels_per_point()
             .unwrap_or_else(|| context.pixels_per_point());
@@ -390,7 +434,7 @@ impl HostApp {
                 error.to_string(),
             ));
         }
-        self.motion.set_target(false);
+        self.motion.hide();
         context.request_repaint();
     }
 
@@ -925,7 +969,10 @@ impl HostApp {
                         }
                     }
                 }
-                SettingsAction::Close => self.settings.visible = false,
+                SettingsAction::Close => {
+                    self.settings.visible = false;
+                    context.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                }
             }
         }
         if self.settings.startup_response.is_some() || self.pending_host_settings.is_some() {
@@ -1054,8 +1101,8 @@ impl Drop for HostApp {
     }
 }
 
-impl eframe::App for HostApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl HostApp {
+    pub(crate) fn update(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
         if !self.visuals_configured {
             let mut style = (*context.style_of(egui::Theme::Dark)).clone();
@@ -1068,10 +1115,6 @@ impl eframe::App for HostApp {
             .context_slot
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = Some(context.clone());
-        if self.reveal_on_first_frame {
-            self.reveal_on_first_frame = false;
-            self.open_overlay(&context);
-        }
         self.handle_events(&context);
         self.poll_runtime();
         if !self.search_notifier_configured
@@ -1088,8 +1131,11 @@ impl eframe::App for HostApp {
         if self.settings.startup_response.is_some() || self.pending_host_settings.is_some() {
             context.request_repaint_after(Duration::from_millis(16));
         }
-        let settings_actions = crate::settings_view::show_settings(&context, &mut self.settings);
+        let settings_actions = crate::settings_view::show_settings(ui, &mut self.settings);
         self.handle_settings_actions(&context, settings_actions);
+        if self.settings.visible {
+            return;
+        }
         let viewport_focused = context.input(|input| input.viewport().focused);
         if self.overlay_visible && viewport_focused == Some(true) {
             self.focus_observed = true;

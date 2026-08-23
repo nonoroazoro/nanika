@@ -59,31 +59,7 @@ fn main() {
             }
         };
     tracing::info!(background, "host starting");
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Nanika")
-            .with_inner_size([
-                nanika_host::OVERLAY_WIDTH_POINTS,
-                nanika_host::OVERLAY_HEIGHT_POINTS,
-            ])
-            .with_min_inner_size([480.0, 240.0])
-            .with_decorations(false)
-            .with_transparent(true)
-            .with_always_on_top()
-            .with_visible(false),
-        ..Default::default()
-    };
-    let result = eframe::run_native(
-        "Nanika",
-        options,
-        Box::new(move |_creation_context| {
-            Ok(Box::new(nanika_host::HostApp::with_instance_background(
-                instance,
-                reduced_motion,
-                background,
-            )))
-        }),
-    );
+    let result = nanika_host::HostRunner::run(instance, reduced_motion);
     if let Err(error) = result {
         report_fatal(nanika_host::HostDiagnostic::from_message(
             nanika_host::DiagnosticCode::PlatformUnavailable,

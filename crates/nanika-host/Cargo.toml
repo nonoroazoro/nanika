@@ -8,10 +8,13 @@ autotests = false
 
 [dependencies]
 agent-client-protocol.workspace = true
+accesskit_winit.workspace = true
 async-channel.workspace = true
 async-io.workspace = true
 async-process.workspace = true
-eframe.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
 futures.workspace = true
 futures-lite.workspace = true
 global-hotkey.workspace = true
@@ -22,11 +25,13 @@ nanika-platform = { path = "../nanika-platform" }
 nanika-search = { path = "../nanika-search" }
 nanika-protocol = { path = "../nanika-protocol" }
 nanika-storage = { path = "../nanika-storage" }
+pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
+winit.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

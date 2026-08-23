@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-const SHOW_DURATION: Duration = Duration::from_millis(140);
 const HIDE_DURATION: Duration = Duration::from_millis(110);
 
 #[derive(Debug, Default)]
@@ -21,8 +20,22 @@ impl OverlayMotion {
         }
     }
 
-    pub(crate) fn set_target(&mut self, visible: bool) {
-        self.set_target_at(visible, Instant::now());
+    pub(crate) fn show(&mut self) {
+        self.value = 1.0;
+        self.start_value = 1.0;
+        self.target = 1.0;
+        self.started_at = None;
+    }
+
+    pub(crate) fn hide(&mut self) {
+        self.hide_at(Instant::now());
+    }
+
+    pub(crate) fn hide_immediately(&mut self) {
+        self.value = 0.0;
+        self.start_value = 0.0;
+        self.target = 0.0;
+        self.started_at = None;
     }
 
     pub(crate) fn advance(&mut self) -> bool {
@@ -49,27 +62,22 @@ impl OverlayMotion {
         }
     }
 
-    pub(crate) fn set_target_at(&mut self, visible: bool, now: Instant) {
-        let target = if visible { 1.0 } else { 0.0 };
+    pub(crate) fn hide_at(&mut self, now: Instant) {
         if self.reduced_motion {
-            self.value = target;
-            self.target = target;
+            self.value = 0.0;
+            self.target = 0.0;
             self.started_at = None;
             return;
         }
-        if (self.target - target).abs() < f32::EPSILON {
+        if self.target == 0.0 {
             return;
         }
         if self.started_at.is_some() {
             self.advance_at(now);
         }
         self.start_value = self.value;
-        self.target = target;
-        self.duration = if visible {
-            SHOW_DURATION
-        } else {
-            HIDE_DURATION
-        };
+        self.target = 0.0;
+        self.duration = HIDE_DURATION;
         self.started_at = Some(now);
     }
 

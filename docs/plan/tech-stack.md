@@ -8,9 +8,9 @@ Status: current pre-1.0 implementation baseline. Milestone 8 fixed-machine, phys
 | --- | --- | --- |
 | Language | Rust stable | Prefer the standard library when it is sufficient. |
 | Platforms | Windows 10 and macOS 13 or later | Validate both platforms; keep platform code behind adapters. |
-| UI | `egui` through `eframe` | Disable default features. Enable `wgpu_no_default_features`, `default_fonts`, and `accesskit`. No `glow`, persistence, web, or Linux features. |
-| Renderer | Direct `wgpu` | Disable default features. Enable `wgsl`, `dx12` and `vulkan` on Windows, `metal` on macOS. |
-| Windowing | `winit` through `eframe` | The event-loop thread owns the window. |
+| UI | `egui` with `egui-winit` | Direct native integration with default fonts, clipboard, IME, and accessibility. No `glow`, persistence, web, or Linux features. |
+| Renderer | `egui-wgpu` with direct `wgpu` backend selection | Disable default features. Enable `wgsl`, `dx12` and `vulkan` on Windows, `metal` on macOS. |
+| Windowing | Direct `winit` | The event-loop thread owns visibility, focus, input, and presentation order. |
 | Global hotkey | `global-hotkey` | One configurable normal modifier-and-key shortcut. |
 | Fuzzy matching | `nucleo-matcher` | One persistent matcher owned by the named search owner thread. |
 | Application paths | `directories` | Resolve roots once through `ProjectDirs`. |
@@ -89,11 +89,11 @@ The host owns the single input field, input history, query navigation, search ag
 
 ## UI and interaction
 
-Use a transparent, undecorated, always-on-top overlay. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Windows placement uses target-monitor physical pixels; macOS placement uses global AppKit points converted with the current window scale expected by `winit`. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
+Use an undecorated, always-on-top overlay. The primary process starts with only its tray or menu-bar visible. A hidden native window may prewarm the GPU surface, but the event loop shows it only after a complete frame has been presented for hotkey or menu activation. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Windows placement uses target-monitor physical pixels; macOS placement uses global AppKit points converted with the current window scale expected by `winit`. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
 
-The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon and dismissal use frame-rate-independent smoothstep timelines of 140 ms and 110 ms. Interruption continues from the current value. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
+The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon paints complete content on its first visible frame. Dismissal uses a frame-rate-independent 110 ms smoothstep timeline, and a new summon interrupts it immediately. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
 
-The host explicitly enables the selected `wgpu` backend features through its direct dependency because `eframe`'s `wgpu_no_default_features` intentionally leaves backend selection to the application. The Windows smoke test confirmed that at least one native backend is enabled and startup no longer panics.
+Direct integration lets the host keep the native window hidden through presentation and show it only after a complete frame. The host explicitly enables the selected `wgpu` backend features through its direct dependency.
 
 The MVP includes a minimal host tray or menu bar item:
 
