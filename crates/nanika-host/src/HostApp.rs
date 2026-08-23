@@ -18,9 +18,9 @@ use nanika_search::{
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    ExtensionProcess, ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService,
-    HostEvent, HostRuntime, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS,
-    OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
+    ExtensionRuntime, ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService,
+    HostEvent, HostRuntime, InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS,
+    OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
@@ -60,6 +60,8 @@ pub struct HostApp {
     search_error: Option<String>,
     operation_error: Option<String>,
     action_error: Option<String>,
+    invocation_output: Option<InvocationPresentation>,
+    pending_invocation_id: Option<u64>,
     overlay_visible: bool,
     focus_pending: bool,
     focus_observed: bool,
@@ -209,6 +211,8 @@ impl HostApp {
             search_error: None,
             operation_error: None,
             action_error: None,
+            invocation_output: None,
+            pending_invocation_id: None,
             overlay_visible: false,
             focus_pending: false,
             focus_observed: false,
@@ -305,7 +309,10 @@ impl HostApp {
         }
         context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         context.send_viewport_cmd(egui::ViewportCommand::Focus);
-        self.begin_search();
+        if self.pending_invocation_id.is_none() {
+            self.invocation_output = None;
+            self.begin_search();
+        }
         context.request_repaint();
     }
 
@@ -331,6 +338,7 @@ impl HostApp {
             return;
         }
         self.action_error = None;
+        self.invocation_output = None;
         let selected = self
             .search_snapshot
             .as_ref()
@@ -359,7 +367,10 @@ impl HostApp {
             candidate.action_id(),
             query,
         ) {
-            Ok(()) => self.close_overlay(context),
+            Ok(invocation_id) => {
+                self.pending_invocation_id = Some(invocation_id);
+                context.request_repaint();
+            }
             Err(error) => self.action_error = Some(error.to_string()),
         }
     }
@@ -384,7 +395,7 @@ impl HostApp {
         }
     }
 
-    fn refresh_search_snapshot(&mut self) {
+    fn refresh_search_snapshot(&mut self, context: &egui::Context) {
         if let Some(snapshot) = self.search.as_ref().and_then(SearchHandle::latest_snapshot)
             && snapshot.generation == self.search_generation
             && self
@@ -404,15 +415,51 @@ impl HostApp {
             .as_ref()
             .and_then(SearchStorageWorker::last_error)
             .or_else(|| self.extension_search.first_error());
+        for output in self.extension_search.take_invocation_outputs() {
+            if let Some(presentation) = &mut self.invocation_output {
+                presentation.append(output);
+            } else {
+                self.invocation_output = Some(InvocationPresentation::from_output(output));
+            }
+        }
         for result in self.extension_search.take_results() {
+            let is_pending = self.pending_invocation_id == Some(result.invocation_id);
+            if is_pending {
+                self.pending_invocation_id = None;
+            }
             match result.result {
-                Ok(()) => self.record_execution(
-                    &result.extension_id,
-                    &result.entry_id,
-                    &result.action_id,
-                    &result.query_context,
-                ),
-                Err(error) => self.action_error = Some(error),
+                Ok(has_output) => {
+                    self.record_execution(
+                        &result.extension_id,
+                        &result.entry_id,
+                        &result.action_id,
+                        &result.query_context,
+                    );
+                    if has_output && is_pending {
+                        let presentation = self.invocation_output.get_or_insert_with(|| {
+                            InvocationPresentation::empty(
+                                result.invocation_id,
+                                result.extension_id.clone(),
+                                result.generation,
+                            )
+                        });
+                        if presentation.invocation_id == result.invocation_id {
+                            presentation.complete = true;
+                        }
+                    } else if is_pending {
+                        self.close_overlay(context);
+                    }
+                }
+                Err(error) => {
+                    if let Some(output) = &mut self.invocation_output
+                        && output.invocation_id == result.invocation_id
+                    {
+                        output.complete = true;
+                    }
+                    if is_pending {
+                        self.action_error = Some(error);
+                    }
+                }
             }
         }
         for result in self.extension_search.take_settings() {
@@ -497,7 +544,7 @@ impl HostApp {
             if let Err(error) = self.register_search_extension(
                 extension.extension_id,
                 extension.kind,
-                extension.process,
+                extension.runtime,
             ) {
                 self.runtime_error =
                     combine_errors(self.runtime_error.take(), Some(error.to_string()));
@@ -591,7 +638,7 @@ impl HostApp {
         &mut self,
         extension_id: impl Into<String>,
         kind: ExtensionKind,
-        process: ExtensionProcess,
+        runtime: ExtensionRuntime,
     ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
         let search = self
@@ -606,7 +653,7 @@ impl HostApp {
             .register_extension(&extension_id, kind, unix_timestamp())
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         self.extension_search
-            .register(extension_id, process, search)?;
+            .register(extension_id, runtime, search)?;
         self.begin_search();
         Ok(())
     }
@@ -826,7 +873,7 @@ impl eframe::App for HostApp {
                 .set_notifier(Arc::new(move || repaint_context.request_repaint()));
             self.search_notifier_configured = true;
         }
-        self.refresh_search_snapshot();
+        self.refresh_search_snapshot(&context);
         if self.settings.startup_response.is_some() || self.pending_host_settings.is_some() {
             context.request_repaint_after(Duration::from_millis(16));
         }
@@ -879,13 +926,21 @@ impl eframe::App for HostApp {
                             .color(egui::Color32::from_rgb(168, 176, 198)),
                     );
                     ui.add_space(12.0);
-                    let response = ui.add_sized(
-                        [ui.available_width(), 54.0],
-                        egui::TextEdit::singleline(&mut self.query)
-                            .id(input_id)
-                            .hint_text("Type a command, app, calculation, or keyword")
-                            .font(egui::TextStyle::Heading),
-                    );
+                    let response = ui
+                        .add_enabled_ui(
+                            self.pending_invocation_id.is_none()
+                                && self.invocation_output.is_none(),
+                            |ui| {
+                                ui.add_sized(
+                                    [ui.available_width(), 54.0],
+                                    egui::TextEdit::singleline(&mut self.query)
+                                        .id(input_id)
+                                        .hint_text("Type a command, app, calculation, or keyword")
+                                        .font(egui::TextStyle::Heading),
+                                )
+                            },
+                        )
+                        .inner;
                     if response.changed() {
                         truncate_chars(&mut self.query, MAX_QUERY_CHARS);
                         self.history.reset_navigation();
@@ -896,22 +951,27 @@ impl eframe::App for HostApp {
                         self.focus_pending = false;
                     }
 
-                    if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                        self.submit_query(&context);
+                    let accepting_query =
+                        self.pending_invocation_id.is_none() && self.invocation_output.is_none();
+                    if accepting_query {
+                        if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                            self.submit_query(&context);
+                        }
+                        if ui.input(|input| {
+                            input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowUp)
+                        }) {
+                            self.navigate_history(HistoryDirection::Older);
+                        } else if ui.input(|input| {
+                            input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowDown)
+                        }) {
+                            self.navigate_history(HistoryDirection::Newer);
+                        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+                            self.select_previous();
+                        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+                            self.select_next();
+                        }
                     }
-                    if ui.input(|input| {
-                        input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowUp)
-                    }) {
-                        self.navigate_history(HistoryDirection::Older);
-                    } else if ui.input(|input| {
-                        input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowDown)
-                    }) {
-                        self.navigate_history(HistoryDirection::Newer);
-                    } else if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
-                        self.select_previous();
-                    } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
-                        self.select_next();
-                    } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                    if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                         self.close_overlay(&context);
                     }
                     if ui.input(|input| input.modifiers.ctrl && input.key_pressed(egui::Key::Q)) {
@@ -923,7 +983,54 @@ impl eframe::App for HostApp {
                     {
                         ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error);
                     }
-                    if self.extension_search.is_empty() {
+                    if let Some(output) = &self.invocation_output {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(&output.extension_id)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(168, 176, 198)),
+                            );
+                            ui.label(
+                                egui::RichText::new(if output.complete {
+                                    "Complete"
+                                } else {
+                                    "Running"
+                                })
+                                .color(egui::Color32::from_rgb(126, 134, 155)),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        let (visible_text, truncated) = output.visible_text();
+                        if truncated {
+                            ui.label(
+                                egui::RichText::new("Showing the latest output")
+                                    .color(egui::Color32::from_rgb(126, 134, 155)),
+                            );
+                        }
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .max_height(280.0)
+                            .show(ui, |ui| {
+                                let text = if visible_text.is_empty() && output.complete {
+                                    "No output"
+                                } else {
+                                    visible_text
+                                };
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text)
+                                            .color(egui::Color32::from_rgb(224, 228, 238)),
+                                    )
+                                    .selectable(true)
+                                    .wrap(),
+                                );
+                            });
+                    } else if self.pending_invocation_id.is_some() {
+                        ui.label(
+                            egui::RichText::new("Running...")
+                                .color(egui::Color32::from_rgb(168, 176, 198)),
+                        );
+                    } else if self.extension_search.is_empty() {
                         ui.label(
                             egui::RichText::new("No extensions enabled")
                                 .color(egui::Color32::from_rgb(126, 134, 155)),

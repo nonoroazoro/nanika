@@ -1,12 +1,13 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionSearchWorker, ExtensionSettingsResult, HostServiceHandler, SupervisorError,
+    ExtensionInvocation, ExtensionInvocationOutput, ExtensionInvocationResult, ExtensionNotifier,
+    ExtensionRuntime, ExtensionSearchWorker, ExtensionSettingsResult, HostServiceHandler,
+    SupervisorError,
 };
 
 const INVOCATION_RESULT_CAPACITY: usize = 16;
@@ -17,6 +18,7 @@ pub struct ExtensionSearchCoordinator {
     results: Receiver<ExtensionInvocationResult>,
     result_sender: SyncSender<ExtensionInvocationResult>,
     pending_invocations: AtomicUsize,
+    next_invocation_id: AtomicU64,
     notifier: ExtensionNotifier,
     host_services: Option<Arc<dyn HostServiceHandler>>,
 }
@@ -29,6 +31,7 @@ impl ExtensionSearchCoordinator {
             results,
             result_sender,
             pending_invocations: AtomicUsize::new(0),
+            next_invocation_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
             host_services: None,
         }
@@ -41,10 +44,11 @@ impl ExtensionSearchCoordinator {
     pub fn register(
         &mut self,
         extension_id: impl Into<String>,
-        process: ExtensionProcess,
+        runtime: impl Into<ExtensionRuntime>,
         search: SearchHandle,
     ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
+        let runtime = runtime.into();
         if self
             .workers
             .iter()
@@ -57,7 +61,7 @@ impl ExtensionSearchCoordinator {
         }
         self.workers.push(ExtensionSearchWorker::spawn(
             extension_id,
-            process,
+            runtime,
             search,
             self.result_sender.clone(),
             Arc::clone(&self.notifier),
@@ -98,7 +102,7 @@ impl ExtensionSearchCoordinator {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
         query_context: impl Into<String>,
-    ) -> Result<(), SupervisorError> {
+    ) -> Result<u64, SupervisorError> {
         let worker = self
             .workers
             .iter()
@@ -113,7 +117,9 @@ impl ExtensionSearchCoordinator {
                 (pending < INVOCATION_RESULT_CAPACITY).then_some(pending + 1)
             })
             .map_err(|_| SupervisorError::QueueFull)?;
+        let invocation_id = self.next_invocation_id.fetch_add(1, Ordering::Relaxed);
         let invocation = ExtensionInvocation {
+            invocation_id,
             generation,
             entry_id: entry_id.into(),
             action_id: action_id.into(),
@@ -123,7 +129,7 @@ impl ExtensionSearchCoordinator {
             self.pending_invocations.fetch_sub(1, Ordering::AcqRel);
             return Err(error);
         }
-        Ok(())
+        Ok(invocation_id)
     }
 
     pub(crate) fn take_results(&self) -> Vec<ExtensionInvocationResult> {
@@ -137,6 +143,13 @@ impl ExtensionSearchCoordinator {
         self.workers
             .iter()
             .filter_map(ExtensionSearchWorker::take_settings)
+            .collect()
+    }
+
+    pub(crate) fn take_invocation_outputs(&self) -> Vec<ExtensionInvocationOutput> {
+        self.workers
+            .iter()
+            .flat_map(ExtensionSearchWorker::take_invocation_outputs)
             .collect()
     }
 

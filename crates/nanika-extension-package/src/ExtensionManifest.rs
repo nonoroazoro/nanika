@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ExtensionTarget;
+use crate::{ExtensionProtocol, ExtensionTarget};
 
 /// Typed root manifest for one external extension version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -14,6 +14,8 @@ pub struct ExtensionManifest {
     pub version: String,
     pub host_api: String,
     pub targets: BTreeMap<String, ExtensionTarget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<ExtensionProtocol>,
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default)]
@@ -24,4 +26,16 @@ pub struct ExtensionManifest {
     pub activation_events: Vec<String>,
     #[serde(default)]
     pub contributions: serde_json::Value,
+}
+
+impl ExtensionManifest {
+    pub(crate) fn validated_protocol(&self) -> ExtensionProtocol {
+        match (self.manifest_version, self.runtime) {
+            (1, None) => ExtensionProtocol::Nanika {
+                protocol_version: 1,
+            },
+            (2, Some(protocol)) => protocol,
+            _ => unreachable!("manifest protocol is resolved only after validation"),
+        }
+    }
 }

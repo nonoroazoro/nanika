@@ -8,6 +8,8 @@ mod active_extension;
 mod extension_manifest;
 #[path = "ExtensionPackageError.rs"]
 mod extension_package_error;
+#[path = "ExtensionProtocol.rs"]
+mod extension_protocol;
 #[path = "ExtensionTarget.rs"]
 mod extension_target;
 mod package;
@@ -23,6 +25,7 @@ mod staging_directory;
 pub use active_extension::*;
 pub use extension_manifest::*;
 pub use extension_package_error::*;
+pub use extension_protocol::*;
 pub use extension_target::*;
 pub use package::*;
 pub(crate) use package_operation::*;

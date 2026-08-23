@@ -516,7 +516,7 @@ fn coordinator_bounds_outstanding_action_completions_without_dropping_them() {
         .expect("worker should register");
 
     for index in 0..16 {
-        coordinator
+        let invocation_id = coordinator
             .invoke(
                 "fixture.extension",
                 u64::try_from(index).expect("generation should fit"),
@@ -525,6 +525,10 @@ fn coordinator_bounds_outstanding_action_completions_without_dropping_them() {
                 "fixture",
             )
             .expect("bounded action should enqueue");
+        assert_eq!(
+            invocation_id,
+            u64::try_from(index + 1).expect("ID should fit")
+        );
     }
     assert!(matches!(
         coordinator.invoke(

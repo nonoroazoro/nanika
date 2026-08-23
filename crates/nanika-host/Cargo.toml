@@ -7,7 +7,13 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+agent-client-protocol.workspace = true
+async-channel.workspace = true
+async-io.workspace = true
+async-process.workspace = true
 eframe.workspace = true
+futures.workspace = true
+futures-lite.workspace = true
 global-hotkey.workspace = true
 nanika-core = { path = "../nanika-core" }
 nanika-config = { path = "../nanika-config" }
@@ -29,6 +35,7 @@ criterion.workspace = true
 wgpu = { workspace = true, features = ["dx12", "vulkan", "wgsl"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+rustix.workspace = true
 wgpu = { workspace = true, features = ["metal", "wgsl"] }
 
 [lints]

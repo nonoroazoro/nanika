@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 8 local Windows checks, packaging, and single-instance smoke pass. Fixed-machine performance, physical platform acceptance, signing, and notarization remain. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
+Status: current pre-1.0 implementation baseline. Milestone 8 physical acceptance and removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify a change with updated migration and validation notes.
 
 ## Selected baseline
 
@@ -26,12 +26,13 @@ Status: current pre-1.0 implementation baseline. Milestone 8 local Windows check
 | Serialization | `serde`, `serde_json`, `jsonc-parser` | JSONC only for human-edited files and manifests. Internal APIs use typed Rust values. |
 | Extension IDs and versions | `uuid` and `semver` | UUID v4 for opaque IDs and Semantic Versioning for packages. |
 | Database | SQLite through `rusqlite` | Default features disabled; only `bundled`. |
-| Background work | Standard-library threads and channels | Named owner threads; no async runtime or project-wide pool. |
+| Background work | Standard-library threads and channels | Named owner threads; no project-wide async runtime or pool. |
 | Process launch | `std::process::Command` behind platform adapters | Structured arguments by default; explicit shell mode only. |
 | Errors | `thiserror` and standard error traits | Typed errors at crate and host boundaries. |
 | Diagnostics | `tracing`, `tracing-subscriber`, and `tracing-appender` | Bounded non-blocking local logs; no content-bearing query or clipboard fields. |
 | Benchmarks | `criterion` as a dev dependency | Default features disabled; targets stay outside runtime crates. |
-| Extension runtime | Host-supervised child processes | Every extension uses the same protocol and failure boundary. |
+| Extension runtime | Host-supervised child processes | Every extension uses the same lifecycle and failure boundary; a versioned schema selects its wire adapter. |
+| ACP | Official `agent-client-protocol` SDK with `async-io`, `async-channel`, `async-process`, `futures`, and `futures-lite` | Stable ACP v1 only. One isolated supervisor thread drives each ACP process; `rustix` terminates the macOS process group. No project-wide executor. |
 | Extension package | ZIP with `.nanika` suffix | `zip` default features disabled; only `deflate-flate2-zlib-rs`. |
 | Package integrity | `sha2` | SHA-256 for corruption detection. |
 
@@ -62,6 +63,7 @@ extensions/
   nanika-extension-calculator/
   nanika-extension-clipboard/
   nanika-extension-fixture/
+  nanika-extension-acp-dummy/
 ```
 
 ## Host and extension boundary
@@ -199,7 +201,7 @@ Every database uses embedded, ordered, forward-only migrations in a transaction.
 
 ## Threads and process execution
 
-Use named owner threads for storage, application discovery, search aggregation, and platform event sources. Runtime configuration and storage initialization stay off the UI thread. The search owner reuses one `nucleo-matcher` instance. Do not create a thread per query, action, or database operation. Fixed extension workers publish typed snapshots and carry generation IDs. Shutdown stops extension workers, storage, search, and platform events in that order.
+Use named owner threads for storage, application discovery, search aggregation, and platform event sources. Runtime configuration and storage initialization stay off the UI thread. The search owner reuses one `nucleo-matcher` instance. Do not create a thread per query, action, or database operation. Fixed extension workers publish typed snapshots and carry generation IDs. Each active ACP extension owns one additional named supervisor thread for its isolated async protocol executor. Shutdown stops extension workers, storage, search, and platform events in that order.
 
 Only the host process launcher and extension supervisor may create child processes. Extensions submit typed `Program`, `Shell`, or `MacApplication` descriptors. `Program` keeps structured arguments separate, with an explicit Windows raw-argument representation for Shell Links. `Shell` selects `cmd.exe` on Windows and `/bin/zsh` on macOS. MVP launches are detached with null stdio, and action success means the process was accepted. One bounded launcher owner serializes spawn work. Windows releases detached process handles; macOS reaps children through `kqueue` `NOTE_EXIT` events without polling. Captured execution and process-tree cancellation remain a later descriptor mode.
 
@@ -247,9 +249,13 @@ The native tray or menu bar emits only `Open Nanika`, `Settings`, `Rescan applic
 
 ## Extension protocol and package
 
-The universal extension protocol uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. JSON here is IPC only, not configuration.
+Nanika protocol v1 uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. ACP v1 uses its standard newline-delimited JSON-RPC 2.0 stdio transport with an 8 MiB frame limit in both directions. The two wire protocols never share a stream.
 
-The current implementation provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query, action, and settings deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, request-correlated extension settings results, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions and settings updates are never replayed after an ambiguous crash. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation. ACP remains a separate future adapter.
+`ExtensionRuntime` is the common supervisor entry for built-in and external extensions. It selects the wire adapter from validated runtime metadata without changing permissions, lifecycle, restart budgets, or failure policy.
+
+The Nanika adapter provides typed frames, an off-UI-thread registration handshake, generation-aware cancellation, explicit refresh completion, a one-frame receive queue, query, action, and settings deadlines, incremental snapshots with an explicit completion flag, bounded stderr capture, restart budgets, automatic process recovery, request-correlated extension settings results, and orderly shutdown. `invoke` identifies both the selected entry and action. Interrupted queries are safe to retry after restart. Actions and settings updates are never replayed after an ambiguous crash. Outstanding actions are bounded to the result queue capacity, so accepted completion messages are not dropped. Successful `result` messages commit contextual usage through the storage owner. Late frames are ignored by request ID and generation.
+
+The ACP adapter negotiates stable v1, creates one session, and contributes a prompt candidate only for `@<extension-id> <prompt>`. It streams text off the UI thread, limits stderr to 64 KiB and prompt output to 256 KiB, and uses the common handshake and action deadlines. Cancellation first sends the ACP notification; timeout or non-cooperation terminates and reaps the child within a bounded shutdown path. Each invocation has a unique host ID. Workers publish bounded protocol-neutral delta batches, and the UI accepts only current output while laying out at most the latest 16 KiB. ACP extensions contribute empty settings and receive no ACP client capabilities or Nanika host-service privilege by default.
 
 Host messages: `initialize`, `query`, `invoke`, `cancel`, `refresh`, `getSettings`, `updateSettings`, `hostResponse`, `error`, and `shutdown`.
 
@@ -257,7 +263,7 @@ Extension messages: `initialized`, bounded `snapshot`, `result`, `refreshed`, `s
 
 Each `hostRequest` is bound to its parent invocation and generation, and extensions validate matching `hostResponse` fields. The same router handles built-in and external extensions. Service owners have independent bounded queues and independent initialization failure, so one unavailable service does not disable the others. Host service waits remain inside the parent action deadline, and queued work expires before starting a side effect. Current services accept typed launch descriptors and typed clipboard writes; image writes are confined to the requesting extension's machine-local payload root and are read with encoded and decoded resource limits.
 
-Every request carries an ID. Query, action, and refresh messages carry a generation. The host drops stale generations, applies a 2-second handshake deadline, bounds action time, captures bounded stderr, and performs graceful shutdown before termination.
+Nanika requests carry IDs; query, action, and refresh messages also carry a generation. ACP uses its standard JSON-RPC request and session IDs, plus a host invocation ID for output correlation. The host drops stale generations, applies a 2-second handshake deadline, bounds action time and stderr, performs orderly normal shutdown, and force-terminates a child after deadline or failed cancellation.
 
 External packages are ZIP archives with a `.nanika` suffix:
 
@@ -269,11 +275,11 @@ README.md
 LICENSE
 ```
 
-Manifest version 1 is strict: unknown fields, unknown targets, unsupported or duplicate permissions, and unsafe entrypoints are rejected. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Capabilities, dependencies, activation events, and manifest contributions remain reserved and must be empty until a later manifest version defines their semantics.
+Manifest version 1 remains valid and implicitly selects Nanika protocol v1. Manifest version 2 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols and versions are rejected. Both versions reject unknown fields, unknown targets, unsupported or duplicate permissions, and unsafe entrypoints. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Capabilities, dependencies, activation events, and manifest contributions remain reserved.
 
 `nanika-cli` installs, updates, enables, disables, and removes external extensions while the host is stopped. `install` creates a missing extension or repairs the same immutable version; a different installed version requires `update`. `update` requires an installed extension, preserves enablement, and rejects downgrades. Archives are limited to 128 MiB, 4,096 entries, and 512 MiB expanded content. Traversal, symlinks, cross-platform name collisions, filesystem collisions, unsupported compression, and excessive compression ratios are rejected. Extraction never overwrites an existing path. The package is copied and hashed once, then extraction uses that immutable staged copy. The target entrypoint is made executable on macOS. Destructive artifact mutations write a recovery journal before rename; host startup and later CLI operations finish or roll back an interrupted replacement or removal. Configuration, database state, and artifacts use ordered mutations with compensation, and generated cleanup is best-effort after logical commit. Built-in IDs cannot be replaced or removed. No marketplace, development-directory install, or background download service is included.
 
-ACP remains a future extension protocol. It will reuse the child-process boundary and stdio transport through a separate adapter. ACP messages will not mix with Nanika control frames.
+The temporary `nanika-extension-acp-dummy` is an ordinary workspace extension that implements stable ACP v1 and returns `Hello World`. Tests package it as `.nanika`, install and resolve it through the normal external-extension path, publish its explicitly activated prompt candidate, and verify streamed output through the host adapter. Protocol tests also verify v1 negotiation, unique session IDs, bounded frames, cancellation, forced termination of a non-cooperative prompt, and bounded deadlines. It has no runtime privilege, is excluded from release packaging, and must be removed before 1.0.
 
 ## Performance and validation
 
@@ -292,7 +298,7 @@ Release builds use thin LTO and one codegen unit. Windows ships a signed portabl
 ## Deferred or rejected
 
 - Electron, Tauri, and webview UI stacks.
-- `glow`, `tokio`, `anyhow`, `log`, `rayon`, and a general tray crate.
+- Direct host use of `glow`, `tokio`, `anyhow`, `log`, `rayon`, and a general tray crate.
 - Rust dynamic-library extensions, `libloading`, `abi_stable`, `interprocess`, Wasmtime, and WASI for the MVP.
 - Extension marketplace, background downloads, cloud sync, generated-data sync, and enforceable sandboxing.
-- ACP runtime implementation, file search, URL search, and other post-MVP capabilities.
+- Draft ACP v2, production agent UX, file search, URL search, and other later capabilities.

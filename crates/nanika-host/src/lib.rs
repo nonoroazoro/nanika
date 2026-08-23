@@ -1,5 +1,12 @@
 //! Host-owned UI and extension supervision boundaries.
 
+#[path = "AcpConnectionContext.rs"]
+mod acp_connection_context;
+#[path = "AcpExtensionCommand.rs"]
+mod acp_extension_command;
+#[path = "AcpExtensionProcess.rs"]
+mod acp_extension_process;
+mod acp_transport;
 #[path = "BuiltinExtensionSpec.rs"]
 mod builtin_extension_spec;
 mod builtins;
@@ -9,6 +16,10 @@ mod diagnostics;
 mod extension_command;
 #[path = "ExtensionInvocation.rs"]
 mod extension_invocation;
+#[path = "ExtensionInvocationOutput.rs"]
+mod extension_invocation_output;
+#[path = "ExtensionInvocationOutputState.rs"]
+mod extension_invocation_output_state;
 #[path = "ExtensionInvocationResult.rs"]
 mod extension_invocation_result;
 #[path = "ExtensionLimits.rs"]
@@ -19,6 +30,10 @@ mod extension_notifier;
 mod extension_process;
 #[path = "ExtensionRefresh.rs"]
 mod extension_refresh;
+#[path = "ExtensionRuntime.rs"]
+mod extension_runtime;
+#[path = "ExtensionRuntimeInvocation.rs"]
+mod extension_runtime_invocation;
 #[path = "ExtensionSearchCoordinator.rs"]
 mod extension_search_coordinator;
 #[path = "ExtensionSearchQuery.rs"]
@@ -51,6 +66,8 @@ mod host_runtime;
 mod host_service_handler;
 #[path = "HostServiceRouter.rs"]
 mod host_service_router;
+#[path = "InvocationPresentation.rs"]
+mod invocation_presentation;
 #[path = "OverlayMotion.rs"]
 mod overlay_motion;
 #[path = "PendingExtension.rs"]
@@ -66,15 +83,23 @@ mod settings_view;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
 
+pub(crate) use acp_connection_context::*;
+pub(crate) use acp_extension_command::*;
+pub use acp_extension_process::*;
+pub(crate) use acp_transport::*;
 pub(crate) use builtin_extension_spec::*;
 pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_invocation::*;
+pub(crate) use extension_invocation_output::*;
+pub(crate) use extension_invocation_output_state::*;
 pub(crate) use extension_invocation_result::*;
 pub use extension_limits::*;
 pub(crate) use extension_notifier::*;
 pub use extension_process::*;
 pub(crate) use extension_refresh::*;
+pub use extension_runtime::*;
+pub use extension_runtime_invocation::*;
 pub use extension_search_coordinator::*;
 pub(crate) use extension_search_query::*;
 pub(crate) use extension_search_state::*;
@@ -91,6 +116,7 @@ pub(crate) use host_event::*;
 pub(crate) use host_runtime::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
+pub(crate) use invocation_presentation::*;
 pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
 pub(crate) use pending_host_settings::*;
@@ -122,11 +148,23 @@ pub fn publish_extension_snapshot(
 }
 
 #[cfg(test)]
+#[path = "../tests/acp_transport.rs"]
+mod acp_transport_tests;
+#[cfg(test)]
+#[path = "../tests/ExtensionInvocationOutputState.rs"]
+mod extension_invocation_output_state_tests;
+#[cfg(test)]
+#[path = "../tests/ExtensionRuntime.rs"]
+mod extension_runtime_tests;
+#[cfg(test)]
 #[path = "../tests/HostApp.rs"]
 mod host_app_tests;
 #[cfg(test)]
 #[path = "../tests/HostConfigService.rs"]
 mod host_config_service_tests;
+#[cfg(test)]
+#[path = "../tests/InvocationPresentation.rs"]
+mod invocation_presentation_tests;
 #[cfg(test)]
 #[path = "../tests/OverlayMotion.rs"]
 mod overlay_motion_tests;

@@ -6,40 +6,49 @@ pub(crate) use nanika_core::{
     APPLICATION_EXTENSION_ID, CALCULATOR_EXTENSION_ID, CLIPBOARD_EXTENSION_ID,
     COMMAND_EXTENSION_ID, SCRIPT_EXTENSION_ID,
 };
-use nanika_extension_package::resolve_active_extensions;
+use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
 use nanika_storage::StoredExtension;
 use nanika_storage::{ExtensionKind, NanikaPaths};
 
-use crate::{BuiltinExtensionSpec, ExtensionProcess, PendingExtension};
+use crate::{BuiltinExtensionSpec, ExtensionRuntime, PendingExtension};
+
+const NANIKA_V1: ExtensionProtocol = ExtensionProtocol::Nanika {
+    protocol_version: 1,
+};
 
 const BUILTINS: [BuiltinExtensionSpec; 5] = [
     BuiltinExtensionSpec {
         extension_id: APPLICATION_EXTENSION_ID,
         binary_name: "nanika-extension-application",
+        protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
     },
     BuiltinExtensionSpec {
         extension_id: COMMAND_EXTENSION_ID,
         binary_name: "nanika-extension-command",
+        protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
     },
     BuiltinExtensionSpec {
         extension_id: SCRIPT_EXTENSION_ID,
         binary_name: "nanika-extension-script",
+        protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
     },
     BuiltinExtensionSpec {
         extension_id: CALCULATOR_EXTENSION_ID,
         binary_name: "nanika-extension-calculator",
+        protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["clipboard.write"],
     },
     BuiltinExtensionSpec {
         extension_id: CLIPBOARD_EXTENSION_ID,
         binary_name: "nanika-extension-clipboard",
+        protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["clipboard.write"],
     },
@@ -68,13 +77,15 @@ pub(crate) fn spawn_extensions(
             ));
             continue;
         }
-        let arguments = [
-            path_argument("data-root", paths.app_data_root()),
-            path_argument("cache-root", paths.cache_root()),
-            path_argument("config-root", paths.config_root()),
-        ];
-        match ExtensionProcess::spawn_with(&program, arguments, Default::default()) {
-            Ok(process) => extensions.push(PendingExtension {
+        let arguments = extension_arguments(spec.protocol, paths);
+        match ExtensionRuntime::spawn_with(
+            spec.extension_id,
+            spec.protocol,
+            &program,
+            arguments,
+            Default::default(),
+        ) {
+            Ok(runtime) => extensions.push(PendingExtension {
                 extension_id: spec.extension_id.to_owned(),
                 kind: spec.kind,
                 permissions: spec
@@ -82,7 +93,7 @@ pub(crate) fn spawn_extensions(
                     .iter()
                     .map(|permission| (*permission).to_owned())
                     .collect(),
-                process,
+                runtime,
             }),
             Err(error) => errors.push(format!(
                 "failed to spawn built-in extension {}: {error}",
@@ -93,21 +104,24 @@ pub(crate) fn spawn_extensions(
     let (external, external_errors) = resolve_active_extensions(paths, installed, registry);
     errors.extend(external_errors);
     for extension in external {
-        let arguments = [
-            path_argument("data-root", paths.app_data_root()),
-            path_argument("cache-root", paths.cache_root()),
-            path_argument("config-root", paths.config_root()),
-        ];
-        match ExtensionProcess::spawn_with(&extension.program, arguments, Default::default()) {
-            Ok(process) => extensions.push(PendingExtension {
-                extension_id: extension.extension_id,
+        let extension_id = extension.extension_id;
+        let arguments = extension_arguments(extension.protocol, paths);
+        match ExtensionRuntime::spawn_with(
+            &extension_id,
+            extension.protocol,
+            &extension.program,
+            arguments,
+            Default::default(),
+        ) {
+            Ok(runtime) => extensions.push(PendingExtension {
+                extension_id,
                 kind: ExtensionKind::External,
                 permissions: extension.permissions,
-                process,
+                runtime,
             }),
             Err(error) => errors.push(format!(
                 "failed to spawn external extension {}: {error}",
-                extension.extension_id
+                extension_id
             )),
         }
     }
@@ -120,6 +134,22 @@ fn companion_executable(current_executable: &Path, binary_name: &str) -> PathBuf
 
 fn path_argument(name: &str, path: &Path) -> OsString {
     OsString::from(format!("--{name}={}", path.display()))
+}
+
+fn extension_arguments(protocol: ExtensionProtocol, paths: &NanikaPaths) -> Vec<OsString> {
+    match protocol {
+        ExtensionProtocol::Nanika {
+            protocol_version: 1,
+        } => vec![
+            path_argument("data-root", paths.app_data_root()),
+            path_argument("cache-root", paths.cache_root()),
+            path_argument("config-root", paths.config_root()),
+        ],
+        ExtensionProtocol::Acp {
+            protocol_version: 1,
+        } => Vec::new(),
+        _ => Vec::new(),
+    }
 }
 
 #[cfg(test)]

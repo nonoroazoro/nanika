@@ -2,8 +2,8 @@ use std::io::Write;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
-    install_package, remove_extension, resolve_active_extensions, set_extension_enabled,
-    update_package,
+    ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
+    set_extension_enabled, update_package,
 };
 use nanika_storage::{HostDatabase, NanikaPaths};
 use zip::write::SimpleFileOptions;
@@ -23,6 +23,12 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
 
     let installed = install_package(&package, &paths, &store).expect("install package");
     assert_eq!(installed.extension_id, "com.example.extension");
+    assert_eq!(
+        installed.protocol,
+        ExtensionProtocol::Nanika {
+            protocol_version: 1
+        }
+    );
     assert!(installed.program.is_file());
 
     let database = HostDatabase::open(paths.host_database()).expect("database");
@@ -48,6 +54,166 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
             .expect("extension lookup")
             .is_none()
     );
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_version_two_preserves_acp_protocol_version() {
+    let root = temporary_root("acp-runtime");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("acp.nanika");
+    create_package_definition_with_runtime(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        2,
+        Some(serde_json::json!({
+            "protocol": "acp",
+            "protocolVersion": 1
+        })),
+    );
+
+    let installed = install_package(&package, &paths, &store).expect("install ACP package");
+
+    assert_eq!(
+        installed.protocol,
+        ExtensionProtocol::Acp {
+            protocol_version: 1
+        }
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_version_two_preserves_nanika_protocol_version() {
+    let root = temporary_root("nanika-runtime-v2");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("nanika.nanika");
+    create_package_definition_with_runtime(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        2,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
+    );
+
+    let installed = install_package(&package, &paths, &store).expect("install Nanika package");
+
+    assert_eq!(
+        installed.protocol,
+        ExtensionProtocol::Nanika {
+            protocol_version: 1
+        }
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_version_two_requires_runtime_protocol() {
+    let root = temporary_root("missing-runtime-v2");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("missing-runtime.nanika");
+    create_package_definition_with_runtime(&package, false, &[], "1.2.3", false, false, 2, None);
+
+    let error = install_package(&package, &paths, &store)
+        .expect_err("manifest version 2 without a runtime must fail");
+
+    assert!(error.to_string().contains("requires a runtime protocol"));
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_version_two_rejects_unsupported_acp_protocol_version() {
+    let root = temporary_root("unsupported-acp-runtime");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("acp.nanika");
+    create_package_definition_with_runtime(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        2,
+        Some(serde_json::json!({
+            "protocol": "acp",
+            "protocolVersion": 2
+        })),
+    );
+
+    let error = install_package(&package, &paths, &store)
+        .expect_err("unsupported ACP protocol version must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported ACP protocol version")
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_version_one_rejects_runtime_protocol_declarations() {
+    let root = temporary_root("legacy-runtime");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("legacy.nanika");
+    create_package_definition_with_runtime(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "acp",
+            "protocolVersion": 1
+        })),
+    );
+
+    let error = install_package(&package, &paths, &store)
+        .expect_err("legacy manifest runtime declaration must fail");
+
+    assert!(error.to_string().contains("version 1 cannot declare"));
     cleanup(&root);
 }
 
@@ -364,6 +530,29 @@ fn create_package_definition(
     unknown_field: bool,
     unicode_collision: bool,
 ) {
+    create_package_definition_with_runtime(
+        path,
+        traversal,
+        dependencies,
+        version,
+        unknown_field,
+        unicode_collision,
+        1,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_package_definition_with_runtime(
+    path: &std::path::Path,
+    traversal: bool,
+    dependencies: &[&str],
+    version: &str,
+    unknown_field: bool,
+    unicode_collision: bool,
+    manifest_version: u32,
+    runtime: Option<serde_json::Value>,
+) {
     std::fs::create_dir_all(path.parent().expect("package parent")).expect("create parent");
     let file = std::fs::File::create(path).expect("create package");
     let mut archive = zip::ZipWriter::new(file);
@@ -378,7 +567,7 @@ fn create_package_definition(
     let entrypoint = format!("bin/{target}/example{}", std::env::consts::EXE_SUFFIX);
     let mut manifest = serde_json::json!({
         "format": "nanika-extension",
-        "manifestVersion": 1,
+        "manifestVersion": manifest_version,
         "id": "com.example.extension",
         "version": version,
         "hostApi": "^0.1",
@@ -388,6 +577,9 @@ fn create_package_definition(
         "permissions": ["process.launch"],
         "dependencies": dependencies
     });
+    if let Some(runtime) = runtime {
+        manifest["runtime"] = runtime;
+    }
     if unknown_field {
         manifest["dependecies"] = serde_json::json!(["com.example.required"]);
     }

@@ -7,10 +7,11 @@ use std::time::Duration;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationResult, ExtensionNotifier, ExtensionProcess,
-    ExtensionRefresh, ExtensionSearchQuery, ExtensionSearchState, ExtensionSettingsResult,
-    ExtensionSettingsUpdate, ExtensionWork, HostServiceHandler, SupervisorError,
-    publish_extension_snapshot,
+    ExtensionInvocation, ExtensionInvocationOutput, ExtensionInvocationOutputState,
+    ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh, ExtensionRuntime,
+    ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
+    ExtensionSettingsResult, ExtensionSettingsUpdate, ExtensionWork, HostServiceHandler,
+    SupervisorError, publish_extension_snapshot,
 };
 
 const MAX_PENDING_INVOCATIONS: usize = 16;
@@ -21,6 +22,7 @@ pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<String>>>,
+    invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
     settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -28,7 +30,7 @@ pub(crate) struct ExtensionSearchWorker {
 impl ExtensionSearchWorker {
     pub(crate) fn spawn(
         extension_id: impl Into<String>,
-        mut process: ExtensionProcess,
+        mut runtime: ExtensionRuntime,
         search: SearchHandle,
         invocation_results: SyncSender<ExtensionInvocationResult>,
         notifier: ExtensionNotifier,
@@ -37,19 +39,21 @@ impl ExtensionSearchWorker {
         let extension_id = extension_id.into();
         let worker_extension_id = extension_id.clone();
         if let Some(host_services) = host_services {
-            process.set_host_services(extension_id.clone(), host_services);
+            runtime.set_host_services(extension_id.clone(), host_services);
         }
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
         let worker_state = Arc::clone(&state);
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
+        let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
+        let worker_invocation_output = Arc::clone(&invocation_output);
         let settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>> =
             Arc::new(Mutex::new(None));
         let worker_settings_result = Arc::clone(&settings_result);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
-                if let Err(error) = process.initialize(format!("initialize-{worker_extension_id}"))
+                if let Err(error) = runtime.initialize(format!("initialize-{worker_extension_id}"))
                 {
                     set_error(
                         &worker_error,
@@ -58,7 +62,7 @@ impl ExtensionSearchWorker {
                     notify(&notifier);
                     return;
                 }
-                let initial_settings = process
+                let initial_settings = runtime
                     .settings(format!("settings-{worker_extension_id}"))
                     .map_err(|error| error.to_string());
                 *worker_settings_result
@@ -76,7 +80,7 @@ impl ExtensionSearchWorker {
                     };
                     let result = match work {
                         ExtensionWork::Query(query) => run_query(
-                            &mut process,
+                            &mut runtime,
                             &worker_extension_id,
                             query,
                             &search,
@@ -84,34 +88,38 @@ impl ExtensionSearchWorker {
                         ),
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
-                                &mut process,
+                                &mut runtime,
                                 &worker_extension_id,
                                 &invocation,
                                 &worker_state,
+                                &worker_invocation_output,
+                                &notifier,
                             );
                             let report = ExtensionInvocationResult {
+                                invocation_id: invocation.invocation_id,
                                 extension_id: worker_extension_id.clone(),
+                                generation: invocation.generation,
                                 entry_id: invocation.entry_id,
                                 action_id: invocation.action_id,
                                 query_context: invocation.query_context,
-                                result: match &result {
-                                    Ok(()) => Ok(()),
-                                    Err(error) => Err(error.to_string()),
-                                },
+                                result: result
+                                    .as_ref()
+                                    .map(Clone::clone)
+                                    .map_err(ToString::to_string),
                             };
                             if invocation_results.send(report).is_err() {
                                 Err(SupervisorError::ChannelClosed)
                             } else {
-                                result.map(|()| true)
+                                result.map(|_| true)
                             }
                         }
                         ExtensionWork::Refresh(refresh) => {
-                            run_refresh(&mut process, &worker_extension_id, refresh, &worker_state)
+                            run_refresh(&mut runtime, &worker_extension_id, refresh, &worker_state)
                         }
                         ExtensionWork::UpdateSettings(update) => {
                             let request_id = update.request_id.clone();
                             let result =
-                                run_settings_update(&mut process, &worker_extension_id, update);
+                                run_settings_update(&mut runtime, &worker_extension_id, update);
                             let report = ExtensionSettingsResult {
                                 extension_id: worker_extension_id.clone(),
                                 request_id: Some(request_id),
@@ -136,12 +144,13 @@ impl ExtensionSearchWorker {
                     }
                     notify(&notifier);
                 }
-                let _ = process.shutdown(format!("shutdown-{worker_extension_id}"));
+                let _ = runtime.shutdown(format!("shutdown-{worker_extension_id}"));
             })?;
         Ok(Self {
             extension_id,
             state,
             last_error,
+            invocation_output,
             settings_result,
             thread: Some(thread),
         })
@@ -212,6 +221,14 @@ impl ExtensionSearchWorker {
             .take()
     }
 
+    pub(crate) fn take_invocation_outputs(&self) -> Vec<ExtensionInvocationOutput> {
+        self.invocation_output
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take_changed()
+            .unwrap_or_default()
+    }
+
     fn stop(&mut self) {
         self.request_stop();
         self.join();
@@ -267,31 +284,31 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
 }
 
 fn run_settings_update(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     extension_id: &str,
     update: ExtensionSettingsUpdate,
 ) -> Result<nanika_protocol::SettingsContribution, SupervisorError> {
-    recover_if_exited(process, extension_id, 0)?;
-    let result = process.update_settings(update.request_id, update.updates);
+    recover_if_exited(runtime, extension_id, 0)?;
+    let result = runtime.update_settings(update.request_id, update.updates);
     if matches!(
         &result,
         Err(SupervisorError::ChannelClosed
             | SupervisorError::Protocol(_)
             | SupervisorError::Timeout(_))
     ) {
-        restart_or_terminate(process, format!("restart-settings-{extension_id}"))?;
+        restart_or_terminate(runtime, format!("restart-settings-{extension_id}"))?;
     }
     result
 }
 
 fn run_refresh(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     extension_id: &str,
     refresh: ExtensionRefresh,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
 ) -> Result<bool, SupervisorError> {
-    recover_if_exited(process, extension_id, refresh.generation)?;
-    let result = process.refresh_cancellable(
+    recover_if_exited(runtime, extension_id, refresh.generation)?;
+    let result = runtime.refresh_cancellable(
         format!("refresh-{extension_id}-{}", refresh.generation),
         refresh.generation,
         Duration::from_secs(30),
@@ -311,7 +328,7 @@ fn run_refresh(
             | SupervisorError::Timeout(_))
     ) {
         restart_or_terminate(
-            process,
+            runtime,
             format!("restart-refresh-{extension_id}-{}", refresh.generation),
         )?;
     }
@@ -319,16 +336,16 @@ fn run_refresh(
 }
 
 fn run_query(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     extension_id: &str,
     query: ExtensionSearchQuery,
     search: &SearchHandle,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
 ) -> Result<bool, SupervisorError> {
-    recover_if_exited(process, extension_id, query.generation)?;
+    recover_if_exited(runtime, extension_id, query.generation)?;
     let mut retried = false;
     loop {
-        let result = process.query_incremental(
+        let result = runtime.query_incremental(
             format!("search-{extension_id}-{}", query.generation),
             query.generation,
             query.query.clone(),
@@ -353,11 +370,11 @@ fn run_query(
             return result;
         }
         if retried {
-            let _ = process.terminate();
+            let _ = runtime.terminate();
             return result;
         }
         restart_or_terminate(
-            process,
+            runtime,
             format!("restart-{extension_id}-{}", query.generation),
         )?;
         retried = true;
@@ -365,17 +382,42 @@ fn run_query(
 }
 
 fn run_invocation(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     extension_id: &str,
     invocation: &ExtensionInvocation,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-) -> Result<(), SupervisorError> {
-    recover_if_exited(process, extension_id, invocation.generation)?;
-    let result = process.invoke_cancellable(
-        format!("invoke-{extension_id}-{}", invocation.generation),
-        invocation.generation,
-        invocation.entry_id.clone(),
-        invocation.action_id.clone(),
+    invocation_output: &Arc<Mutex<ExtensionInvocationOutputState>>,
+    notifier: &ExtensionNotifier,
+) -> Result<bool, SupervisorError> {
+    recover_if_exited(runtime, extension_id, invocation.generation)?;
+    let output_state = Arc::clone(invocation_output);
+    let output_notifier = Arc::clone(notifier);
+    let output_extension_id = extension_id.to_owned();
+    let output_generation = invocation.generation;
+    let output_invocation_id = invocation.invocation_id;
+    let publish = Arc::new(move |chunk: String| {
+        let should_notify = output_state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .append(
+                output_invocation_id,
+                &output_extension_id,
+                output_generation,
+                &chunk,
+            );
+        if should_notify {
+            notify(&output_notifier);
+        }
+    });
+    let result = runtime.invoke_cancellable(
+        ExtensionRuntimeInvocation::new(
+            format!("invoke-{extension_id}-{}", invocation.generation),
+            invocation.generation,
+            invocation.entry_id.clone(),
+            invocation.action_id.clone(),
+            invocation.query_context.clone(),
+        ),
+        publish,
         || {
             let (lock, _) = &**state;
             lock.lock()
@@ -390,7 +432,7 @@ fn run_invocation(
             | SupervisorError::Timeout(_))
     ) {
         restart_or_terminate(
-            process,
+            runtime,
             format!("restart-invoke-{extension_id}-{}", invocation.generation),
         )?;
     }
@@ -398,24 +440,24 @@ fn run_invocation(
 }
 
 fn restart_or_terminate(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     request_id: String,
 ) -> Result<(), SupervisorError> {
-    match process.restart(request_id) {
+    match runtime.restart(request_id) {
         Ok(()) => Ok(()),
         Err(error) => {
-            let _ = process.terminate();
+            let _ = runtime.terminate();
             Err(error)
         }
     }
 }
 
 fn recover_if_exited(
-    process: &mut ExtensionProcess,
+    runtime: &mut ExtensionRuntime,
     extension_id: &str,
     generation: u64,
 ) -> Result<(), SupervisorError> {
-    process
+    runtime
         .recover_if_exited(format!("recover-{extension_id}-{generation}"))
         .map(|_| ())
 }

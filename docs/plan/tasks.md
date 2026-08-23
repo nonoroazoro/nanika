@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: Milestone 8 local Windows checks, packaging, and single-instance smoke pass. Fixed-machine performance, physical platform acceptance, signing, and notarization remain.
+Status: Milestone 8 still requires physical acceptance. Milestone 9 is complete. The temporary ACP dummy remains a required pre-1.0 cleanup item.
 
 ## Product direction
 
@@ -70,10 +70,22 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 - [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, no-clobber extraction, recoverable activation, path validation, and SHA-256 checks.
 - [x] Limit MVP installation to explicit local `.nanika` packages. No development-directory install, marketplace, or background download.
 - [x] Implement local package install, monotonic state-preserving update, same-version repair, enable, disable, recoverable removal, compatibility checks, and built-in protection through `nanika-cli`.
-- [x] Reserve ACP as a future child-process protocol adapter with separate wire messages.
+- [x] Reserve ACP as a separate child-process protocol adapter with separate wire messages.
 - [x] Define extension-owned settings schema, semantic validation, and storage.
 - [ ] Add settings migrations and reset behavior before a format change requires them.
 - [x] Define the default extension implementations and their acceptance tests.
+
+### ACP extension protocol
+
+- [x] Select stable ACP v1 and the official Rust SDK. Keep draft ACP v2 disabled.
+- [x] Add manifest v2 with a required versioned runtime protocol declaration. Preserve manifest v1 as implicit Nanika protocol v1.
+- [x] Add a temporary, unprivileged ACP v1 dummy extension with version negotiation, unique sessions, cancellation, and `Hello World` prompts.
+- [x] Route ACP extensions through the common runtime lifecycle, permissions boundary, failure policy, and `.nanika` package path.
+- [x] Enforce bounded transport frames, stderr, prompt output, handshake and action deadlines, cooperative cancellation, and forced termination.
+- [x] Require explicit `@<extension-id> <prompt>` activation so ACP does not pollute ordinary search.
+- [x] Correlate streamed output by invocation ID and present bounded deltas through generic extension UI without ACP-specific privileges.
+- [x] Test non-cooperative prompt timeout and cancellation through the ordinary dummy extension path.
+- [ ] Remove the dummy extension before 1.0 packaging.
 
 ### Application extension
 
@@ -166,4 +178,4 @@ Built-in extensions are shipped and enabled by default. External extensions are 
 6. [x] Command, script, calculator, and clipboard history extensions.
 7. [x] Settings, startup, and macOS adapters.
 8. [ ] Performance, packaging, release, and cross-platform acceptance. Local Windows checks, packaging, and single-instance smoke pass; fixed-machine performance and physical platform acceptance remain.
-9. Post-MVP ACP extension.
+9. [x] ACP extension protocol.
