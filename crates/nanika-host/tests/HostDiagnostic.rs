@@ -59,3 +59,22 @@ fn repeated_events_are_suppressed_inside_the_record_interval() {
     assert!(!should_record(&diagnostic, false));
     assert!(should_record(&diagnostic, true));
 }
+
+#[test]
+fn distinct_safe_contexts_are_recorded_independently() {
+    let application = HostDiagnostic::new(
+        DiagnosticCode::ExtensionUnavailable,
+        "test extension contexts",
+        "Some features are unavailable.",
+    )
+    .with_safe_context("com.nanika.application");
+    let calculator = HostDiagnostic::new(
+        DiagnosticCode::ExtensionUnavailable,
+        "test extension contexts",
+        "Some features are unavailable.",
+    )
+    .with_safe_context("com.nanika.calculator");
+
+    assert!(should_record(&application, false));
+    assert!(should_record(&calculator, false));
+}

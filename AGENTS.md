@@ -10,6 +10,12 @@
 - Performance is a first-class requirement: keep the UI responsive and measure latency, frame pacing, and resource use.
 - Keep blocking work off the UI thread and avoid continuous work or repainting while idle.
 
+## Cross-platform
+
+- Shared host, UI, diagnostics, protocol, and extension behavior must remain platform-neutral.
+- Isolate unavoidable OS-specific behavior behind platform adapters and maintain implementations for every supported OS. Never introduce a single-OS solution into shared code.
+- Validate cross-platform changes on Windows and macOS. Linux-specific behavior must not become an implicit fallback or enter shared paths unless Linux is added to the supported baseline.
+
 ## UI
 
 - The UI must be elegant and coherent, with an explicit visual language and clear hierarchy.

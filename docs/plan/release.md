@@ -30,10 +30,6 @@ macOS local package:
 
 An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`. The script signs child executables first, signs the app with hardened runtime and a secure timestamp, verifies it, submits the ZIP through `notarytool`, staples the app, validates the ticket, and recreates the archive.
 
-## Current validation
-
-The current working tree passes the Windows workspace quality gate. Commit `2d00bd3` produced a portable ZIP with a verified SHA-256, the expected binary inventory, clean-profile startup, five isolated built-in extension processes, foreground and background second-launch behavior, and packaged diagnostics export. That artifact predates the current changes and is unsigned because no code-signing certificate is available. Current packaging, signing, physical platform acceptance, and macOS packaging remain release gates.
-
 ## Checklist
 
 1. Confirm a clean tree, the intended version, and committed `Cargo.lock`.
@@ -42,8 +38,10 @@ The current working tree passes the Windows workspace quality gate. Commit `2d00
 4. Run the native UI benchmark on fixed Windows and macOS reference machines and retain the schema-versioned reports.
 5. Complete the platform acceptance list in `performance.md` on physical Windows and macOS machines.
 6. Build with release credentials and verify signatures, notarization, archive contents, and SHA-256 files.
-7. Install each artifact on a clean user profile and verify startup, summon, settings, actions, and removal.
-8. Publish the versioned archives, checksums, and release notes together.
+7. Install each artifact on a clean user profile and verify startup, summon, settings, actions, diagnostics, and removal.
+8. Confirm the host starts all five built-in extension processes and that one failed extension does not prevent the other features from loading.
+9. Confirm user-facing failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
+10. Publish the versioned archives, checksums, and release notes together.
 
 ## Update and rollback
 

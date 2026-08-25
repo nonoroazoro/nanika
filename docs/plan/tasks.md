@@ -1,184 +1,52 @@
 # Nanika Tasks
 
-Status: Milestone 8 still requires fixed-machine performance, signing, physical Windows acceptance, and macOS validation. Milestone 9 is complete. The temporary ACP dummy remains a required pre-1.0 cleanup item.
+Status: the pre-1.0 architecture and MVP capabilities are implemented. The remaining work is cross-platform acceptance, release validation, and explicitly deferred cleanup.
 
-## Product direction
+## Product baseline
 
-Nanika is a native, keyboard-driven capability host for Windows 10 and macOS 13 or later. The host foundation supplies only shared infrastructure. Every domain capability is an extension, including the default command, application, script, calculator, and clipboard history capabilities.
+Nanika is a native, keyboard-driven capability host for Windows 10 and macOS 13 or later. The host provides shared infrastructure only. Application search, commands, scripts, calculation, clipboard history, and future domain capabilities run as extensions.
 
-Built-in extensions are shipped and enabled by default. External extensions are installed separately. Both run as independent host-supervised processes and use the same contract, settings, permissions, and failure policy. Built-in status grants no privilege and only prevents uninstall from the default distribution.
+Built-in and external extensions run as independent host-supervised processes with the same lifecycle, settings, permissions, diagnostics, and failure policy. Built-in status grants no additional privilege. A failed extension must not prevent the host or unaffected features from starting.
+
+Shared host, UI, diagnostics, protocol, configuration, storage, search, and extension lifecycle code remains platform-neutral. Native behavior is isolated behind typed Windows and macOS adapters.
 
 ## MVP acceptance criteria
 
-- Configurable global hotkey summons an overlay on the active monitor.
-- Keyboard input, navigation, input history, Enter, and Escape work without a mouse.
-- Default extensions provide command execution, application execution, script execution, calculation, and clipboard history.
-- Extensions can contribute searchable entries and actions without host registration.
-- Query results appear incrementally and stale generations cannot replace newer results.
-- Repeated execution raises the matching action for the same query context without overwhelming lexical relevance.
-- Settings are editable in the host Settings view and through advanced JSONC editing.
-- Built-in and external extension settings are loaded dynamically through the same contribution contract.
-- A user can install, enable, update, disable, and remove external extensions.
-- Missing, incompatible, or failed extensions do not prevent host startup.
+- A configurable global hotkey summons a focused overlay on the active monitor.
+- Keyboard input, navigation, input history, Enter, Escape, and reduced motion work without a mouse.
+- The default distribution includes application search, commands, scripts, calculation, and clipboard history.
+- Extensions contribute bounded incremental candidates and actions without host domain registration.
+- Stale generations cannot replace newer results, and repeated execution cannot overwhelm lexical relevance.
+- Settings are editable through the host UI and advanced JSONC files.
+- External extensions can be installed, repaired, updated, enabled, disabled, and removed through `nanika-cli` while the host is stopped.
 - A foreground second launch activates the existing host; a background launch exits without disturbing it.
-- Startup integration works on Windows 10 and macOS 13 or later.
-- User configuration is in one relocatable tree; generated data remains machine-local.
-- Startup, indexing, search, launch, and permission failures produce actionable diagnostics.
+- Configuration is relocatable, while databases, extension artifacts, payloads, caches, and logs remain machine-local.
+- User-facing failures name the affected feature and provide a recovery action without exposing internal process, protocol, path, or storage details.
+- Operational diagnostics preserve redaction, record distinct extension IDs independently, remain bounded, and support export.
+- Hidden idle performs no continuous repaint or polling beyond explicitly designed platform adapters.
 
-## TODO
+## Remaining pre-1.0 work
 
-### Baseline and quality
+### Cross-platform acceptance
 
-- [x] Record the selected stack and rejected directions in `tech-stack.md`.
-- [x] Select Rust, direct `egui-winit` and `egui-wgpu` integration, `wgpu`, `winit`, `global-hotkey`, `nucleo-matcher`, SQLite, and the selected platform adapters.
-- [x] Resolve the final Cargo feature graph and commit `Cargo.lock`.
-- [ ] Validate overlay focus, IME, DPI, monitor placement, `wgpu` backends, and hotkey integration on Windows and macOS.
-- [x] Define the visual language, typography, spacing, colors, icons, empty states, and accessibility behavior.
-- [x] Define animation timing, easing, interruption, reduced-motion behavior, and repaint scheduling.
-- [x] Define representative hardware profiles and performance budgets.
+- [ ] Validate focus, IME, hotkey conflicts, active-monitor placement, mixed DPI, full-screen behavior, elevated foreground windows, and `wgpu` backends on physical Windows and macOS machines.
+- [ ] Validate startup enable, disable, repair, approval, stale paths, external disablement, rollback, and hidden idle launch on both platforms.
+- [ ] Validate foreground and background second-launch behavior, stale instance recovery, shutdown cleanup, and per-user isolation on both platforms.
+- [ ] Validate application, command, script, batch, clipboard, and macOS bundle actions on their supported platforms.
+- [ ] Validate diagnostics and feature-specific user messages for missing, incompatible, and failed built-in and external extensions on both platforms.
 
-### Scaffolding
+### Performance and release
 
-- [x] Create the virtual Cargo workspace with resolver 3, Rust 2024 edition, shared metadata, inherited lints, and the package boundaries for the host, shared Core types, protocol, platform adapters, storage, and extension executables.
-- [x] Add the minimal host binary and event-loop entry point without domain capabilities.
-- [x] Add the shared typed protocol boundary and a minimal extension process fixture.
-- [x] Add Windows and macOS platform adapter modules with explicit unsupported-platform errors.
-- [x] Add test and benchmark target layout plus the project formatting, lint, and test commands.
-- [x] Verify that the host and fixture start and exit, and that the workspace passes the baseline checks.
+- [ ] Add and run the native UI report on a physical Mac.
+- [ ] Record P50, P95, P99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed Windows and macOS reference machines.
+- [ ] Run current Windows and macOS quality, packaging, checksum, clean-profile, and binary-inventory checks from clean trees.
+- [ ] Sign the Windows artifact and sign, notarize, and staple both macOS artifacts with release credentials.
+- [ ] Complete clean-profile installation, startup, summon, settings, actions, diagnostics export, update, rollback, and removal acceptance for every release artifact.
 
-### Host architecture
+### Deferred cleanup
 
-- [x] Define the host foundation as UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction.
-- [x] Keep all domain capabilities in extensions. Keep shared search aggregation, ranking, and input history in the host foundation.
-- [x] Define typed host boundaries and error categories, redaction, source chaining, and user-facing diagnostics.
-- [x] Implement non-blocking host logs, duplicate suppression, a 32 MiB directory cap, daily rotation, eight-file retention, shutdown flush, bounded export, and atomic no-clobber publication.
-- [x] Expand structured operational events and redaction coverage across all failure boundaries.
-- [x] Complete named owner threads for storage, discovery, search, and platform event sources.
-- [x] Complete bounded queues, cancellation, generation handling, ordered shutdown, and worker failure recovery across all MVP capabilities.
-- [x] Complete platform adapters for window, hotkey, discovery, launch, startup, tray, and single-instance behavior.
-
-### Extensions
-
-- [x] Require every built-in and external extension to run as a separate host-supervised child process.
-- [x] Define one extension contract for capability, lifecycle, settings, permissions, host services, and failure handling.
-- [x] Keep host APIs and IPC from exposing host memory, SQLite connections, global configuration, or another extension's state. The MVP does not claim an enforceable filesystem sandbox.
-- [x] Implement the off-UI-thread registration handshake, bounded JSON frames, and orderly shutdown fixture.
-- [x] Define extension and action identities that survive refreshes and updates.
-- [x] Enforce a strict versioned manifest schema, supported permissions and targets, compatibility, and safe entrypoints. Reject unknown fields and reserved MVP fields until their semantics exist.
-- [x] Define the universal stdio protocol, handshake, bounded frames, generations, cancellation, timeout, and shutdown.
-- [x] Implement bounded protocol queues, deadlines, restart budgets, safe query retry, non-replayed action recovery, graceful shutdown, and child reaping.
-- [x] Select `.nanika` ZIP packages, `manifest.jsonc`, immutable versions, staging, no-clobber extraction, recoverable activation, path validation, and SHA-256 checks.
-- [x] Limit MVP installation to explicit local `.nanika` packages. No development-directory install, marketplace, or background download.
-- [x] Implement local package install, monotonic state-preserving update, same-version repair, enable, disable, recoverable removal, compatibility checks, and built-in protection through `nanika-cli`.
-- [x] Reserve ACP as a separate child-process protocol adapter with separate wire messages.
-- [x] Define extension-owned settings schema, semantic validation, and storage.
-- [ ] Add settings migrations and reset behavior only after a released format requires compatibility.
-- [x] Define the default extension implementations and their acceptance tests.
-
-### ACP extension protocol
-
-- [x] Select stable ACP v1 and the official Rust SDK. Keep draft ACP v2 disabled.
-- [x] Define manifest v1 with a required versioned runtime protocol declaration for Nanika v1 or ACP v1.
-- [x] Add a temporary, unprivileged ACP v1 dummy extension with version negotiation, unique sessions, cancellation, and `Hello World` prompts.
-- [x] Route ACP extensions through the common runtime lifecycle, permissions boundary, failure policy, and `.nanika` package path.
-- [x] Enforce bounded transport frames, stderr, prompt output, deadlines, typed invocation outcomes, cancellation recovery, shutdown without relaunch, and process-tree termination.
-- [x] Require explicit `@<extension-id> <prompt>` activation so ACP does not pollute ordinary search.
-- [x] Correlate streamed output by invocation ID and present bounded deltas through generic extension UI without ACP-specific privileges.
-- [x] Test non-cooperative timeout, repeated cancellation, shutdown, recovery, startup containment, and descendant termination through the ordinary dummy extension path.
-- [ ] Remove the dummy extension before 1.0 packaging.
-
-### Application extension
-
-- [x] Define Windows and macOS application roots, configured roots, exclusions, permission handling, and explicit rescan behavior.
-- [x] Define stable application identity, metadata, executable validation, stale-entry cleanup, and duplicate handling.
-- [x] Define icon extraction, cache keys, fallback icons, and high-DPI variants.
-- [x] Define startup indexing, cancellation, transactional batches, failure recovery, and generated database schema tests.
-- [x] Use startup refresh plus explicit rescan. Do not add a filesystem watcher or periodic scan loop in the MVP.
-
-### Search, ranking, and input history
-
-- [x] Define Unicode lowercase, punctuation, whitespace, and identity-preserving behavior.
-- [x] Implement consistent aliases, including localized names supplied as aliases.
-- [x] Define exact, prefix, token, fuzzy, and empty-query behavior.
-- [x] Implement the fuzzy relevance cutoff and no-result policy.
-- [x] Define and implement contextual frequency, recency decay, caps, cold start, local-only privacy, 180-day retention, and reset.
-- [x] Align usage identity with the persisted extension, entry, action, and query-context schema.
-- [x] Define deterministic ranking fixtures and tie-breakers.
-- [x] Implement bounded in-memory input-history navigation, deduplication, ordering, and limits.
-- [x] Preserve the draft query during navigation and persist history.
-- [x] Integrate empty-query and incremental search snapshots with the host and extension contributions.
-- [x] Coalesce query bursts without dropping the latest input or accepting stale results.
-- [x] Bound outstanding actions so accepted completion messages are never dropped.
-- [x] Recover from timeout and ignore late protocol frames without poisoning later requests.
-- [x] Make committed storage usage authoritative for in-memory ranking.
-- [x] Keep usage writes asynchronous and outside the summon and query hot paths.
-
-### Overlay and platform integration
-
-- [x] Define summon, focus, selection, Enter, Escape, and dismissal behavior for the initial overlay.
-- [x] Define pointer-monitor work-area placement and mixed-DPI coordinate handling without mixing current-window and target-monitor scales. Validate physical behavior, elevated windows, and full-screen applications during platform acceptance.
-- [x] Include the minimal host tray or menu bar entry: `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
-- [x] Start with only the tray or menu-bar visible. Show the overlay only after hotkey or menu activation, and keep it out of the Windows taskbar and macOS Dock.
-- [x] Provide a Settings view for host settings and dynamically contributed settings from every extension. Keep JSONC as an advanced path.
-- [x] Keep Settings read-only until runtime owners load and correlate extension updates by request ID.
-- [x] Implement Windows hotkey registration, replacement rollback, repeated activation handling, and event-loop delivery.
-- [x] Implement the macOS normal shortcut registration boundary. Runtime permission validation remains.
-- [x] Select Windows current-user Run registration and macOS `SMAppService.mainAppService`.
-- [x] Open macOS Login Items for approval-required startup registration.
-- [ ] Verify startup status, enable, disable, stale paths, external disablement, rollback, and hidden idle launch.
-- [x] Implement typed MVP launch descriptors, structured arguments, explicit interpreters, shell policy, detached null stdio, deadlines, and child reaping.
-- [ ] Add captured output and launched-action process-tree cancellation when a future capability requires them.
-- [ ] Verify GUI, command, script, batch, and macOS bundle launches on both platforms.
-- [x] Select single-instance handoff: Windows `CreateMutexW` plus hidden-window activation; macOS `flock` plus a local Unix socket.
-- [x] Integrate startup-race-safe Windows hidden-window and macOS lock/socket activation with the host through bounded blocking event sources.
-- [x] Negotiate Windows notification callback version 4 and preserve background secondary-launch semantics.
-- [x] Test Windows second-launch activation and shutdown cleanup.
-- [ ] Validate macOS second-launch activation, stale lock recovery, and per-user isolation.
-
-### Configuration and storage
-
-- [x] Select `ProjectDirs::from("com", "nanika", "nanika")` and macOS bundle ID `com.nanika.nanika` as the current pre-1.0 identity.
-- [x] Separate relocatable user configuration from machine-local bootstrap metadata and generated data.
-- [x] Select JSONC for human-edited configuration and manifests, with typed Rust boundaries and CST-preserving edits. Treat only a missing extension registry as default state.
-- [x] Define host and extension settings models, schema validation, and path scope.
+- [ ] Remove `nanika-extension-acp-dummy` before 1.0 packaging.
+- [ ] Add settings migrations and reset behavior only when a released format requires compatibility.
 - [ ] Define machine overrides and secret handling before a capability requires them.
-- [x] Implement bootstrap relocation, directory creation, malformed-file recovery, and last-known-good read-only fallback.
-- [x] Select one `nanika.db` plus one database per extension. Do not sync live SQLite files.
-- [x] Record the baseline host and application tables, ownership, pragmas, WAL policy, and migration boundary in `tech-stack.md`.
-- [x] Implement the resolved path boundary, host migration runner, and isolated extension database owner.
-- [x] Consolidate the host, application, and clipboard schemas as baseline version 1; test initialization, retention, reset, interrupted scan recovery, and per-row isolation of malformed extension metadata.
 - [ ] Add maintenance snapshots and corruption recovery before the first post-release destructive database migration.
-- [x] Verify all databases remain under `<app-data-root>/databases` and never enter synchronized configuration.
-- [x] Implement bounded local logs and diagnostic export.
-- [x] Implement complete-scan cache pruning, visible cleanup failures, integrity checks, and one-shot recovery for the derived application index.
-
-### Quality and release
-
-- [x] Run `cargo fmt`, `cargo clippy`, library and integration tests, and documentation tests.
-- [x] Add domain tests for application identity, search ranking, calculator behavior, clipboard retention, config recovery, database migrations, and storage recovery.
-- [x] Add deterministic `criterion` benchmarks for query delivery, startup, indexing, extension activation, persistence, and rendering preparation.
-- [x] Add a Windows native release harness for startup visibility, hidden idle, repeated summon and dismissal, latency percentiles, resource use, JSON reports, and process cleanup.
-- [ ] Add and run the equivalent native UI report on a physical Mac.
-- [ ] Measure p50, p95, p99, frame-time variance, dropped frames, CPU, memory, database size, and thread count on fixed Windows and macOS machines.
-- [x] Keep timing comparisons advisory on ordinary CI and require evidence before changing the selected stack.
-- [x] Define and verify Windows portable packaging, checksums, and optional Authenticode signing.
-- [x] Define macOS app packaging, Developer ID signing, notarization, stapling, and checksums.
-- [x] Define update, rollback, artifact naming, and release checklist.
-
-## Approval gate
-
-- [x] Review and approve this plan.
-- [x] Confirm the first implementation milestone.
-- [x] Explicitly authorize scaffolding and code implementation.
-
-## Implementation milestones
-
-1. [x] Scaffolding and host foundation.
-2. [x] Single instance, universal extension process boundary, configuration, and storage.
-3. [x] Global hotkey, overlay, visual language, and animation baseline.
-4. [x] Search aggregation, contextual ranking, input history, and fixtures.
-5. [x] Windows application extension with discovery, indexing, and persistence.
-6. [x] Command, script, calculator, and clipboard history extensions.
-7. [x] Settings, startup, and macOS adapters.
-8. [ ] Performance, packaging, release, and cross-platform acceptance. Current Windows source checks pass. Commit `2d00bd3` passed packaging, checksum, inventory, clean-profile process, single-instance, diagnostics export, and advisory hidden-idle checks. Current packaging, fixed-machine performance, signing, physical Windows acceptance, and macOS validation remain.
-9. [x] ACP extension protocol.
+- [ ] Add captured output and launched-action process-tree cancellation only when a future capability requires them.

@@ -1,6 +1,6 @@
 # Nanika Technical Stack
 
-Status: current pre-1.0 implementation baseline. Milestone 8 fixed-machine, physical-platform, and release-credential acceptance plus removal of the temporary ACP dummy remain. Milestone 9 is complete. Before 1.0, measured platform or maintenance problems may justify rewriting the baseline with updated validation notes.
+Status: current pre-1.0 implementation baseline. Before 1.0, measured platform or maintenance problems may justify rewriting the baseline with updated validation notes.
 
 ## Selected baseline
 
@@ -66,6 +66,12 @@ extensions/
   nanika-extension-acp-dummy/
 ```
 
+## Cross-platform architecture
+
+Shared host, UI, diagnostics, protocol, configuration, storage, search, and extension lifecycle logic is platform-neutral. Platform-specific behavior exists only behind typed adapters in `nanika-platform` or an extension's explicit platform adapter. A shared feature is not complete if it works on only one supported OS.
+
+Every platform adapter contract must preserve the same user-visible semantics, failure boundary, cancellation behavior, and diagnostics shape on Windows and macOS. Platform implementations may use native APIs, but platform details must not leak into shared state or wire protocols. Linux-specific behavior is not an acceptable fallback and must not enter shared paths unless Linux becomes an explicit supported target through a baseline update.
+
 ## Host and extension boundary
 
 The host foundation provides UI, window and input handling, scheduling, persistence boundaries, diagnostics, permissions, platform drivers, extension lifecycle, and shared interaction. It exposes typed platform services but contributes no application, command, script, calculator, clipboard history, or agent capability.
@@ -76,6 +82,8 @@ Every domain capability is an extension. This follows the relevant VS Code model
 - `External`: an extension executable installed from a `.nanika` package.
 
 Both forms use the same capability contract, lifecycle, settings contribution, permissions, host services, process supervisor, and failure policy. Built-in status grants no extra privilege. The bare host has no domain capability. The default distribution enables command, application, script, calculator, and clipboard history extensions.
+
+A development launch must build `nanika-host` and all five built-in extension packages before starting `target/debug/nanika-host`. The host resolves each companion executable next to its own binary. Building or copying the host alone is an invalid development or packaging layout and produces feature-specific startup diagnostics.
 
 ### Process boundary
 
@@ -110,6 +118,8 @@ Settings use a bounded declarative contract with toggle, text, string-list, and 
 The named search owner thread owns a persistent `nucleo-matcher` instance, aggregation, usage state, final ranking, and generation-tagged snapshots. The UI replaces a coalesced latest-query slot and wakes the bounded owner queue, so saturation cannot drop the current input. Each extension has a fixed protocol worker with a latest-query slot. New queries cancel in-flight work, incremental snapshots wake the UI, and stale request IDs and generations are discarded.
 
 The `nanika-search` crate implements Unicode lowercase, punctuation-separated, whitespace-collapsed exact, prefix, token, fuzzy, empty-query, and alias matching through `nucleo-matcher`. Extensions may supply localized names as aliases. Candidate search values are normalized once when snapshots enter the host. Queries are capped at 4,096 Unicode scalar values. Fuzzy results require 12 score points per normalized query character. Contextual frequency and seven-day recency decay apply only inside the same lexical tier. Ranking uses top-k selection before sorting; snapshots contain at most 100 results. Each extension contribution is capped at 5,000 candidates and deduplicated by extension, entry, and action identity.
+
+Clipboard history currently publishes its retained entries into the shared result set, including for an empty query. Text content contributes a bounded searchable alias, and the host applies the same global ranking and visible-result limit used for every extension. Clipboard content remains local and never enters diagnostics.
 
 Ranking order is deterministic:
 
@@ -172,7 +182,9 @@ The current `nanika-config` boundary implements bootstrap creation, absolute rel
 
 ## Diagnostics
 
-The host uses stable diagnostic codes and categories. `HostDiagnostic` keeps a safe user message separate from a cloneable technical source chain retained by active UI error state. Operational logs contain only the code, category, operation, and explicitly safe context such as a validated extension ID. Raw worker errors never enter the UI. Debug formatting redacts messages and sources. Query text, clipboard content, settings values, extension payloads, and external error text are never logged.
+The host uses stable diagnostic codes and categories. `HostDiagnostic` keeps a safe user message separate from a cloneable technical source chain retained by active UI error state. Operational logs contain only the code, category, operation, and explicitly safe context such as a validated extension ID. Independent extension failures carry distinct safe contexts so duplicate suppression does not merge failures from different extensions. Raw worker errors never enter the UI. Debug formatting redacts messages and sources. Query text, clipboard content, settings values, extension payloads, and external error text are never logged.
+
+User-visible diagnostics describe the unavailable capability and a concrete recovery action without exposing internal extension, process, protocol, or storage terminology. Identical user messages are rendered once even when several independent technical failures share the same recovery path. The underlying diagnostics remain separate in memory and in operational logs.
 
 The primary host is the only log owner. It writes non-blocking INFO-and-higher lifecycle and failure events under `<app-data-root>/logs`. The queue is lossy and bounded to 256 lines. Identical code, operation, context, and level combinations are recorded at most once per 30 seconds, with at most 256 active keys. Startup removes the oldest owned logs above 32 MiB, and the writer stops at the remaining byte budget. Logs rotate daily, retain at most eight files, and flush during orderly shutdown.
 
@@ -287,7 +299,7 @@ The temporary `nanika-extension-acp-dummy` is an ordinary workspace extension th
 
 ## Performance and validation
 
-Initial targets:
+Targets:
 
 - Warm summon to interactive overlay: P95 at or below 50 ms.
 - Input to updated result state: P95 at or below 16.7 ms.

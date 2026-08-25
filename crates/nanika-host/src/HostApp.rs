@@ -1242,7 +1242,10 @@ impl HostApp {
                             error.user_message(),
                         );
                     } else {
-                        for error in &self.runtime_errors {
+                        for (index, error) in self.runtime_errors.iter().enumerate() {
+                            if !should_render_runtime_error(&self.runtime_errors, index) {
+                                continue;
+                            }
                             ui.colored_label(
                                 egui::Color32::from_rgb(242, 145, 145),
                                 error.user_message(),
@@ -1298,8 +1301,12 @@ impl HostApp {
                         );
                     } else if self.extension_search.is_empty() {
                         ui.label(
-                            egui::RichText::new("No extensions enabled")
-                                .color(egui::Color32::from_rgb(126, 134, 155)),
+                            egui::RichText::new(if self.settings.runtime_ready {
+                                "No search features are available"
+                            } else {
+                                "Starting Nanika..."
+                            })
+                            .color(egui::Color32::from_rgb(126, 134, 155)),
                         );
                     } else if let Some(snapshot) = &self.search_snapshot
                         && snapshot.generation == self.search_generation
@@ -1374,6 +1381,24 @@ fn diagnostic_notice(
     let diagnostic = HostDiagnostic::new(code, operation, user_message);
     diagnostic.record_warning();
     diagnostic
+}
+
+fn extension_startup_diagnostics(errors: Vec<crate::ExtensionStartupError>) -> Vec<HostDiagnostic> {
+    let user_message = extension_startup_user_message(&errors);
+    errors
+        .into_iter()
+        .map(|error| {
+            let diagnostic = HostDiagnostic::from_message(
+                DiagnosticCode::ExtensionUnavailable,
+                "start extension",
+                user_message.clone(),
+                error.source,
+            )
+            .with_safe_context(error.diagnostic_context);
+            diagnostic.record_warning();
+            diagnostic
+        })
+        .collect()
 }
 
 fn initialize_search_runtime() -> HostRuntime {
@@ -1488,14 +1513,7 @@ fn initialize_search_runtime() -> HostRuntime {
                 &installed_extensions,
             );
             pending_extensions = extensions;
-            for extension_error in extension_errors {
-                errors.push(diagnostic_message(
-                    DiagnosticCode::ExtensionUnavailable,
-                    "start extension",
-                    "An extension could not start. Other extensions remain available.",
-                    extension_error,
-                ));
-            }
+            errors.extend(extension_startup_diagnostics(extension_errors));
             let (router, service_errors) = crate::HostServiceRouter::spawn(paths.app_data_root());
             for extension in &pending_extensions {
                 router.register_permissions(
@@ -1598,6 +1616,45 @@ fn unix_timestamp_millis() -> u64 {
 
 pub(super) fn maximum_visible_result_index(result_count: usize) -> usize {
     result_count.min(MAX_VISIBLE_RESULTS).saturating_sub(1)
+}
+
+pub(super) fn extension_startup_user_message(errors: &[crate::ExtensionStartupError]) -> String {
+    let mut features = Vec::new();
+    for error in errors {
+        let feature = match error.diagnostic_context.as_str() {
+            crate::builtins::APPLICATION_EXTENSION_ID => "App search",
+            crate::builtins::COMMAND_EXTENSION_ID => "commands",
+            crate::builtins::SCRIPT_EXTENSION_ID => "scripts",
+            crate::builtins::CALCULATOR_EXTENSION_ID => "calculator",
+            crate::builtins::CLIPBOARD_EXTENSION_ID => "clipboard history",
+            _ => "an installed feature",
+        };
+        if !features.contains(&feature) {
+            features.push(feature);
+        }
+    }
+    let subject = match features.as_slice() {
+        [] => "Some Nanika features".to_owned(),
+        [feature] => (*feature).to_owned(),
+        [first, second] => format!("{first} and {second}"),
+        _ => {
+            let last = features.pop().unwrap_or("an installed feature");
+            format!("{}, and {last}", features.join(", "))
+        }
+    };
+    let verb = if features.len() == 1 { "is" } else { "are" };
+    format!(
+        "{subject} {verb} unavailable. Restart Nanika. If the problem continues, reinstall Nanika or the affected add-on."
+    )
+}
+
+pub(super) fn should_render_runtime_error(errors: &[HostDiagnostic], index: usize) -> bool {
+    let Some(error) = errors.get(index) else {
+        return false;
+    };
+    !errors[..index]
+        .iter()
+        .any(|existing| existing.user_message() == error.user_message())
 }
 
 pub(super) fn truncate_chars(value: &mut String, maximum: usize) {

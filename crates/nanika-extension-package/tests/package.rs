@@ -5,7 +5,7 @@ use nanika_extension_package::{
     ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
     set_extension_enabled, update_package,
 };
-use nanika_storage::{HostDatabase, NanikaPaths};
+use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use zip::write::SimpleFileOptions;
 
 #[test]
@@ -54,6 +54,41 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
             .expect("extension lookup")
             .is_none()
     );
+    cleanup(&root);
+}
+
+#[test]
+fn resolution_error_preserves_safe_extension_context() {
+    let root = temporary_root("resolution-error-context");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let extension = StoredExtension {
+        extension_id: "com.example.missing".to_owned(),
+        kind: ExtensionKind::External,
+        installed_version: Some("1.0.0".to_owned()),
+        active_version: Some("1.0.0".to_owned()),
+        install_path: Some(
+            paths
+                .app_data_root()
+                .join("extensions/com.example.missing/1.0.0"),
+        ),
+        package_digest: None,
+        state: "enabled".to_owned(),
+        health: "unknown".to_owned(),
+        last_error: None,
+    };
+
+    let (active, errors) =
+        resolve_active_extensions(&paths, &[extension], &ExtensionRegistryConfig::default());
+
+    assert!(active.is_empty());
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].diagnostic_context, "com.example.missing");
+    assert!(!errors[0].message.is_empty());
     cleanup(&root);
 }
 

@@ -11,8 +11,8 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    ActiveExtension, ExtensionManifest, ExtensionPackageError, ExtensionTarget, PackageOperation,
-    PackageTransaction, StagedPackage, StagingDirectory,
+    ActiveExtension, ExtensionManifest, ExtensionPackageError, ExtensionResolutionError,
+    ExtensionTarget, PackageOperation, PackageTransaction, StagedPackage, StagingDirectory,
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -342,11 +342,14 @@ pub fn resolve_active_extensions(
     paths: &NanikaPaths,
     installed: &[StoredExtension],
     registry: &ExtensionRegistryConfig,
-) -> (Vec<ActiveExtension>, Vec<String>) {
+) -> (Vec<ActiveExtension>, Vec<ExtensionResolutionError>) {
     let mut active = Vec::new();
     let mut errors = Vec::new();
     if let Err(error) = recover_package_artifacts(paths) {
-        errors.push(format!("package recovery failed: {error}"));
+        errors.push(ExtensionResolutionError::new(
+            "package-recovery",
+            format!("package recovery failed: {error}"),
+        ));
     }
     for extension in installed
         .iter()
@@ -358,7 +361,10 @@ pub fn resolve_active_extensions(
         }
         match resolve_active_extension(paths, extension) {
             Ok(extension) => active.push(extension),
-            Err(error) => errors.push(format!("{}: {error}", extension.extension_id)),
+            Err(error) => errors.push(ExtensionResolutionError::new(
+                &extension.extension_id,
+                error.to_string(),
+            )),
         }
     }
     (active, errors)

@@ -58,6 +58,8 @@ mod extension_search_worker;
 mod extension_settings_result;
 #[path = "ExtensionSettingsUpdate.rs"]
 mod extension_settings_update;
+#[path = "ExtensionStartupError.rs"]
+mod extension_startup_error;
 #[path = "ExtensionWork.rs"]
 mod extension_work;
 #[path = "HistoryDirection.rs"]
@@ -130,6 +132,7 @@ pub(crate) use extension_search_state::*;
 pub(crate) use extension_search_worker::*;
 pub(crate) use extension_settings_result::*;
 pub(crate) use extension_settings_update::*;
+pub(crate) use extension_startup_error::*;
 pub(crate) use extension_work::*;
 pub(crate) use history_direction::*;
 pub use host_app::HostApp;

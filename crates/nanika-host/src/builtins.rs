@@ -10,7 +10,7 @@ use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
 use nanika_storage::StoredExtension;
 use nanika_storage::{ExtensionKind, NanikaPaths};
 
-use crate::{BuiltinExtensionSpec, ExtensionRuntime, PendingExtension};
+use crate::{BuiltinExtensionSpec, ExtensionRuntime, ExtensionStartupError, PendingExtension};
 
 const NANIKA_V1: ExtensionProtocol = ExtensionProtocol::Nanika {
     protocol_version: 1,
@@ -58,10 +58,18 @@ pub(crate) fn spawn_extensions(
     paths: &NanikaPaths,
     registry: &ExtensionRegistryConfig,
     installed: &[StoredExtension],
-) -> (Vec<PendingExtension>, Vec<String>) {
+) -> (Vec<PendingExtension>, Vec<ExtensionStartupError>) {
     let current_executable = match std::env::current_exe() {
         Ok(path) => path,
-        Err(error) => return (Vec::new(), vec![error.to_string()]),
+        Err(error) => {
+            return (
+                Vec::new(),
+                vec![ExtensionStartupError::new(
+                    "extension-discovery",
+                    error.to_string(),
+                )],
+            );
+        }
     };
     let mut extensions = Vec::with_capacity(BUILTINS.len());
     let mut errors = Vec::new();
@@ -71,9 +79,12 @@ pub(crate) fn spawn_extensions(
         }
         let program = companion_executable(&current_executable, spec.binary_name);
         if !program.is_file() {
-            errors.push(format!(
-                "built-in extension executable is missing: {}",
-                program.display()
+            errors.push(ExtensionStartupError::new(
+                spec.extension_id,
+                format!(
+                    "built-in extension executable is missing: {}",
+                    program.display()
+                ),
             ));
             continue;
         }
@@ -95,14 +106,14 @@ pub(crate) fn spawn_extensions(
                     .collect(),
                 runtime,
             }),
-            Err(error) => errors.push(format!(
-                "failed to spawn built-in extension {}: {error}",
-                spec.extension_id
+            Err(error) => errors.push(ExtensionStartupError::new(
+                spec.extension_id,
+                format!("failed to spawn built-in extension: {error}"),
             )),
         }
     }
     let (external, external_errors) = resolve_active_extensions(paths, installed, registry);
-    errors.extend(external_errors);
+    errors.extend(external_errors.into_iter().map(ExtensionStartupError::from));
     for extension in external {
         let extension_id = extension.extension_id;
         let arguments = extension_arguments(extension.protocol, paths);
@@ -119,9 +130,9 @@ pub(crate) fn spawn_extensions(
                 permissions: extension.permissions,
                 runtime,
             }),
-            Err(error) => errors.push(format!(
-                "failed to spawn external extension {}: {error}",
-                extension_id
+            Err(error) => errors.push(ExtensionStartupError::new(
+                extension_id,
+                format!("failed to spawn external extension: {error}"),
             )),
         }
     }

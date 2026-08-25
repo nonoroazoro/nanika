@@ -10,6 +10,8 @@ mod extension_manifest;
 mod extension_package_error;
 #[path = "ExtensionProtocol.rs"]
 mod extension_protocol;
+#[path = "ExtensionResolutionError.rs"]
+mod extension_resolution_error;
 #[path = "ExtensionTarget.rs"]
 mod extension_target;
 mod package;
@@ -26,6 +28,7 @@ pub use active_extension::*;
 pub use extension_manifest::*;
 pub use extension_package_error::*;
 pub use extension_protocol::*;
+pub use extension_resolution_error::*;
 pub use extension_target::*;
 pub use package::*;
 pub(crate) use package_operation::*;
