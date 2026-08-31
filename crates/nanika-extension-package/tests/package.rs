@@ -2,7 +2,7 @@ use std::io::Write;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
-    ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
+    CommandMode, ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
     set_extension_enabled, update_package,
 };
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
@@ -160,6 +160,94 @@ fn manifest_preserves_nanika_protocol_version() {
         ExtensionProtocol::Nanika {
             protocol_version: 1
         }
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_preserves_valid_command_contributions() {
+    let root = temporary_root("command-contributions");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("commands.nanika");
+    create_package_definition_with_runtime_and_contributions(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
+        Some(serde_json::json!({
+            "rootSearch": true,
+            "commands": [{
+                "id": "example.open",
+                "title": "Open Example",
+                "description": "Open the example view.",
+                "mode": "view",
+                "keywords": ["sample"]
+            }]
+        })),
+    );
+
+    let installed = install_package(&package, &paths, &store).expect("install package");
+
+    assert!(installed.contributions.root_search);
+    assert_eq!(installed.contributions.commands.len(), 1);
+    assert_eq!(installed.contributions.commands[0].id, "example.open");
+    assert_eq!(installed.contributions.commands[0].mode, CommandMode::View);
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_rejects_acp_command_contributions() {
+    let root = temporary_root("acp-command-contributions");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("acp-commands.nanika");
+    create_package_definition_with_runtime_and_contributions(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "acp",
+            "protocolVersion": 1
+        })),
+        Some(serde_json::json!({
+            "commands": [{
+                "id": "example.open",
+                "title": "Open Example",
+                "description": "Open the example view.",
+                "mode": "view"
+            }]
+        })),
+    );
+
+    let error =
+        install_package(&package, &paths, &store).expect_err("ACP command contributions must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("command contributions require the Nanika protocol")
     );
     cleanup(&root);
 }
@@ -591,6 +679,31 @@ fn create_package_definition_with_runtime(
     manifest_version: u32,
     runtime: Option<serde_json::Value>,
 ) {
+    create_package_definition_with_runtime_and_contributions(
+        path,
+        traversal,
+        dependencies,
+        version,
+        unknown_field,
+        unicode_collision,
+        manifest_version,
+        runtime,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_package_definition_with_runtime_and_contributions(
+    path: &std::path::Path,
+    traversal: bool,
+    dependencies: &[&str],
+    version: &str,
+    unknown_field: bool,
+    unicode_collision: bool,
+    manifest_version: u32,
+    runtime: Option<serde_json::Value>,
+    contributions: Option<serde_json::Value>,
+) {
     std::fs::create_dir_all(path.parent().expect("package parent")).expect("create parent");
     let file = std::fs::File::create(path).expect("create package");
     let mut archive = zip::ZipWriter::new(file);
@@ -617,6 +730,9 @@ fn create_package_definition_with_runtime(
     });
     if let Some(runtime) = runtime {
         manifest["runtime"] = runtime;
+    }
+    if let Some(contributions) = contributions {
+        manifest["contributions"] = contributions;
     }
     if unknown_field {
         manifest["dependecies"] = serde_json::json!(["com.example.required"]);

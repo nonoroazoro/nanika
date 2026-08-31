@@ -11,8 +11,9 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    ActiveExtension, ExtensionManifest, ExtensionPackageError, ExtensionResolutionError,
-    ExtensionTarget, PackageOperation, PackageTransaction, StagedPackage, StagingDirectory,
+    ActiveExtension, CommandContribution, ExtensionManifest, ExtensionPackageError,
+    ExtensionProtocol, ExtensionResolutionError, ExtensionTarget, PackageOperation,
+    PackageTransaction, StagedPackage, StagingDirectory,
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -22,6 +23,8 @@ const MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_COMPRESSION_RATIO: u64 = 100;
+const MAX_COMMANDS: usize = 64;
+const MAX_COMMAND_KEYWORDS: usize = 16;
 
 /// Validate, stage, and activate one local `.nanika` package.
 pub fn install_package(
@@ -181,6 +184,7 @@ fn apply_package(
         program: version_root.join(entrypoint),
         protocol,
         permissions: manifest.permissions,
+        contributions: manifest.contributions,
     })
 }
 
@@ -407,6 +411,7 @@ fn resolve_active_extension(
         program,
         protocol,
         permissions: manifest.permissions,
+        contributions: manifest.contributions,
     })
 }
 
@@ -743,18 +748,76 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
             "extension activation events are reserved for a future manifest version".to_owned(),
         ));
     }
-    if !manifest.contributions.is_null()
-        && !manifest
-            .contributions
-            .as_object()
-            .is_some_and(|contributions| contributions.is_empty())
+    if !manifest.contributions.commands.is_empty()
+        && !matches!(manifest.runtime, ExtensionProtocol::Nanika { .. })
     {
         return Err(ExtensionPackageError::Manifest(
-            "extension manifest contributions are reserved for a future manifest version"
-                .to_owned(),
+            "command contributions require the Nanika protocol".to_owned(),
         ));
     }
+    validate_contributions(&manifest.contributions.commands)?;
     Ok(())
+}
+
+fn validate_contributions(commands: &[CommandContribution]) -> Result<(), ExtensionPackageError> {
+    if commands.len() > MAX_COMMANDS {
+        return Err(ExtensionPackageError::Manifest(
+            "extension contributes too many commands".to_owned(),
+        ));
+    }
+    let mut ids = HashSet::new();
+    for command in commands {
+        if !is_valid_contribution_id(&command.id) {
+            return Err(ExtensionPackageError::Manifest(
+                "extension command id is invalid".to_owned(),
+            ));
+        }
+        if !ids.insert(command.id.as_str()) {
+            return Err(ExtensionPackageError::Manifest(
+                "extension command ids must be unique".to_owned(),
+            ));
+        }
+        validate_contribution_text("title", &command.title, 128)?;
+        validate_contribution_text("description", &command.description, 512)?;
+        if let Some(subtitle) = &command.subtitle {
+            validate_contribution_text("subtitle", subtitle, 128)?;
+        }
+        if command.keywords.len() > MAX_COMMAND_KEYWORDS {
+            return Err(ExtensionPackageError::Manifest(
+                "extension command has too many keywords".to_owned(),
+            ));
+        }
+        for keyword in &command.keywords {
+            validate_contribution_text("keyword", keyword, 64)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_contribution_text(
+    field: &str,
+    value: &str,
+    maximum_chars: usize,
+) -> Result<(), ExtensionPackageError> {
+    let count = value.chars().count();
+    if value.trim().is_empty() || count > maximum_chars || value.chars().any(char::is_control) {
+        return Err(ExtensionPackageError::Manifest(format!(
+            "extension command {field} is invalid"
+        )));
+    }
+    Ok(())
+}
+
+fn is_valid_contribution_id(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    let Some(first) = bytes.next() else {
+        return false;
+    };
+    value.len() <= 128
+        && first.is_ascii_lowercase()
+        && bytes.all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'_')
+        })
 }
 
 fn target_entrypoint(

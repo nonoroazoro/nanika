@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Candidate, HostServiceRequest, HostServiceResponse, SettingUpdate, SettingsContribution,
+    Candidate, HostServiceRequest, HostServiceResponse, NavigationEffect, SettingUpdate,
+    SettingsContribution, View, ViewEvent,
 };
 
 /// One request or response on the extension protocol.
@@ -36,6 +37,30 @@ pub enum Message {
     Result {
         request_id: String,
         generation: u64,
+        effect: NavigationEffect,
+    },
+    ViewEvent {
+        request_id: String,
+        generation: u64,
+        view_id: String,
+        revision: u64,
+        event: ViewEvent,
+    },
+    ViewUpdated {
+        request_id: String,
+        generation: u64,
+        view_id: String,
+        revision: u64,
+        effect: NavigationEffect,
+        view: Option<View>,
+    },
+    ViewClose {
+        request_id: String,
+        view_id: String,
+    },
+    ViewClosed {
+        request_id: String,
+        view_id: String,
     },
     Cancel {
         request_id: String,

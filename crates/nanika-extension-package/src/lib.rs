@@ -4,6 +4,12 @@
 
 #[path = "ActiveExtension.rs"]
 mod active_extension;
+#[path = "CommandContribution.rs"]
+mod command_contribution;
+#[path = "CommandMode.rs"]
+mod command_mode;
+#[path = "ExtensionContributions.rs"]
+mod extension_contributions;
 #[path = "ExtensionManifest.rs"]
 mod extension_manifest;
 #[path = "ExtensionPackageError.rs"]
@@ -25,6 +31,9 @@ mod staged_package;
 mod staging_directory;
 
 pub use active_extension::*;
+pub use command_contribution::*;
+pub use command_mode::*;
+pub use extension_contributions::*;
 pub use extension_manifest::*;
 pub use extension_package_error::*;
 pub use extension_protocol::*;

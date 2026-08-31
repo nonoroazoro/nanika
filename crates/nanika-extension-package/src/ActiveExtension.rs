@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::ExtensionProtocol;
+use crate::{ExtensionContributions, ExtensionProtocol};
 
 /// Validated external extension ready for host-supervised process creation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,4 +9,5 @@ pub struct ActiveExtension {
     pub program: PathBuf,
     pub protocol: ExtensionProtocol,
     pub permissions: Vec<String>,
+    pub contributions: ExtensionContributions,
 }

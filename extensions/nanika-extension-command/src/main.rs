@@ -168,6 +168,7 @@ fn invoke_host(
                     &Message::Result {
                         request_id,
                         generation,
+                        effect: nanika_protocol::NavigationEffect::Close,
                     },
                 );
             }
@@ -208,6 +209,10 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Snapshot { request_id, .. }
         | Message::Invoke { request_id, .. }
         | Message::Result { request_id, .. }
+        | Message::ViewEvent { request_id, .. }
+        | Message::ViewUpdated { request_id, .. }
+        | Message::ViewClose { request_id, .. }
+        | Message::ViewClosed { request_id, .. }
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }

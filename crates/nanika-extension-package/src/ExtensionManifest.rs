@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ExtensionProtocol, ExtensionTarget};
+use crate::{ExtensionContributions, ExtensionProtocol, ExtensionTarget};
 
 /// Typed root manifest for one external extension version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -24,7 +24,7 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub activation_events: Vec<String>,
     #[serde(default)]
-    pub contributions: serde_json::Value,
+    pub contributions: ExtensionContributions,
 }
 
 impl ExtensionManifest {
