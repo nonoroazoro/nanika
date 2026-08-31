@@ -581,6 +581,7 @@ pub(crate) fn contribution_candidates(
                 title: command.title.clone(),
                 action_id: "command.execute".to_owned(),
                 aliases,
+                icon: None,
             }
         })
         .collect()

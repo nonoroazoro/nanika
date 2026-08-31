@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use nanika_protocol::{Candidate, LaunchArguments, LaunchDescriptor};
+use nanika_protocol::{Candidate, IconReference, LaunchArguments, LaunchDescriptor};
 
 use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
@@ -38,6 +38,7 @@ impl ApplicationEntry {
                 .filter(|alias| *alias != self.normalized_name)
                 .map(str::to_owned)
                 .collect(),
+            icon: IconReference::new(&self.icon_key).ok(),
         }
     }
 

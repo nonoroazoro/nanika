@@ -166,7 +166,7 @@ The local layout is:
   logs/
   payloads/<extension-id>/
 <cache-root>/
-  icons/
+  icons/<extension-id>/<icon-key>/{32,64}.png
   metadata/
 ```
 
@@ -251,7 +251,7 @@ The application extension runs as its own process with one discovery owner. The 
 
 Windows discovery resolves every `.lnk` through Shell COM and validates PE targets before indexing. Validation is reused while canonical path, size, and modification time remain unchanged; benchmarks separate cold validation from warm refresh. Identity uses the canonical executable, effective working directory, and typed arguments, so equivalent shortcuts and direct executables deduplicate without merging different launch behavior. Complete scans stale missing entries and remove entries already stale; cancelled, failed, or partial scans preserve unseen data. SQLite commits each generation atomically. Snapshots below 5,000 entries remain complete; larger indexes use query-aware top-k preselection before host ranking.
 
-Searchable entries publish before icon extraction. The recoverable icon cache uses high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Complete scans prune unreferenced cache entries; extraction failures increase scan warnings and prune failures fail the refresh. SQLite corruption or a non-database file rebuilds only the derived application index, with one retry; incompatible schemas and access failures remain visible errors. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. Application actions now submit persisted typed launch metadata to the common host service. The macOS adapter still requires runtime validation on macOS.
+Searchable entries publish before icon extraction. The recoverable icon cache uses extension-scoped high-resolution metadata keys, retry markers, exact 32 px and 64 px PNG variants, legacy Windows alpha recovery, and a generated fallback. Candidates carry only a validated opaque icon key. The host asynchronously decodes icons for the eight visible Root Search results and retains at most 256 decoded GPU textures; no file access or image decoding runs on the UI thread. Complete scans prune unreferenced cache entries; extraction failures increase scan warnings and prune failures fail the refresh. SQLite corruption or a non-database file rebuilds only the derived application index, with one retry; incompatible schemas and access failures remain visible errors. Optional macOS roots do not make a scan partial; bundle executables require executable permissions. Application actions now submit persisted typed launch metadata to the common host service. The macOS adapter still requires runtime validation on macOS.
 
 ### Clipboard
 

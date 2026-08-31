@@ -11,6 +11,10 @@ fn exact_matches_beyond_the_snapshot_limit_remain_searchable() {
 
     assert_eq!(selected.len(), 5_000);
     assert_eq!(selected[0].title, "Zettelkasten");
+    assert_eq!(
+        selected[0].icon.as_ref().map(|icon| icon.key()),
+        Some("fallback")
+    );
 }
 
 #[test]

@@ -137,6 +137,7 @@ impl ExtensionRuntime {
                         title: format!("Ask {}", process.extension_id()),
                         action_id: "prompt".to_owned(),
                         aliases: vec![query],
+                        icon: None,
                     }]
                 } else {
                     Vec::new()

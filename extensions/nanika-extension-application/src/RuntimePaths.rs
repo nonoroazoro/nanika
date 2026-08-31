@@ -50,7 +50,7 @@ impl RuntimePaths {
     }
 
     pub fn icon_root(&self) -> PathBuf {
-        self.cache_root.join("icons/application")
+        self.cache_root.join("icons").join(EXTENSION_ID)
     }
 }
 

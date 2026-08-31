@@ -1,8 +1,9 @@
 use crate::host_app::{
-    extension_startup_user_message, maximum_visible_result_index, should_render_runtime_error,
-    truncate_chars,
+    extension_startup_user_message, maximum_visible_result_index, selected_execution,
+    should_render_runtime_error, truncate_chars,
 };
 use crate::{DiagnosticCode, ExtensionStartupError, HostDiagnostic};
+use nanika_search::{Candidate, RankedCandidate, SearchSnapshot};
 
 #[test]
 fn selection_stays_within_rendered_results() {
@@ -16,6 +17,33 @@ fn query_truncation_preserves_utf8() {
     let mut query = "一二三four".to_owned();
     truncate_chars(&mut query, 4);
     assert_eq!(query, "一二三f");
+}
+
+#[test]
+fn selected_item_execution_does_not_require_query_text() {
+    let snapshot = SearchSnapshot {
+        generation: 7,
+        normalized_query: String::new(),
+        results: vec![RankedCandidate {
+            candidate: Candidate::new(
+                "com.nanika.application",
+                "app.example",
+                "Example",
+                "run",
+                Vec::new(),
+            ),
+            lexical_tier: 0,
+            fuzzy_score: 0,
+            contextual_boost: 0,
+        }],
+    };
+
+    let (candidate, query_context) =
+        selected_execution(Some(&snapshot), snapshot.generation, 0, "   ")
+            .expect("selected item should be executable");
+
+    assert_eq!(candidate.entry_id(), "app.example");
+    assert!(query_context.is_empty());
 }
 
 #[test]

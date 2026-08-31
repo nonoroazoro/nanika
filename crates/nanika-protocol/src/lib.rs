@@ -16,6 +16,8 @@ mod framing;
 mod host_service_request;
 #[path = "HostServiceResponse.rs"]
 mod host_service_response;
+#[path = "IconReference.rs"]
+mod icon_reference;
 #[path = "LaunchArguments.rs"]
 mod launch_arguments;
 #[path = "LaunchDescriptor.rs"]
@@ -69,6 +71,7 @@ pub use frame_error::*;
 pub use framing::*;
 pub use host_service_request::*;
 pub use host_service_response::*;
+pub use icon_reference::*;
 pub use launch_arguments::*;
 pub use launch_descriptor::*;
 pub use list_item::*;

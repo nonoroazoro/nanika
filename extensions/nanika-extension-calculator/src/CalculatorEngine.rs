@@ -41,6 +41,7 @@ impl CalculatorEngine {
                 title: format!("= {result}"),
                 action_id: COPY_ACTION_ID.to_owned(),
                 aliases: vec![query.to_owned()],
+                icon: None,
             },
             result.to_owned(),
         ))

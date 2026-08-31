@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -15,20 +16,22 @@ use nanika_protocol::{
     ViewActionStyle, ViewEvent,
 };
 use nanika_search::{
-    InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap,
-    UsageStat, normalize_history_key,
+    Candidate, InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey,
+    UsageMap, UsageStat, normalize_history_key,
 };
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
     ActivationTrace, DiagnosticCode, ExtensionInvocationOutcome, ExtensionRuntime,
     ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService, HostDiagnostic,
-    HostEvent, HostRuntime, InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS,
-    OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
+    HostEvent, HostRuntime, IconIdentity, IconLoader, InvocationPresentation, MAX_VISIBLE_RESULTS,
+    OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings,
+    SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
 const MAX_EXTENSION_VIEW_DEPTH: usize = 16;
+const MAX_ICON_TEXTURES: usize = 256;
 
 fn default_hotkey() -> HotKey {
     #[cfg(target_os = "macos")]
@@ -68,6 +71,11 @@ pub struct HostApp {
     selected_index: usize,
     extension_search: ExtensionSearchCoordinator,
     storage: Option<SearchStorageWorker>,
+    icon_loader: Option<IconLoader>,
+    icon_textures: HashMap<IconIdentity, (egui::TextureHandle, u64)>,
+    pending_icons: HashSet<IconIdentity>,
+    failed_icons: HashSet<IconIdentity>,
+    icon_access_sequence: u64,
     runtime_errors: Vec<HostDiagnostic>,
     search_error: Option<HostDiagnostic>,
     operation_error: Option<HostDiagnostic>,
@@ -203,10 +211,11 @@ impl HostApp {
 
         let (runtime_sender, runtime_receiver) = mpsc::sync_channel(1);
         let runtime_context = Arc::clone(&context_slot);
+        let runtime_wake = Arc::clone(&wake);
         let runtime_thread = match std::thread::Builder::new()
             .name("nanika-runtime-initializer".to_owned())
             .spawn(move || {
-                let _ = runtime_sender.send(initialize_search_runtime());
+                let _ = runtime_sender.send(initialize_search_runtime(runtime_wake));
                 if let Some(context) = runtime_context
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
@@ -287,6 +296,11 @@ impl HostApp {
             selected_index: 0,
             extension_search: ExtensionSearchCoordinator::default(),
             storage: None,
+            icon_loader: None,
+            icon_textures: HashMap::new(),
+            pending_icons: HashSet::new(),
+            failed_icons: HashSet::new(),
+            icon_access_sequence: 0,
             runtime_errors: startup_errors,
             search_error: None,
             operation_error: None,
@@ -609,20 +623,16 @@ impl HostApp {
         }
     }
 
-    fn submit_query(&mut self, context: &egui::Context) {
-        let query = self.query.trim().to_owned();
-        if query.is_empty() {
-            return;
-        }
+    fn execute_selected(&mut self, context: &egui::Context) {
         self.action_error = None;
         self.invocation_output = None;
-        let selected = self
-            .search_snapshot
-            .as_ref()
-            .filter(|snapshot| snapshot.generation == self.search_generation)
-            .and_then(|snapshot| snapshot.results.get(self.selected_index))
-            .map(|result| result.candidate.clone());
-        let Some(candidate) = selected else {
+        let selected = selected_execution(
+            self.search_snapshot.as_deref(),
+            self.search_generation,
+            self.selected_index,
+            &self.query,
+        );
+        let Some((candidate, query_context)) = selected else {
             self.operation_error = Some(HostDiagnostic::new(
                 DiagnosticCode::InternalFailure,
                 "resolve selected action",
@@ -631,27 +641,29 @@ impl HostApp {
             return;
         };
         let extension_id = candidate.extension_id().to_owned();
-        self.history.record(&query);
-        if let Some(storage) = &self.storage
-            && let Err(error) = storage.record_history(
-                normalize_history_key(&query),
-                query.clone(),
-                unix_timestamp_millis(),
-            )
-        {
-            self.operation_error = Some(diagnostic_message(
-                DiagnosticCode::StorageUnavailable,
-                "record input history",
-                "Input history could not be saved.",
-                error.to_string(),
-            ));
+        if !query_context.is_empty() {
+            self.history.record(&query_context);
+            if let Some(storage) = &self.storage
+                && let Err(error) = storage.record_history(
+                    normalize_history_key(&query_context),
+                    query_context.clone(),
+                    unix_timestamp_millis(),
+                )
+            {
+                self.operation_error = Some(diagnostic_message(
+                    DiagnosticCode::StorageUnavailable,
+                    "record input history",
+                    "Input history could not be saved.",
+                    error.to_string(),
+                ));
+            }
         }
         match self.extension_search.invoke(
             &extension_id,
             self.search_generation,
             candidate.entry_id(),
             candidate.action_id(),
-            query,
+            query_context,
         ) {
             Ok(invocation_id) => {
                 self.pending_invocation_id = Some(invocation_id);
@@ -856,6 +868,7 @@ impl HostApp {
                 .is_none_or(|current| !Arc::ptr_eq(current, &snapshot))
         {
             self.search_snapshot = Some(snapshot);
+            self.failed_icons.clear();
             self.selected_index =
                 self.selected_index
                     .min(self.search_snapshot.as_ref().map_or(0, |snapshot| {
@@ -1111,6 +1124,7 @@ impl HostApp {
         self.search_owner = runtime.search_owner;
         self.search = runtime.search;
         self.storage = runtime.storage;
+        self.icon_loader = runtime.icon_loader;
         self.runtime_errors.extend(runtime.errors);
         if let Some(host_services) = runtime.host_services {
             self.extension_search.set_host_services(host_services);
@@ -1133,6 +1147,52 @@ impl HostApp {
         self.runtime_receiver = None;
         if self.overlay_visible {
             self.begin_search();
+        }
+    }
+
+    fn poll_icon_loader(&mut self, context: &egui::Context) {
+        let results = self
+            .icon_loader
+            .as_ref()
+            .map(IconLoader::take_results)
+            .unwrap_or_default();
+        for result in results {
+            self.pending_icons.remove(&result.identity);
+            match result.image {
+                Ok(image) => {
+                    if self.icon_textures.len() >= MAX_ICON_TEXTURES
+                        && !self.icon_textures.contains_key(&result.identity)
+                        && let Some(oldest) = self
+                            .icon_textures
+                            .iter()
+                            .min_by_key(|(_, (_, last_used))| *last_used)
+                            .map(|(identity, _)| identity.clone())
+                    {
+                        self.icon_textures.remove(&oldest);
+                    }
+                    self.icon_access_sequence = self.icon_access_sequence.saturating_add(1);
+                    let texture = context.load_texture(
+                        result.identity.texture_name(),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    self.icon_textures
+                        .insert(result.identity, (texture, self.icon_access_sequence));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        extension_id = %result.identity.extension_id(),
+                        icon_key = %result.identity.key(),
+                        error = %error,
+                        "extension icon could not be loaded"
+                    );
+                    if self.failed_icons.len() >= MAX_ICON_TEXTURES {
+                        self.failed_icons.clear();
+                    }
+                    self.failed_icons.insert(result.identity);
+                }
+            }
+            context.request_repaint();
         }
     }
 
@@ -1510,6 +1570,7 @@ impl Drop for HostApp {
         if let Some(storage) = self.storage.take() {
             storage.shutdown();
         }
+        self.icon_loader.take();
         self.search = None;
         if let Some(owner) = self.search_owner.take() {
             owner.shutdown();
@@ -1716,6 +1777,7 @@ impl HostApp {
             .unwrap_or_else(|error| error.into_inner()) = Some(context.clone());
         self.handle_events(&context);
         self.poll_runtime();
+        self.poll_icon_loader(&context);
         if !self.search_notifier_configured
             && let Some(search) = &self.search
         {
@@ -1805,11 +1867,11 @@ impl HostApp {
                         self.focus_pending = false;
                     }
 
-                    let accepting_query =
+                    let accepting_input =
                         self.pending_invocation_id.is_none() && self.invocation_output.is_none();
-                    if accepting_query {
+                    if accepting_input {
                         if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                            self.submit_query(&context);
+                            self.execute_selected(&context);
                         }
                         if ui.input(|input| {
                             input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowUp)
@@ -1849,6 +1911,7 @@ impl HostApp {
                             );
                         }
                     }
+                    let mut clicked_result_index = None;
                     if let Some(output) = &self.invocation_output {
                         ui.horizontal(|ui| {
                             ui.label(
@@ -1914,15 +1977,34 @@ impl HostApp {
                             self.search_generation,
                             self.selected_index,
                         ) {
+                            let texture_id = icon_texture_id(
+                                self.icon_loader.as_ref(),
+                                &mut self.icon_textures,
+                                &mut self.pending_icons,
+                                &self.failed_icons,
+                                &mut self.icon_access_sequence,
+                                &result.candidate,
+                            );
+                            let title = egui::RichText::new(result.candidate.title())
+                                .color(egui::Color32::from_rgb(224, 228, 238));
+                            let button = match texture_id {
+                                Some(texture_id) => egui::Button::image_and_text(
+                                    (texture_id, egui::vec2(28.0, 28.0)),
+                                    title,
+                                ),
+                                None => egui::Button::new(title),
+                            };
                             if ui
-                                .selectable_label(
-                                    selected,
-                                    egui::RichText::new(result.candidate.title())
-                                        .color(egui::Color32::from_rgb(224, 228, 238)),
+                                .add_sized(
+                                    [ui.available_width(), 40.0],
+                                    button
+                                        .selected(selected)
+                                        .frame(true)
+                                        .frame_when_inactive(selected),
                                 )
                                 .clicked()
                             {
-                                self.selected_index = index;
+                                clicked_result_index = Some(index);
                             }
                         }
                     } else {
@@ -1930,6 +2012,10 @@ impl HostApp {
                             egui::RichText::new("No results")
                                 .color(egui::Color32::from_rgb(126, 134, 155)),
                         );
+                    }
+                    if let Some(index) = clicked_result_index {
+                        self.selected_index = index;
+                        self.execute_selected(&context);
                     }
                     if let Some(error) = self
                         .action_error
@@ -2156,7 +2242,7 @@ fn extension_startup_diagnostics(errors: Vec<crate::ExtensionStartupError>) -> V
         .collect()
 }
 
-fn initialize_search_runtime() -> HostRuntime {
+fn initialize_search_runtime(wake: Arc<dyn Fn() + Send + Sync>) -> HostRuntime {
     let mut history_entries = Vec::new();
     let mut usage = UsageMap::new();
     let mut config = None;
@@ -2165,6 +2251,7 @@ fn initialize_search_runtime() -> HostRuntime {
     let mut config_service = None;
     let mut startup = None;
     let mut storage = None;
+    let mut icon_loader = None;
     let mut installed_extensions = Vec::new();
     let mut pending_extensions = Vec::new();
     let mut host_services = None;
@@ -2172,6 +2259,15 @@ fn initialize_search_runtime() -> HostRuntime {
 
     match NanikaPaths::discover() {
         Some(paths) => {
+            match IconLoader::spawn(paths.cache_root(), wake) {
+                Ok(loader) => icon_loader = Some(loader),
+                Err(error) => errors.push(diagnostic_message(
+                    DiagnosticCode::InternalFailure,
+                    "start icon loader",
+                    "Application icons are temporarily unavailable.",
+                    error.to_string(),
+                )),
+            }
             match ConfigStore::open(paths.app_data_root(), paths.config_root()) {
                 Ok(store) => {
                     if store.is_read_only() {
@@ -2326,6 +2422,7 @@ fn initialize_search_runtime() -> HostRuntime {
                 search_owner: Some(owner),
                 search: Some(handle),
                 storage,
+                icon_loader,
                 pending_extensions,
                 host_services,
                 errors,
@@ -2347,6 +2444,7 @@ fn initialize_search_runtime() -> HostRuntime {
                 search_owner: None,
                 search: None,
                 storage,
+                icon_loader,
                 pending_extensions,
                 host_services,
                 errors,
@@ -2375,6 +2473,41 @@ fn unix_timestamp_millis() -> u64 {
 
 pub(super) fn maximum_visible_result_index(result_count: usize) -> usize {
     result_count.min(MAX_VISIBLE_RESULTS).saturating_sub(1)
+}
+
+pub(super) fn selected_execution(
+    snapshot: Option<&SearchSnapshot>,
+    generation: u64,
+    selected_index: usize,
+    query: &str,
+) -> Option<(Candidate, String)> {
+    snapshot
+        .filter(|snapshot| snapshot.generation == generation)
+        .and_then(|snapshot| snapshot.results.get(selected_index))
+        .map(|result| (result.candidate.clone(), query.trim().to_owned()))
+}
+
+fn icon_texture_id(
+    loader: Option<&IconLoader>,
+    textures: &mut HashMap<IconIdentity, (egui::TextureHandle, u64)>,
+    pending: &mut HashSet<IconIdentity>,
+    failures: &HashSet<IconIdentity>,
+    access_sequence: &mut u64,
+    candidate: &Candidate,
+) -> Option<egui::TextureId> {
+    let identity = IconIdentity::new(candidate.extension_id(), candidate.icon_key()?);
+    if let Some((texture, last_used)) = textures.get_mut(&identity) {
+        *access_sequence = access_sequence.saturating_add(1);
+        *last_used = *access_sequence;
+        return Some(texture.id());
+    }
+    if !pending.contains(&identity)
+        && !failures.contains(&identity)
+        && loader.is_some_and(|loader| loader.request(identity.clone()).is_ok())
+    {
+        pending.insert(identity);
+    }
+    None
 }
 
 pub(super) fn extension_startup_user_message(errors: &[crate::ExtensionStartupError]) -> String {

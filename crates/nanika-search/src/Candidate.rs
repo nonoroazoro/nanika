@@ -8,6 +8,7 @@ pub struct Candidate {
     title: String,
     action_id: String,
     aliases: Vec<String>,
+    icon_key: Option<String>,
     search_values: Vec<String>,
 }
 
@@ -30,8 +31,14 @@ impl Candidate {
             title,
             action_id: action_id.into(),
             aliases,
+            icon_key: None,
             search_values,
         }
+    }
+
+    pub fn with_icon_key(mut self, icon_key: Option<String>) -> Self {
+        self.icon_key = icon_key;
+        self
     }
 
     pub(crate) fn search_values(&self) -> &[String] {
@@ -56,6 +63,10 @@ impl Candidate {
 
     pub fn aliases(&self) -> &[String] {
         &self.aliases
+    }
+
+    pub fn icon_key(&self) -> Option<&str> {
+        self.icon_key.as_deref()
     }
 
     pub(crate) fn set_extension_id(&mut self, extension_id: &str) {

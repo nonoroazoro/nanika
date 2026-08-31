@@ -102,6 +102,14 @@ mod host_runtime;
 mod host_service_handler;
 #[path = "HostServiceRouter.rs"]
 mod host_service_router;
+#[path = "IconIdentity.rs"]
+mod icon_identity;
+#[path = "IconLoadResult.rs"]
+mod icon_load_result;
+#[path = "IconLoader.rs"]
+mod icon_loader;
+#[path = "IconLoaderCommand.rs"]
+mod icon_loader_command;
 #[path = "InvocationPresentation.rs"]
 mod invocation_presentation;
 #[path = "OverlayMotion.rs"]
@@ -173,6 +181,10 @@ pub(crate) use host_runner_event::*;
 pub(crate) use host_runtime::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
+pub(crate) use icon_identity::*;
+pub(crate) use icon_load_result::*;
+pub(crate) use icon_loader::*;
+pub(crate) use icon_loader_command::*;
 pub(crate) use invocation_presentation::*;
 pub use nanika_core::{DiagnosticCategory, DiagnosticCode};
 pub(crate) use overlay_motion::*;
@@ -194,6 +206,10 @@ pub fn publish_extension_snapshot(
     let candidates = entries
         .into_iter()
         .map(|entry| {
+            let icon_key = entry
+                .icon
+                .filter(nanika_protocol::IconReference::is_valid)
+                .map(|icon| icon.key().to_owned());
             nanika_search::Candidate::new(
                 extension_id,
                 entry.entry_id,
@@ -201,6 +217,7 @@ pub fn publish_extension_snapshot(
                 entry.action_id,
                 entry.aliases,
             )
+            .with_icon_key(icon_key)
         })
         .collect();
     search.publish_extension_snapshot(extension_id, generation, candidates)
@@ -237,6 +254,9 @@ mod host_config_service_tests;
 #[cfg(test)]
 #[path = "../tests/HostDiagnostic.rs"]
 mod host_diagnostic_tests;
+#[cfg(test)]
+#[path = "../tests/IconLoader.rs"]
+mod icon_loader_tests;
 #[cfg(test)]
 #[path = "../tests/InvocationPresentation.rs"]
 mod invocation_presentation_tests;

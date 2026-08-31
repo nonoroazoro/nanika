@@ -103,6 +103,19 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         .into_iter()
         .find(|entry| entry.title == "Nanika Sample")
         .expect("sample application candidate");
+    let icon_key = entry
+        .icon
+        .as_ref()
+        .map(|icon| icon.key())
+        .expect("application candidate should reference its icon");
+    assert!(
+        cache_root
+            .join("icons")
+            .join("com.nanika.application")
+            .join(icon_key)
+            .join("32.png")
+            .is_file()
+    );
     write_frame(
         &mut input,
         &Message::Invoke {
@@ -200,7 +213,7 @@ fn process_reports_startup_cache_failure_after_handshake() {
     create_application_fixture(&applications);
     write_settings(&config_root, &applications);
     std::fs::create_dir_all(cache_root.join("icons")).expect("icon parent should exist");
-    std::fs::write(cache_root.join("icons/application"), [])
+    std::fs::write(cache_root.join("icons/com.nanika.application"), [])
         .expect("invalid icon root should exist");
 
     let mut child = Command::new(PathBuf::from(env!(

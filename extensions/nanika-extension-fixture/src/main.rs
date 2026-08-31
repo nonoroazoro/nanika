@@ -259,5 +259,6 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         title: title.to_owned(),
         action_id: "fixture.run".to_owned(),
         aliases: vec!["fixture alias".to_owned()],
+        icon: None,
     }
 }

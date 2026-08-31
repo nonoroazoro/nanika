@@ -2357,6 +2357,7 @@ dependencies = [
  "nanika-protocol",
  "nanika-search",
  "nanika-storage",
+ "png",
  "pollster",
  "rustix 1.1.4",
  "serde",

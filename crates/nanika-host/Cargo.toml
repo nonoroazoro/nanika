@@ -27,6 +27,7 @@ nanika-search = { path = "../nanika-search" }
 nanika-protocol = { path = "../nanika-protocol" }
 nanika-storage = { path = "../nanika-storage" }
 pollster.workspace = true
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
