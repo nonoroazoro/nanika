@@ -8,7 +8,7 @@ Status: current pre-1.0 implementation baseline. Before 1.0, measured platform o
 | --- | --- | --- |
 | Language | Rust stable | Prefer the standard library when it is sufficient. |
 | Platforms | Windows 10 and macOS 13 or later | Validate both platforms; keep platform code behind adapters. |
-| UI | `egui` with `egui-winit` | Direct native integration with default fonts, clipboard, IME, and accessibility. No `glow`, persistence, web, or Linux features. |
+| UI | `egui` with `egui-winit` | Direct native integration with a bounded CJK-capable system UI font, clipboard, IME, and accessibility. No `glow`, persistence, web, or Linux features. |
 | Renderer | `egui-wgpu` with direct `wgpu` backend selection | Disable default features. Enable `wgsl`, `dx12` and `vulkan` on Windows, `metal` on macOS. |
 | Windowing | Direct `winit` | The event-loop thread owns visibility, focus, input, and presentation order. |
 | Global hotkey | `global-hotkey` | One configurable normal modifier-and-key shortcut. |
@@ -22,7 +22,7 @@ Status: current pre-1.0 implementation baseline. Before 1.0, measured platform o
 | Calculator | `fend-core` | Deterministic, interruptible, arbitrary-precision local evaluation. |
 | Startup | `windows-registry` and `objc2-service-management` | Current-user Windows Run entry and macOS `SMAppService.mainAppService`. |
 | Tray and menu bar | `windows-sys` and `objc2-app-kit` | Native Windows notification icon and macOS `NSStatusItem`; no general tray crate. |
-| Single instance | `windows-sys`, `libc`, and standard library sockets | Windows named mutex plus hidden-window activation; macOS `flock` plus a local Unix socket. |
+| Single instance | `windows-sys`, `libc`, and standard library sockets | Windows named mutex plus hidden-window activation; macOS `flock` plus a local Unix datagram socket. |
 | Serialization | `serde`, `serde_json`, `jsonc-parser` | JSONC only for human-edited files and manifests. Internal APIs use typed Rust values. |
 | Extension IDs and versions | `uuid` and `semver` | UUID v4 for opaque IDs and Semantic Versioning for packages. |
 | Database | SQLite through `rusqlite` | Default features disabled; only `bundled`. |
@@ -93,13 +93,21 @@ Do not load extensions in-process or through Rust dynamic libraries. This is pro
 
 ### Shared interaction
 
-The host owns the single input field, input history, query navigation, search aggregation, contextual ranking, and final ordering. Extensions contribute candidates, actions, and settings. They do not own global query navigation or cross-extension ordering.
+The host owns Root Search, including its input field, input history, query navigation, search aggregation, contextual ranking, and final ordering. Extensions may contribute static commands and bounded dynamic candidates to Root Search. They do not control cross-extension ordering.
+
+A command may complete without a view or push a route-local host-rendered view. The extension supplies a bounded declarative `ListView` or `DetailView`; the host owns pixels, typography, accessibility, keyboard behavior, focus, and platform consistency. A list may request the semantic `Plain` or `Split` layout, sections, selection, detail content, filters, pagination, and typed item actions. A standalone detail may declare actions; actions for a detail nested in a list belong to its selected list item. The extension never receives a raw host widget, native handle, or arbitrary drawing surface.
+
+Each pushed view has an extension-scoped ID and monotonic revision. The host serializes operations for that view, validates every replacement document, and keeps local text editing responsive while coalescing pending search text to the latest value. Back closes the active route immediately from the user's perspective. Overlay dismissal closes every extension route in reverse stack order. Nested routes are bounded, and stale updates cannot mutate a different route.
+
+`ViewActionStyle` communicates primary, secondary, or destructive prominence. It does not grant behavior or permission. Every action is rendered by the host and returned to the owning extension as a typed event. Host services such as clipboard writes and process launches remain separately permission checked.
 
 ## UI and interaction
 
 Use an undecorated, always-on-top overlay. The primary process starts with only its tray or menu-bar visible. A hidden native window may prewarm the GPU surface, but the event loop shows it only after a complete frame has been presented for hotkey or menu activation. The event-loop thread owns window state, focus, IME, scale-factor changes, and monitor placement. Windows placement uses target-monitor physical pixels; macOS placement uses global AppKit points converted with the current window scale expected by `winit`. Repaint only for input, state changes, or active animation. Hidden and idle states do not run a continuous render loop.
 
-The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a single large query field, 8 px spacing rhythm, and no decorative icon dependency. Summon paints complete content on its first visible frame. Dismissal uses a frame-rate-independent 110 ms smoothstep timeline, and a new summon interrupts it immediately. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
+The shared visibility contract is show, hide, and toggle. Windows implements hide through the normal native visibility command. macOS keeps the overlay ordered in with alpha zero and mouse events disabled, briefly orders it out only when needed to release key focus, and immediately orders it back in. This prevents Carbon hotkey events from waiting for a later `winit` event-loop tick while preserving the same user-visible hidden state and near-zero idle work. The macOS behavior remains isolated in `nanika-platform`.
+
+The initial UI language uses a dark graphite surface, restrained blue-gray secondary text, a prominent route-local query field where applicable, 8 px spacing rhythm, and no decorative icon dependency. The host loads one CJK-capable system UI font off the UI thread and delivers it to the UI independently of storage and extension initialization. It is the primary proportional font so Latin and CJK glyphs in normal UI runs share one font face and compatible metrics. It remains a fallback for the monospace family. A shared resolver selects from bounded font candidates supplied by Windows and macOS adapters; startup never scans the complete system font catalog. Font ownership stays in the host design system and is not exposed as an extension styling capability. IME preedit and commit remain handled through the shared `egui-winit` path on Windows and macOS. Summon paints complete content on its first visible frame. Dismissal uses a frame-rate-independent 110 ms smoothstep timeline, and a new summon interrupts it immediately. Active animation requests repaint at up to 120 Hz, while hidden idle state schedules no continuous repaint. Reduced motion snaps directly to the target and is configurable in Settings; `--reduced-motion` remains a runtime override.
 
 Direct integration lets the host keep the native window hidden through presentation and show it only after a complete frame. The host explicitly enables the selected `wgpu` backend features through its direct dependency.
 
@@ -119,7 +127,7 @@ The named search owner thread owns a persistent `nucleo-matcher` instance, aggre
 
 The `nanika-search` crate implements Unicode lowercase, punctuation-separated, whitespace-collapsed exact, prefix, token, fuzzy, empty-query, and alias matching through `nucleo-matcher`. Extensions may supply localized names as aliases. Candidate search values are normalized once when snapshots enter the host. Queries are capped at 4,096 Unicode scalar values. Fuzzy results require 12 score points per normalized query character. Contextual frequency and seven-day recency decay apply only inside the same lexical tier. Ranking uses top-k selection before sorting; snapshots contain at most 100 results. Each extension contribution is capped at 5,000 candidates and deduplicated by extension, entry, and action identity.
 
-Clipboard history currently publishes its retained entries into the shared result set, including for an empty query. Text content contributes a bounded searchable alias, and the host applies the same global ranking and visible-result limit used for every extension. Clipboard content remains local and never enters diagnostics.
+Clipboard history contributes one static `Clipboard History` command to Root Search and does not publish retained clipboard entries there. Invoking the command pushes its route-local `ListView` with a split detail pane, bounded local filtering, content-type filtering, selection, pagination, and typed actions. Clipboard content remains local and never enters diagnostics.
 
 Ranking order is deterministic:
 
@@ -225,11 +233,13 @@ Only the host process launcher and extension supervisor may create child process
 
 ### Single instance
 
-Nanika runs one host instance per user session. Windows uses `Local\com.nanika.nanika` through `CreateMutexW`; a blocking platform event thread owns the hidden activation window and notification icon. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns the local Unix socket under `<app-data-root>`. Both feed bounded platform events to the host and tolerate the primary's startup handoff race. A foreground second launch requests activation, then exits. A background second launch exits without activation.
+Nanika runs one host instance per user session. Windows uses `Local\com.nanika.nanika` through `CreateMutexW`; a blocking platform event thread owns the hidden activation window and notification icon. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns a local Unix datagram socket under `<app-data-root>`. One-byte activation and stop datagrams cannot leave the listener blocked on a partial stream connection. Both adapters feed bounded platform events to the host and tolerate the primary's startup handoff race. A foreground second launch requests activation, then exits. A background second launch exits without activation.
 
 ### Global hotkey
 
-Use `global-hotkey` on the event-loop thread. Register only the configured shortcut's press event. Keep media keys outside the MVP. Registration conflicts and failed replacement must preserve the previous working shortcut and produce diagnostics.
+Use `global-hotkey` on the event-loop thread. The default shortcut is `Ctrl+Space` on macOS and `Alt+Space` on Windows. A press toggles the launcher when it owns the activation and ensures the launcher opens for second-instance activation. A press during dismissal interrupts the animation and reveals the existing surface immediately. Keep media keys outside the MVP. Registration conflicts and failed replacement must preserve the previous working shortcut and produce diagnostics.
+
+Measure native hotkey delivery through a passive `nanika-platform` observer before `global-hotkey` discards the source timestamp. The observer must always continue native event propagation and must never become an alternate hotkey delivery path. Use Carbon `EventTime` on macOS and `MSG.time` on Windows, then expose only a platform-neutral `Duration` to the host. Missing native timing must mark a sample incomplete instead of silently treating callback time as input time.
 
 ### Application discovery
 
@@ -245,7 +255,7 @@ Searchable entries publish before icon extraction. The recoverable icon cache us
 
 ### Clipboard
 
-The clipboard extension captures permitted text, file lists, and images. Windows uses native change delivery. macOS polls `NSPasteboard.changeCount` through `clipboard-rs` at a 250 ms interval. The watcher only sends bounded events; one owner performs capture, deduplication, retention, payload cleanup, and SQLite persistence. Oversized content is skipped, never truncated: text and encoded file lists are limited to 1 MiB, file lists to 256 paths, and PNG images to 16 MiB, 8,192 pixels per dimension, and 16,777,216 pixels. Explicit refresh completes only after capture and persistence; worker errors are reported through the protocol. Restore uses the common host clipboard service. Clipboard content never enters diagnostics or synchronized configuration.
+The clipboard extension captures permitted text, file lists, and images. Windows uses native change delivery. macOS polls `NSPasteboard.changeCount` through `clipboard-rs` at a 250 ms interval. The watcher only sends bounded events; one owner performs capture, deduplication, retention, payload cleanup, and SQLite persistence. Oversized content is skipped, never truncated: text and encoded file lists are limited to 1 MiB, file lists to 256 paths, and PNG images to 16 MiB, 8,192 pixels per dimension, and 16,777,216 pixels. Explicit refresh completes only after capture and persistence; worker errors are reported through the protocol. The implemented action uses the common host clipboard service, is labeled `Copy to Clipboard`, and closes the view after a successful copy. TODO: define a separate platform-neutral paste-to-foreground host service with Windows and macOS adapters before presenting paste behavior. Clipboard content never enters diagnostics or synchronized configuration.
 
 ### Calculator
 
@@ -291,7 +301,7 @@ README.md
 LICENSE
 ```
 
-Manifest version 1 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols, versions, fields, targets, unsupported or duplicate permissions, and unsafe entrypoints are rejected. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Capabilities, dependencies, activation events, and manifest contributions remain reserved.
+Manifest version 1 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols, versions, fields, targets, unsupported or duplicate permissions, and unsafe entrypoints are rejected. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Nanika extensions may declare bounded static commands and Root Search participation through `contributions`; ACP extensions retain their existing prompt activation path. Capabilities, dependencies, and activation events remain reserved.
 
 `nanika-cli` installs, updates, enables, disables, and removes external extensions while the host is stopped. `install` creates a missing extension or repairs the same immutable version; a different installed version requires `update`. `update` requires an installed extension, preserves enablement, and rejects downgrades. Archives are limited to 128 MiB, 4,096 entries, and 512 MiB expanded content. Traversal, symlinks, cross-platform name collisions, filesystem collisions, unsupported compression, and excessive compression ratios are rejected. Extraction never overwrites an existing path. The package is copied and hashed once, then extraction uses that immutable staged copy. The target entrypoint is made executable on macOS. Destructive artifact mutations write a recovery journal before rename; host startup and later CLI operations finish or roll back an interrupted replacement or removal. Configuration, database state, and artifacts use ordered mutations with compensation, and generated cleanup is best-effort after logical commit. Built-in IDs cannot be replaced or removed. No marketplace, development-directory install, or background download service is included.
 

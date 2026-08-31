@@ -1,6 +1,6 @@
 # Nanika Tasks
 
-Status: the pre-1.0 architecture and MVP capabilities are implemented. The remaining work is cross-platform acceptance, release validation, and explicitly deferred cleanup.
+Status: the implemented baseline is listed first. Every unchecked item is a TODO. Cross-platform acceptance and release validation are not complete.
 
 ## Product baseline
 
@@ -10,12 +10,14 @@ Built-in and external extensions run as independent host-supervised processes wi
 
 Shared host, UI, diagnostics, protocol, configuration, storage, search, and extension lifecycle code remains platform-neutral. Native behavior is isolated behind typed Windows and macOS adapters.
 
-## MVP acceptance criteria
+## Implemented MVP baseline
 
-- A configurable global hotkey summons a focused overlay on the active monitor.
-- Keyboard input, navigation, input history, Enter, Escape, and reduced motion work without a mouse.
+- A configurable global hotkey toggles a focused overlay on the active monitor.
+- The shared input path handles keyboard input, IME preedit and commit, calibrated mixed Latin and CJK text rendering, navigation, input history, Enter, Escape, and reduced motion without a mouse. Physical Windows and macOS acceptance remains a TODO below.
 - The default distribution includes application search, commands, scripts, calculation, and clipboard history.
-- Extensions contribute bounded incremental candidates and actions without host domain registration.
+- Extensions contribute bounded incremental candidates, static commands, host-rendered views, and typed actions without host domain registration.
+- Clipboard history contributes one Root Search command that opens an independent host-rendered List and Split Detail route. Its current action copies the selected content to the clipboard.
+- Route-local view search remains responsive during extension round trips, nested routes close cleanly, and every declared action is reachable from the host UI.
 - Stale generations cannot replace newer results, and repeated execution cannot overwhelm lexical relevance.
 - Settings are editable through the host UI and advanced JSONC files.
 - External extensions can be installed, repaired, updated, enabled, disabled, and removed through `nanika-cli` while the host is stopped.
@@ -25,7 +27,7 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 - Operational diagnostics preserve redaction, record distinct extension IDs independently, remain bounded, and support export.
 - Hidden idle performs no continuous repaint or polling beyond explicitly designed platform adapters.
 
-## Remaining pre-1.0 work
+## Remaining pre-1.0 work (TODO)
 
 ### Cross-platform acceptance
 
@@ -34,6 +36,7 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 - [ ] Validate foreground and background second-launch behavior, stale instance recovery, shutdown cleanup, and per-user isolation on both platforms.
 - [ ] Validate application, command, script, batch, clipboard, and macOS bundle actions on their supported platforms.
 - [ ] Validate diagnostics and feature-specific user messages for missing, incompatible, and failed built-in and external extensions on both platforms.
+- [ ] Validate native IME preedit, commit, candidate-window placement, CJK-capable system UI font selection, and mixed-script visual alignment on physical Windows and macOS machines.
 
 ### Performance and release
 
@@ -43,10 +46,11 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 - [ ] Sign the Windows artifact and sign, notarize, and staple both macOS artifacts with release credentials.
 - [ ] Complete clean-profile installation, startup, summon, settings, actions, diagnostics export, update, rollback, and removal acceptance for every release artifact.
 
-### Deferred cleanup
+### Deferred work
 
 - [ ] Remove `nanika-extension-acp-dummy` before 1.0 packaging.
 - [ ] Add settings migrations and reset behavior only when a released format requires compatibility.
 - [ ] Define machine overrides and secret handling before a capability requires them.
 - [ ] Add maintenance snapshots and corruption recovery before the first post-release destructive database migration.
 - [ ] Add captured output and launched-action process-tree cancellation only when a future capability requires them.
+- [ ] Define and implement a platform-neutral paste-to-foreground host service with Windows and macOS adapters. Clipboard history currently copies the selected item to the clipboard and closes its view.

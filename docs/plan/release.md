@@ -41,7 +41,9 @@ An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`.
 7. Install each artifact on a clean user profile and verify startup, summon, settings, actions, diagnostics, and removal.
 8. Confirm the host starts all five built-in extension processes and that one failed extension does not prevent the other features from loading.
 9. Confirm user-facing failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
-10. Publish the versioned archives, checksums, and release notes together.
+10. Confirm Root Search and extension view inputs render Latin and CJK text through native IME composition on Windows and macOS.
+11. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, and every action style through the host-rendered protocol path.
+12. Publish the versioned archives, checksums, and release notes together.
 
 ## Update and rollback
 
