@@ -43,7 +43,8 @@ An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`.
 9. Confirm user-facing failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
 10. Confirm Root Search and extension view inputs render Latin and CJK text through native IME composition on Windows and macOS.
 11. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, and every action style through the host-rendered protocol path.
-12. Publish the versioned archives, checksums, and release notes together.
+12. Confirm Root Search, shared view components, interaction states, high-DPI rendering, and reduced motion match the current [UI design baseline](../design/ui.md) on Windows and macOS.
+13. Publish the versioned archives, checksums, and release notes together.
 
 ## Update and rollback
 

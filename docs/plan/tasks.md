@@ -29,6 +29,14 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 
 ## Remaining pre-1.0 work (TODO)
 
+### UI foundation
+
+- [ ] Introduce host-owned design tokens and reusable `egui` components for Root Search, result rows, sections, icons, action bars, key hints, List, Split, Detail, and shared states.
+- [ ] Rebuild Root Search against the [UI design proposal](../design/ui.md), including a bounded presentation model for title, subtitle, category, icon, and accessory content.
+- [ ] Rebuild extension List, Split, and Detail rendering with the same component system without granting extensions pixel-level styling or arbitrary drawing access.
+- [ ] Implement coherent empty, loading, degraded, and diagnostic states.
+- [ ] Validate the visual baseline, keyboard behavior, IME, accessibility, high-DPI rendering, reduced motion, latency, and frame pacing on physical Windows and macOS machines.
+
 ### Cross-platform acceptance
 
 - [ ] Validate focus, IME, hotkey conflicts, active-monitor placement, mixed DPI, full-screen behavior, elevated foreground windows, and `wgpu` backends on physical Windows and macOS machines.
