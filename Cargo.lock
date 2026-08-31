@@ -1420,6 +1420,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontdb"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2660c5e9157bf76d2db1294e4a9feba604ef610819a3b591088d0d8392a3290f"
+dependencies = [
+ "log",
+ "slotmap",
+ "tinyvec",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2288,6 +2299,7 @@ name = "nanika-extension-fixture"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "nanika-extension-package",
  "nanika-host",
  "nanika-protocol",
  "nanika-search",
@@ -2334,6 +2346,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "fontdb",
  "futures",
  "futures-lite",
  "global-hotkey",
@@ -2369,6 +2382,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-service-management",
  "png",
+ "raw-window-handle",
  "windows-registry",
  "windows-sys 0.61.2",
 ]
@@ -3704,6 +3718,15 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slotmap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+dependencies = [
+ "version_check",
+]
 
 [[package]]
 name = "smallvec"

@@ -1,4 +1,19 @@
-use crate::diagnostics::enforce_log_budget;
+use std::ffi::OsStr;
+
+use crate::diagnostics::{enforce_log_budget, maximum_level};
+
+#[test]
+fn verbose_diagnostics_are_opt_in() {
+    assert_eq!(maximum_level(None), tracing::Level::INFO);
+    assert_eq!(
+        maximum_level(Some(OsStr::new("verbose"))),
+        tracing::Level::DEBUG
+    );
+    assert_eq!(
+        maximum_level(Some(OsStr::new("debug"))),
+        tracing::Level::INFO
+    );
+}
 
 #[test]
 fn log_budget_removes_oldest_owned_files() {

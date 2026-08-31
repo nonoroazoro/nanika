@@ -6,16 +6,17 @@ use nanika_protocol::SettingUpdate;
 
 #[test]
 fn script_settings_require_stable_ids_and_absolute_paths() {
+    let root = std::env::temp_dir().join("nanika-script-validation");
     let config = ScriptConfig {
         format_version: 1,
         scripts: vec![ScriptEntry {
             id: "build-project".to_owned(),
             title: "Build project".to_owned(),
             aliases: vec!["build".to_owned()],
-            interpreter: PathBuf::from("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"),
-            script: PathBuf::from("C:/scripts/build.ps1"),
+            interpreter: root.join("interpreter"),
+            script: root.join("build-script"),
             arguments: Vec::new(),
-            working_directory: Some(PathBuf::from("C:/project")),
+            working_directory: Some(root),
         }],
     };
     assert!(config.validate().is_ok());

@@ -11,7 +11,9 @@ use agent_client_protocol::schema::{
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, Error};
 use futures_lite::future;
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
-use nanika_extension_package::{ExtensionProtocol, install_package, resolve_active_extensions};
+use nanika_extension_package::{
+    ExtensionContributions, ExtensionProtocol, install_package, resolve_active_extensions,
+};
 use nanika_host::{
     ExtensionLimits, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchCoordinator,
     SupervisorError,
@@ -137,7 +139,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
     drop(candidates);
     let streamed = Arc::new(Mutex::new(String::new()));
     let published_output = Arc::clone(&streamed);
-    let output = runtime
+    let (_, has_output) = runtime
         .invoke_cancellable(
             ExtensionRuntimeInvocation::new(
                 "invoke-dummy",
@@ -155,7 +157,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
             || false,
         )
         .expect("invoke ACP prompt");
-    assert!(output);
+    assert!(has_output);
     assert_eq!(
         streamed
             .lock()
@@ -306,6 +308,7 @@ fn coordinator_cancels_an_acp_invocation_and_keeps_the_extension_usable() {
             "com.example.acp-dummy",
             hanging_runtime(TEST_TIMEOUT),
             owner.handle(),
+            ExtensionContributions::default(),
         )
         .expect("register ACP extension");
     for cycle in 0_u64..4 {
@@ -362,6 +365,7 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
             "com.example.acp-dummy",
             hanging_runtime_with_arguments(TEST_TIMEOUT, [argument.into()]),
             owner.handle(),
+            ExtensionContributions::default(),
         )
         .expect("register ACP extension");
     coordinator

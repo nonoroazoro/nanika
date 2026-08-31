@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
-use std::io::{ErrorKind, Read, Write};
+use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -33,12 +33,12 @@ pub(crate) fn acquire(app_data_root: &Path) -> Result<InstanceRole, PlatformErro
     if activation_path.exists() {
         std::fs::remove_file(&activation_path)?;
     }
-    let listener = UnixListener::bind(&activation_path)?;
+    let socket = UnixDatagram::bind(&activation_path)?;
     let (events, event_receiver) = mpsc::sync_channel(8);
     let event_sender = events.clone();
     let event_thread = std::thread::Builder::new()
         .name("nanika-instance-events".to_owned())
-        .spawn(move || run_event_loop(listener, events))?;
+        .spawn(move || run_event_loop(socket, events))?;
 
     Ok(InstanceRole::Primary(SingleInstance {
         events: Some(event_receiver),
@@ -53,11 +53,10 @@ pub(crate) fn signal_activate(app_data_root: &Path) -> Result<(), PlatformError>
     let path = app_data_root.join(SOCKET_FILE);
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        match UnixStream::connect(&path) {
-            Ok(mut stream) => {
-                stream.write_all(&[ACTIVATE_REQUEST])?;
-                return Ok(());
-            }
+        let socket = UnixDatagram::unbound()?;
+        match socket.send_to(&[ACTIVATE_REQUEST], &path) {
+            Ok(1) => return Ok(()),
+            Ok(_) => return Err(PlatformError::ActivationChannelClosed),
             Err(error)
                 if matches!(
                     error.kind(),
@@ -71,20 +70,14 @@ pub(crate) fn signal_activate(app_data_root: &Path) -> Result<(), PlatformError>
     }
 }
 
-fn run_event_loop(listener: UnixListener, events: mpsc::SyncSender<PlatformEvent>) {
-    for stream in listener.incoming() {
-        let Ok(mut stream) = stream else {
-            break;
-        };
-        if stream
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .is_err()
-        {
-            continue;
-        }
+fn run_event_loop(socket: UnixDatagram, events: mpsc::SyncSender<PlatformEvent>) {
+    loop {
         let mut request = [0; 1];
-        let Ok(()) = stream.read_exact(&mut request) else {
-            continue;
+        match socket.recv(&mut request) {
+            Ok(1) => {}
+            Ok(_) => continue,
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => break,
         };
         match request[0] {
             ACTIVATE_REQUEST => {

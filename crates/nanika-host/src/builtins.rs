@@ -6,15 +6,29 @@ pub(crate) use nanika_core::{
     APPLICATION_EXTENSION_ID, CALCULATOR_EXTENSION_ID, CLIPBOARD_EXTENSION_ID,
     COMMAND_EXTENSION_ID, SCRIPT_EXTENSION_ID,
 };
-use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
+use nanika_extension_package::{
+    CommandContribution, CommandMode, ExtensionContributions, ExtensionProtocol,
+    resolve_active_extensions,
+};
 use nanika_storage::StoredExtension;
 use nanika_storage::{ExtensionKind, NanikaPaths};
 
-use crate::{BuiltinExtensionSpec, ExtensionRuntime, ExtensionStartupError, PendingExtension};
+use crate::{
+    BuiltinCommandSpec, BuiltinExtensionSpec, ExtensionRuntime, ExtensionStartupError,
+    PendingExtension,
+};
 
 const NANIKA_V1: ExtensionProtocol = ExtensionProtocol::Nanika {
     protocol_version: 1,
 };
+
+const CLIPBOARD_COMMANDS: [BuiltinCommandSpec; 1] = [BuiltinCommandSpec {
+    id: "clipboard.history",
+    title: "Clipboard History",
+    description: "Search and copy previous clipboard content.",
+    mode: CommandMode::View,
+    keywords: &["clipboard", "history", "paste"],
+}];
 
 const BUILTINS: [BuiltinExtensionSpec; 5] = [
     BuiltinExtensionSpec {
@@ -23,6 +37,8 @@ const BUILTINS: [BuiltinExtensionSpec; 5] = [
         protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
+        root_search: true,
+        commands: &[],
     },
     BuiltinExtensionSpec {
         extension_id: COMMAND_EXTENSION_ID,
@@ -30,6 +46,8 @@ const BUILTINS: [BuiltinExtensionSpec; 5] = [
         protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
+        root_search: true,
+        commands: &[],
     },
     BuiltinExtensionSpec {
         extension_id: SCRIPT_EXTENSION_ID,
@@ -37,6 +55,8 @@ const BUILTINS: [BuiltinExtensionSpec; 5] = [
         protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["process.launch"],
+        root_search: true,
+        commands: &[],
     },
     BuiltinExtensionSpec {
         extension_id: CALCULATOR_EXTENSION_ID,
@@ -44,6 +64,8 @@ const BUILTINS: [BuiltinExtensionSpec; 5] = [
         protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["clipboard.write"],
+        root_search: true,
+        commands: &[],
     },
     BuiltinExtensionSpec {
         extension_id: CLIPBOARD_EXTENSION_ID,
@@ -51,6 +73,8 @@ const BUILTINS: [BuiltinExtensionSpec; 5] = [
         protocol: NANIKA_V1,
         kind: ExtensionKind::BuiltIn,
         permissions: &["clipboard.write"],
+        root_search: false,
+        commands: &CLIPBOARD_COMMANDS,
     },
 ];
 
@@ -104,6 +128,7 @@ pub(crate) fn spawn_extensions(
                     .iter()
                     .map(|permission| (*permission).to_owned())
                     .collect(),
+                contributions: builtin_contributions(&spec),
                 runtime,
             }),
             Err(error) => errors.push(ExtensionStartupError::new(
@@ -116,6 +141,10 @@ pub(crate) fn spawn_extensions(
     errors.extend(external_errors.into_iter().map(ExtensionStartupError::from));
     for extension in external {
         let extension_id = extension.extension_id;
+        let mut contributions = extension.contributions;
+        if matches!(extension.protocol, ExtensionProtocol::Acp { .. }) {
+            contributions.root_search = true;
+        }
         let arguments = extension_arguments(extension.protocol, paths);
         match ExtensionRuntime::spawn_with(
             &extension_id,
@@ -128,6 +157,7 @@ pub(crate) fn spawn_extensions(
                 extension_id,
                 kind: ExtensionKind::External,
                 permissions: extension.permissions,
+                contributions,
                 runtime,
             }),
             Err(error) => errors.push(ExtensionStartupError::new(
@@ -137,6 +167,28 @@ pub(crate) fn spawn_extensions(
         }
     }
     (extensions, errors)
+}
+
+fn builtin_contributions(spec: &BuiltinExtensionSpec) -> ExtensionContributions {
+    ExtensionContributions {
+        commands: spec
+            .commands
+            .iter()
+            .map(|command| CommandContribution {
+                id: command.id.to_owned(),
+                title: command.title.to_owned(),
+                description: command.description.to_owned(),
+                mode: command.mode,
+                subtitle: None,
+                keywords: command
+                    .keywords
+                    .iter()
+                    .map(|keyword| (*keyword).to_owned())
+                    .collect(),
+            })
+            .collect(),
+        root_search: spec.root_search,
+    }
 }
 
 fn companion_executable(current_executable: &Path, binary_name: &str) -> PathBuf {

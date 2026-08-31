@@ -2,23 +2,29 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
+use nanika_extension_package::{CommandMode, ExtensionContributions};
 use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationOutput, ExtensionInvocationResult, ExtensionNotifier,
-    ExtensionRuntime, ExtensionSearchWorker, ExtensionSettingsResult, HostServiceHandler,
+    ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionSettingsResult,
+    ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate, HostServiceHandler,
     SupervisorError,
 };
 
 const INVOCATION_RESULT_CAPACITY: usize = 16;
+const VIEW_UPDATE_CAPACITY: usize = 16;
 
 /// Collection of fixed extension workers queried by one host generation.
 pub struct ExtensionSearchCoordinator {
     workers: Vec<ExtensionSearchWorker>,
     results: Receiver<ExtensionInvocationResult>,
     result_sender: SyncSender<ExtensionInvocationResult>,
+    view_updates: Receiver<ExtensionViewUpdate>,
+    view_update_sender: SyncSender<ExtensionViewUpdate>,
     pending_invocations: AtomicUsize,
     next_invocation_id: AtomicU64,
+    next_view_request_id: AtomicU64,
     notifier: ExtensionNotifier,
     host_services: Option<Arc<dyn HostServiceHandler>>,
 }
@@ -26,12 +32,16 @@ pub struct ExtensionSearchCoordinator {
 impl ExtensionSearchCoordinator {
     pub fn new() -> Self {
         let (result_sender, results) = mpsc::sync_channel(INVOCATION_RESULT_CAPACITY);
+        let (view_update_sender, view_updates) = mpsc::sync_channel(VIEW_UPDATE_CAPACITY);
         Self {
             workers: Vec::new(),
             results,
             result_sender,
+            view_updates,
+            view_update_sender,
             pending_invocations: AtomicUsize::new(0),
             next_invocation_id: AtomicU64::new(1),
+            next_view_request_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
             host_services: None,
         }
@@ -46,6 +56,7 @@ impl ExtensionSearchCoordinator {
         extension_id: impl Into<String>,
         runtime: impl Into<ExtensionRuntime>,
         search: SearchHandle,
+        contributions: ExtensionContributions,
     ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
         let runtime = runtime.into();
@@ -63,11 +74,22 @@ impl ExtensionSearchCoordinator {
             extension_id,
             runtime,
             search,
-            self.result_sender.clone(),
-            Arc::clone(&self.notifier),
-            self.host_services.clone(),
+            contributions,
+            ExtensionSearchWorkerContext {
+                invocation_results: self.result_sender.clone(),
+                view_updates: self.view_update_sender.clone(),
+                notifier: Arc::clone(&self.notifier),
+                host_services: self.host_services.clone(),
+            },
         )?);
         Ok(())
+    }
+
+    pub(crate) fn command_mode(&self, extension_id: &str, entry_id: &str) -> Option<CommandMode> {
+        self.workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .and_then(|worker| worker.command_mode(entry_id))
     }
 
     pub fn query(&self, generation: u64, query: &str) {
@@ -150,11 +172,70 @@ impl ExtensionSearchCoordinator {
         Ok(())
     }
 
+    pub(crate) fn view_event(
+        &self,
+        extension_id: &str,
+        generation: u64,
+        view_id: impl Into<String>,
+        revision: u64,
+        event: nanika_protocol::ViewEvent,
+    ) -> Result<u64, SupervisorError> {
+        let worker = self
+            .workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .ok_or_else(|| {
+                SupervisorError::UnexpectedMessage(format!(
+                    "extension search worker does not exist: {extension_id}"
+                ))
+            })?;
+        let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
+        worker.view_event(ExtensionViewRequest {
+            request_id,
+            generation,
+            view_id: view_id.into(),
+            revision,
+            kind: ExtensionViewRequestKind::Event(event),
+        })?;
+        Ok(request_id)
+    }
+
+    pub(crate) fn close_view(
+        &self,
+        extension_id: &str,
+        generation: u64,
+        view_id: impl Into<String>,
+        revision: u64,
+    ) -> Result<u64, SupervisorError> {
+        let worker = self
+            .workers
+            .iter()
+            .find(|worker| worker.extension_id() == extension_id)
+            .ok_or_else(|| {
+                SupervisorError::UnexpectedMessage(format!(
+                    "extension search worker does not exist: {extension_id}"
+                ))
+            })?;
+        let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
+        worker.view_event(ExtensionViewRequest {
+            request_id,
+            generation,
+            view_id: view_id.into(),
+            revision,
+            kind: ExtensionViewRequestKind::Close,
+        })?;
+        Ok(request_id)
+    }
+
     pub(crate) fn take_results(&self) -> Vec<ExtensionInvocationResult> {
         let results = self.results.try_iter().collect::<Vec<_>>();
         self.pending_invocations
             .fetch_sub(results.len(), Ordering::AcqRel);
         results
+    }
+
+    pub(crate) fn take_view_updates(&self) -> Vec<ExtensionViewUpdate> {
+        self.view_updates.try_iter().collect()
     }
 
     pub(crate) fn take_settings(&self) -> Vec<ExtensionSettingsResult> {

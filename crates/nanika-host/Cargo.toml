@@ -17,6 +17,7 @@ egui-wgpu.workspace = true
 egui-winit.workspace = true
 futures.workspace = true
 futures-lite.workspace = true
+fontdb.workspace = true
 global-hotkey.workspace = true
 nanika-core = { path = "../nanika-core" }
 nanika-config = { path = "../nanika-config" }

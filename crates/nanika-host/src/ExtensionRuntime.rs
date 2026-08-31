@@ -152,7 +152,7 @@ impl ExtensionRuntime {
         invocation: ExtensionRuntimeInvocation,
         publish: Arc<dyn Fn(String) + Send + Sync>,
         should_cancel: impl FnMut() -> bool,
-    ) -> Result<bool, SupervisorError> {
+    ) -> Result<(nanika_protocol::NavigationEffect, bool), SupervisorError> {
         match self {
             Self::Nanika(process) => process
                 .invoke_cancellable(
@@ -162,7 +162,7 @@ impl ExtensionRuntime {
                     invocation.action_id,
                     should_cancel,
                 )
-                .map(|()| false),
+                .map(|effect| (effect, false)),
             Self::Acp(process) => {
                 if invocation.entry_id != "prompt" || invocation.action_id != "prompt" {
                     return Err(SupervisorError::UnexpectedMessage(
@@ -177,7 +177,7 @@ impl ExtensionRuntime {
                     })?;
                 process
                     .prompt_cancellable(prompt, publish, should_cancel)
-                    .map(|()| true)
+                    .map(|()| (nanika_protocol::NavigationEffect::None, true))
             }
         }
     }
@@ -189,6 +189,51 @@ impl ExtensionRuntime {
         match self {
             Self::Nanika(process) => process.recover_if_exited(request_id),
             Self::Acp(process) => process.recover_if_exited(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn view_event_cancellable(
+        &mut self,
+        request_id: impl Into<String>,
+        generation: u64,
+        view_id: impl Into<String>,
+        revision: u64,
+        event: nanika_protocol::ViewEvent,
+        should_cancel: impl FnMut() -> bool,
+    ) -> Result<
+        (
+            u64,
+            nanika_protocol::NavigationEffect,
+            Option<nanika_protocol::View>,
+        ),
+        SupervisorError,
+    > {
+        match self {
+            Self::Nanika(process) => process.view_event_cancellable(
+                request_id,
+                generation,
+                view_id,
+                revision,
+                event,
+                should_cancel,
+            ),
+            Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
+                "ACP extensions cannot own host-rendered views".to_owned(),
+            )),
+        }
+    }
+
+    pub(crate) fn close_view(
+        &mut self,
+        request_id: impl Into<String>,
+        view_id: impl Into<String>,
+    ) -> Result<(), SupervisorError> {
+        match self {
+            Self::Nanika(process) => process.close_view(request_id, view_id),
+            Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
+                "ACP extensions cannot own host-rendered views".to_owned(),
+            )),
         }
     }
 

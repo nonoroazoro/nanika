@@ -14,7 +14,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     let config_root = root.join("config");
     let applications = root.join("applications");
     std::fs::create_dir_all(&applications).expect("application root should exist");
-    create_executable(&applications.join("Nanika Sample.exe"));
+    create_application_fixture(&applications);
     write_settings(&config_root, &applications);
 
     let mut child = Command::new(PathBuf::from(env!(
@@ -197,7 +197,7 @@ fn process_reports_startup_cache_failure_after_handshake() {
     let config_root = root.join("config");
     let applications = root.join("applications");
     std::fs::create_dir_all(&applications).expect("application root should exist");
-    create_executable(&applications.join("Nanika Sample.exe"));
+    create_application_fixture(&applications);
     write_settings(&config_root, &applications);
     std::fs::create_dir_all(cache_root.join("icons")).expect("icon parent should exist");
     std::fs::write(cache_root.join("icons/application"), [])
@@ -301,6 +301,54 @@ fn write_settings(config_root: &Path, application_root: &Path) {
 
 fn argument(name: &str, value: &Path) -> OsString {
     OsString::from(format!("--{name}={}", value.display()))
+}
+
+#[cfg(windows)]
+fn create_application_fixture(root: &Path) {
+    create_executable(&root.join("Nanika Sample.exe"));
+}
+
+#[cfg(target_os = "macos")]
+fn create_application_fixture(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bundle = root.join("Nanika Sample.app/Contents");
+    let executable = bundle.join("MacOS/nanika-sample");
+    std::fs::create_dir_all(
+        executable
+            .parent()
+            .expect("application executable should have a parent"),
+    )
+    .expect("application executable directory should exist");
+    std::fs::write(
+        bundle.join("Info.plist"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>Nanika Sample</string>
+  <key>CFBundleExecutable</key>
+  <string>nanika-sample</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.nanika.test.sample</string>
+</dict>
+</plist>
+"#,
+    )
+    .expect("application property list should exist");
+    create_executable(&executable);
+    let mut permissions = executable
+        .metadata()
+        .expect("application executable metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(executable, permissions)
+        .expect("application executable should be executable");
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn create_application_fixture(root: &Path) {
+    create_executable(&root.join("Nanika Sample.exe"));
 }
 
 fn create_executable(target: &Path) {

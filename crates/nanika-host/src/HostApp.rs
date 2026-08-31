@@ -3,12 +3,16 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use global_hotkey::GlobalHotKeyEvent;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_platform::{
-    HotkeyRegistration, NativeMenu, PlatformError, PlatformEvent, SingleInstance, StartupService,
-    active_overlay_position,
+    HotkeyRegistration, NativeMenu, OverlayPosition, PlatformError, PlatformEvent, SingleInstance,
+    StartupService, active_overlay_position,
+};
+use nanika_protocol::{
+    DetailView, ListItem, ListLayout, ListView, NavigationEffect, View, ViewAction,
+    ViewActionStyle, ViewEvent,
 };
 use nanika_search::{
     InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap,
@@ -17,16 +21,22 @@ use nanika_search::{
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    DiagnosticCode, ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator,
-    HistoryDirection, HostConfig, HostConfigService, HostDiagnostic, HostEvent, HostRuntime,
-    InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS,
-    OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
+    ActivationTrace, DiagnosticCode, ExtensionInvocationOutcome, ExtensionRuntime,
+    ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService, HostDiagnostic,
+    HostEvent, HostRuntime, InvocationPresentation, MAX_VISIBLE_RESULTS, OVERLAY_HEIGHT_POINTS,
+    OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings, SettingsAction, SettingsState,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_micros(8_333);
+const MAX_EXTENSION_VIEW_DEPTH: usize = 16;
 
 fn default_hotkey() -> HotKey {
-    HotKey::new(Some(Modifiers::CONTROL), Code::Space)
+    #[cfg(target_os = "macos")]
+    return HotKey::new(Some(Modifiers::CONTROL), Code::Space);
+    #[cfg(windows)]
+    return HotKey::new(Some(Modifiers::ALT), Code::Space);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    HotKey::new(Some(Modifiers::ALT), Code::Space)
 }
 
 pub struct HostApp {
@@ -39,6 +49,8 @@ pub struct HostApp {
     instance_bridge: Option<JoinHandle<()>>,
     runtime_receiver: Option<mpsc::Receiver<HostRuntime>>,
     runtime_thread: Option<JoinHandle<()>>,
+    font_receiver: Option<mpsc::Receiver<Option<crate::SystemFont>>>,
+    font_thread: Option<JoinHandle<()>>,
     query: String,
     history: InputHistory,
     config: Option<ConfigStore>,
@@ -64,46 +76,66 @@ pub struct HostApp {
     invocation_output: Option<InvocationPresentation>,
     pending_invocation_id: Option<u64>,
     pending_invocation_extension_id: Option<String>,
+    view_stack: Vec<crate::ExtensionViewState>,
+    pending_view_request_id: Option<u64>,
     overlay_visible: bool,
     focus_pending: bool,
     focus_observed: bool,
+    focus_lost_pending: bool,
     motion: OverlayMotion,
     visuals_configured: bool,
     forced_reduced_motion: bool,
-    activation_started_at: Option<Instant>,
+    overlay_window_configured: bool,
+    last_overlay_position: Option<OverlayPosition>,
+    activation_sequence: u64,
+    activation_trace: Option<ActivationTrace>,
 }
 
 impl HostApp {
     pub fn new() -> Self {
-        Self::build(None, false)
+        Self::build(None, false, Arc::new(|| {}))
     }
 
     pub fn new_with_reduced_motion(reduced_motion: bool) -> Self {
-        Self::build(None, reduced_motion)
+        Self::build(None, reduced_motion, Arc::new(|| {}))
     }
 
     pub fn with_instance(instance: SingleInstance, reduced_motion: bool) -> Self {
-        Self::build(Some(instance), reduced_motion)
+        Self::build(Some(instance), reduced_motion, Arc::new(|| {}))
     }
 
-    fn build(mut instance: Option<SingleInstance>, reduced_motion: bool) -> Self {
-        let (sender, events) = mpsc::sync_channel(16);
+    pub(crate) fn with_instance_and_wake(
+        instance: SingleInstance,
+        reduced_motion: bool,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        Self::build(Some(instance), reduced_motion, wake)
+    }
+
+    fn build(
+        mut instance: Option<SingleInstance>,
+        reduced_motion: bool,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        let (sender, events) = mpsc::channel();
         let context_slot: Arc<Mutex<Option<egui::Context>>> = Arc::new(Mutex::new(None));
-        let event_context = Arc::clone(&context_slot);
+        let hotkey_wake = Arc::clone(&wake);
         let hotkey_events = sender.clone();
-        GlobalHotKeyEvent::set_event_handler(Some(move |event| {
-            let _ = hotkey_events.try_send(HostEvent::Hotkey {
+        HotkeyRegistration::set_event_handler(move |event: GlobalHotKeyEvent, delivery_delay| {
+            let received_at = Instant::now();
+            tracing::debug!(
+                hotkey_id = event.id,
+                hotkey_state = ?event.state,
+                delivery_ms = delivery_delay.map(|delay| delay.as_secs_f64() * 1_000.0),
+                "native hotkey event"
+            );
+            let _ = hotkey_events.send(HostEvent::Hotkey {
                 event,
-                received_at: Instant::now(),
+                received_at,
+                delivery_delay,
             });
-            if let Some(context) = event_context
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .as_ref()
-            {
-                context.request_repaint();
-            }
-        }));
+            hotkey_wake();
+        });
 
         let (hotkey, hotkey_error) = match HotkeyRegistration::register(default_hotkey()) {
             Ok(hotkey) => (Some(hotkey), None),
@@ -131,22 +163,16 @@ impl HostApp {
             match instance.take_events() {
                 Ok(platform_events) => {
                     let host_events = sender;
-                    let activation_context = Arc::clone(&context_slot);
+                    let activation_wake = Arc::clone(&wake);
                     match std::thread::Builder::new()
                         .name("nanika-instance-bridge".to_owned())
                         .spawn(move || {
                             while let Ok(event) = platform_events.recv() {
-                                let _ = host_events.try_send(HostEvent::Platform {
+                                let _ = host_events.send(HostEvent::Platform {
                                     event,
                                     received_at: Instant::now(),
                                 });
-                                if let Some(context) = activation_context
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner())
-                                    .as_ref()
-                                {
-                                    context.request_repaint();
-                                }
+                                activation_wake();
                             }
                         }) {
                         Ok(thread) => Some(thread),
@@ -201,6 +227,36 @@ impl HostApp {
             }
         };
 
+        let (font_sender, font_receiver) = mpsc::sync_channel(1);
+        let font_wake = Arc::clone(&wake);
+        let font_thread = match std::thread::Builder::new()
+            .name("nanika-system-font-loader".to_owned())
+            .spawn(move || {
+                let font = crate::load_system_ui_font();
+                if let Some(font) = &font {
+                    tracing::debug!(
+                        family = %font.family,
+                        bytes = font.data.len(),
+                        "loaded system UI font"
+                    );
+                } else {
+                    tracing::warn!("no system UI font with CJK coverage was found");
+                }
+                let _ = font_sender.send(font);
+                font_wake();
+            }) {
+            Ok(thread) => Some(thread),
+            Err(error) => {
+                startup_errors.push(diagnostic_message(
+                    DiagnosticCode::InternalFailure,
+                    "start system font loader",
+                    "Nanika could not prepare fonts for CJK text. Restore the system fonts and restart Nanika.",
+                    error.to_string(),
+                ));
+                None
+            }
+        };
+
         let host_config = HostConfig::default();
         Self {
             hotkey,
@@ -212,6 +268,8 @@ impl HostApp {
             instance_bridge,
             runtime_receiver: Some(runtime_receiver),
             runtime_thread,
+            font_receiver: font_thread.as_ref().map(|_| font_receiver),
+            font_thread,
             query: String::new(),
             history: InputHistory::new(50),
             config: None,
@@ -237,24 +295,29 @@ impl HostApp {
             invocation_output: None,
             pending_invocation_id: None,
             pending_invocation_extension_id: None,
+            view_stack: Vec::new(),
+            pending_view_request_id: None,
             overlay_visible: false,
             focus_pending: false,
             focus_observed: false,
+            focus_lost_pending: false,
             motion: OverlayMotion::new(reduced_motion),
             visuals_configured: false,
             forced_reduced_motion: reduced_motion,
-            activation_started_at: None,
+            overlay_window_configured: true,
+            last_overlay_position: None,
+            activation_sequence: 0,
+            activation_trace: None,
         }
     }
 
     fn handle_events(&mut self, context: &egui::Context) {
-        let mut activation_started_at = None;
         while let Ok(event) = self.events.try_recv() {
             match event {
                 HostEvent::Platform {
                     event: PlatformEvent::Open,
                     received_at,
-                } => activation_started_at = Some(received_at),
+                } => self.handle_activation("instance", received_at, None, false, context),
                 HostEvent::Platform {
                     event: PlatformEvent::Settings,
                     ..
@@ -292,26 +355,78 @@ impl HostApp {
                         .retain(|existing| existing.operation() != operation);
                     self.runtime_errors.push(diagnostic);
                 }
-                HostEvent::Hotkey { event, received_at }
-                    if event.state == HotKeyState::Pressed
-                        && self
-                            .hotkey
-                            .as_ref()
-                            .is_some_and(|hotkey| hotkey.id() == event.id) =>
+                HostEvent::Hotkey {
+                    event,
+                    received_at,
+                    delivery_delay,
+                } if self
+                    .hotkey
+                    .as_ref()
+                    .is_some_and(|hotkey| hotkey.is_activation(&event)) =>
                 {
-                    activation_started_at = Some(received_at);
+                    self.handle_activation("hotkey", received_at, delivery_delay, true, context);
                 }
                 HostEvent::Hotkey { .. } => {}
             }
         }
-        if let Some(started_at) = activation_started_at {
-            self.activation_started_at = Some(started_at);
-            self.open_overlay(context);
+    }
+
+    fn handle_activation(
+        &mut self,
+        source: &'static str,
+        received_at: Instant,
+        delivery_delay: Option<Duration>,
+        toggle: bool,
+        context: &egui::Context,
+    ) {
+        if toggle && self.overlay_visible && self.motion.target_visible() {
+            self.close_overlay(context);
+            return;
+        }
+        self.activation_sequence = self.activation_sequence.saturating_add(1);
+        let mut trace = ActivationTrace::new(
+            self.activation_sequence,
+            source,
+            received_at,
+            delivery_delay,
+        );
+        trace.mark_handled(Instant::now());
+        self.activation_trace = Some(trace);
+        self.open_overlay(context);
+    }
+
+    pub(crate) fn mark_activation_render_started(&mut self, at: Instant) {
+        if let Some(trace) = self.activation_trace.as_mut() {
+            trace.mark_render_started(at);
         }
     }
 
-    pub(crate) fn take_activation_started_at(&mut self) -> Option<Instant> {
-        self.activation_started_at.take()
+    pub(crate) fn mark_activation_frame_submitted(&mut self, at: Instant) {
+        if let Some(trace) = self.activation_trace.as_mut() {
+            trace.mark_frame_submitted(at);
+        }
+    }
+
+    pub(crate) fn mark_activation_visible_command_applied(&mut self, at: Instant) {
+        if let Some(trace) = self.activation_trace.as_mut() {
+            trace.mark_visible_command_applied(at);
+        }
+    }
+
+    pub(crate) fn finish_activation(&mut self, at: Instant) {
+        if let Some(trace) = self.activation_trace.take() {
+            trace.finish(at);
+        }
+    }
+
+    pub(crate) fn native_focus_changed(&mut self, focused: bool) {
+        if focused {
+            self.focus_observed = true;
+            self.focus_lost_pending = false;
+        } else if self.focus_observed {
+            self.focus_observed = false;
+            self.focus_lost_pending = true;
+        }
     }
 
     fn open_settings(&mut self, context: &egui::Context) {
@@ -320,6 +435,8 @@ impl HostApp {
         self.overlay_visible = false;
         self.settings.visible = true;
         self.settings.error = None;
+        self.overlay_window_configured = false;
+        self.last_overlay_position = None;
         self.request_startup_status();
         context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika Settings".to_owned()));
         context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(760.0, 680.0)));
@@ -362,64 +479,90 @@ impl HostApp {
     }
 
     fn open_overlay(&mut self, context: &egui::Context) {
+        let interrupting_dismissal = self.overlay_visible && !self.motion.target_visible();
         self.settings.visible = false;
         self.overlay_visible = true;
         self.focus_pending = true;
-        self.focus_observed = false;
-        self.motion.show();
-        context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika".to_owned()));
-        context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-            OVERLAY_WIDTH_POINTS,
-            OVERLAY_HEIGHT_POINTS,
-        )));
-        context.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-            480.0, 240.0,
-        )));
-        context.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
-        context.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
-        context.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-            egui::WindowLevel::AlwaysOnTop,
-        ));
-        let native_scale_factor = context
-            .native_pixels_per_point()
-            .unwrap_or_else(|| context.pixels_per_point());
-        match active_overlay_position(
-            OVERLAY_WIDTH_POINTS,
-            OVERLAY_HEIGHT_POINTS,
-            native_scale_factor,
-        ) {
-            Ok(position) => {
-                if self.operation_error.as_ref().is_some_and(|error| {
-                    error.user_message()
-                        == "Nanika could not place the overlay on the active monitor."
-                }) {
-                    self.operation_error = None;
-                }
-                let pixels_per_point = context.pixels_per_point();
-                context.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                    position.x / pixels_per_point,
-                    position.y / pixels_per_point,
-                )));
-            }
-            Err(error) => {
-                self.operation_error = Some(diagnostic_message(
-                    DiagnosticCode::PlatformUnavailable,
-                    "place overlay on active monitor",
-                    "Nanika could not place the overlay on the active monitor.",
-                    error.to_string(),
-                ));
-            }
+        self.focus_lost_pending = false;
+        if !interrupting_dismissal {
+            self.focus_observed = false;
         }
-        context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        context.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.motion.show();
+        if !self.overlay_window_configured {
+            context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika".to_owned()));
+            context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                OVERLAY_WIDTH_POINTS,
+                OVERLAY_HEIGHT_POINTS,
+            )));
+            context.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
+                480.0, 240.0,
+            )));
+            context.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+            context.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+            context.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                egui::WindowLevel::AlwaysOnTop,
+            ));
+            self.overlay_window_configured = true;
+        }
+        if !interrupting_dismissal {
+            let native_scale_factor = context
+                .native_pixels_per_point()
+                .unwrap_or_else(|| context.pixels_per_point());
+            if let Some(trace) = self.activation_trace.as_mut() {
+                trace.mark_placement_started(Instant::now());
+            }
+            match active_overlay_position(
+                OVERLAY_WIDTH_POINTS,
+                OVERLAY_HEIGHT_POINTS,
+                native_scale_factor,
+            ) {
+                Ok(position) => {
+                    if self.operation_error.as_ref().is_some_and(|error| {
+                        error.user_message()
+                            == "Nanika could not place the overlay on the active monitor."
+                    }) {
+                        self.operation_error = None;
+                    }
+                    if self.last_overlay_position != Some(position) {
+                        let pixels_per_point = context.pixels_per_point();
+                        context.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                            egui::pos2(
+                                position.x / pixels_per_point,
+                                position.y / pixels_per_point,
+                            ),
+                        ));
+                        self.last_overlay_position = Some(position);
+                    }
+                }
+                Err(error) => {
+                    self.operation_error = Some(diagnostic_message(
+                        DiagnosticCode::PlatformUnavailable,
+                        "place overlay on active monitor",
+                        "Nanika could not place the overlay on the active monitor.",
+                        error.to_string(),
+                    ));
+                }
+            }
+            if let Some(trace) = self.activation_trace.as_mut() {
+                trace.mark_placement_finished(Instant::now());
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        }
+        if !interrupting_dismissal || !self.focus_observed {
+            context.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
         if self.pending_invocation_id.is_none() {
             self.invocation_output = None;
             self.begin_search();
+        }
+        if let Some(trace) = self.activation_trace.as_mut() {
+            trace.mark_prepared(Instant::now());
         }
         context.request_repaint();
     }
 
     fn close_overlay(&mut self, context: &egui::Context) {
+        self.activation_trace = None;
         if let (Some(extension_id), Some(invocation_id)) = (
             self.pending_invocation_extension_id.as_deref(),
             self.pending_invocation_id,
@@ -434,6 +577,23 @@ impl HostApp {
                 error.to_string(),
             ));
         }
+        for active in self.view_stack.iter().rev() {
+            if let Err(error) = self.extension_search.close_view(
+                &active.extension_id,
+                active.generation,
+                active.view_id.clone(),
+                active.revision,
+            ) {
+                tracing::warn!(
+                    extension_id = %active.extension_id,
+                    view_id = %active.view_id,
+                    error = %error,
+                    "extension view cleanup could not be queued"
+                );
+            }
+        }
+        self.view_stack.clear();
+        self.pending_view_request_id = None;
         self.motion.hide();
         context.request_repaint();
     }
@@ -509,6 +669,159 @@ impl HostApp {
         }
     }
 
+    fn apply_navigation_effect(
+        &mut self,
+        extension_id: String,
+        generation: u64,
+        effect: NavigationEffect,
+        context: &egui::Context,
+    ) {
+        match effect {
+            NavigationEffect::None => {}
+            NavigationEffect::Close => self.close_overlay(context),
+            NavigationEffect::Pop => {
+                self.view_stack.pop();
+                self.pending_view_request_id = None;
+                self.focus_pending = true;
+                context.request_repaint();
+            }
+            NavigationEffect::Push {
+                view_id,
+                revision,
+                view,
+            } => {
+                if self
+                    .view_stack
+                    .iter()
+                    .any(|active| active.extension_id == extension_id && active.view_id == view_id)
+                {
+                    let _ = self.extension_search.close_view(
+                        &extension_id,
+                        generation,
+                        view_id,
+                        revision,
+                    );
+                    self.action_error = Some(diagnostic_notice(
+                        DiagnosticCode::ExtensionUnavailable,
+                        "push extension view",
+                        "The extension reused an active view identifier.",
+                    ));
+                    return;
+                }
+                if self.view_stack.len() >= MAX_EXTENSION_VIEW_DEPTH {
+                    let _ = self.extension_search.close_view(
+                        &extension_id,
+                        generation,
+                        view_id,
+                        revision,
+                    );
+                    self.action_error = Some(diagnostic_notice(
+                        DiagnosticCode::ExtensionUnavailable,
+                        "push extension view",
+                        "The extension opened too many nested views.",
+                    ));
+                    return;
+                }
+                self.invocation_output = None;
+                self.action_error = None;
+                let search_text = view_search_text(&view);
+                self.view_stack.push(crate::ExtensionViewState {
+                    extension_id,
+                    generation,
+                    view_id,
+                    revision,
+                    view: *view,
+                    search_text,
+                    queued_search_text: None,
+                });
+                self.pending_view_request_id = None;
+                self.focus_pending = true;
+                context.request_repaint();
+            }
+        }
+    }
+
+    fn send_view_event(&mut self, event: ViewEvent, context: &egui::Context) -> bool {
+        if self.pending_view_request_id.is_some() {
+            return false;
+        }
+        let Some(active) = self.view_stack.last() else {
+            return false;
+        };
+        match self.extension_search.view_event(
+            &active.extension_id,
+            active.generation,
+            active.view_id.clone(),
+            active.revision,
+            event,
+        ) {
+            Ok(request_id) => {
+                self.pending_view_request_id = Some(request_id);
+                context.request_repaint();
+                true
+            }
+            Err(error) => {
+                self.action_error = Some(diagnostic_message(
+                    DiagnosticCode::ExtensionUnavailable,
+                    "send extension view event",
+                    "The current view could not respond.",
+                    error.to_string(),
+                ));
+                false
+            }
+        }
+    }
+
+    fn queue_view_search(&mut self, text: String, context: &egui::Context) {
+        let Some(active) = self.view_stack.last_mut() else {
+            return;
+        };
+        active.search_text = Some(text.clone());
+        active.queued_search_text = Some(text);
+        self.flush_view_search(context);
+    }
+
+    fn flush_view_search(&mut self, context: &egui::Context) {
+        if self.pending_view_request_id.is_some() {
+            return;
+        }
+        let queued = self
+            .view_stack
+            .last_mut()
+            .and_then(|active| active.queued_search_text.take());
+        let Some(text) = queued else {
+            return;
+        };
+        if !self.send_view_event(ViewEvent::SearchChanged { text: text.clone() }, context)
+            && let Some(active) = self.view_stack.last_mut()
+        {
+            active.queued_search_text = Some(text);
+        }
+    }
+
+    fn close_active_view(&mut self, context: &egui::Context) {
+        let Some(active) = self.view_stack.pop() else {
+            self.close_overlay(context);
+            return;
+        };
+        if let Err(error) = self.extension_search.close_view(
+            &active.extension_id,
+            active.generation,
+            active.view_id,
+            active.revision,
+        ) {
+            self.action_error = Some(diagnostic_message(
+                DiagnosticCode::ExtensionUnavailable,
+                "close extension view",
+                "The current view could not close.",
+                error.to_string(),
+            ));
+        }
+        self.pending_view_request_id = None;
+        self.focus_pending = true;
+        context.request_repaint();
+    }
+
     fn begin_search(&mut self) {
         let Some(search) = &self.search else {
             return;
@@ -582,13 +895,30 @@ impl HostApp {
                 self.pending_invocation_extension_id = None;
             }
             match result.result {
-                Ok(ExtensionInvocationOutcome::Completed { has_output }) => {
+                Ok(ExtensionInvocationOutcome::Completed { effect, has_output }) => {
                     self.record_execution(
                         &result.extension_id,
                         &result.entry_id,
                         &result.action_id,
                         &result.query_context,
                     );
+                    let command_mode = self
+                        .extension_search
+                        .command_mode(&result.extension_id, &result.entry_id);
+                    if is_pending
+                        && matches!(
+                            command_mode,
+                            Some(nanika_extension_package::CommandMode::View)
+                        )
+                        && !matches!(effect, NavigationEffect::Push { .. })
+                    {
+                        self.action_error = Some(diagnostic_notice(
+                            DiagnosticCode::ExtensionUnavailable,
+                            "open extension view",
+                            "The selected feature did not provide a view.",
+                        ));
+                        continue;
+                    }
                     if has_output && is_pending {
                         let presentation = self.invocation_output.get_or_insert_with(|| {
                             InvocationPresentation::empty(
@@ -600,8 +930,29 @@ impl HostApp {
                         if presentation.invocation_id == result.invocation_id {
                             presentation.complete = true;
                         }
-                    } else if is_pending {
-                        self.close_overlay(context);
+                    }
+                    if is_pending {
+                        self.apply_navigation_effect(
+                            result.extension_id,
+                            result.generation,
+                            effect,
+                            context,
+                        );
+                    } else if let NavigationEffect::Push {
+                        view_id, revision, ..
+                    } = effect
+                        && let Err(error) = self.extension_search.close_view(
+                            &result.extension_id,
+                            result.generation,
+                            view_id,
+                            revision,
+                        )
+                    {
+                        tracing::warn!(
+                            extension_id = %result.extension_id,
+                            error = %error,
+                            "superseded extension view cleanup could not be queued"
+                        );
                     }
                 }
                 Ok(ExtensionInvocationOutcome::Cancelled) => {
@@ -625,6 +976,48 @@ impl HostApp {
                             error,
                         ));
                     }
+                }
+            }
+        }
+        for update in self.extension_search.take_view_updates() {
+            if self.pending_view_request_id != Some(update.request_id) {
+                continue;
+            }
+            self.pending_view_request_id = None;
+            let Some(active) = self.view_stack.last_mut() else {
+                continue;
+            };
+            if active.extension_id != update.extension_id
+                || active.generation != update.generation
+                || active.view_id != update.view_id
+            {
+                continue;
+            }
+            match update.result {
+                Ok(payload) => {
+                    if let Some(view) = payload.view {
+                        active.revision = payload.revision;
+                        active.view = view;
+                        if active.queued_search_text.is_none() {
+                            active.search_text = view_search_text(&active.view);
+                        }
+                    }
+                    self.apply_navigation_effect(
+                        update.extension_id,
+                        update.generation,
+                        payload.effect,
+                        context,
+                    );
+                    self.flush_view_search(context);
+                }
+                Err(error) => {
+                    self.action_error = Some(diagnostic_message(
+                        DiagnosticCode::ExtensionUnavailable,
+                        "update extension view",
+                        "The current view could not be updated.",
+                        error,
+                    ));
+                    self.flush_view_search(context);
                 }
             }
         }
@@ -727,6 +1120,7 @@ impl HostApp {
                 extension.extension_id,
                 extension.kind,
                 extension.runtime,
+                extension.contributions,
             ) {
                 self.runtime_errors.push(diagnostic_message(
                     DiagnosticCode::ExtensionUnavailable,
@@ -739,6 +1133,35 @@ impl HostApp {
         self.runtime_receiver = None;
         if self.overlay_visible {
             self.begin_search();
+        }
+    }
+
+    fn poll_system_font(&mut self, context: &egui::Context) {
+        let Some(receiver) = &self.font_receiver else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(Some(font)) => {
+                configure_fonts(context, font);
+                self.font_receiver = None;
+            }
+            Ok(None) => {
+                self.runtime_errors.push(diagnostic_notice(
+                    DiagnosticCode::PlatformUnavailable,
+                    "load CJK system font",
+                    "Nanika could not prepare fonts for CJK text. Restore the system fonts and restart Nanika.",
+                ));
+                self.font_receiver = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.runtime_errors.push(diagnostic_notice(
+                    DiagnosticCode::InternalFailure,
+                    "load CJK system font",
+                    "Nanika could not prepare fonts for CJK text. Restart Nanika and try again.",
+                ));
+                self.font_receiver = None;
+            }
         }
     }
 
@@ -841,6 +1264,7 @@ impl HostApp {
         extension_id: impl Into<String>,
         kind: ExtensionKind,
         runtime: ExtensionRuntime,
+        contributions: nanika_extension_package::ExtensionContributions,
     ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
         let search = self
@@ -855,7 +1279,7 @@ impl HostApp {
             .register_extension(&extension_id, kind, unix_timestamp())
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         self.extension_search
-            .register(extension_id, runtime, search)?;
+            .register(extension_id, runtime, search, contributions)?;
         self.begin_search();
         Ok(())
     }
@@ -1075,6 +1499,9 @@ impl Default for HostApp {
 impl Drop for HostApp {
     fn drop(&mut self) {
         GlobalHotKeyEvent::set_event_handler::<fn(GlobalHotKeyEvent)>(None);
+        if let Some(thread) = self.font_thread.take() {
+            let _ = thread.join();
+        }
         if let Some(thread) = self.runtime_thread.take() {
             let _ = thread.join();
         }
@@ -1102,8 +1529,180 @@ impl Drop for HostApp {
 }
 
 impl HostApp {
+    fn render_extension_view(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        let Some(active) = self.view_stack.last().cloned() else {
+            return;
+        };
+        let accepting_actions = self.pending_view_request_id.is_none();
+        let mut event = None;
+        let mut back_requested = false;
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                back_requested = true;
+            }
+            ui.add_space(8.0);
+            let title = match &active.view {
+                View::List { list } => &list.title,
+                View::Detail { detail } => detail.title.as_deref().unwrap_or("Detail"),
+            };
+            ui.label(
+                egui::RichText::new(title)
+                    .strong()
+                    .color(egui::Color32::from_rgb(224, 228, 238)),
+            );
+            if let View::List { list } = &active.view
+                && let Some(filter) = &list.filter
+            {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut selected = filter.selected_value.clone();
+                    let selected_title = filter
+                        .options
+                        .iter()
+                        .find(|option| option.value == selected)
+                        .map_or_else(|| selected.clone(), |option| option.title.clone());
+                    ui.add_enabled_ui(accepting_actions, |ui| {
+                        egui::ComboBox::from_id_salt((
+                            "extension-filter",
+                            &active.view_id,
+                            &filter.id,
+                        ))
+                        .selected_text(&selected_title)
+                        .show_ui(ui, |ui| {
+                            for option in &filter.options {
+                                ui.selectable_value(
+                                    &mut selected,
+                                    option.value.clone(),
+                                    &option.title,
+                                );
+                            }
+                        });
+                    });
+                    if selected != filter.selected_value {
+                        event = Some(ViewEvent::FilterChanged {
+                            filter_id: filter.id.clone(),
+                            value: selected,
+                        });
+                    }
+                });
+            }
+        });
+        if back_requested {
+            self.close_active_view(context);
+            return;
+        }
+        ui.add_space(12.0);
+        match &active.view {
+            View::List { list } => {
+                let input_id = egui::Id::new(("extension-query", &active.view_id));
+                let mut search_text = active
+                    .search_text
+                    .clone()
+                    .unwrap_or_else(|| list.search_text.clone());
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut search_text)
+                        .id(input_id)
+                        .hint_text(&list.search_placeholder)
+                        .font(egui::TextStyle::Heading)
+                        .desired_width(f32::INFINITY),
+                );
+                if response.changed() {
+                    truncate_chars(&mut search_text, MAX_QUERY_CHARS);
+                    self.queue_view_search(search_text, context);
+                }
+                if self.focus_pending {
+                    context.memory_mut(|memory| memory.request_focus(input_id));
+                    self.focus_pending = false;
+                }
+                let items = list_items(list);
+                let selected_index = list
+                    .selected_item_id
+                    .as_ref()
+                    .and_then(|selected| items.iter().position(|item| item.id == *selected));
+                if accepting_actions && event.is_none() {
+                    if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+                        if let Some(item) = previous_list_item(&items, selected_index) {
+                            event = Some(ViewEvent::SelectionChanged {
+                                item_id: Some(item.id.clone()),
+                            });
+                        }
+                    } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+                        if let Some(item) = next_list_item(&items, selected_index) {
+                            event = Some(ViewEvent::SelectionChanged {
+                                item_id: Some(item.id.clone()),
+                            });
+                        }
+                    } else if ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        && let Some((item_id, action_id)) = selected_primary_action(list)
+                    {
+                        event = Some(ViewEvent::ActionInvoked {
+                            item_id: Some(item_id),
+                            action_id,
+                        });
+                    }
+                }
+                ui.add_space(10.0);
+                if list.layout == ListLayout::Split {
+                    ui.columns(2, |columns| {
+                        if let Some(item_id) = render_list(&mut columns[0], list, accepting_actions)
+                        {
+                            event = Some(ViewEvent::SelectionChanged {
+                                item_id: Some(item_id),
+                            });
+                        }
+                        if let Some(detail) = &list.detail {
+                            render_detail(&mut columns[1], detail);
+                        }
+                    });
+                } else if let Some(item_id) = render_list(ui, list, accepting_actions) {
+                    event = Some(ViewEvent::SelectionChanged {
+                        item_id: Some(item_id),
+                    });
+                }
+                if let Some(cursor) = &list.next_cursor
+                    && accepting_actions
+                    && ui.button("Load more").clicked()
+                {
+                    event = Some(ViewEvent::LoadMore {
+                        cursor: cursor.clone(),
+                    });
+                }
+                if event.is_none()
+                    && let Some((item_id, actions)) = selected_actions(list)
+                    && let Some(action_id) = render_view_actions(ui, actions, accepting_actions)
+                {
+                    event = Some(ViewEvent::ActionInvoked {
+                        item_id: Some(item_id),
+                        action_id,
+                    });
+                }
+            }
+            View::Detail { detail } => {
+                render_detail(ui, detail);
+                if let Some(action_id) = render_view_actions(ui, &detail.actions, accepting_actions)
+                {
+                    event = Some(ViewEvent::ActionInvoked {
+                        item_id: None,
+                        action_id,
+                    });
+                }
+            }
+        }
+        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.close_active_view(context);
+            return;
+        }
+        if let Some(error) = self.action_error.as_ref() {
+            ui.add_space(8.0);
+            ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error.user_message());
+        }
+        if let Some(event) = event {
+            let _ = self.send_view_event(event, context);
+        }
+    }
+
     pub(crate) fn update(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
+        self.poll_system_font(&context);
         if !self.visuals_configured {
             let mut style = (*context.style_of(egui::Theme::Dark)).clone();
             style.spacing.item_spacing = egui::vec2(8.0, 8.0);
@@ -1136,14 +1735,8 @@ impl HostApp {
         if self.settings.visible {
             return;
         }
-        let viewport_focused = context.input(|input| input.viewport().focused);
-        if self.overlay_visible && viewport_focused == Some(true) {
-            self.focus_observed = true;
-        } else if self.overlay_visible
-            && self.focus_observed
-            && viewport_focused == Some(false)
-            && self.motion.target_visible()
-        {
+        if self.overlay_visible && self.focus_lost_pending && self.motion.target_visible() {
+            self.focus_lost_pending = false;
             self.close_overlay(&context);
         }
 
@@ -1174,6 +1767,10 @@ impl HostApp {
             )
             .show(ui, |ui| {
                 ui.set_opacity(self.motion.value());
+                if !self.view_stack.is_empty() {
+                    self.render_extension_view(ui, &context);
+                    return;
+                }
                 ui.vertical_centered(|ui| {
                     ui.add_space(24.0);
                     ui.label(
@@ -1349,6 +1946,164 @@ impl HostApp {
                 });
             });
     }
+}
+
+fn list_items(list: &ListView) -> Vec<&ListItem> {
+    list.sections
+        .iter()
+        .flat_map(|section| section.items.iter())
+        .collect()
+}
+
+fn previous_list_item<'a>(
+    items: &'a [&ListItem],
+    selected_index: Option<usize>,
+) -> Option<&'a ListItem> {
+    let index = selected_index.unwrap_or(0).saturating_sub(1);
+    items.get(index).copied()
+}
+
+fn next_list_item<'a>(
+    items: &'a [&ListItem],
+    selected_index: Option<usize>,
+) -> Option<&'a ListItem> {
+    let index = selected_index.map_or(0, |index| index.saturating_add(1));
+    items.get(index.min(items.len().saturating_sub(1))).copied()
+}
+
+fn selected_primary_action(list: &ListView) -> Option<(String, String)> {
+    let selected = list.selected_item_id.as_deref()?;
+    let item = list_items(list)
+        .into_iter()
+        .find(|item| item.id == selected)?;
+    let action = item
+        .actions
+        .iter()
+        .find(|action| action.style == ViewActionStyle::Primary)
+        .or_else(|| item.actions.first())?;
+    Some((item.id.clone(), action.id.clone()))
+}
+
+fn render_list(ui: &mut egui::Ui, list: &ListView, enabled: bool) -> Option<String> {
+    let mut clicked = None;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .max_height(330.0)
+        .show(ui, |ui| {
+            for section in &list.sections {
+                if let Some(title) = &section.title {
+                    ui.label(
+                        egui::RichText::new(title)
+                            .strong()
+                            .color(egui::Color32::from_rgb(168, 176, 198)),
+                    );
+                }
+                for item in &section.items {
+                    let selected = list.selected_item_id.as_deref() == Some(item.id.as_str());
+                    let label = match &item.subtitle {
+                        Some(subtitle) => format!("{}  {}", item.title, subtitle),
+                        None => item.title.clone(),
+                    };
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::selectable(
+                                selected,
+                                egui::RichText::new(label)
+                                    .color(egui::Color32::from_rgb(224, 228, 238)),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        clicked = Some(item.id.clone());
+                    }
+                }
+                ui.add_space(8.0);
+            }
+        });
+    clicked
+}
+
+fn selected_actions(list: &ListView) -> Option<(String, &[ViewAction])> {
+    let selected = list.selected_item_id.as_deref()?;
+    let item = list_items(list)
+        .into_iter()
+        .find(|item| item.id == selected)?;
+    (!item.actions.is_empty()).then(|| (item.id.clone(), item.actions.as_slice()))
+}
+
+fn render_view_actions(ui: &mut egui::Ui, actions: &[ViewAction], enabled: bool) -> Option<String> {
+    if actions.is_empty() {
+        return None;
+    }
+    ui.separator();
+    let mut invoked = None;
+    ui.horizontal_wrapped(|ui| {
+        for action in actions {
+            let button = match action.style {
+                ViewActionStyle::Primary => {
+                    egui::Button::new(&action.title).fill(egui::Color32::from_rgb(72, 98, 158))
+                }
+                ViewActionStyle::Secondary => egui::Button::new(&action.title),
+                ViewActionStyle::Destructive => egui::Button::new(
+                    egui::RichText::new(&action.title)
+                        .color(egui::Color32::from_rgb(255, 190, 190)),
+                )
+                .fill(egui::Color32::from_rgb(105, 46, 50)),
+            };
+            if ui.add_enabled(enabled, button).clicked() {
+                invoked = Some(action.id.clone());
+            }
+        }
+    });
+    invoked
+}
+
+fn view_search_text(view: &View) -> Option<String> {
+    match view {
+        View::List { list } => Some(list.search_text.clone()),
+        View::Detail { .. } => None,
+    }
+}
+
+fn render_detail(ui: &mut egui::Ui, detail: &DetailView) {
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .max_height(330.0)
+        .show(ui, |ui| {
+            if let Some(title) = &detail.title {
+                ui.label(
+                    egui::RichText::new(title)
+                        .strong()
+                        .color(egui::Color32::from_rgb(224, 228, 238)),
+                );
+                ui.add_space(6.0);
+            }
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&detail.body).color(egui::Color32::from_rgb(224, 228, 238)),
+                )
+                .selectable(true)
+                .wrap(),
+            );
+            if !detail.metadata.is_empty() {
+                ui.separator();
+                for metadata in &detail.metadata {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(&metadata.title)
+                                .color(egui::Color32::from_rgb(126, 134, 155)),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(&metadata.value)
+                                    .color(egui::Color32::from_rgb(224, 228, 238)),
+                            );
+                        });
+                    });
+                }
+            }
+        });
 }
 
 fn platform_error_message(error: PlatformError) -> HostDiagnostic {
@@ -1598,6 +2353,10 @@ fn initialize_search_runtime() -> HostRuntime {
             }
         }
     }
+}
+
+fn configure_fonts(context: &egui::Context, font: crate::SystemFont) {
+    context.set_fonts(font.into_font_definitions());
 }
 
 fn unix_timestamp() -> u64 {

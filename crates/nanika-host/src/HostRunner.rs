@@ -4,13 +4,15 @@ use std::time::Instant;
 
 use egui::{ViewportCommand, ViewportId, ViewportInfo};
 use egui_wgpu::winit::Painter;
-use egui_wgpu::{RendererOptions, WgpuConfiguration};
+use egui_wgpu::{RendererOptions, SurfaceConfig, WgpuConfiguration};
 use egui_winit::{ActionRequested, State};
 use nanika_platform::SingleInstance;
+use nanika_platform::apply_overlay_visibility;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::raw_window_handle::HasWindowHandle;
 use winit::window::{Window, WindowAttributes, WindowId, WindowLevel};
 
 use crate::{HostApp, HostRunnerEvent, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS};
@@ -46,7 +48,16 @@ impl HostRunner {
             }
         });
         let mut runner = Self {
-            app: HostApp::with_instance(instance, reduced_motion),
+            app: HostApp::with_instance_and_wake(
+                instance,
+                reduced_motion,
+                Arc::new({
+                    let wake_proxy = proxy.clone();
+                    move || {
+                        let _ = wake_proxy.send_event(HostRunnerEvent::Wake);
+                    }
+                }),
+            ),
             context,
             proxy,
             window: None,
@@ -78,9 +89,11 @@ impl HostRunner {
                 .create_window(overlay_window_attributes())
                 .map_err(|error| error.to_string())?,
         );
+        let wgpu_configuration =
+            WgpuConfiguration::default().with_surface_config(SurfaceConfig::LOW_LATENCY);
         let mut painter = pollster::block_on(Painter::new(
             self.context.clone(),
-            WgpuConfiguration::default(),
+            wgpu_configuration,
             false,
             RendererOptions::default(),
         ));
@@ -100,6 +113,7 @@ impl HostRunner {
         self.input = Some(input);
         self.painter = Some(painter);
         self.render(event_loop)?;
+        self.apply_native_visibility(false)?;
         tracing::info!(
             elapsed_ms = started_at.elapsed().as_secs_f64() * 1_000.0,
             os_visible = ?self.window.as_ref().and_then(|window| window.is_visible()),
@@ -114,6 +128,8 @@ impl HostRunner {
             return Ok(());
         };
 
+        let render_started_at = Instant::now();
+        self.app.mark_activation_render_started(render_started_at);
         egui_winit::update_viewport_info(&mut self.viewport_info, &self.context, &window, false);
         let mut raw_input = self
             .input
@@ -147,7 +163,9 @@ impl HostRunner {
                 Vec::new(),
                 &window,
             );
+        self.app.mark_activation_frame_submitted(Instant::now());
 
+        let mut activation_visible_command = false;
         if let Some(viewport) = output.viewport_output.get(&ViewportId::ROOT) {
             let mut commands = Vec::with_capacity(viewport.commands.len());
             for command in &viewport.commands {
@@ -158,7 +176,11 @@ impl HostRunner {
                             tracing::info!(visible, "native window visibility changed");
                         }
                         self.visible = *visible;
-                        commands.push(command.clone());
+                        activation_visible_command |= *visible;
+                        let handled = self.apply_native_visibility(*visible)?;
+                        if !handled || *visible {
+                            commands.push(command.clone());
+                        }
                     }
                     _ => commands.push(command.clone()),
                 }
@@ -171,8 +193,23 @@ impl HostRunner {
                 &mut self.actions_requested,
             );
         }
+        if activation_visible_command {
+            self.app
+                .mark_activation_visible_command_applied(Instant::now());
+        }
+        if window.has_focus() {
+            self.app.finish_activation(Instant::now());
+        }
         self.forward_requested_actions();
         Ok(())
+    }
+
+    fn apply_native_visibility(&self, visible: bool) -> Result<bool, String> {
+        let Some(window) = self.window.as_ref() else {
+            return Ok(false);
+        };
+        let handle = window.window_handle().map_err(|error| error.to_string())?;
+        apply_overlay_visibility(handle.as_raw(), visible).map_err(|error| error.to_string())
     }
 
     fn forward_requested_actions(&mut self) {
@@ -209,13 +246,6 @@ impl HostRunner {
         } else {
             if let Err(error) = self.render(event_loop) {
                 self.fail(event_loop, error);
-            } else if self.visible
-                && let Some(started_at) = self.app.take_activation_started_at()
-            {
-                tracing::info!(
-                    elapsed_ms = started_at.elapsed().as_secs_f64() * 1_000.0,
-                    "activation rendered, presented, and shown"
-                );
             }
         }
     }
@@ -235,6 +265,10 @@ impl ApplicationHandler<HostRunnerEvent> for HostRunner {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: HostRunnerEvent) {
         match event {
+            HostRunnerEvent::Wake => {
+                self.next_repaint = None;
+                self.repaint_now(event_loop);
+            }
             HostRunnerEvent::Repaint {
                 when,
                 cumulative_pass_nr,
@@ -283,7 +317,13 @@ impl ApplicationHandler<HostRunnerEvent> for HostRunner {
         if window.id() != window_id {
             return;
         }
-        if matches!(event, WindowEvent::CloseRequested) {
+        if let WindowEvent::Focused(focused) = &event {
+            self.app.native_focus_changed(*focused);
+            if *focused {
+                self.app.finish_activation(Instant::now());
+            }
+        }
+        if matches!(&event, WindowEvent::CloseRequested) {
             self.viewport_info.events.push(egui::ViewportEvent::Close);
         }
         if let WindowEvent::Resized(size) = event
@@ -331,6 +371,7 @@ fn overlay_window_attributes() -> WindowAttributes {
         ))
         .with_min_inner_size(LogicalSize::new(480.0, 240.0))
         .with_decorations(false)
+        .with_resizable(false)
         .with_window_level(WindowLevel::AlwaysOnTop)
         .with_visible(false);
 

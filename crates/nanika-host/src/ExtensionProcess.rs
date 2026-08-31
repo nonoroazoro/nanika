@@ -233,6 +233,7 @@ impl ExtensionProcess {
         action_id: impl Into<String>,
     ) -> Result<(), SupervisorError> {
         self.invoke_cancellable(request_id, generation, entry_id, action_id, || false)
+            .map(|_| ())
     }
 
     pub fn refresh(
@@ -344,7 +345,7 @@ impl ExtensionProcess {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
         mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<(), SupervisorError> {
+    ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
         self.ensure_initialized()?;
         let request_id = request_id.into();
         self.send(&Message::Invoke {
@@ -374,8 +375,12 @@ impl ExtensionProcess {
                 Some(Message::Result {
                     request_id: response_id,
                     generation: response_generation,
+                    effect,
                 }) if response_id == request_id && response_generation == generation => {
-                    return Ok(());
+                    effect
+                        .validate()
+                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    return Ok(effect);
                 }
                 Some(Message::HostRequest {
                     request_id: service_request_id,
@@ -475,6 +480,149 @@ impl ExtensionProcess {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn view_event_cancellable(
+        &mut self,
+        request_id: impl Into<String>,
+        generation: u64,
+        view_id: impl Into<String>,
+        revision: u64,
+        event: nanika_protocol::ViewEvent,
+        mut should_cancel: impl FnMut() -> bool,
+    ) -> Result<
+        (
+            u64,
+            nanika_protocol::NavigationEffect,
+            Option<nanika_protocol::View>,
+        ),
+        SupervisorError,
+    > {
+        self.ensure_initialized()?;
+        let request_id = request_id.into();
+        let view_id = view_id.into();
+        self.send(&Message::ViewEvent {
+            request_id: request_id.clone(),
+            generation,
+            view_id: view_id.clone(),
+            revision,
+            event,
+        })?;
+        let deadline = Instant::now() + self.limits.action_timeout;
+        loop {
+            if should_cancel() {
+                self.terminate()?;
+                return Err(SupervisorError::Cancelled("view event"));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                self.terminate()?;
+                return Err(SupervisorError::Timeout("view update"));
+            }
+            let message = match self
+                .receive_timeout(remaining.min(Duration::from_millis(25)), "view update")
+            {
+                Ok(message) => message,
+                Err(SupervisorError::Timeout(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            match message {
+                Some(Message::ViewUpdated {
+                    request_id: response_id,
+                    generation: response_generation,
+                    view_id: response_view_id,
+                    revision: response_revision,
+                    effect,
+                    view,
+                }) if response_id == request_id
+                    && response_generation == generation
+                    && response_view_id == view_id =>
+                {
+                    effect
+                        .validate()
+                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    if let Some(view) = &view {
+                        if response_revision <= revision {
+                            return Err(SupervisorError::UnexpectedMessage(
+                                "extension view revision did not advance".to_owned(),
+                            ));
+                        }
+                        view.validate()
+                            .map_err(SupervisorError::UnexpectedMessage)?;
+                    } else if response_revision != revision {
+                        return Err(SupervisorError::UnexpectedMessage(
+                            "extension view revision changed without a replacement view".to_owned(),
+                        ));
+                    }
+                    return Ok((response_revision, effect, view));
+                }
+                Some(Message::HostRequest {
+                    request_id: service_request_id,
+                    parent_request_id,
+                    generation: service_generation,
+                    request,
+                }) if parent_request_id == request_id && service_generation == generation => {
+                    self.handle_host_request(
+                        service_request_id,
+                        parent_request_id,
+                        service_generation,
+                        request,
+                        deadline,
+                        &mut should_cancel,
+                    )?;
+                }
+                Some(Message::Error {
+                    request_id: response_id,
+                    code,
+                    message,
+                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
+                    return Err(SupervisorError::UnexpectedMessage(format!(
+                        "extension view event failed with {code}: {message}"
+                    )));
+                }
+                Some(_) => {}
+                None => return Err(SupervisorError::ChannelClosed),
+            }
+        }
+    }
+
+    pub(crate) fn close_view(
+        &mut self,
+        request_id: impl Into<String>,
+        view_id: impl Into<String>,
+    ) -> Result<(), SupervisorError> {
+        self.ensure_initialized()?;
+        let request_id = request_id.into();
+        let view_id = view_id.into();
+        self.send(&Message::ViewClose {
+            request_id: request_id.clone(),
+            view_id: view_id.clone(),
+        })?;
+        let deadline = Instant::now() + self.limits.action_timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(SupervisorError::Timeout("view close"));
+            }
+            match self.receive_timeout(remaining.min(Duration::from_millis(25)), "view close")? {
+                Some(Message::ViewClosed {
+                    request_id: response_id,
+                    view_id: response_view_id,
+                }) if response_id == request_id && response_view_id == view_id => return Ok(()),
+                Some(Message::Error {
+                    request_id: response_id,
+                    code,
+                    message,
+                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
+                    return Err(SupervisorError::UnexpectedMessage(format!(
+                        "extension view close failed with {code}: {message}"
+                    )));
+                }
+                Some(_) => {}
+                None => return Err(SupervisorError::ChannelClosed),
+            }
+        }
+    }
+
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         self.child.try_wait()
     }
@@ -537,25 +685,28 @@ impl ExtensionProcess {
         self.input.take();
         self.output.take();
         let mut first_error = None;
-        if let Err(error) = self.process_tree.terminate(self.child.id()) {
-            first_error = Some(error);
-        }
-        match self.child.try_wait() {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                if let Err(error) = self.child.kill()
-                    && error.kind() != io::ErrorKind::InvalidInput
-                    && first_error.is_none()
-                {
-                    first_error = Some(error);
-                }
-            }
+        let child_exited = match self.child.try_wait() {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
             Err(error) => {
                 first_error = Some(error);
-                let _ = self.child.kill();
+                false
             }
+        };
+        if let Err(error) = self.process_tree.terminate(self.child.id())
+            && first_error.is_none()
+        {
+            first_error = Some(error);
         }
-        if let Err(error) = self.child.wait()
+        if !child_exited
+            && let Err(error) = self.child.kill()
+            && error.kind() != io::ErrorKind::InvalidInput
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
+        if !child_exited
+            && let Err(error) = self.child.wait()
             && first_error.is_none()
         {
             first_error = Some(error);

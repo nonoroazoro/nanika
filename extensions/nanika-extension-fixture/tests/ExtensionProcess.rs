@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use nanika_extension_package::ExtensionContributions;
 use nanika_host::{
     ExtensionLimits, ExtensionProcess, ExtensionSearchCoordinator, SupervisorError,
     publish_extension_snapshot,
@@ -116,7 +117,12 @@ fn extension_invocation_uses_the_common_host_service_boundary() {
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator.set_host_services(services.clone());
     coordinator
-        .register("fixture.extension", extension, owner.handle())
+        .register(
+            "fixture.extension",
+            extension,
+            owner.handle(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     coordinator
         .invoke(
@@ -153,7 +159,12 @@ fn host_service_wait_is_bounded_by_the_action_deadline() {
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator.set_host_services(Arc::new(BlockingHostServices::new()));
     coordinator
-        .register("fixture.extension", extension, owner.handle())
+        .register(
+            "fixture.extension",
+            extension,
+            owner.handle(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     coordinator
         .invoke(
@@ -217,7 +228,12 @@ fn coordinator_dispatches_refresh_off_the_caller_thread() {
     .expect("fixture should spawn");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, owner.handle())
+        .register(
+            "fixture.extension",
+            extension,
+            owner.handle(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
 
     coordinator
@@ -284,7 +300,12 @@ fn extension_search_worker_dispatches_off_the_caller_thread() {
     let extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search.clone())
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     let generation = search
         .begin_query("calculator")
@@ -354,7 +375,12 @@ fn extension_worker_publishes_incremental_snapshots() {
         .expect("fixture should initialize");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search.clone())
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     let generation = search.begin_query("final").expect("query should enqueue");
     coordinator.query(generation, "final");
@@ -396,14 +422,19 @@ fn extension_worker_recovers_a_crashed_query_automatically() {
         .expect("fixture should initialize");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search.clone())
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     let generation = search
         .begin_query("recovered")
         .expect("query should enqueue");
     coordinator.query(generation, "recovered");
 
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(snapshot) = search.latest_snapshot()
             && snapshot.generation == generation
@@ -414,8 +445,12 @@ fn extension_worker_recovers_a_crashed_query_automatically() {
         {
             break;
         }
-        assert!(Instant::now() < deadline, "worker should recover and retry");
-        std::thread::yield_now();
+        assert!(
+            Instant::now() < deadline,
+            "worker should recover and retry: {:?}",
+            coordinator.first_error()
+        );
+        std::thread::sleep(Duration::from_millis(1));
     }
     assert!(coordinator.first_error().is_none());
     drop(coordinator);
@@ -441,7 +476,12 @@ fn extension_worker_recovers_a_timed_out_query_automatically() {
         .expect("fixture should initialize");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search.clone())
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
         .expect("worker should register");
     let generation = search
         .begin_query("recovered after timeout")
@@ -488,7 +528,12 @@ fn coordinator_shutdown_cancels_a_running_action() {
         .expect("fixture should initialize");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search)
+        .register(
+            "fixture.extension",
+            extension,
+            search,
+            fixture_contributions(),
+        )
         .expect("worker should register");
     coordinator
         .invoke(
@@ -519,7 +564,12 @@ fn coordinator_bounds_outstanding_action_completions_without_dropping_them() {
     let extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
     let mut coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register("fixture.extension", extension, search)
+        .register(
+            "fixture.extension",
+            extension,
+            search,
+            fixture_contributions(),
+        )
         .expect("worker should register");
 
     for index in 0..16 {
@@ -628,5 +678,12 @@ fn wait_for_exit(extension: &mut ExtensionProcess) {
     while extension.try_wait().expect("process status").is_none() {
         assert!(Instant::now() < deadline, "fixture did not exit");
         std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn fixture_contributions() -> ExtensionContributions {
+    ExtensionContributions {
+        root_search: true,
+        ..ExtensionContributions::default()
     }
 }

@@ -8,6 +8,9 @@ mod clipboard_service;
 mod clipboard_service_command;
 #[path = "HotkeyRegistration.rs"]
 mod hotkey_registration;
+mod hotkey_timing;
+#[path = "HotkeyTimingObserver.rs"]
+mod hotkey_timing_observer;
 #[path = "InstanceRole.rs"]
 mod instance_role;
 #[path = "LauncherCommand.rs"]
@@ -16,6 +19,7 @@ mod launcher_command;
 mod native_menu;
 #[path = "OverlayPosition.rs"]
 mod overlay_position;
+mod overlay_visibility;
 #[path = "PlatformError.rs"]
 mod platform_error;
 #[path = "PlatformEvent.rs"]
@@ -36,6 +40,12 @@ mod startup_status;
 #[cfg(windows)]
 #[allow(unsafe_code)]
 mod fatal_error_windows;
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod hotkey_timing_macos;
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod hotkey_timing_windows;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 #[path = "MacMenuTarget.rs"]
@@ -59,6 +69,9 @@ mod overlay_position_macos;
 mod overlay_position_windows;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
+mod overlay_visibility_macos;
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
 mod process_launcher_macos;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
@@ -72,6 +85,8 @@ mod windows_instance;
 pub use clipboard_service::*;
 pub(crate) use clipboard_service_command::*;
 pub use hotkey_registration::*;
+pub use hotkey_timing::*;
+pub(crate) use hotkey_timing_observer::*;
 pub use instance_role::*;
 pub(crate) use launcher_command::*;
 #[cfg(target_os = "macos")]
@@ -82,6 +97,7 @@ pub(crate) use mac_menu_target_ivars::*;
 pub(crate) use mac_native_menu::*;
 pub use native_menu::*;
 pub use overlay_position::*;
+pub use overlay_visibility::*;
 pub use platform_error::*;
 pub use platform_event::*;
 pub use process_launcher::*;
@@ -89,6 +105,24 @@ pub use single_instance::*;
 pub(crate) use startup_command::*;
 pub use startup_service::*;
 pub use startup_status::*;
+
+pub(crate) fn install_hotkey_timing_observer() -> Option<*mut std::ffi::c_void> {
+    #[cfg(windows)]
+    return hotkey_timing_windows::install();
+    #[cfg(target_os = "macos")]
+    return hotkey_timing_macos::install();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    None
+}
+
+pub(crate) fn uninstall_hotkey_timing_observer(handle: *mut std::ffi::c_void) {
+    #[cfg(windows)]
+    hotkey_timing_windows::uninstall(handle);
+    #[cfg(target_os = "macos")]
+    hotkey_timing_macos::uninstall(handle);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let _ = handle;
+}
 
 pub(crate) fn startup_status(executable: &Path) -> Result<StartupStatus, PlatformError> {
     #[cfg(windows)]
@@ -205,3 +239,6 @@ pub fn active_overlay_position(
 #[cfg(test)]
 #[path = "../tests/ClipboardService.rs"]
 mod clipboard_service_tests;
+#[cfg(test)]
+#[path = "../tests/HotkeyTiming.rs"]
+mod hotkey_timing_tests;

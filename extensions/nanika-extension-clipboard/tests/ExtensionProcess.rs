@@ -4,12 +4,12 @@ use std::process::{Command, Stdio};
 
 use nanika_extension_clipboard::{ClipboardDatabase, ClipboardEntry, RuntimePaths};
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame,
-    write_frame,
+    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
+    PROTOCOL_NAME, View, ViewEvent, read_frame, write_frame,
 };
 
 #[test]
-fn clipboard_process_contributes_persisted_history_and_restores_through_the_host() {
+fn clipboard_process_opens_a_scoped_view_and_copies_through_the_host() {
     let root =
         std::env::temp_dir().join(format!("nanika-clipboard-process-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -69,20 +69,55 @@ fn clipboard_process_contributes_persisted_history_and_restores_through_the_host
     else {
         panic!("clipboard extension should return a snapshot");
     };
-    let entry = entries
-        .into_iter()
-        .find(|entry| entry.entry_id == "clipboard.persisted")
-        .expect("persisted candidate");
+    assert!(entries.is_empty());
     write_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke".to_owned(),
             generation: 1,
-            entry_id: entry.entry_id,
-            action_id: entry.action_id,
+            entry_id: "clipboard.history".to_owned(),
+            action_id: "command.execute".to_owned(),
         },
     )
     .expect("invoke should write");
+    let Some(Message::Result {
+        effect:
+            NavigationEffect::Push {
+                view_id,
+                revision,
+                view,
+            },
+        ..
+    }) = read_frame(&mut output).expect("view result")
+    else {
+        panic!("clipboard command should push a list view");
+    };
+    let View::List { list } = view.as_ref() else {
+        panic!("clipboard command should push a list view");
+    };
+    assert_eq!(view_id, "clipboard.history");
+    assert_eq!(revision, 1);
+    assert!(list.detail.is_some());
+    assert!(
+        list.sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .any(|item| item.id == "clipboard.persisted")
+    );
+    write_frame(
+        &mut input,
+        &Message::ViewEvent {
+            request_id: "copy".to_owned(),
+            generation: 1,
+            view_id: view_id.clone(),
+            revision,
+            event: ViewEvent::ActionInvoked {
+                item_id: Some("clipboard.persisted".to_owned()),
+                action_id: "clipboard.copy".to_owned(),
+            },
+        },
+    )
+    .expect("view action should write");
     let Some(Message::HostRequest {
         request_id,
         parent_request_id,
@@ -106,9 +141,28 @@ fn clipboard_process_contributes_persisted_history_and_restores_through_the_host
         },
     )
     .expect("host response should write");
+    let Some(Message::ViewUpdated {
+        effect: NavigationEffect::Close,
+        view: None,
+        ..
+    }) = read_frame(&mut output).expect("view action result")
+    else {
+        panic!("copy should close the overlay");
+    };
+    write_frame(
+        &mut input,
+        &Message::ViewClose {
+            request_id: "close".to_owned(),
+            view_id: view_id.clone(),
+        },
+    )
+    .expect("view close should write");
     assert!(matches!(
-        read_frame(&mut output).expect("action result"),
-        Some(Message::Result { .. })
+        read_frame(&mut output).expect("view close response"),
+        Some(Message::ViewClosed {
+            request_id,
+            view_id: response_view_id,
+        }) if request_id == "close" && response_view_id == view_id
     ));
     write_frame(
         &mut input,

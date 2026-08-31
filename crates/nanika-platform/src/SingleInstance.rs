@@ -48,14 +48,13 @@ impl Drop for SingleInstance {
 #[cfg(target_os = "macos")]
 impl Drop for SingleInstance {
     fn drop(&mut self) {
-        use std::io::Write;
         use std::os::fd::AsRawFd;
-        use std::os::unix::net::UnixStream;
+        use std::os::unix::net::UnixDatagram;
 
-        if let Ok(mut stream) = UnixStream::connect(&self.activation_path) {
-            let _ = stream.write_all(b"s");
-        }
-        if let Some(thread) = self.event_thread.take() {
+        let stop_sent = UnixDatagram::unbound()
+            .and_then(|socket| socket.send_to(b"s", &self.activation_path))
+            .is_ok();
+        if stop_sent && let Some(thread) = self.event_thread.take() {
             let _ = thread.join();
         }
         unsafe {

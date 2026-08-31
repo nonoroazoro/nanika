@@ -7,8 +7,12 @@ mod acp_extension_command;
 #[path = "AcpExtensionProcess.rs"]
 mod acp_extension_process;
 mod acp_transport;
+#[path = "ActivationTrace.rs"]
+mod activation_trace;
 #[path = "BoundedLogWriter.rs"]
 mod bounded_log_writer;
+#[path = "BuiltinCommandSpec.rs"]
+mod builtin_command_spec;
 #[path = "BuiltinExtensionSpec.rs"]
 mod builtin_extension_spec;
 mod builtins;
@@ -54,12 +58,24 @@ mod extension_search_query;
 mod extension_search_state;
 #[path = "ExtensionSearchWorker.rs"]
 mod extension_search_worker;
+#[path = "ExtensionSearchWorkerContext.rs"]
+mod extension_search_worker_context;
 #[path = "ExtensionSettingsResult.rs"]
 mod extension_settings_result;
 #[path = "ExtensionSettingsUpdate.rs"]
 mod extension_settings_update;
 #[path = "ExtensionStartupError.rs"]
 mod extension_startup_error;
+#[path = "ExtensionViewRequest.rs"]
+mod extension_view_request;
+#[path = "ExtensionViewRequestKind.rs"]
+mod extension_view_request_kind;
+#[path = "ExtensionViewState.rs"]
+mod extension_view_state;
+#[path = "ExtensionViewUpdate.rs"]
+mod extension_view_update;
+#[path = "ExtensionViewUpdatePayload.rs"]
+mod extension_view_update_payload;
 #[path = "ExtensionWork.rs"]
 mod extension_work;
 #[path = "HistoryDirection.rs"]
@@ -102,12 +118,17 @@ mod settings_state;
 mod settings_view;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
+#[path = "SystemFont.rs"]
+mod system_font;
+mod system_font_paths;
 
 pub(crate) use acp_connection_context::*;
 pub(crate) use acp_extension_command::*;
 pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
+pub(crate) use activation_trace::*;
 pub(crate) use bounded_log_writer::*;
+pub(crate) use builtin_command_spec::*;
 pub(crate) use builtin_extension_spec::*;
 pub(crate) use diagnostic_record_key::*;
 pub(crate) use diagnostic_source::*;
@@ -130,9 +151,15 @@ pub use extension_search_coordinator::*;
 pub(crate) use extension_search_query::*;
 pub(crate) use extension_search_state::*;
 pub(crate) use extension_search_worker::*;
+pub(crate) use extension_search_worker_context::*;
 pub(crate) use extension_settings_result::*;
 pub(crate) use extension_settings_update::*;
 pub(crate) use extension_startup_error::*;
+pub(crate) use extension_view_request::*;
+pub(crate) use extension_view_request_kind::*;
+pub(crate) use extension_view_state::*;
+pub(crate) use extension_view_update::*;
+pub(crate) use extension_view_update_payload::*;
 pub(crate) use extension_work::*;
 pub(crate) use history_direction::*;
 pub use host_app::HostApp;
@@ -155,6 +182,7 @@ pub use render_preparation::*;
 pub(crate) use settings_action::*;
 pub(crate) use settings_state::*;
 pub use supervisor_error::*;
+pub(crate) use system_font::*;
 
 /// Publish one protocol snapshot into the shared search owner.
 pub fn publish_extension_snapshot(
@@ -182,6 +210,9 @@ pub fn publish_extension_snapshot(
 #[path = "../tests/acp_transport.rs"]
 mod acp_transport_tests;
 #[cfg(test)]
+#[path = "../tests/ActivationTrace.rs"]
+mod activation_trace_tests;
+#[cfg(test)]
 #[path = "../tests/BoundedLogWriter.rs"]
 mod bounded_log_writer_tests;
 #[cfg(test)]
@@ -193,6 +224,10 @@ mod extension_invocation_output_state_tests;
 #[cfg(test)]
 #[path = "../tests/ExtensionRuntime.rs"]
 mod extension_runtime_tests;
+#[cfg(test)]
+#[path = "../tests/ExtensionSearchWorker.rs"]
+mod extension_search_worker_tests;
+
 #[cfg(test)]
 #[path = "../tests/HostApp.rs"]
 mod host_app_tests;
@@ -217,3 +252,6 @@ mod settings_state_tests;
 #[cfg(test)]
 #[path = "../tests/settings_view.rs"]
 mod settings_view_tests;
+#[cfg(test)]
+#[path = "../tests/SystemFont.rs"]
+mod system_font_tests;

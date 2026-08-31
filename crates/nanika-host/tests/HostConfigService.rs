@@ -5,6 +5,15 @@ use nanika_config::ConfigStore;
 use crate::{HostConfig, HostConfigService};
 
 #[test]
+fn host_config_uses_the_platform_default_hotkey() {
+    let config = HostConfig::default();
+    #[cfg(target_os = "macos")]
+    assert_eq!(config.hotkey, "Ctrl+Space");
+    #[cfg(windows)]
+    assert_eq!(config.hotkey, "Alt+Space");
+}
+
+#[test]
 fn host_config_updates_run_through_the_owner_and_preserve_comments() {
     let root =
         std::env::temp_dir().join(format!("nanika-host-config-owner-{}", std::process::id()));

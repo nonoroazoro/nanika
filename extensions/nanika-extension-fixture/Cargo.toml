@@ -10,6 +10,7 @@ nanika-protocol = { path = "../../crates/nanika-protocol" }
 
 [dev-dependencies]
 criterion.workspace = true
+nanika-extension-package = { path = "../../crates/nanika-extension-package" }
 nanika-host = { path = "../../crates/nanika-host" }
 nanika-search = { path = "../../crates/nanika-search" }
 

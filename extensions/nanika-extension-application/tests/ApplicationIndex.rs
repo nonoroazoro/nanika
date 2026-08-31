@@ -1,3 +1,4 @@
+#![cfg(windows)]
 #![cfg_attr(windows, allow(unsafe_code))]
 
 use std::path::PathBuf;

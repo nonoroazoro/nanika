@@ -12,7 +12,7 @@ impl NativeMenu {
     pub fn new(events: SyncSender<PlatformEvent>) -> Result<Self, PlatformError> {
         #[cfg(target_os = "macos")]
         {
-            return crate::MacNativeMenu::new(events).map(|inner| Self { _inner: inner });
+            crate::MacNativeMenu::new(events).map(|inner| Self { _inner: inner })
         }
         #[cfg(not(target_os = "macos"))]
         {

@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 
 const FORMAT_VERSION: u32 = 1;
 
+#[cfg(target_os = "macos")]
+const DEFAULT_HOTKEY: &str = "Ctrl+Space";
+#[cfg(windows)]
+const DEFAULT_HOTKEY: &str = "Alt+Space";
+#[cfg(not(any(windows, target_os = "macos")))]
+const DEFAULT_HOTKEY: &str = "Alt+Space";
+
 /// Host-owned preferences stored in the root Nanika config.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -52,7 +59,7 @@ impl Default for HostConfig {
     fn default() -> Self {
         Self {
             format_version: FORMAT_VERSION,
-            hotkey: "Ctrl+Space".to_owned(),
+            hotkey: DEFAULT_HOTKEY.to_owned(),
             reduced_motion: false,
         }
     }

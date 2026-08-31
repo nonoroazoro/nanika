@@ -1,25 +1,29 @@
 use std::io;
-use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use nanika_extension_package::{CommandMode, ExtensionContributions};
 use nanika_search::SearchHandle;
 
 use crate::{
     DiagnosticCode, ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput,
     ExtensionInvocationOutputState, ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh,
     ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
-    ExtensionSettingsResult, ExtensionSettingsUpdate, ExtensionWork, HostDiagnostic,
-    HostServiceHandler, SupervisorError, publish_extension_snapshot,
+    ExtensionSearchWorkerContext, ExtensionSettingsResult, ExtensionSettingsUpdate,
+    ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate,
+    ExtensionViewUpdatePayload, ExtensionWork, HostDiagnostic, SupervisorError,
+    publish_extension_snapshot,
 };
 
 const MAX_PENDING_INVOCATIONS: usize = 16;
 const MAX_PENDING_SETTINGS: usize = 4;
+const MAX_PENDING_VIEW_EVENTS: usize = 16;
 
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
+    contributions: ExtensionContributions,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
@@ -32,15 +36,18 @@ impl ExtensionSearchWorker {
         extension_id: impl Into<String>,
         mut runtime: ExtensionRuntime,
         search: SearchHandle,
-        invocation_results: SyncSender<ExtensionInvocationResult>,
-        notifier: ExtensionNotifier,
-        host_services: Option<Arc<dyn HostServiceHandler>>,
+        contributions: ExtensionContributions,
+        context: ExtensionSearchWorkerContext,
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         let worker_extension_id = extension_id.clone();
-        if let Some(host_services) = host_services {
+        let worker_contributions = contributions.clone();
+        if let Some(host_services) = context.host_services {
             runtime.set_host_services(extension_id.clone(), host_services);
         }
+        let invocation_results = context.invocation_results;
+        let view_updates = context.view_updates;
+        let notifier = context.notifier;
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
         let worker_state = Arc::clone(&state);
         let last_error = Arc::new(Mutex::new(None));
@@ -102,6 +109,7 @@ impl ExtensionSearchWorker {
                             query,
                             &search,
                             &worker_state,
+                            &worker_contributions,
                         ),
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
@@ -130,6 +138,32 @@ impl ExtensionSearchWorker {
                                 result.map(|outcome| {
                                     matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
                                 })
+                            }
+                        }
+                        ExtensionWork::ViewEvent(request) => {
+                            let request_id = request.request_id;
+                            let generation = request.generation;
+                            let view_id = request.view_id.clone();
+                            let result = run_view_event(
+                                &mut runtime,
+                                &worker_extension_id,
+                                request,
+                                &worker_state,
+                            );
+                            let report = ExtensionViewUpdate {
+                                request_id,
+                                extension_id: worker_extension_id.clone(),
+                                generation,
+                                view_id,
+                                result: result
+                                    .as_ref()
+                                    .map(Clone::clone)
+                                    .map_err(ToString::to_string),
+                            };
+                            if view_updates.send(report).is_err() {
+                                Err(SupervisorError::ChannelClosed)
+                            } else {
+                                result.map(|_| true)
                             }
                         }
                         ExtensionWork::Refresh(refresh) => {
@@ -181,6 +215,7 @@ impl ExtensionSearchWorker {
             })?;
         Ok(Self {
             extension_id,
+            contributions,
             state,
             last_error,
             invocation_output,
@@ -199,6 +234,14 @@ impl ExtensionSearchWorker {
         ready.notify_one();
     }
 
+    pub(crate) fn command_mode(&self, entry_id: &str) -> Option<CommandMode> {
+        self.contributions
+            .commands
+            .iter()
+            .find(|command| command.id == entry_id)
+            .map(|command| command.mode)
+    }
+
     pub(crate) fn refresh(&self, generation: u64) {
         let (lock, ready) = &*self.state;
         lock.lock()
@@ -214,6 +257,17 @@ impl ExtensionSearchWorker {
             return Err(SupervisorError::QueueFull);
         }
         state.invocations.push_back(invocation);
+        ready.notify_one();
+        Ok(())
+    }
+
+    pub(crate) fn view_event(&self, request: ExtensionViewRequest) -> Result<(), SupervisorError> {
+        let (lock, ready) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        if state.view_events.len() >= MAX_PENDING_VIEW_EVENTS {
+            return Err(SupervisorError::QueueFull);
+        }
+        state.view_events.push_back(request);
         ready.notify_one();
         Ok(())
     }
@@ -304,12 +358,15 @@ impl Drop for ExtensionSearchWorker {
     }
 }
 
-fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<ExtensionWork> {
+pub(crate) fn next_work(
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+) -> Option<ExtensionWork> {
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     while state.query.is_none()
         && state.refresh.is_none()
         && state.invocations.is_empty()
+        && state.view_events.is_empty()
         && state.settings.is_empty()
         && !state.shutdown
     {
@@ -322,12 +379,65 @@ fn next_work(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>) -> Option<Exte
         state.active_invocation_id = Some(invocation.invocation_id);
         return Some(ExtensionWork::Invoke(invocation));
     }
+    if let Some(event) = state.view_events.pop_front() {
+        return Some(ExtensionWork::ViewEvent(event));
+    }
     state
         .settings
         .pop_front()
         .map(ExtensionWork::UpdateSettings)
         .or_else(|| state.query.take().map(ExtensionWork::Query))
         .or_else(|| state.refresh.take().map(ExtensionWork::Refresh))
+}
+
+fn run_view_event(
+    runtime: &mut ExtensionRuntime,
+    extension_id: &str,
+    request: ExtensionViewRequest,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+) -> Result<ExtensionViewUpdatePayload, SupervisorError> {
+    recover_if_exited(runtime, extension_id, request.generation)?;
+    let request_id = request.request_id;
+    let result = match request.kind {
+        ExtensionViewRequestKind::Event(event) => runtime
+            .view_event_cancellable(
+                format!("view-{extension_id}-{request_id}"),
+                request.generation,
+                request.view_id,
+                request.revision,
+                event,
+                || {
+                    let (lock, _) = &**state;
+                    lock.lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .shutdown
+                },
+            )
+            .map(|(revision, effect, view)| ExtensionViewUpdatePayload {
+                revision,
+                effect,
+                view,
+            }),
+        ExtensionViewRequestKind::Close => runtime
+            .close_view(
+                format!("close-view-{extension_id}-{request_id}"),
+                request.view_id,
+            )
+            .map(|()| ExtensionViewUpdatePayload {
+                revision: request.revision,
+                effect: nanika_protocol::NavigationEffect::Pop,
+                view: None,
+            }),
+    };
+    if matches!(
+        &result,
+        Err(SupervisorError::ChannelClosed
+            | SupervisorError::Protocol(_)
+            | SupervisorError::Timeout(_))
+    ) {
+        restart_or_terminate(runtime, format!("restart-view-{extension_id}-{request_id}"))?;
+    }
+    result
 }
 
 fn run_settings_update(
@@ -365,6 +475,7 @@ fn run_refresh(
             state.shutdown
                 || state.query.is_some()
                 || !state.invocations.is_empty()
+                || !state.view_events.is_empty()
                 || state.refresh.is_some()
         },
     );
@@ -388,8 +499,13 @@ fn run_query(
     query: ExtensionSearchQuery,
     search: &SearchHandle,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+    contributions: &ExtensionContributions,
 ) -> Result<bool, SupervisorError> {
     recover_if_exited(runtime, extension_id, query.generation)?;
+    if !contributions.root_search {
+        return publish_contributions(search, extension_id, query.generation, contributions);
+    }
+    publish_contributions(search, extension_id, query.generation, contributions)?;
     let mut retried = false;
     loop {
         let result = runtime.query_incremental(
@@ -397,14 +513,18 @@ fn run_query(
             query.generation,
             query.query.clone(),
             Duration::from_secs(2),
-            |entries| {
+            |mut entries| {
+                entries.extend(contribution_candidates(contributions));
                 publish_extension_snapshot(search, extension_id, query.generation, entries)
                     .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
             },
             || {
                 let (lock, _) = &**state;
                 let state = lock.lock().unwrap_or_else(|error| error.into_inner());
-                state.shutdown || state.query.is_some() || !state.invocations.is_empty()
+                state.shutdown
+                    || state.query.is_some()
+                    || !state.invocations.is_empty()
+                    || !state.view_events.is_empty()
             },
         );
         let restartable = matches!(
@@ -426,6 +546,44 @@ fn run_query(
         )?;
         retried = true;
     }
+}
+
+fn publish_contributions(
+    search: &SearchHandle,
+    extension_id: &str,
+    generation: u64,
+    contributions: &ExtensionContributions,
+) -> Result<bool, SupervisorError> {
+    publish_extension_snapshot(
+        search,
+        extension_id,
+        generation,
+        contribution_candidates(contributions),
+    )
+    .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
+    Ok(true)
+}
+
+pub(crate) fn contribution_candidates(
+    contributions: &ExtensionContributions,
+) -> Vec<nanika_protocol::Candidate> {
+    contributions
+        .commands
+        .iter()
+        .map(|command| {
+            let mut aliases = command.keywords.clone();
+            aliases.push(command.description.clone());
+            if let Some(subtitle) = &command.subtitle {
+                aliases.push(subtitle.clone());
+            }
+            nanika_protocol::Candidate {
+                entry_id: command.id.clone(),
+                title: command.title.clone(),
+                action_id: "command.execute".to_owned(),
+                aliases,
+            }
+        })
+        .collect()
 }
 
 fn run_invocation(
@@ -504,7 +662,7 @@ fn run_invocation(
             format!("restart-invoke-{extension_id}-{}", invocation.generation),
         )?;
     }
-    result.map(|has_output| ExtensionInvocationOutcome::Completed { has_output })
+    result.map(|(effect, has_output)| ExtensionInvocationOutcome::Completed { effect, has_output })
 }
 
 fn restart_or_terminate(

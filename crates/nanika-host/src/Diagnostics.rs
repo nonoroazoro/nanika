@@ -33,12 +33,22 @@ impl Diagnostics {
             .finish(appender);
         tracing_subscriber::fmt()
             .with_ansi(false)
-            .with_max_level(tracing::Level::INFO)
+            .with_max_level(maximum_level(
+                std::env::var_os("NANIKA_DIAGNOSTICS").as_deref(),
+            ))
             .with_target(true)
             .with_writer(writer)
             .try_init()
             .map_err(|error| error.to_string())?;
         Ok(Self { _worker: worker })
+    }
+}
+
+pub(crate) fn maximum_level(value: Option<&OsStr>) -> tracing::Level {
+    if value == Some(OsStr::new("verbose")) {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
     }
 }
 

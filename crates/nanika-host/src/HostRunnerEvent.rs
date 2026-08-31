@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 pub(crate) enum HostRunnerEvent {
+    Wake,
     Repaint {
         when: Instant,
         cumulative_pass_nr: u64,

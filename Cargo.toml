@@ -38,6 +38,7 @@ egui-wgpu = { version = "0.36.1", default-features = false, features = ["winit"]
 egui-winit = { version = "0.36.1", default-features = false, features = ["accesskit", "clipboard"] }
 pollster = "0.4.0"
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
+raw-window-handle = "0.6.2"
 wgpu = { version = "30.0.0", default-features = false }
 global-hotkey = "0.8.0"
 nucleo-matcher = "0.3.1"
@@ -57,6 +58,7 @@ windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
 fend-core = "1.5.8"
+fontdb = { version = "0.24.0", default-features = false, features = ["fs"] }
 windows-registry = "0.6.1"
 objc2-service-management = { version = "0.3.2", default-features = false }
 objc2 = { version = "0.6.4", default-features = false }
