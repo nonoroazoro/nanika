@@ -13,7 +13,10 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 ## Implemented MVP baseline
 
 - A configurable global hotkey toggles a focused overlay on the active monitor.
-- The shared input path handles keyboard input, IME preedit and commit, calibrated mixed Latin and CJK text rendering, navigation, input history, Enter, Escape, and reduced motion without a mouse. Physical Windows and macOS acceptance remains a TODO below.
+- The shared input path handles keyboard input, IME preedit and commit, a native primary UI font with a bounded CJK fallback, navigation, input history, Enter, Escape, and reduced motion without a mouse. Root Search and extension filters use shared single-line input sizing and vertical alignment. Physical Windows and macOS acceptance remains a TODO below.
+- Root Search waits for the initial snapshot from every ready extension before publishing a new query generation, virtualizes up to 100 results, keeps keyboard selection visible, selects an existing query when reopened, and activates a result by Enter or pointer click.
+- Application search uses localized macOS display names while retaining original names as aliases. Application icons are extracted and cached off the UI thread, normalized by visible alpha bounds, and decoded only for visible rows.
+- Calculator contributes a result only when the query contains an explicit symbolic or word operator.
 - The default distribution includes application search, commands, scripts, calculation, and clipboard history.
 - Extensions contribute bounded incremental candidates, static commands, host-rendered views, and typed actions without host domain registration.
 - Clipboard history contributes one Root Search command that opens an independent host-rendered List and Split Detail route. Its current action copies the selected content to the clipboard.
@@ -32,7 +35,7 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 ### UI foundation
 
 - [ ] Introduce host-owned design tokens and reusable `egui` components for Root Search, result rows, sections, icons, action bars, key hints, List, Split, Detail, and shared states.
-- [ ] Rebuild Root Search against the [UI design proposal](../design/ui.md), including a bounded presentation model for title, subtitle, category, icon, and accessory content.
+- [ ] Rebuild Root Search through the native `egui` component system, including a bounded presentation model for title, subtitle, category, icon, and accessory content. Approve the result from actual Windows and macOS captures and interaction tests.
 - [ ] Rebuild extension List, Split, and Detail rendering with the same component system without granting extensions pixel-level styling or arbitrary drawing access.
 - [ ] Implement coherent empty, loading, degraded, and diagnostic states.
 - [ ] Validate the visual baseline, keyboard behavior, IME, accessibility, high-DPI rendering, reduced motion, latency, and frame pacing on physical Windows and macOS machines.
@@ -44,7 +47,7 @@ Shared host, UI, diagnostics, protocol, configuration, storage, search, and exte
 - [ ] Validate foreground and background second-launch behavior, stale instance recovery, shutdown cleanup, and per-user isolation on both platforms.
 - [ ] Validate application, command, script, batch, clipboard, and macOS bundle actions on their supported platforms.
 - [ ] Validate diagnostics and feature-specific user messages for missing, incompatible, and failed built-in and external extensions on both platforms.
-- [ ] Validate native IME preedit, commit, candidate-window placement, CJK-capable system UI font selection, and mixed-script visual alignment on physical Windows and macOS machines.
+- [ ] Validate native IME preedit, commit, candidate-window placement, native primary and CJK fallback font selection, caret alignment, and mixed-script visual alignment on physical Windows and macOS machines.
 
 ### Performance and release
 

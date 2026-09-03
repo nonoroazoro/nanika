@@ -33,8 +33,10 @@ fn mixed_script_glyph_bounds() -> Vec<(char, egui::Rect)> {
 fn supported_platform_has_a_cjk_system_font() {
     let font = load_system_ui_font().expect("a supported OS must provide a CJK-capable UI font");
 
-    assert!(!font.data.is_empty());
-    assert!(!font.family.is_empty());
+    assert!(!font.primary.data.is_empty());
+    assert!(!font.primary.family.is_empty());
+    assert!(!font.fallback.data.is_empty());
+    assert!(!font.fallback.family.is_empty());
 }
 
 #[test]

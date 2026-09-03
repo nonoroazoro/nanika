@@ -98,6 +98,13 @@ impl ExtensionSearchCoordinator {
         }
     }
 
+    pub(crate) fn ready_query_count(&self) -> usize {
+        self.workers
+            .iter()
+            .filter(|worker| worker.is_query_ready())
+            .count()
+    }
+
     pub fn refresh(&self, extension_id: &str, generation: u64) -> Result<(), SupervisorError> {
         self.workers
             .iter()

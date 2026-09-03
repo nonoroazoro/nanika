@@ -88,3 +88,60 @@ fn owner_coalesces_query_bursts_without_dropping_the_latest_query() {
     }
     owner.shutdown();
 }
+
+#[test]
+fn owner_publishes_initial_extension_results_as_one_snapshot() {
+    let owner = SearchOwner::spawn(UsageMap::new()).expect("owner should start");
+    let handle = owner.handle();
+    let generation = handle
+        .begin_query_with_expected_extensions("tool", 2)
+        .expect("query should enqueue");
+    handle
+        .publish_extension_snapshot(
+            "first.extension",
+            generation,
+            vec![Candidate::new(
+                "first.extension",
+                "first",
+                "First Tool",
+                "open",
+                Vec::new(),
+            )],
+        )
+        .expect("first snapshot should enqueue");
+
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(
+        handle
+            .latest_snapshot()
+            .is_none_or(|snapshot| snapshot.generation != generation),
+        "partial initial results must not be published"
+    );
+
+    handle
+        .publish_extension_snapshot(
+            "second.extension",
+            generation,
+            vec![Candidate::new(
+                "second.extension",
+                "second",
+                "Second Tool",
+                "open",
+                Vec::new(),
+            )],
+        )
+        .expect("second snapshot should enqueue");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        if let Some(snapshot) = handle.latest_snapshot()
+            && snapshot.generation == generation
+            && snapshot.results.len() == 2
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "combined snapshot should arrive");
+        std::thread::yield_now();
+    }
+    owner.shutdown();
+}

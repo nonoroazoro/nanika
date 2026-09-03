@@ -34,7 +34,7 @@ impl ApplicationEntry {
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: self
                 .normalized_tokens
-                .split_whitespace()
+                .lines()
                 .filter(|alias| *alias != self.normalized_name)
                 .map(str::to_owned)
                 .collect(),

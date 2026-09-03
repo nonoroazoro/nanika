@@ -28,7 +28,7 @@ pub fn select_candidates(
     }
     let mut matched = entries
         .iter()
-        .filter_map(|entry| match_rank(&query, &entry.normalized_name).map(|rank| (entry, rank)))
+        .filter_map(|entry| entry_match_rank(&query, entry).map(|rank| (entry, rank)))
         .collect::<Vec<_>>();
     if matched.len() > limit {
         matched.select_nth_unstable_by(limit, compare_matches);
@@ -55,6 +55,13 @@ pub fn select_candidates(
             .map(ApplicationEntry::candidate),
     );
     selected
+}
+
+fn entry_match_rank(query: &str, entry: &ApplicationEntry) -> Option<(u8, usize)> {
+    std::iter::once(entry.normalized_name.as_str())
+        .chain(entry.normalized_tokens.lines())
+        .filter_map(|value| match_rank(query, value))
+        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| right.1.cmp(&left.1)))
 }
 
 fn match_rank(query: &str, value: &str) -> Option<(u8, usize)> {

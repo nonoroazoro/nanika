@@ -23,7 +23,8 @@ mod discovery_state;
 mod discovery_worker;
 #[path = "IconCache.rs"]
 mod icon_cache;
-#[cfg(any(target_os = "macos", test))]
+#[path = "IconNormalizer.rs"]
+mod icon_normalizer;
 mod image_resize;
 #[cfg(any(windows, test))]
 mod legacy_icon;
@@ -49,6 +50,7 @@ pub(crate) use discovery_services::*;
 pub(crate) use discovery_state::*;
 pub use discovery_worker::*;
 pub use icon_cache::*;
+pub(crate) use icon_normalizer::*;
 pub use runtime_event::*;
 pub use runtime_paths::*;
 pub use scan_report::*;
@@ -77,6 +79,9 @@ mod candidate_selection_tests;
 #[cfg(test)]
 #[path = "../tests/IconCache.rs"]
 mod icon_cache_tests;
+#[cfg(test)]
+#[path = "../tests/IconNormalizer.rs"]
+mod icon_normalizer_tests;
 #[cfg(test)]
 #[path = "../tests/image_resize.rs"]
 mod image_resize_tests;

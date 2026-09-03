@@ -23,7 +23,10 @@ impl CalculatorEngine {
 
     pub fn evaluate(&self, query: &str) -> Option<(Candidate, String)> {
         let query = query.trim();
-        if query.is_empty() || query.chars().count() > MAX_INPUT_CHARS {
+        if query.is_empty()
+            || query.chars().count() > MAX_INPUT_CHARS
+            || !has_explicit_operator(query)
+        {
             return None;
         }
         let interrupt = DeadlineInterrupt {
@@ -46,6 +49,35 @@ impl CalculatorEngine {
             result.to_owned(),
         ))
     }
+}
+
+fn has_explicit_operator(query: &str) -> bool {
+    query.chars().any(|character| {
+        matches!(
+            character,
+            '+' | '-'
+                | '*'
+                | '/'
+                | '^'
+                | '%'
+                | '='
+                | '<'
+                | '>'
+                | '&'
+                | '|'
+                | '!'
+                | '('
+                | ')'
+                | '×'
+                | '÷'
+                | '−'
+        )
+    }) || query.split_whitespace().any(|token| {
+        matches!(
+            token.to_ascii_lowercase().as_str(),
+            "to" | "in" | "of" | "mod" | "per" | "plus" | "minus" | "times" | "divided"
+        )
+    })
 }
 
 impl Default for CalculatorEngine {

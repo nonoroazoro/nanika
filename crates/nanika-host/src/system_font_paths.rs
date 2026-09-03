@@ -8,11 +8,21 @@ mod implementation;
 mod implementation;
 
 #[cfg(any(windows, target_os = "macos"))]
-pub(crate) fn candidates() -> Vec<(PathBuf, &'static str)> {
-    implementation::candidates()
+pub(crate) fn primary_candidates() -> Vec<PathBuf> {
+    implementation::primary_candidates()
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
-pub(crate) fn candidates() -> Vec<(PathBuf, &'static str)> {
+pub(crate) fn primary_candidates() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+pub(crate) fn fallback_candidates() -> Vec<PathBuf> {
+    implementation::fallback_candidates()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub(crate) fn fallback_candidates() -> Vec<PathBuf> {
     Vec::new()
 }

@@ -119,6 +119,8 @@ mod pending_extension;
 #[path = "PendingHostSettings.rs"]
 mod pending_host_settings;
 mod render_preparation;
+#[path = "SearchInput.rs"]
+mod search_input;
 #[path = "SettingsAction.rs"]
 mod settings_action;
 #[path = "SettingsState.rs"]
@@ -128,6 +130,8 @@ mod settings_view;
 mod supervisor_error;
 #[path = "SystemFont.rs"]
 mod system_font;
+#[path = "SystemFontFace.rs"]
+mod system_font_face;
 mod system_font_paths;
 
 pub(crate) use acp_connection_context::*;
@@ -191,10 +195,12 @@ pub(crate) use overlay_motion::*;
 pub(crate) use pending_extension::*;
 pub(crate) use pending_host_settings::*;
 pub use render_preparation::*;
+pub(crate) use search_input::*;
 pub(crate) use settings_action::*;
 pub(crate) use settings_state::*;
 pub use supervisor_error::*;
 pub(crate) use system_font::*;
+pub(crate) use system_font_face::*;
 
 /// Publish one protocol snapshot into the shared search owner.
 pub fn publish_extension_snapshot(
@@ -266,6 +272,9 @@ mod overlay_motion_tests;
 #[cfg(test)]
 #[path = "../tests/render_preparation.rs"]
 mod render_preparation_tests;
+#[cfg(test)]
+#[path = "../tests/SearchInput.rs"]
+mod search_input_tests;
 #[cfg(test)]
 #[path = "../tests/SettingsState.rs"]
 mod settings_state_tests;

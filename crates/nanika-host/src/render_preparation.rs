@@ -1,6 +1,6 @@
 use nanika_search::{RankedCandidate, SearchSnapshot};
 
-pub const MAX_VISIBLE_RESULTS: usize = 8;
+pub const MAX_ROOT_RESULTS: usize = 100;
 pub const OVERLAY_WIDTH_POINTS: f32 = 720.0;
 pub const OVERLAY_HEIGHT_POINTS: f32 = 480.0;
 
@@ -17,7 +17,7 @@ pub fn prepare_visible_results(
     };
     results
         .iter()
-        .take(MAX_VISIBLE_RESULTS)
+        .take(MAX_ROOT_RESULTS)
         .enumerate()
         .map(move |(index, result)| (index, result, index == selected_index))
 }

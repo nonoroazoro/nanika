@@ -28,6 +28,31 @@ fn small_snapshots_preserve_the_full_host_ranking_input() {
     assert_eq!(selected[1].title, "Alpha");
 }
 
+#[test]
+fn localized_names_keep_complete_original_names_searchable() {
+    let mut localized = entry(0, "图书");
+    localized.normalized_tokens = "books\nbook reader".to_owned();
+
+    let candidate = localized.candidate();
+
+    assert_eq!(candidate.title, "图书");
+    assert_eq!(candidate.aliases, ["books", "book reader"]);
+}
+
+#[test]
+fn aliases_beyond_the_snapshot_limit_remain_searchable() {
+    let mut entries = (0..5_001)
+        .map(|index| entry(index, &format!("Application {index:04}")))
+        .collect::<Vec<_>>();
+    let mut localized = entry(5_001, "图书");
+    localized.normalized_tokens = "books".to_owned();
+    entries.push(localized);
+
+    let selected = select_candidates(&entries, "books", 5_000);
+
+    assert_eq!(selected[0].title, "图书");
+}
+
 fn entry(index: usize, name: &str) -> ApplicationEntry {
     let normalized_name = name.to_lowercase();
     ApplicationEntry {

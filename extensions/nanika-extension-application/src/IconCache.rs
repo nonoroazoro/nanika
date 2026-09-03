@@ -9,6 +9,7 @@ use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
 const ICON_SIZES: [u32; 2] = [32, 64];
 const FALLBACK_KEY: &str = "application-fallback-v1";
+const ICON_RENDER_VERSION: &str = "normalized-v4";
 
 /// Machine-local icon cache with deterministic content keys.
 pub struct IconCache {
@@ -165,6 +166,7 @@ pub(crate) fn key_from_stamp(
     modified: u128,
 ) -> String {
     stable_hash(&[
+        ICON_RENDER_VERSION,
         &path_key(source),
         &icon_index.to_string(),
         &length.to_string(),

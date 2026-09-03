@@ -92,8 +92,11 @@ pub(super) fn extract_icon(
             "Windows did not provide an application icon",
         )));
     }
-    let result = icon_pixels(icon, size)
-        .and_then(|pixels| crate::icon_cache::write_png(target, size, size, &pixels));
+    let result = icon_pixels(icon, size).and_then(|pixels| {
+        let pixels = crate::normalize_icon_rgba(&pixels, size, size, size)
+            .ok_or_else(|| std::io::Error::other("Windows provided an empty application icon"))?;
+        crate::icon_cache::write_png(target, size, size, &pixels)
+    });
     unsafe {
         DestroyIcon(icon);
     }

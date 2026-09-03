@@ -11,7 +11,7 @@ use crate::{
 #[derive(Clone)]
 pub struct SearchHandle {
     pub(crate) commands: SyncSender<SearchCommand>,
-    pub(crate) pending_query: Arc<Mutex<Option<(u64, String)>>>,
+    pub(crate) pending_query: Arc<Mutex<Option<(u64, String, usize)>>>,
     pub(crate) latest: Arc<Mutex<Option<Arc<SearchSnapshot>>>>,
     pub(crate) next_generation: Arc<AtomicU64>,
     pub(crate) notifier: SearchNotifier,
@@ -19,6 +19,14 @@ pub struct SearchHandle {
 
 impl SearchHandle {
     pub fn begin_query(&self, query: impl Into<String>) -> Result<u64, SearchQueueError> {
+        self.begin_query_with_expected_extensions(query, 0)
+    }
+
+    pub fn begin_query_with_expected_extensions(
+        &self,
+        query: impl Into<String>,
+        expected_extensions: usize,
+    ) -> Result<u64, SearchQueueError> {
         let query = query.into();
         if query.chars().count() > MAX_QUERY_CHARS {
             return Err(SearchQueueError::QueryTooLong);
@@ -31,7 +39,8 @@ impl SearchHandle {
         *self
             .pending_query
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some((generation, query));
+            .unwrap_or_else(|error| error.into_inner()) =
+            Some((generation, query, expected_extensions));
         match self.commands.try_send(SearchCommand::WakeQuery) {
             Ok(()) | Err(TrySendError::Full(_)) => Ok(generation),
             Err(TrySendError::Disconnected(_)) => Err(SearchQueueError::Closed),

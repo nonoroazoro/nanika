@@ -1,18 +1,22 @@
 use std::path::PathBuf;
 
-pub(super) fn candidates() -> Vec<(PathBuf, &'static str)> {
+pub(super) fn primary_candidates() -> Vec<PathBuf> {
     [
-        (
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            "Hiragino Sans GB",
-        ),
-        ("/System/Library/Fonts/STHeiti Medium.ttc", "Heiti SC"),
-        (
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "Arial Unicode MS",
-        ),
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
     ]
     .into_iter()
-    .map(|(path, family)| (PathBuf::from(path), family))
+    .map(PathBuf::from)
+    .collect()
+}
+
+pub(super) fn fallback_candidates() -> Vec<PathBuf> {
+    [
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
     .collect()
 }

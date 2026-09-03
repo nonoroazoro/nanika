@@ -13,7 +13,7 @@ fn indexing(criterion: &mut Criterion) {
     let root = test_root();
     let applications = root.join("applications");
     std::fs::create_dir_all(&applications).expect("application root should exist");
-    create_executables(&applications);
+    create_applications(&applications);
     let database_path = root.join("application.db");
     let icon_root = root.join("icons");
     let database = ApplicationDatabase::open(&database_path).expect("database should open");
@@ -85,7 +85,8 @@ fn indexing(criterion: &mut Criterion) {
     std::fs::remove_dir_all(root).expect("benchmark directory should be removable");
 }
 
-fn create_executables(root: &Path) {
+#[cfg(windows)]
+fn create_applications(root: &Path) {
     let mut executable = vec![0_u8; 68];
     executable[..2].copy_from_slice(b"MZ");
     executable[60..64].copy_from_slice(&64_u32.to_le_bytes());
@@ -93,6 +94,33 @@ fn create_executables(root: &Path) {
     for index in 0..ENTRY_COUNT {
         let target = root.join(format!("Application {index:04}.exe"));
         std::fs::write(target, &executable).expect("benchmark executable should exist");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn create_applications(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    for index in 0..ENTRY_COUNT {
+        let name = format!("Application {index:04}");
+        let contents = root.join(format!("{name}.app/Contents"));
+        let executable = contents.join("MacOS").join(&name);
+        std::fs::create_dir_all(
+            executable
+                .parent()
+                .expect("benchmark executable should have a parent"),
+        )
+        .expect("application bundle should exist");
+        std::fs::write(&executable, b"#!/bin/sh\nexit 0\n")
+            .expect("benchmark executable should exist");
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
+            .expect("benchmark executable should be executable");
+        let mut info = plist::Dictionary::new();
+        info.insert("CFBundleExecutable".to_owned(), name.clone().into());
+        info.insert("CFBundleDisplayName".to_owned(), name.into());
+        plist::Value::Dictionary(info)
+            .to_file_xml(contents.join("Info.plist"))
+            .expect("application metadata should exist");
     }
 }
 

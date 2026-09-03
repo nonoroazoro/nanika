@@ -9,7 +9,7 @@ use nanika_search::{Candidate, RankedCandidate, SearchSnapshot};
 fn selection_stays_within_rendered_results() {
     assert_eq!(maximum_visible_result_index(0), 0);
     assert_eq!(maximum_visible_result_index(3), 2);
-    assert_eq!(maximum_visible_result_index(100), 7);
+    assert_eq!(maximum_visible_result_index(100), 99);
 }
 
 #[test]

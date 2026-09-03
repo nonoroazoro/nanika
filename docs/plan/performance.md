@@ -58,6 +58,8 @@ Use a release build and collect at least 200 warm summons and 1,000 query update
 - foreground and background second launches;
 - startup enable, disable, repair, approval, and hidden idle launch;
 - application, command, script, batch, clipboard, and macOS bundle actions;
+- stable Root Search publication while extensions return their initial snapshots;
+- virtualized result scrolling and visible-row icon decode without UI-thread file or image work;
 - 60 Hz and 120 Hz animation interruption and reduced motion;
 - hidden idle CPU, memory, database size, and owner thread count.
 

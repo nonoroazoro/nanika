@@ -1,16 +1,23 @@
 use std::path::PathBuf;
 
-pub(super) fn candidates() -> Vec<(PathBuf, &'static str)> {
+pub(super) fn primary_candidates() -> Vec<PathBuf> {
     let Some(windows_root) = std::env::var_os("WINDIR") else {
         return Vec::new();
     };
     let font_root = PathBuf::from(windows_root).join("Fonts");
-    [
-        ("msyh.ttc", "Microsoft YaHei"),
-        ("msyhbd.ttc", "Microsoft YaHei"),
-        ("simsun.ttc", "SimSun"),
-    ]
-    .into_iter()
-    .map(|(file, family)| (font_root.join(file), family))
-    .collect()
+    ["segoeui.ttf", "segoeuisl.ttf"]
+        .into_iter()
+        .map(|file| font_root.join(file))
+        .collect()
+}
+
+pub(super) fn fallback_candidates() -> Vec<PathBuf> {
+    let Some(windows_root) = std::env::var_os("WINDIR") else {
+        return Vec::new();
+    };
+    let font_root = PathBuf::from(windows_root).join("Fonts");
+    ["msyh.ttc", "msyhbd.ttc", "simsun.ttc"]
+        .into_iter()
+        .map(|file| font_root.join(file))
+        .collect()
 }

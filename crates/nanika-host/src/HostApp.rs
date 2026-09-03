@@ -24,7 +24,7 @@ use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 use crate::{
     ActivationTrace, DiagnosticCode, ExtensionInvocationOutcome, ExtensionRuntime,
     ExtensionSearchCoordinator, HistoryDirection, HostConfig, HostConfigService, HostDiagnostic,
-    HostEvent, HostRuntime, IconIdentity, IconLoader, InvocationPresentation, MAX_VISIBLE_RESULTS,
+    HostEvent, HostRuntime, IconIdentity, IconLoader, InvocationPresentation, MAX_ROOT_RESULTS,
     OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS, OverlayMotion, PendingHostSettings,
     SettingsAction, SettingsState,
 };
@@ -88,6 +88,8 @@ pub struct HostApp {
     pending_view_request_id: Option<u64>,
     overlay_visible: bool,
     focus_pending: bool,
+    select_query_pending: bool,
+    selection_scroll_pending: bool,
     focus_observed: bool,
     focus_lost_pending: bool,
     motion: OverlayMotion,
@@ -244,9 +246,9 @@ impl HostApp {
                 let font = crate::load_system_ui_font();
                 if let Some(font) = &font {
                     tracing::debug!(
-                        family = %font.family,
-                        bytes = font.data.len(),
-                        "loaded system UI font"
+                        primary = %font.primary.family,
+                        fallback = %font.fallback.family,
+                        "loaded system UI font stack"
                     );
                 } else {
                     tracing::warn!("no system UI font with CJK coverage was found");
@@ -313,6 +315,8 @@ impl HostApp {
             pending_view_request_id: None,
             overlay_visible: false,
             focus_pending: false,
+            select_query_pending: false,
+            selection_scroll_pending: false,
             focus_observed: false,
             focus_lost_pending: false,
             motion: OverlayMotion::new(reduced_motion),
@@ -497,6 +501,7 @@ impl HostApp {
         self.settings.visible = false;
         self.overlay_visible = true;
         self.focus_pending = true;
+        self.select_query_pending = self.view_stack.is_empty() && !self.query.is_empty();
         self.focus_lost_pending = false;
         if !interrupting_dismissal {
             self.focus_observed = false;
@@ -838,10 +843,14 @@ impl HostApp {
         let Some(search) = &self.search else {
             return;
         };
-        match search.begin_query(self.query.clone()) {
+        match search.begin_query_with_expected_extensions(
+            self.query.clone(),
+            self.extension_search.ready_query_count(),
+        ) {
             Ok(generation) => {
                 self.search_generation = generation;
                 self.selected_index = 0;
+                self.selection_scroll_pending = true;
                 self.operation_error = None;
                 self.extension_search.query(generation, &self.query);
             }
@@ -1095,14 +1104,18 @@ impl HostApp {
     }
 
     fn select_previous(&mut self) {
-        self.selected_index = self.selected_index.saturating_sub(1);
+        let selected_index = self.selected_index.saturating_sub(1);
+        self.selection_scroll_pending = selected_index != self.selected_index;
+        self.selected_index = selected_index;
     }
 
     fn select_next(&mut self) {
         let maximum = self.search_snapshot.as_ref().map_or(0, |snapshot| {
             maximum_visible_result_index(snapshot.results.len())
         });
-        self.selected_index = self.selected_index.saturating_add(1).min(maximum);
+        let selected_index = self.selected_index.saturating_add(1).min(maximum);
+        self.selection_scroll_pending = selected_index != self.selected_index;
+        self.selected_index = selected_index;
     }
 
     fn poll_runtime(&mut self) {
@@ -1597,17 +1610,24 @@ impl HostApp {
         let accepting_actions = self.pending_view_request_id.is_none();
         let mut event = None;
         let mut back_requested = false;
-        ui.horizontal(|ui| {
-            if ui.button("Back").clicked() {
+        ui.horizontal_centered(|ui| {
+            if ui
+                .add_sized(
+                    [72.0, 34.0],
+                    egui::Button::new(egui::RichText::new("‹  Back").size(14.0)),
+                )
+                .clicked()
+            {
                 back_requested = true;
             }
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             let title = match &active.view {
                 View::List { list } => &list.title,
                 View::Detail { detail } => detail.title.as_deref().unwrap_or("Detail"),
             };
             ui.label(
                 egui::RichText::new(title)
+                    .size(17.0)
                     .strong()
                     .color(egui::Color32::from_rgb(224, 228, 238)),
             );
@@ -1651,7 +1671,7 @@ impl HostApp {
             self.close_active_view(context);
             return;
         }
-        ui.add_space(12.0);
+        ui.add_space(10.0);
         match &active.view {
             View::List { list } => {
                 let input_id = egui::Id::new(("extension-query", &active.view_id));
@@ -1659,12 +1679,21 @@ impl HostApp {
                     .search_text
                     .clone()
                     .unwrap_or_else(|| list.search_text.clone());
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut search_text)
-                        .id(input_id)
-                        .hint_text(&list.search_placeholder)
-                        .font(egui::TextStyle::Heading)
-                        .desired_width(f32::INFINITY),
+                let (navigate_previous, navigate_next) = if accepting_actions {
+                    ui.input_mut(|input| {
+                        (
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                        )
+                    })
+                } else {
+                    (false, false)
+                };
+                let response = crate::SearchInput::compact(
+                    ui,
+                    input_id,
+                    &mut search_text,
+                    &list.search_placeholder,
                 );
                 if response.changed() {
                     truncate_chars(&mut search_text, MAX_QUERY_CHARS);
@@ -1680,13 +1709,13 @@ impl HostApp {
                     .as_ref()
                     .and_then(|selected| items.iter().position(|item| item.id == *selected));
                 if accepting_actions && event.is_none() {
-                    if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+                    if navigate_previous {
                         if let Some(item) = previous_list_item(&items, selected_index) {
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item.id.clone()),
                             });
                         }
-                    } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+                    } else if navigate_next {
                         if let Some(item) = next_list_item(&items, selected_index) {
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item.id.clone()),
@@ -1702,43 +1731,89 @@ impl HostApp {
                     }
                 }
                 ui.add_space(10.0);
+                let actions = selected_actions(list);
+                let footer_visible = list.next_cursor.is_some()
+                    || actions
+                        .as_ref()
+                        .is_some_and(|(_, actions)| !actions.is_empty());
+                let content_height =
+                    (ui.available_height() - if footer_visible { 50.0 } else { 0.0 }).max(120.0);
                 if list.layout == ListLayout::Split {
                     ui.columns(2, |columns| {
-                        if let Some(item_id) = render_list(&mut columns[0], list, accepting_actions)
-                        {
+                        if let Some(item_id) = render_list(
+                            &mut columns[0],
+                            list,
+                            accepting_actions,
+                            egui::Id::new(("extension-list", &active.view_id)),
+                            content_height,
+                        ) {
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item_id),
                             });
                         }
                         if let Some(detail) = &list.detail {
-                            render_detail(&mut columns[1], detail);
+                            render_detail(
+                                &mut columns[1],
+                                detail,
+                                egui::Id::new(("extension-detail", &active.view_id)),
+                                content_height,
+                            );
+                        } else {
+                            render_empty_detail(&mut columns[1], content_height);
                         }
                     });
-                } else if let Some(item_id) = render_list(ui, list, accepting_actions) {
+                } else if let Some(item_id) = render_list(
+                    ui,
+                    list,
+                    accepting_actions,
+                    egui::Id::new(("extension-list", &active.view_id)),
+                    content_height,
+                ) {
                     event = Some(ViewEvent::SelectionChanged {
                         item_id: Some(item_id),
                     });
                 }
-                if let Some(cursor) = &list.next_cursor
-                    && accepting_actions
-                    && ui.button("Load more").clicked()
-                {
-                    event = Some(ViewEvent::LoadMore {
-                        cursor: cursor.clone(),
-                    });
-                }
-                if event.is_none()
-                    && let Some((item_id, actions)) = selected_actions(list)
-                    && let Some(action_id) = render_view_actions(ui, actions, accepting_actions)
-                {
-                    event = Some(ViewEvent::ActionInvoked {
-                        item_id: Some(item_id),
-                        action_id,
+                if footer_visible {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if let Some(cursor) = &list.next_cursor
+                            && accepting_actions
+                            && ui.button("Load more").clicked()
+                        {
+                            event = Some(ViewEvent::LoadMore {
+                                cursor: cursor.clone(),
+                            });
+                        }
+                        if event.is_none()
+                            && let Some((item_id, actions)) = actions
+                            && let Some(action_id) =
+                                render_view_actions(ui, actions, accepting_actions)
+                        {
+                            event = Some(ViewEvent::ActionInvoked {
+                                item_id: Some(item_id),
+                                action_id,
+                            });
+                        }
                     });
                 }
             }
             View::Detail { detail } => {
-                render_detail(ui, detail);
+                let actions_visible = !detail.actions.is_empty();
+                let content_height =
+                    (ui.available_height() - if actions_visible { 50.0 } else { 0.0 }).max(120.0);
+                render_detail(
+                    ui,
+                    detail,
+                    egui::Id::new(("extension-detail", &active.view_id)),
+                    content_height,
+                );
+                if actions_visible {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                }
                 if let Some(action_id) = render_view_actions(ui, &detail.actions, accepting_actions)
                 {
                     event = Some(ViewEvent::ActionInvoked {
@@ -1765,9 +1840,32 @@ impl HostApp {
         let context = ui.ctx().clone();
         self.poll_system_font(&context);
         if !self.visuals_configured {
+            context.set_theme(egui::Theme::Dark);
             let mut style = (*context.style_of(egui::Theme::Dark)).clone();
             style.spacing.item_spacing = egui::vec2(8.0, 8.0);
             style.spacing.button_padding = egui::vec2(12.0, 8.0);
+            style.visuals.override_text_color = Some(egui::Color32::from_rgb(218, 223, 235));
+            style.visuals.weak_text_color = Some(egui::Color32::from_rgb(139, 148, 171));
+            style.visuals.extreme_bg_color = egui::Color32::from_rgb(15, 17, 24);
+            style.visuals.text_edit_bg_color = Some(egui::Color32::from_rgb(15, 17, 24));
+            style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 30);
+            style.visuals.window_fill = egui::Color32::from_rgb(20, 22, 30);
+            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 32, 43);
+            style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(28, 32, 43);
+            style.visuals.widgets.inactive.bg_stroke =
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 58, 74));
+            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 44, 59);
+            style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(38, 44, 59);
+            style.visuals.widgets.hovered.bg_stroke =
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(78, 91, 120));
+            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 52, 69);
+            style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(45, 52, 69);
+            style.visuals.widgets.active.bg_stroke =
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(102, 124, 176));
+            style.visuals.widgets.open = style.visuals.widgets.active;
+            style.visuals.selection.bg_fill = egui::Color32::from_rgb(49, 61, 86);
+            style.visuals.selection.stroke =
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 173, 226));
             context.set_style_of(egui::Theme::Dark, style);
             self.visuals_configured = true;
         }
@@ -1842,17 +1940,35 @@ impl HostApp {
                             .color(egui::Color32::from_rgb(168, 176, 198)),
                     );
                     ui.add_space(12.0);
+                    let accepting_input =
+                        self.pending_invocation_id.is_none() && self.invocation_output.is_none();
+                    let (history_older, history_newer, select_previous, select_next) =
+                        if accepting_input {
+                            ui.input_mut(|input| {
+                                let history_older =
+                                    input.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowUp);
+                                let history_newer =
+                                    input.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowDown);
+                                let select_previous = !history_older
+                                    && input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp);
+                                let select_next = !history_newer
+                                    && input
+                                        .consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown);
+                                (history_older, history_newer, select_previous, select_next)
+                            })
+                        } else {
+                            (false, false, false, false)
+                        };
                     let response = ui
                         .add_enabled_ui(
                             self.pending_invocation_id.is_none()
                                 && self.invocation_output.is_none(),
                             |ui| {
-                                ui.add_sized(
-                                    [ui.available_width(), 54.0],
-                                    egui::TextEdit::singleline(&mut self.query)
-                                        .id(input_id)
-                                        .hint_text("Type a command, app, calculation, or keyword")
-                                        .font(egui::TextStyle::Heading),
+                                crate::SearchInput::root(
+                                    ui,
+                                    input_id,
+                                    &mut self.query,
+                                    "Type a command, app, calculation, or keyword",
                                 )
                             },
                         )
@@ -1866,24 +1982,30 @@ impl HostApp {
                         context.memory_mut(|memory| memory.request_focus(input_id));
                         self.focus_pending = false;
                     }
+                    if self.select_query_pending {
+                        let mut state =
+                            egui::TextEdit::load_state(&context, input_id).unwrap_or_default();
+                        state
+                            .cursor
+                            .set_char_range(Some(egui::text::CCursorRange::two(
+                                egui::text::CCursor::new(0),
+                                egui::text::CCursor::new(self.query.chars().count()),
+                            )));
+                        egui::TextEdit::store_state(&context, input_id, state);
+                        self.select_query_pending = false;
+                    }
 
-                    let accepting_input =
-                        self.pending_invocation_id.is_none() && self.invocation_output.is_none();
                     if accepting_input {
                         if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
                             self.execute_selected(&context);
                         }
-                        if ui.input(|input| {
-                            input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowUp)
-                        }) {
+                        if history_older {
                             self.navigate_history(HistoryDirection::Older);
-                        } else if ui.input(|input| {
-                            input.modifiers.ctrl && input.key_pressed(egui::Key::ArrowDown)
-                        }) {
+                        } else if history_newer {
                             self.navigate_history(HistoryDirection::Newer);
-                        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+                        } else if select_previous {
                             self.select_previous();
-                        } else if ui.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+                        } else if select_next {
                             self.select_next();
                         }
                     }
@@ -1968,45 +2090,66 @@ impl HostApp {
                             })
                             .color(egui::Color32::from_rgb(126, 134, 155)),
                         );
-                    } else if let Some(snapshot) = &self.search_snapshot
+                    } else if let Some(snapshot) = self.search_snapshot.clone()
                         && snapshot.generation == self.search_generation
                         && !snapshot.results.is_empty()
                     {
-                        for (index, result, selected) in crate::prepare_visible_results(
-                            snapshot,
-                            self.search_generation,
-                            self.selected_index,
-                        ) {
-                            let texture_id = icon_texture_id(
-                                self.icon_loader.as_ref(),
-                                &mut self.icon_textures,
-                                &mut self.pending_icons,
-                                &self.failed_icons,
-                                &mut self.icon_access_sequence,
-                                &result.candidate,
-                            );
-                            let title = egui::RichText::new(result.candidate.title())
-                                .color(egui::Color32::from_rgb(224, 228, 238));
-                            let button = match texture_id {
-                                Some(texture_id) => egui::Button::image_and_text(
-                                    (texture_id, egui::vec2(28.0, 28.0)),
-                                    title,
-                                ),
-                                None => egui::Button::new(title),
+                        const RESULT_ROW_HEIGHT: f32 = 40.0;
+                        let result_count = snapshot.results.len().min(MAX_ROOT_RESULTS);
+                        let scroll_id = ui.make_persistent_id("nanika.results");
+                        let available_height = ui.available_height();
+                        let mut results = egui::ScrollArea::vertical()
+                            .id_salt("nanika.results")
+                            .auto_shrink([false, false])
+                            .max_height(available_height);
+                        if self.selection_scroll_pending {
+                            let spacing = ui.spacing().item_spacing.y;
+                            let row_extent = RESULT_ROW_HEIGHT + spacing;
+                            let row_top = self.selected_index as f32 * row_extent;
+                            let row_bottom = row_top + RESULT_ROW_HEIGHT;
+                            let current_offset =
+                                egui::scroll_area::State::load(&context, scroll_id)
+                                    .map_or(0.0, |state| state.offset.y);
+                            let target_offset = if row_top < current_offset {
+                                row_top
+                            } else if row_bottom > current_offset + available_height {
+                                (row_bottom - available_height).max(0.0)
+                            } else {
+                                current_offset
                             };
-                            if ui
-                                .add_sized(
-                                    [ui.available_width(), 40.0],
-                                    button
-                                        .selected(selected)
-                                        .frame(true)
-                                        .frame_when_inactive(selected),
+                            results = results.vertical_scroll_offset(target_offset);
+                            self.selection_scroll_pending = false;
+                        }
+                        results.show_rows(ui, RESULT_ROW_HEIGHT, result_count, |ui, row_range| {
+                            for (index, result, selected) in crate::prepare_visible_results(
+                                &snapshot,
+                                self.search_generation,
+                                self.selected_index,
+                            )
+                            .skip(row_range.start)
+                            .take(row_range.len())
+                            {
+                                let texture_id = icon_texture_id(
+                                    self.icon_loader.as_ref(),
+                                    &mut self.icon_textures,
+                                    &mut self.pending_icons,
+                                    &self.failed_icons,
+                                    &mut self.icon_access_sequence,
+                                    &result.candidate,
+                                );
+                                if render_result_row(
+                                    ui,
+                                    texture_id,
+                                    result.candidate.title(),
+                                    selected,
+                                    RESULT_ROW_HEIGHT,
                                 )
                                 .clicked()
-                            {
-                                clicked_result_index = Some(index);
+                                {
+                                    clicked_result_index = Some(index);
+                                }
                             }
-                        }
+                        });
                     } else {
                         ui.label(
                             egui::RichText::new("No results")
@@ -2041,6 +2184,70 @@ fn list_items(list: &ListView) -> Vec<&ListItem> {
         .collect()
 }
 
+fn render_result_row(
+    ui: &mut egui::Ui,
+    texture_id: Option<egui::TextureId>,
+    title: &str,
+    selected: bool,
+    height: f32,
+) -> egui::Response {
+    let desired_size = egui::vec2(ui.available_width(), height);
+    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
+
+    if ui.is_rect_visible(rect) {
+        let fill = match (selected, response.hovered()) {
+            (true, true) => egui::Color32::from_rgb(45, 52, 69),
+            (true, false) => egui::Color32::from_rgb(38, 44, 59),
+            (false, true) => egui::Color32::from_rgb(29, 34, 46),
+            (false, false) => egui::Color32::TRANSPARENT,
+        };
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, egui::CornerRadius::same(6), fill);
+        if selected {
+            painter.line_segment(
+                [
+                    egui::pos2(rect.left() + 2.0, rect.top() + 8.0),
+                    egui::pos2(rect.left() + 2.0, rect.bottom() - 8.0),
+                ],
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(117, 148, 218)),
+            );
+        }
+
+        let icon_size = 28.0;
+        let content_left = rect.left() + 10.0;
+        let text_left = if let Some(texture_id) = texture_id {
+            let icon_rect = egui::Rect::from_min_size(
+                egui::pos2(content_left, rect.center().y - icon_size * 0.5),
+                egui::vec2(icon_size, icon_size),
+            );
+            painter.image(
+                texture_id,
+                icon_rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+            icon_rect.right() + 8.0
+        } else {
+            content_left
+        };
+        let text_color = if selected {
+            egui::Color32::from_rgb(242, 245, 252)
+        } else {
+            egui::Color32::from_rgb(218, 223, 235)
+        };
+        painter.text(
+            egui::pos2(text_left, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            title,
+            egui::TextStyle::Body.resolve(ui.style()),
+            text_color,
+        );
+    }
+
+    response
+}
+
 fn previous_list_item<'a>(
     items: &'a [&ListItem],
     selected_index: Option<usize>,
@@ -2070,44 +2277,105 @@ fn selected_primary_action(list: &ListView) -> Option<(String, String)> {
     Some((item.id.clone(), action.id.clone()))
 }
 
-fn render_list(ui: &mut egui::Ui, list: &ListView, enabled: bool) -> Option<String> {
+fn render_list(
+    ui: &mut egui::Ui,
+    list: &ListView,
+    enabled: bool,
+    scroll_id: egui::Id,
+    max_height: f32,
+) -> Option<String> {
     let mut clicked = None;
     egui::ScrollArea::vertical()
+        .id_salt(scroll_id)
         .auto_shrink([false, false])
-        .max_height(330.0)
+        .max_height(max_height)
         .show(ui, |ui| {
             for section in &list.sections {
                 if let Some(title) = &section.title {
                     ui.label(
                         egui::RichText::new(title)
+                            .size(11.0)
                             .strong()
-                            .color(egui::Color32::from_rgb(168, 176, 198)),
+                            .color(egui::Color32::from_rgb(126, 136, 160)),
                     );
+                    ui.add_space(2.0);
                 }
                 for item in &section.items {
                     let selected = list.selected_item_id.as_deref() == Some(item.id.as_str());
-                    let label = match &item.subtitle {
-                        Some(subtitle) => format!("{}  {}", item.title, subtitle),
-                        None => item.title.clone(),
-                    };
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::selectable(
-                                selected,
-                                egui::RichText::new(label)
-                                    .color(egui::Color32::from_rgb(224, 228, 238)),
-                            ),
-                        )
-                        .clicked()
-                    {
+                    if render_list_item(ui, item, selected, enabled).clicked() {
                         clicked = Some(item.id.clone());
                     }
                 }
-                ui.add_space(8.0);
+                ui.add_space(6.0);
             }
         });
     clicked
+}
+
+fn render_list_item(
+    ui: &mut egui::Ui,
+    item: &ListItem,
+    selected: bool,
+    enabled: bool,
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), sense);
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &item.title));
+    if !ui.is_rect_visible(rect) {
+        return response;
+    }
+
+    let fill = match (selected, response.hovered() && enabled) {
+        (true, true) => egui::Color32::from_rgb(45, 52, 69),
+        (true, false) => egui::Color32::from_rgb(38, 44, 59),
+        (false, true) => egui::Color32::from_rgb(29, 34, 46),
+        (false, false) => egui::Color32::TRANSPARENT,
+    };
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, egui::CornerRadius::same(6), fill);
+    if selected {
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 2.0, rect.top() + 9.0),
+                egui::pos2(rect.left() + 2.0, rect.bottom() - 9.0),
+            ],
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(117, 148, 218)),
+        );
+    }
+
+    let text_left = rect.left() + 12.0;
+    let title_color = if enabled {
+        egui::Color32::from_rgb(224, 228, 238)
+    } else {
+        egui::Color32::from_rgb(126, 134, 155)
+    };
+    let title_position = if item.subtitle.is_some() {
+        egui::pos2(text_left, rect.top() + 16.0)
+    } else {
+        egui::pos2(text_left, rect.center().y)
+    };
+    painter.text(
+        title_position,
+        egui::Align2::LEFT_CENTER,
+        &item.title,
+        egui::TextStyle::Body.resolve(ui.style()),
+        title_color,
+    );
+    if let Some(subtitle) = &item.subtitle {
+        painter.text(
+            egui::pos2(text_left, rect.bottom() - 10.0),
+            egui::Align2::LEFT_BOTTOM,
+            subtitle,
+            egui::FontId::proportional(11.0),
+            egui::Color32::from_rgb(126, 136, 160),
+        );
+    }
+    response
 }
 
 fn selected_actions(list: &ListView) -> Option<(String, &[ViewAction])> {
@@ -2122,13 +2390,12 @@ fn render_view_actions(ui: &mut egui::Ui, actions: &[ViewAction], enabled: bool)
     if actions.is_empty() {
         return None;
     }
-    ui.separator();
     let mut invoked = None;
     ui.horizontal_wrapped(|ui| {
         for action in actions {
             let button = match action.style {
                 ViewActionStyle::Primary => {
-                    egui::Button::new(&action.title).fill(egui::Color32::from_rgb(72, 98, 158))
+                    egui::Button::new(&action.title).fill(egui::Color32::from_rgb(57, 72, 108))
                 }
                 ViewActionStyle::Secondary => egui::Button::new(&action.title),
                 ViewActionStyle::Destructive => egui::Button::new(
@@ -2152,44 +2419,79 @@ fn view_search_text(view: &View) -> Option<String> {
     }
 }
 
-fn render_detail(ui: &mut egui::Ui, detail: &DetailView) {
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .max_height(330.0)
+fn render_detail(ui: &mut egui::Ui, detail: &DetailView, scroll_id: egui::Id, max_height: f32) {
+    egui::Frame::new()
+        .fill(egui::Color32::from_rgb(17, 19, 27))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 47, 61)))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(14))
         .show(ui, |ui| {
-            if let Some(title) = &detail.title {
-                ui.label(
-                    egui::RichText::new(title)
-                        .strong()
-                        .color(egui::Color32::from_rgb(224, 228, 238)),
-                );
-                ui.add_space(6.0);
-            }
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(&detail.body).color(egui::Color32::from_rgb(224, 228, 238)),
-                )
-                .selectable(true)
-                .wrap(),
-            );
-            if !detail.metadata.is_empty() {
-                ui.separator();
-                for metadata in &detail.metadata {
-                    ui.horizontal(|ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(scroll_id)
+                .auto_shrink([false, false])
+                .max_height((max_height - 28.0).max(80.0))
+                .show(ui, |ui| {
+                    if let Some(title) = &detail.title {
                         ui.label(
-                            egui::RichText::new(&metadata.title)
-                                .color(egui::Color32::from_rgb(126, 134, 155)),
+                            egui::RichText::new(title)
+                                .size(15.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(232, 235, 244)),
                         );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new(&metadata.value)
-                                    .color(egui::Color32::from_rgb(224, 228, 238)),
-                            );
-                        });
-                    });
-                }
-            }
+                        ui.add_space(10.0);
+                    }
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&detail.body)
+                                .color(egui::Color32::from_rgb(202, 208, 223)),
+                        )
+                        .selectable(true)
+                        .wrap(),
+                    );
+                    if !detail.metadata.is_empty() {
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(8.0);
+                        for metadata in &detail.metadata {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(&metadata.title)
+                                        .color(egui::Color32::from_rgb(126, 136, 160)),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            egui::RichText::new(&metadata.value)
+                                                .color(egui::Color32::from_rgb(218, 223, 235)),
+                                        );
+                                    },
+                                );
+                            });
+                        }
+                    }
+                });
         });
+}
+
+fn render_empty_detail(ui: &mut egui::Ui, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), height),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(
+        rect,
+        egui::CornerRadius::same(8),
+        egui::Color32::from_rgb(17, 19, 27),
+    );
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "Select an item to preview",
+        egui::TextStyle::Body.resolve(ui.style()),
+        egui::Color32::from_rgb(126, 136, 160),
+    );
 }
 
 fn platform_error_message(error: PlatformError) -> HostDiagnostic {
@@ -2472,7 +2774,7 @@ fn unix_timestamp_millis() -> u64 {
 }
 
 pub(super) fn maximum_visible_result_index(result_count: usize) -> usize {
-    result_count.min(MAX_VISIBLE_RESULTS).saturating_sub(1)
+    result_count.min(MAX_ROOT_RESULTS).saturating_sub(1)
 }
 
 pub(super) fn selected_execution(

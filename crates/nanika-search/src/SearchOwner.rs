@@ -33,23 +33,29 @@ impl SearchOwner {
                 let mut generation = 0;
                 let mut query = String::new();
                 let mut extension_results: HashMap<String, Vec<Candidate>> = HashMap::new();
+                let mut expected_extensions = 0;
+                let mut waiting_for_initial_snapshots = false;
 
                 while let Ok(command) = receiver.recv() {
-                    if let Some((next_generation, next_query)) =
+                    if let Some((next_generation, next_query, next_expected_extensions)) =
                         take_pending_query(&owner_pending_query)
                     {
                         generation = next_generation;
                         query = next_query;
+                        expected_extensions = next_expected_extensions;
+                        waiting_for_initial_snapshots = expected_extensions > 0;
                         extension_results.clear();
-                        publish_current(
-                            &mut engine,
-                            generation,
-                            &query,
-                            &extension_results,
-                            &initial_usage,
-                            &owner_latest,
-                            &owner_notifier,
-                        );
+                        if !waiting_for_initial_snapshots {
+                            publish_current(
+                                &mut engine,
+                                generation,
+                                &query,
+                                &extension_results,
+                                &initial_usage,
+                                &owner_latest,
+                                &owner_notifier,
+                            );
+                        }
                     }
                     match command {
                         SearchCommand::WakeQuery => {}
@@ -74,6 +80,12 @@ impl SearchOwner {
                                 );
                             }
                             extension_results.insert(extension_id, unique.into_values().collect());
+                            if waiting_for_initial_snapshots
+                                && extension_results.len() < expected_extensions
+                            {
+                                continue;
+                            }
+                            waiting_for_initial_snapshots = false;
                             publish_current(
                                 &mut engine,
                                 generation,
@@ -145,7 +157,9 @@ impl SearchOwner {
     }
 }
 
-fn take_pending_query(pending_query: &Mutex<Option<(u64, String)>>) -> Option<(u64, String)> {
+fn take_pending_query(
+    pending_query: &Mutex<Option<(u64, String, usize)>>,
+) -> Option<(u64, String, usize)> {
     pending_query
         .lock()
         .unwrap_or_else(|error| error.into_inner())

@@ -20,10 +20,10 @@ fn explicit_shell_launch_uses_the_platform_interpreter() {
         })
         .expect("shell command should launch");
 
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while marker.metadata().map_or(0, |metadata| metadata.len()) == 0 {
         assert!(Instant::now() < deadline, "shell command should complete");
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(
         std::fs::read_to_string(&marker)

@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -28,6 +29,7 @@ pub(crate) struct ExtensionSearchWorker {
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
     settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>>,
+    query_ready: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -57,6 +59,8 @@ impl ExtensionSearchWorker {
         let settings_result: Arc<Mutex<Option<ExtensionSettingsResult>>> =
             Arc::new(Mutex::new(None));
         let worker_settings_result = Arc::clone(&settings_result);
+        let query_ready = Arc::new(AtomicBool::new(false));
+        let worker_query_ready = Arc::clone(&query_ready);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
@@ -96,6 +100,7 @@ impl ExtensionSearchWorker {
                     request_id: None,
                     result: initial_settings,
                 });
+                worker_query_ready.store(true, Ordering::Release);
                 notify(&notifier);
                 loop {
                     let work = next_work(&worker_state);
@@ -220,6 +225,7 @@ impl ExtensionSearchWorker {
             last_error,
             invocation_output,
             settings_result,
+            query_ready,
             thread: Some(thread),
         })
     }
@@ -308,6 +314,14 @@ impl ExtensionSearchWorker {
 
     pub fn extension_id(&self) -> &str {
         &self.extension_id
+    }
+
+    pub(crate) fn is_query_ready(&self) -> bool {
+        self.query_ready.load(Ordering::Acquire)
+            && self
+                .thread
+                .as_ref()
+                .is_some_and(|thread| !thread.is_finished())
     }
 
     pub fn last_error(&self) -> Option<HostDiagnostic> {
@@ -505,7 +519,9 @@ fn run_query(
     if !contributions.root_search {
         return publish_contributions(search, extension_id, query.generation, contributions);
     }
-    publish_contributions(search, extension_id, query.generation, contributions)?;
+    if !contributions.commands.is_empty() {
+        publish_contributions(search, extension_id, query.generation, contributions)?;
+    }
     let mut retried = false;
     loop {
         let result = runtime.query_incremental(

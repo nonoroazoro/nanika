@@ -41,10 +41,13 @@ An official macOS build sets `NANIKA_SIGN_IDENTITY` and `NANIKA_NOTARY_PROFILE`.
 7. Install each artifact on a clean user profile and verify startup, summon, settings, actions, diagnostics, and removal.
 8. Confirm the host starts all five built-in extension processes and that one failed extension does not prevent the other features from loading.
 9. Confirm user-facing failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
-10. Confirm Root Search and extension view inputs render Latin and CJK text through native IME composition on Windows and macOS.
-11. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, and every action style through the host-rendered protocol path.
-12. Confirm Root Search, shared view components, interaction states, high-DPI rendering, and reduced motion match the current [UI design baseline](../design/ui.md) on Windows and macOS.
-13. Publish the versioned archives, checksums, and release notes together.
+10. Confirm Root Search and extension view inputs render Latin and CJK text through native IME composition, with aligned text and caret geometry, on Windows and macOS.
+11. Confirm Root Search Enter and pointer activation, Up and Down selection, selected-row scrolling, query selection after reopen, and stable result publication while typing.
+12. Confirm localized application names and original-name aliases are searchable. Confirm cached icons are normalized and remain responsive while scrolling on Windows and macOS.
+13. Confirm calculator results appear for explicit symbolic and word operators and do not appear for plain search terms.
+14. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the host-rendered protocol path.
+15. Confirm Root Search, shared view components, interaction states, high-DPI rendering, and reduced motion against approved native captures on Windows and macOS.
+16. Publish the versioned archives, checksums, and release notes together.
 
 ## Update and rollback
 
