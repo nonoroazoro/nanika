@@ -42,6 +42,7 @@ impl CalculatorEngine {
             Candidate {
                 entry_id: format!("calculator.{}", stable_hash(&[query, result])),
                 title: format!("= {result}"),
+                subtitle: Some("Calculator".to_owned()),
                 action_id: COPY_ACTION_ID.to_owned(),
                 aliases: vec![query.to_owned()],
                 icon: None,

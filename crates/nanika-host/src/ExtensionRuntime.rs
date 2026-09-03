@@ -135,6 +135,7 @@ impl ExtensionRuntime {
                     vec![Candidate {
                         entry_id: "prompt".to_owned(),
                         title: format!("Ask {}", process.extension_id()),
+                        subtitle: Some("AI Command".to_owned()),
                         action_id: "prompt".to_owned(),
                         aliases: vec![query],
                         icon: None,

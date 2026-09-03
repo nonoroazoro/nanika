@@ -7,6 +7,7 @@ use crate::IconReference;
 pub struct Candidate {
     pub entry_id: String,
     pub title: String,
+    pub subtitle: Option<String>,
     pub action_id: String,
     pub aliases: Vec<String>,
     pub icon: Option<IconReference>,

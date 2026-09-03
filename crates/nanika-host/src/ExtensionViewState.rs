@@ -10,4 +10,6 @@ pub(crate) struct ExtensionViewState {
     pub(crate) view: View,
     pub(crate) search_text: Option<String>,
     pub(crate) queued_search_text: Option<String>,
+    pub(crate) selected_item_id: Option<String>,
+    pub(crate) queued_selection_item_id: Option<String>,
 }

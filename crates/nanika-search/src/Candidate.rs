@@ -6,6 +6,7 @@ pub struct Candidate {
     entry_id: String,
     extension_id: String,
     title: String,
+    subtitle: Option<String>,
     action_id: String,
     aliases: Vec<String>,
     icon_key: Option<String>,
@@ -29,6 +30,7 @@ impl Candidate {
             entry_id: entry_id.into(),
             extension_id: extension_id.into(),
             title,
+            subtitle: None,
             action_id: action_id.into(),
             aliases,
             icon_key: None,
@@ -38,6 +40,11 @@ impl Candidate {
 
     pub fn with_icon_key(mut self, icon_key: Option<String>) -> Self {
         self.icon_key = icon_key;
+        self
+    }
+
+    pub fn with_subtitle(mut self, subtitle: Option<String>) -> Self {
+        self.subtitle = subtitle;
         self
     }
 
@@ -55,6 +62,10 @@ impl Candidate {
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    pub fn subtitle(&self) -> Option<&str> {
+        self.subtitle.as_deref()
     }
 
     pub fn action_id(&self) -> &str {

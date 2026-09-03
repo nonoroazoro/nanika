@@ -15,7 +15,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::{Window, WindowAttributes, WindowId, WindowLevel};
 
-use crate::{HostApp, HostRunnerEvent, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS};
+use crate::{DesignSystem, HostApp, HostRunnerEvent, OVERLAY_HEIGHT_POINTS, OVERLAY_WIDTH_POINTS};
 
 pub struct HostRunner {
     app: HostApp,
@@ -157,7 +157,7 @@ impl HostRunner {
             .paint_and_update_textures(
                 ViewportId::ROOT,
                 output.pixels_per_point,
-                [20.0 / 255.0, 22.0 / 255.0, 30.0 / 255.0, 1.0],
+                DesignSystem::clear_color(self.context.theme()),
                 &clipped_primitives,
                 &mut textures_delta,
                 Vec::new(),
@@ -369,7 +369,7 @@ fn overlay_window_attributes() -> WindowAttributes {
             OVERLAY_WIDTH_POINTS,
             OVERLAY_HEIGHT_POINTS,
         ))
-        .with_min_inner_size(LogicalSize::new(480.0, 240.0))
+        .with_min_inner_size(LogicalSize::new(480.0, 120.0))
         .with_decorations(false)
         .with_resizable(false)
         .with_window_level(WindowLevel::AlwaysOnTop)

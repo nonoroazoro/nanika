@@ -9,7 +9,7 @@ use crate::{IconIdentity, IconLoadResult, IconLoaderCommand};
 
 const ICON_COMMAND_CAPACITY: usize = 16;
 const MAX_ICON_FILE_BYTES: u64 = 1024 * 1024;
-const MAX_ICON_DIMENSION: u32 = 64;
+const MAX_ICON_DIMENSION: u32 = 128;
 
 /// Asynchronously decodes bounded extension icon cache entries.
 pub(crate) struct IconLoader {
@@ -87,7 +87,7 @@ fn load_icon(cache_root: &Path, identity: &IconIdentity) -> Result<egui::ColorIm
         .join("icons")
         .join(identity.extension_id())
         .join(identity.key())
-        .join("32.png");
+        .join("128.png");
     let file = File::open(&path).map_err(|error| error.to_string())?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if metadata.len() > MAX_ICON_FILE_BYTES {

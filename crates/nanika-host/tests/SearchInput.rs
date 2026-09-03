@@ -23,7 +23,7 @@ fn root_input_has_compact_native_font_metrics_and_stable_height() {
 
     assert!(row_height <= 34.0, "unexpected row height: {row_height}");
     assert!(
-        (62.0..=66.0).contains(&input_height),
+        (58.0..=62.0).contains(&input_height),
         "unexpected input height: {input_height}"
     );
 }

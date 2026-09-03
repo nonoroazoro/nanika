@@ -12,8 +12,7 @@ use nanika_platform::{
     StartupService, active_overlay_position,
 };
 use nanika_protocol::{
-    DetailView, ListItem, ListLayout, ListView, NavigationEffect, View, ViewAction,
-    ViewActionStyle, ViewEvent,
+    ListItem, ListLayout, ListView, NavigationEffect, View, ViewAction, ViewActionStyle, ViewEvent,
 };
 use nanika_search::{
     Candidate, InputHistory, MAX_QUERY_CHARS, SearchHandle, SearchOwner, SearchSnapshot, UsageKey,
@@ -90,12 +89,15 @@ pub struct HostApp {
     focus_pending: bool,
     select_query_pending: bool,
     selection_scroll_pending: bool,
+    results_scroll_offset: f32,
+    results_viewport_height: f32,
     focus_observed: bool,
     focus_lost_pending: bool,
     motion: OverlayMotion,
     visuals_configured: bool,
     forced_reduced_motion: bool,
     overlay_window_configured: bool,
+    overlay_height_points: f32,
     last_overlay_position: Option<OverlayPosition>,
     activation_sequence: u64,
     activation_trace: Option<ActivationTrace>,
@@ -317,12 +319,15 @@ impl HostApp {
             focus_pending: false,
             select_query_pending: false,
             selection_scroll_pending: false,
+            results_scroll_offset: 0.0,
+            results_viewport_height: 0.0,
             focus_observed: false,
             focus_lost_pending: false,
             motion: OverlayMotion::new(reduced_motion),
             visuals_configured: false,
             forced_reduced_motion: reduced_motion,
             overlay_window_configured: true,
+            overlay_height_points: OVERLAY_HEIGHT_POINTS,
             last_overlay_position: None,
             activation_sequence: 0,
             activation_trace: None,
@@ -507,14 +512,22 @@ impl HostApp {
             self.focus_observed = false;
         }
         self.motion.show();
+        let overlay_height = self.desired_overlay_height();
+        if (overlay_height - self.overlay_height_points).abs() > f32::EPSILON {
+            context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                OVERLAY_WIDTH_POINTS,
+                overlay_height,
+            )));
+            self.overlay_height_points = overlay_height;
+        }
         if !self.overlay_window_configured {
             context.send_viewport_cmd(egui::ViewportCommand::Title("Nanika".to_owned()));
             context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
                 OVERLAY_WIDTH_POINTS,
-                OVERLAY_HEIGHT_POINTS,
+                overlay_height,
             )));
             context.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                480.0, 240.0,
+                480.0, 120.0,
             )));
             context.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
             context.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
@@ -530,11 +543,8 @@ impl HostApp {
             if let Some(trace) = self.activation_trace.as_mut() {
                 trace.mark_placement_started(Instant::now());
             }
-            match active_overlay_position(
-                OVERLAY_WIDTH_POINTS,
-                OVERLAY_HEIGHT_POINTS,
-                native_scale_factor,
-            ) {
+            match active_overlay_position(OVERLAY_WIDTH_POINTS, overlay_height, native_scale_factor)
+            {
                 Ok(position) => {
                     if self.operation_error.as_ref().is_some_and(|error| {
                         error.user_message()
@@ -742,6 +752,7 @@ impl HostApp {
                 self.invocation_output = None;
                 self.action_error = None;
                 let search_text = view_search_text(&view);
+                let selected_item_id = view_selected_item_id(&view);
                 self.view_stack.push(crate::ExtensionViewState {
                     extension_id,
                     generation,
@@ -750,6 +761,8 @@ impl HostApp {
                     view: *view,
                     search_text,
                     queued_search_text: None,
+                    selected_item_id,
+                    queued_selection_item_id: None,
                 });
                 self.pending_view_request_id = None;
                 self.focus_pending = true;
@@ -813,6 +826,38 @@ impl HostApp {
             && let Some(active) = self.view_stack.last_mut()
         {
             active.queued_search_text = Some(text);
+        }
+    }
+
+    fn queue_view_selection(&mut self, item_id: String, context: &egui::Context) {
+        let Some(active) = self.view_stack.last_mut() else {
+            return;
+        };
+        active.selected_item_id = Some(item_id.clone());
+        active.queued_selection_item_id = Some(item_id);
+        self.flush_view_selection(context);
+        context.request_repaint();
+    }
+
+    fn flush_view_selection(&mut self, context: &egui::Context) {
+        if self.pending_view_request_id.is_some() {
+            return;
+        }
+        let queued = self
+            .view_stack
+            .last_mut()
+            .and_then(|active| active.queued_selection_item_id.take());
+        let Some(item_id) = queued else {
+            return;
+        };
+        if !self.send_view_event(
+            ViewEvent::SelectionChanged {
+                item_id: Some(item_id.clone()),
+            },
+            context,
+        ) && let Some(active) = self.view_stack.last_mut()
+        {
+            active.queued_selection_item_id = Some(item_id);
         }
     }
 
@@ -1023,6 +1068,9 @@ impl HostApp {
                         if active.queued_search_text.is_none() {
                             active.search_text = view_search_text(&active.view);
                         }
+                        if active.queued_selection_item_id.is_none() {
+                            active.selected_item_id = view_selected_item_id(&active.view);
+                        }
                     }
                     self.apply_navigation_effect(
                         update.extension_id,
@@ -1030,6 +1078,7 @@ impl HostApp {
                         payload.effect,
                         context,
                     );
+                    self.flush_view_selection(context);
                     self.flush_view_search(context);
                 }
                 Err(error) => {
@@ -1105,7 +1154,13 @@ impl HostApp {
 
     fn select_previous(&mut self) {
         let selected_index = self.selected_index.saturating_sub(1);
-        self.selection_scroll_pending = selected_index != self.selected_index;
+        self.selection_scroll_pending = selected_index != self.selected_index
+            && crate::root_selection_scroll_target(
+                selected_index,
+                self.results_scroll_offset,
+                self.results_viewport_height,
+            )
+            .is_some();
         self.selected_index = selected_index;
     }
 
@@ -1114,7 +1169,13 @@ impl HostApp {
             maximum_visible_result_index(snapshot.results.len())
         });
         let selected_index = self.selected_index.saturating_add(1).min(maximum);
-        self.selection_scroll_pending = selected_index != self.selected_index;
+        self.selection_scroll_pending = selected_index != self.selected_index
+            && crate::root_selection_scroll_target(
+                selected_index,
+                self.results_scroll_offset,
+                self.results_viewport_height,
+            )
+            .is_some();
         self.selected_index = selected_index;
     }
 
@@ -1607,14 +1668,27 @@ impl HostApp {
         let Some(active) = self.view_stack.last().cloned() else {
             return;
         };
+        let palette = crate::DesignSystem::palette(ui);
         let accepting_actions = self.pending_view_request_id.is_none();
         let mut event = None;
         let mut back_requested = false;
+        let mut scroll_to_item_id = None;
         ui.horizontal_centered(|ui| {
             if ui
                 .add_sized(
-                    [72.0, 34.0],
-                    egui::Button::new(egui::RichText::new("‹  Back").size(14.0)),
+                    [
+                        crate::DesignSystem::BACK_BUTTON_WIDTH,
+                        crate::DesignSystem::BACK_BUTTON_HEIGHT,
+                    ],
+                    egui::Button::new(
+                        egui::RichText::new("‹ Back")
+                            .size(crate::DesignSystem::FONT_BACK)
+                            .color(palette.text_detail),
+                    )
+                    .frame(false)
+                    .corner_radius(egui::CornerRadius::same(
+                        crate::DesignSystem::CONTROL_RADIUS,
+                    )),
                 )
                 .clicked()
             {
@@ -1627,9 +1701,9 @@ impl HostApp {
             };
             ui.label(
                 egui::RichText::new(title)
-                    .size(17.0)
+                    .size(crate::DesignSystem::FONT_ROUTE_TITLE)
                     .strong()
-                    .color(egui::Color32::from_rgb(224, 228, 238)),
+                    .color(palette.text_row),
             );
             if let View::List { list } = &active.view
                 && let Some(filter) = &list.filter
@@ -1679,16 +1753,12 @@ impl HostApp {
                     .search_text
                     .clone()
                     .unwrap_or_else(|| list.search_text.clone());
-                let (navigate_previous, navigate_next) = if accepting_actions {
-                    ui.input_mut(|input| {
-                        (
-                            input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
-                            input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
-                        )
-                    })
-                } else {
-                    (false, false)
-                };
+                let (navigate_previous, navigate_next) = ui.input_mut(|input| {
+                    (
+                        input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                        input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                    )
+                });
                 let response = crate::SearchInput::compact(
                     ui,
                     input_id,
@@ -1704,25 +1774,29 @@ impl HostApp {
                     self.focus_pending = false;
                 }
                 let items = list_items(list);
-                let selected_index = list
+                let selected_index = active
                     .selected_item_id
                     .as_ref()
                     .and_then(|selected| items.iter().position(|item| item.id == *selected));
-                if accepting_actions && event.is_none() {
+                if event.is_none() {
                     if navigate_previous {
                         if let Some(item) = previous_list_item(&items, selected_index) {
+                            scroll_to_item_id = Some(item.id.clone());
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item.id.clone()),
                             });
                         }
                     } else if navigate_next {
                         if let Some(item) = next_list_item(&items, selected_index) {
+                            scroll_to_item_id = Some(item.id.clone());
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item.id.clone()),
                             });
                         }
-                    } else if ui.input(|input| input.key_pressed(egui::Key::Enter))
-                        && let Some((item_id, action_id)) = selected_primary_action(list)
+                    } else if accepting_actions
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        && let Some((item_id, action_id)) =
+                            selected_primary_action(list, active.selected_item_id.as_deref())
                     {
                         event = Some(ViewEvent::ActionInvoked {
                             item_id: Some(item_id),
@@ -1731,13 +1805,18 @@ impl HostApp {
                     }
                 }
                 ui.add_space(10.0);
-                let actions = selected_actions(list);
+                let actions = selected_actions(list, active.selected_item_id.as_deref());
                 let footer_visible = list.next_cursor.is_some()
                     || actions
                         .as_ref()
                         .is_some_and(|(_, actions)| !actions.is_empty());
-                let content_height =
-                    (ui.available_height() - if footer_visible { 50.0 } else { 0.0 }).max(120.0);
+                let content_height = (ui.available_height()
+                    - if footer_visible {
+                        crate::DesignSystem::ACTION_BAR_HEIGHT + 8.0
+                    } else {
+                        0.0
+                    })
+                .max(120.0);
                 if list.layout == ListLayout::Split {
                     ui.columns(2, |columns| {
                         if let Some(item_id) = render_list(
@@ -1746,20 +1825,22 @@ impl HostApp {
                             accepting_actions,
                             egui::Id::new(("extension-list", &active.view_id)),
                             content_height,
+                            scroll_to_item_id.as_deref(),
+                            active.selected_item_id.as_deref(),
                         ) {
                             event = Some(ViewEvent::SelectionChanged {
                                 item_id: Some(item_id),
                             });
                         }
                         if let Some(detail) = &list.detail {
-                            render_detail(
+                            crate::detail_panel(
                                 &mut columns[1],
                                 detail,
                                 egui::Id::new(("extension-detail", &active.view_id)),
                                 content_height,
                             );
                         } else {
-                            render_empty_detail(&mut columns[1], content_height);
+                            crate::empty_detail_panel(&mut columns[1], content_height);
                         }
                     });
                 } else if let Some(item_id) = render_list(
@@ -1768,6 +1849,8 @@ impl HostApp {
                     accepting_actions,
                     egui::Id::new(("extension-list", &active.view_id)),
                     content_height,
+                    scroll_to_item_id.as_deref(),
+                    active.selected_item_id.as_deref(),
                 ) {
                     event = Some(ViewEvent::SelectionChanged {
                         item_id: Some(item_id),
@@ -1801,9 +1884,14 @@ impl HostApp {
             }
             View::Detail { detail } => {
                 let actions_visible = !detail.actions.is_empty();
-                let content_height =
-                    (ui.available_height() - if actions_visible { 50.0 } else { 0.0 }).max(120.0);
-                render_detail(
+                let content_height = (ui.available_height()
+                    - if actions_visible {
+                        crate::DesignSystem::ACTION_BAR_HEIGHT + 8.0
+                    } else {
+                        0.0
+                    })
+                .max(120.0);
+                crate::detail_panel(
                     ui,
                     detail,
                     egui::Id::new(("extension-detail", &active.view_id)),
@@ -1829,10 +1917,17 @@ impl HostApp {
         }
         if let Some(error) = self.action_error.as_ref() {
             ui.add_space(8.0);
-            ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error.user_message());
+            ui.colored_label(palette.text_error, error.user_message());
         }
         if let Some(event) = event {
-            let _ = self.send_view_event(event, context);
+            match event {
+                ViewEvent::SelectionChanged {
+                    item_id: Some(item_id),
+                } => self.queue_view_selection(item_id, context),
+                event => {
+                    let _ = self.send_view_event(event, context);
+                }
+            }
         }
     }
 
@@ -1840,33 +1935,7 @@ impl HostApp {
         let context = ui.ctx().clone();
         self.poll_system_font(&context);
         if !self.visuals_configured {
-            context.set_theme(egui::Theme::Dark);
-            let mut style = (*context.style_of(egui::Theme::Dark)).clone();
-            style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-            style.spacing.button_padding = egui::vec2(12.0, 8.0);
-            style.visuals.override_text_color = Some(egui::Color32::from_rgb(218, 223, 235));
-            style.visuals.weak_text_color = Some(egui::Color32::from_rgb(139, 148, 171));
-            style.visuals.extreme_bg_color = egui::Color32::from_rgb(15, 17, 24);
-            style.visuals.text_edit_bg_color = Some(egui::Color32::from_rgb(15, 17, 24));
-            style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 30);
-            style.visuals.window_fill = egui::Color32::from_rgb(20, 22, 30);
-            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 32, 43);
-            style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(28, 32, 43);
-            style.visuals.widgets.inactive.bg_stroke =
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(52, 58, 74));
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 44, 59);
-            style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(38, 44, 59);
-            style.visuals.widgets.hovered.bg_stroke =
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(78, 91, 120));
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 52, 69);
-            style.visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(45, 52, 69);
-            style.visuals.widgets.active.bg_stroke =
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(102, 124, 176));
-            style.visuals.widgets.open = style.visuals.widgets.active;
-            style.visuals.selection.bg_fill = egui::Color32::from_rgb(49, 61, 86);
-            style.visuals.selection.stroke =
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(150, 173, 226));
-            context.set_style_of(egui::Theme::Dark, style);
+            crate::DesignSystem::install(&context);
             self.visuals_configured = true;
         }
         *self
@@ -1916,30 +1985,36 @@ impl HostApp {
             return;
         }
 
+        let overlay_height = self.desired_overlay_height();
+        if (overlay_height - self.overlay_height_points).abs() > f32::EPSILON {
+            context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                OVERLAY_WIDTH_POINTS,
+                overlay_height,
+            )));
+            self.overlay_height_points = overlay_height;
+            context.request_repaint();
+        }
+
         let input_id = egui::Id::new("nanika.query");
         let alpha = (self.motion.value() * 255.0).round() as u8;
-        let panel_fill = egui::Color32::from_rgba_unmultiplied(20, 22, 30, alpha);
+        let panel_fill = crate::DesignSystem::root_surface(alpha, context.theme());
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(panel_fill)
-                    .inner_margin(egui::Margin::same(24)),
+                    .inner_margin(egui::Margin::ZERO),
             )
             .show(ui, |ui| {
+                let palette = crate::DesignSystem::palette(ui);
                 ui.set_opacity(self.motion.value());
                 if !self.view_stack.is_empty() {
-                    self.render_extension_view(ui, &context);
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::same(crate::DesignSystem::VIEW_INSET))
+                        .show(ui, |ui| self.render_extension_view(ui, &context));
                     return;
                 }
-                ui.vertical_centered(|ui| {
-                    ui.add_space(24.0);
-                    ui.label(
-                        egui::RichText::new("NANIKA")
-                            .size(13.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(168, 176, 198)),
-                    );
-                    ui.add_space(12.0);
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     let accepting_input =
                         self.pending_invocation_id.is_none() && self.invocation_output.is_none();
                     let (history_older, history_newer, select_previous, select_next) =
@@ -1968,7 +2043,7 @@ impl HostApp {
                                     ui,
                                     input_id,
                                     &mut self.query,
-                                    "Type a command, app, calculation, or keyword",
+                                    "Search for apps and commands",
                                 )
                             },
                         )
@@ -2016,164 +2091,179 @@ impl HostApp {
                         context.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
 
-                    ui.add_space(16.0);
-                    if let Some(error) = self.hotkey_error.as_ref() {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(242, 145, 145),
-                            error.user_message(),
-                        );
-                    } else {
-                        for (index, error) in self.runtime_errors.iter().enumerate() {
-                            if !should_render_runtime_error(&self.runtime_errors, index) {
-                                continue;
-                            }
-                            ui.colored_label(
-                                egui::Color32::from_rgb(242, 145, 145),
-                                error.user_message(),
-                            );
-                        }
-                    }
-                    let mut clicked_result_index = None;
-                    if let Some(output) = &self.invocation_output {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(&output.extension_id)
-                                    .strong()
-                                    .color(egui::Color32::from_rgb(168, 176, 198)),
-                            );
-                            ui.label(
-                                egui::RichText::new(if output.complete {
-                                    "Complete"
-                                } else {
-                                    "Running"
-                                })
-                                .color(egui::Color32::from_rgb(126, 134, 155)),
-                            );
-                        });
-                        ui.add_space(4.0);
-                        let (visible_text, truncated) = output.visible_text();
-                        if truncated {
-                            ui.label(
-                                egui::RichText::new("Showing the latest output")
-                                    .color(egui::Color32::from_rgb(126, 134, 155)),
-                            );
-                        }
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .max_height(280.0)
-                            .show(ui, |ui| {
-                                let text = if visible_text.is_empty() && output.complete {
-                                    "No output"
-                                } else {
-                                    visible_text
-                                };
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(text)
-                                            .color(egui::Color32::from_rgb(224, 228, 238)),
-                                    )
-                                    .selectable(true)
-                                    .wrap(),
-                                );
-                            });
-                    } else if self.pending_invocation_id.is_some() {
-                        ui.label(
-                            egui::RichText::new("Running...")
-                                .color(egui::Color32::from_rgb(168, 176, 198)),
-                        );
-                    } else if self.extension_search.is_empty() {
-                        ui.label(
-                            egui::RichText::new(if self.settings.runtime_ready {
-                                "No search features are available"
+                    ui.separator();
+                    let content_height = ui.available_height().max(80.0);
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), content_height),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            crate::SectionHeader::show(ui, "Results", 20.0);
+                            if let Some(error) = self.hotkey_error.as_ref() {
+                                ui.colored_label(palette.text_error, error.user_message());
                             } else {
-                                "Starting Nanika..."
-                            })
-                            .color(egui::Color32::from_rgb(126, 134, 155)),
-                        );
-                    } else if let Some(snapshot) = self.search_snapshot.clone()
-                        && snapshot.generation == self.search_generation
-                        && !snapshot.results.is_empty()
-                    {
-                        const RESULT_ROW_HEIGHT: f32 = 40.0;
-                        let result_count = snapshot.results.len().min(MAX_ROOT_RESULTS);
-                        let scroll_id = ui.make_persistent_id("nanika.results");
-                        let available_height = ui.available_height();
-                        let mut results = egui::ScrollArea::vertical()
-                            .id_salt("nanika.results")
-                            .auto_shrink([false, false])
-                            .max_height(available_height);
-                        if self.selection_scroll_pending {
-                            let spacing = ui.spacing().item_spacing.y;
-                            let row_extent = RESULT_ROW_HEIGHT + spacing;
-                            let row_top = self.selected_index as f32 * row_extent;
-                            let row_bottom = row_top + RESULT_ROW_HEIGHT;
-                            let current_offset =
-                                egui::scroll_area::State::load(&context, scroll_id)
-                                    .map_or(0.0, |state| state.offset.y);
-                            let target_offset = if row_top < current_offset {
-                                row_top
-                            } else if row_bottom > current_offset + available_height {
-                                (row_bottom - available_height).max(0.0)
-                            } else {
-                                current_offset
-                            };
-                            results = results.vertical_scroll_offset(target_offset);
-                            self.selection_scroll_pending = false;
-                        }
-                        results.show_rows(ui, RESULT_ROW_HEIGHT, result_count, |ui, row_range| {
-                            for (index, result, selected) in crate::prepare_visible_results(
-                                &snapshot,
-                                self.search_generation,
-                                self.selected_index,
-                            )
-                            .skip(row_range.start)
-                            .take(row_range.len())
-                            {
-                                let texture_id = icon_texture_id(
-                                    self.icon_loader.as_ref(),
-                                    &mut self.icon_textures,
-                                    &mut self.pending_icons,
-                                    &self.failed_icons,
-                                    &mut self.icon_access_sequence,
-                                    &result.candidate,
-                                );
-                                if render_result_row(
-                                    ui,
-                                    texture_id,
-                                    result.candidate.title(),
-                                    selected,
-                                    RESULT_ROW_HEIGHT,
-                                )
-                                .clicked()
-                                {
-                                    clicked_result_index = Some(index);
+                                for (index, error) in self.runtime_errors.iter().enumerate() {
+                                    if !should_render_runtime_error(&self.runtime_errors, index) {
+                                        continue;
+                                    }
+                                    ui.colored_label(palette.text_error, error.user_message());
                                 }
                             }
-                        });
-                    } else {
-                        ui.label(
-                            egui::RichText::new("No results")
-                                .color(egui::Color32::from_rgb(126, 134, 155)),
-                        );
-                    }
-                    if let Some(index) = clicked_result_index {
-                        self.selected_index = index;
-                        self.execute_selected(&context);
-                    }
-                    if let Some(error) = self
-                        .action_error
-                        .as_ref()
-                        .or(self.operation_error.as_ref())
-                        .or(self.search_error.as_ref())
-                    {
-                        ui.add_space(8.0);
-                        ui.colored_label(
-                            egui::Color32::from_rgb(242, 145, 145),
-                            error.user_message(),
-                        );
-                    }
+                            let mut clicked_result_index = None;
+                            if let Some(output) = &self.invocation_output {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(&output.extension_id)
+                                            .strong()
+                                            .color(palette.text_secondary),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(if output.complete {
+                                            "Complete"
+                                        } else {
+                                            "Running"
+                                        })
+                                        .color(palette.text_disabled),
+                                    );
+                                });
+                                ui.add_space(4.0);
+                                let (visible_text, truncated) = output.visible_text();
+                                if truncated {
+                                    ui.label(
+                                        egui::RichText::new("Showing the latest output")
+                                            .color(palette.text_disabled),
+                                    );
+                                }
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .max_height(280.0)
+                                    .show(ui, |ui| {
+                                        let text = if visible_text.is_empty() && output.complete {
+                                            "No output"
+                                        } else {
+                                            visible_text
+                                        };
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(text).color(palette.text_row),
+                                            )
+                                            .selectable(true)
+                                            .wrap(),
+                                        );
+                                    });
+                            } else if self.pending_invocation_id.is_some() {
+                                ui.label(
+                                    egui::RichText::new("Running...").color(palette.text_secondary),
+                                );
+                            } else if self.extension_search.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(if self.settings.runtime_ready {
+                                        "No search features are available"
+                                    } else {
+                                        "Starting Nanika..."
+                                    })
+                                    .color(palette.text_disabled),
+                                );
+                            } else if let Some(snapshot) = self.search_snapshot.clone()
+                                && snapshot.generation == self.search_generation
+                                && !snapshot.results.is_empty()
+                            {
+                                let result_count = snapshot.results.len().min(MAX_ROOT_RESULTS);
+                                let available_height = (ui.available_height()
+                                    / crate::DesignSystem::ROOT_RESULT_ROW_HEIGHT)
+                                    .floor()
+                                    * crate::DesignSystem::ROOT_RESULT_ROW_HEIGHT;
+                                let mut results = egui::ScrollArea::vertical()
+                                    .id_salt("nanika.results")
+                                    .auto_shrink([false, false])
+                                    .animated(false)
+                                    .max_height(available_height);
+                                if self.selection_scroll_pending {
+                                    if let Some(target_offset) =
+                                        crate::root_selection_scroll_target(
+                                            self.selected_index,
+                                            self.results_scroll_offset,
+                                            self.results_viewport_height,
+                                        )
+                                    {
+                                        results = results.vertical_scroll_offset(target_offset);
+                                    }
+                                    self.selection_scroll_pending = false;
+                                }
+                                let output = results.show_rows(
+                                    ui,
+                                    crate::DesignSystem::ROOT_RESULT_ROW_HEIGHT,
+                                    result_count,
+                                    |ui, row_range| {
+                                        for (index, result, selected) in
+                                            crate::prepare_visible_results(
+                                                &snapshot,
+                                                self.search_generation,
+                                                self.selected_index,
+                                            )
+                                            .skip(row_range.start)
+                                            .take(row_range.len())
+                                        {
+                                            let texture_id = icon_texture_id(
+                                                self.icon_loader.as_ref(),
+                                                &mut self.icon_textures,
+                                                &mut self.pending_icons,
+                                                &self.failed_icons,
+                                                &mut self.icon_access_sequence,
+                                                &result.candidate,
+                                            );
+                                            if crate::root_result_row(
+                                                ui,
+                                                texture_id,
+                                                result.candidate.title(),
+                                                result.candidate.subtitle(),
+                                                selected,
+                                            )
+                                            .clicked()
+                                            {
+                                                clicked_result_index = Some(index);
+                                            }
+                                        }
+                                    },
+                                );
+                                self.results_scroll_offset = output.state.offset.y;
+                                self.results_viewport_height = output.inner_rect.height();
+                            } else {
+                                ui.label(
+                                    egui::RichText::new("No results").color(palette.text_disabled),
+                                );
+                            }
+                            if let Some(index) = clicked_result_index {
+                                self.selected_index = index;
+                                self.execute_selected(&context);
+                            }
+                            if let Some(error) = self
+                                .action_error
+                                .as_ref()
+                                .or(self.operation_error.as_ref())
+                                .or(self.search_error.as_ref())
+                            {
+                                ui.add_space(8.0);
+                                ui.colored_label(palette.text_error, error.user_message());
+                            }
+                        },
+                    );
                 });
             });
+    }
+
+    fn desired_overlay_height(&self) -> f32 {
+        if !self.view_stack.is_empty()
+            || self.pending_invocation_id.is_some()
+            || self.invocation_output.is_some()
+        {
+            return OVERLAY_HEIGHT_POINTS;
+        }
+        let result_count = self
+            .search_snapshot
+            .as_ref()
+            .filter(|snapshot| snapshot.generation == self.search_generation)
+            .map_or(0, |snapshot| snapshot.results.len());
+        crate::root_overlay_height_points(result_count)
     }
 }
 
@@ -2184,88 +2274,27 @@ fn list_items(list: &ListView) -> Vec<&ListItem> {
         .collect()
 }
 
-fn render_result_row(
-    ui: &mut egui::Ui,
-    texture_id: Option<egui::TextureId>,
-    title: &str,
-    selected: bool,
-    height: f32,
-) -> egui::Response {
-    let desired_size = egui::vec2(ui.available_width(), height);
-    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
-
-    if ui.is_rect_visible(rect) {
-        let fill = match (selected, response.hovered()) {
-            (true, true) => egui::Color32::from_rgb(45, 52, 69),
-            (true, false) => egui::Color32::from_rgb(38, 44, 59),
-            (false, true) => egui::Color32::from_rgb(29, 34, 46),
-            (false, false) => egui::Color32::TRANSPARENT,
-        };
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, egui::CornerRadius::same(6), fill);
-        if selected {
-            painter.line_segment(
-                [
-                    egui::pos2(rect.left() + 2.0, rect.top() + 8.0),
-                    egui::pos2(rect.left() + 2.0, rect.bottom() - 8.0),
-                ],
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(117, 148, 218)),
-            );
-        }
-
-        let icon_size = 28.0;
-        let content_left = rect.left() + 10.0;
-        let text_left = if let Some(texture_id) = texture_id {
-            let icon_rect = egui::Rect::from_min_size(
-                egui::pos2(content_left, rect.center().y - icon_size * 0.5),
-                egui::vec2(icon_size, icon_size),
-            );
-            painter.image(
-                texture_id,
-                icon_rect,
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-            icon_rect.right() + 8.0
-        } else {
-            content_left
-        };
-        let text_color = if selected {
-            egui::Color32::from_rgb(242, 245, 252)
-        } else {
-            egui::Color32::from_rgb(218, 223, 235)
-        };
-        painter.text(
-            egui::pos2(text_left, rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            title,
-            egui::TextStyle::Body.resolve(ui.style()),
-            text_color,
-        );
-    }
-
-    response
-}
-
-fn previous_list_item<'a>(
+pub(super) fn previous_list_item<'a>(
     items: &'a [&ListItem],
     selected_index: Option<usize>,
 ) -> Option<&'a ListItem> {
-    let index = selected_index.unwrap_or(0).saturating_sub(1);
+    let index = selected_index?.checked_sub(1)?;
     items.get(index).copied()
 }
 
-fn next_list_item<'a>(
+pub(super) fn next_list_item<'a>(
     items: &'a [&ListItem],
     selected_index: Option<usize>,
 ) -> Option<&'a ListItem> {
     let index = selected_index.map_or(0, |index| index.saturating_add(1));
-    items.get(index.min(items.len().saturating_sub(1))).copied()
+    items.get(index).copied()
 }
 
-fn selected_primary_action(list: &ListView) -> Option<(String, String)> {
-    let selected = list.selected_item_id.as_deref()?;
+fn selected_primary_action(
+    list: &ListView,
+    selected_item_id: Option<&str>,
+) -> Option<(String, String)> {
+    let selected = selected_item_id?;
     let item = list_items(list)
         .into_iter()
         .find(|item| item.id == selected)?;
@@ -2283,26 +2312,42 @@ fn render_list(
     enabled: bool,
     scroll_id: egui::Id,
     max_height: f32,
+    scroll_to_item_id: Option<&str>,
+    selected_item_id: Option<&str>,
 ) -> Option<String> {
+    let palette = crate::DesignSystem::palette(ui);
     let mut clicked = None;
     egui::ScrollArea::vertical()
         .id_salt(scroll_id)
         .auto_shrink([false, false])
+        .animated(false)
         .max_height(max_height)
         .show(ui, |ui| {
             for section in &list.sections {
                 if let Some(title) = &section.title {
                     ui.label(
                         egui::RichText::new(title)
-                            .size(11.0)
+                            .size(crate::DesignSystem::FONT_SECTION)
                             .strong()
-                            .color(egui::Color32::from_rgb(126, 136, 160)),
+                            .color(palette.text_secondary),
                     );
                     ui.add_space(2.0);
                 }
                 for item in &section.items {
-                    let selected = list.selected_item_id.as_deref() == Some(item.id.as_str());
-                    if render_list_item(ui, item, selected, enabled).clicked() {
+                    let selected = selected_item_id == Some(item.id.as_str());
+                    let response = crate::list_row(
+                        ui,
+                        &item.title,
+                        item.subtitle.as_deref(),
+                        selected,
+                        enabled,
+                    );
+                    if scroll_to_item_id == Some(item.id.as_str())
+                        && crate::row_crosses_viewport_edge(response.rect, ui.clip_rect())
+                    {
+                        response.scroll_to_me(None);
+                    }
+                    if response.clicked() {
                         clicked = Some(item.id.clone());
                     }
                 }
@@ -2312,74 +2357,11 @@ fn render_list(
     clicked
 }
 
-fn render_list_item(
-    ui: &mut egui::Ui,
-    item: &ListItem,
-    selected: bool,
-    enabled: bool,
-) -> egui::Response {
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), sense);
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &item.title));
-    if !ui.is_rect_visible(rect) {
-        return response;
-    }
-
-    let fill = match (selected, response.hovered() && enabled) {
-        (true, true) => egui::Color32::from_rgb(45, 52, 69),
-        (true, false) => egui::Color32::from_rgb(38, 44, 59),
-        (false, true) => egui::Color32::from_rgb(29, 34, 46),
-        (false, false) => egui::Color32::TRANSPARENT,
-    };
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, egui::CornerRadius::same(6), fill);
-    if selected {
-        painter.line_segment(
-            [
-                egui::pos2(rect.left() + 2.0, rect.top() + 9.0),
-                egui::pos2(rect.left() + 2.0, rect.bottom() - 9.0),
-            ],
-            egui::Stroke::new(2.0, egui::Color32::from_rgb(117, 148, 218)),
-        );
-    }
-
-    let text_left = rect.left() + 12.0;
-    let title_color = if enabled {
-        egui::Color32::from_rgb(224, 228, 238)
-    } else {
-        egui::Color32::from_rgb(126, 134, 155)
-    };
-    let title_position = if item.subtitle.is_some() {
-        egui::pos2(text_left, rect.top() + 16.0)
-    } else {
-        egui::pos2(text_left, rect.center().y)
-    };
-    painter.text(
-        title_position,
-        egui::Align2::LEFT_CENTER,
-        &item.title,
-        egui::TextStyle::Body.resolve(ui.style()),
-        title_color,
-    );
-    if let Some(subtitle) = &item.subtitle {
-        painter.text(
-            egui::pos2(text_left, rect.bottom() - 10.0),
-            egui::Align2::LEFT_BOTTOM,
-            subtitle,
-            egui::FontId::proportional(11.0),
-            egui::Color32::from_rgb(126, 136, 160),
-        );
-    }
-    response
-}
-
-fn selected_actions(list: &ListView) -> Option<(String, &[ViewAction])> {
-    let selected = list.selected_item_id.as_deref()?;
+fn selected_actions<'a>(
+    list: &'a ListView,
+    selected_item_id: Option<&str>,
+) -> Option<(String, &'a [ViewAction])> {
+    let selected = selected_item_id?;
     let item = list_items(list)
         .into_iter()
         .find(|item| item.id == selected)?;
@@ -2390,20 +2372,26 @@ fn render_view_actions(ui: &mut egui::Ui, actions: &[ViewAction], enabled: bool)
     if actions.is_empty() {
         return None;
     }
+    let palette = crate::DesignSystem::palette(ui);
     let mut invoked = None;
-    ui.horizontal_wrapped(|ui| {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         for action in actions {
             let button = match action.style {
-                ViewActionStyle::Primary => {
-                    egui::Button::new(&action.title).fill(egui::Color32::from_rgb(57, 72, 108))
-                }
-                ViewActionStyle::Secondary => egui::Button::new(&action.title),
-                ViewActionStyle::Destructive => egui::Button::new(
-                    egui::RichText::new(&action.title)
-                        .color(egui::Color32::from_rgb(255, 190, 190)),
+                ViewActionStyle::Primary => egui::Button::new(
+                    egui::RichText::new(&action.title).color(palette.text_primary),
                 )
-                .fill(egui::Color32::from_rgb(105, 46, 50)),
-            };
+                .fill(palette.surface_action_primary),
+                ViewActionStyle::Secondary => {
+                    egui::Button::new(egui::RichText::new(&action.title).color(palette.text_detail))
+                }
+                ViewActionStyle::Destructive => egui::Button::new(
+                    egui::RichText::new(&action.title).color(palette.text_destructive),
+                )
+                .fill(palette.surface_action_destructive),
+            }
+            .corner_radius(egui::CornerRadius::same(
+                crate::DesignSystem::CONTROL_RADIUS,
+            ));
             if ui.add_enabled(enabled, button).clicked() {
                 invoked = Some(action.id.clone());
             }
@@ -2419,79 +2407,11 @@ fn view_search_text(view: &View) -> Option<String> {
     }
 }
 
-fn render_detail(ui: &mut egui::Ui, detail: &DetailView, scroll_id: egui::Id, max_height: f32) {
-    egui::Frame::new()
-        .fill(egui::Color32::from_rgb(17, 19, 27))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(42, 47, 61)))
-        .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::same(14))
-        .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt(scroll_id)
-                .auto_shrink([false, false])
-                .max_height((max_height - 28.0).max(80.0))
-                .show(ui, |ui| {
-                    if let Some(title) = &detail.title {
-                        ui.label(
-                            egui::RichText::new(title)
-                                .size(15.0)
-                                .strong()
-                                .color(egui::Color32::from_rgb(232, 235, 244)),
-                        );
-                        ui.add_space(10.0);
-                    }
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&detail.body)
-                                .color(egui::Color32::from_rgb(202, 208, 223)),
-                        )
-                        .selectable(true)
-                        .wrap(),
-                    );
-                    if !detail.metadata.is_empty() {
-                        ui.add_space(12.0);
-                        ui.separator();
-                        ui.add_space(8.0);
-                        for metadata in &detail.metadata {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&metadata.title)
-                                        .color(egui::Color32::from_rgb(126, 136, 160)),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(
-                                            egui::RichText::new(&metadata.value)
-                                                .color(egui::Color32::from_rgb(218, 223, 235)),
-                                        );
-                                    },
-                                );
-                            });
-                        }
-                    }
-                });
-        });
-}
-
-fn render_empty_detail(ui: &mut egui::Ui, height: f32) {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), height),
-        egui::Sense::hover(),
-    );
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(
-        rect,
-        egui::CornerRadius::same(8),
-        egui::Color32::from_rgb(17, 19, 27),
-    );
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "Select an item to preview",
-        egui::TextStyle::Body.resolve(ui.style()),
-        egui::Color32::from_rgb(126, 136, 160),
-    );
+fn view_selected_item_id(view: &View) -> Option<String> {
+    match view {
+        View::List { list } => list.selected_item_id.clone(),
+        View::Detail { .. } => None,
+    }
 }
 
 fn platform_error_message(error: PlatformError) -> HostDiagnostic {

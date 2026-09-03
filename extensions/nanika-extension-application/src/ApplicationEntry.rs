@@ -31,6 +31,7 @@ impl ApplicationEntry {
         Candidate {
             entry_id: self.entry_id.clone(),
             title: self.display_name.clone(),
+            subtitle: Some("Application".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: self
                 .normalized_tokens

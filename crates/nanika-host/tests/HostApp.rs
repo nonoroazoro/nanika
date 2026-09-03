@@ -1,8 +1,9 @@
 use crate::host_app::{
-    extension_startup_user_message, maximum_visible_result_index, selected_execution,
-    should_render_runtime_error, truncate_chars,
+    extension_startup_user_message, maximum_visible_result_index, next_list_item,
+    previous_list_item, selected_execution, should_render_runtime_error, truncate_chars,
 };
 use crate::{DiagnosticCode, ExtensionStartupError, HostDiagnostic};
+use nanika_protocol::ListItem;
 use nanika_search::{Candidate, RankedCandidate, SearchSnapshot};
 
 #[test]
@@ -10,6 +11,28 @@ fn selection_stays_within_rendered_results() {
     assert_eq!(maximum_visible_result_index(0), 0);
     assert_eq!(maximum_visible_result_index(3), 2);
     assert_eq!(maximum_visible_result_index(100), 99);
+}
+
+#[test]
+fn list_navigation_stops_at_both_boundaries() {
+    let first = list_item("first");
+    let second = list_item("second");
+    let items = vec![&first, &second];
+
+    assert!(previous_list_item(&items, Some(0)).is_none());
+    assert_eq!(
+        previous_list_item(&items, Some(1)).map(|item| &item.id),
+        Some(&first.id)
+    );
+    assert_eq!(
+        next_list_item(&items, None).map(|item| &item.id),
+        Some(&first.id)
+    );
+    assert_eq!(
+        next_list_item(&items, Some(0)).map(|item| &item.id),
+        Some(&second.id)
+    );
+    assert!(next_list_item(&items, Some(1)).is_none());
 }
 
 #[test]
@@ -83,4 +106,13 @@ fn extension_startup_message_names_user_features() {
         extension_startup_user_message(&errors),
         "App search and calculator are unavailable. Restart Nanika. If the problem continues, reinstall Nanika or the affected add-on."
     );
+}
+
+fn list_item(id: &str) -> ListItem {
+    ListItem {
+        id: id.to_owned(),
+        title: id.to_owned(),
+        subtitle: None,
+        actions: Vec::new(),
+    }
 }

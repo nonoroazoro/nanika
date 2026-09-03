@@ -104,7 +104,10 @@ pub(crate) fn show_settings(root: &mut egui::Ui, state: &mut SettingsState) -> V
 
                 if let Some(error) = &state.error {
                     ui.add_space(16.0);
-                    ui.colored_label(egui::Color32::from_rgb(242, 145, 145), error.user_message());
+                    ui.colored_label(
+                        crate::DesignSystem::palette(ui).text_error,
+                        error.user_message(),
+                    );
                 }
             });
         });

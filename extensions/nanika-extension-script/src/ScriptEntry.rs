@@ -25,6 +25,7 @@ impl ScriptEntry {
         Candidate {
             entry_id: format!("script.{}", self.id),
             title: self.title.clone(),
+            subtitle: Some("Script".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: self.aliases.clone(),
             icon: None,

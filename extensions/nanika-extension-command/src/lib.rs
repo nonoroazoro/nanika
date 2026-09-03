@@ -18,6 +18,7 @@ pub fn command_candidate(query: &str) -> Option<(Candidate, String)> {
         Candidate {
             entry_id,
             title: format!("Run command: {command}"),
+            subtitle: Some("Command".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: vec![query.to_owned()],
             icon: None,

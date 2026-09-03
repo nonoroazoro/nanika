@@ -16,6 +16,11 @@ mod builtin_command_spec;
 #[path = "BuiltinExtensionSpec.rs"]
 mod builtin_extension_spec;
 mod builtins;
+#[path = "DesignPalette.rs"]
+mod design_palette;
+#[path = "DesignSystem.rs"]
+mod design_system;
+mod detail_panel;
 #[path = "DiagnosticRecordKey.rs"]
 mod diagnostic_record_key;
 #[path = "DiagnosticSource.rs"]
@@ -110,6 +115,11 @@ mod icon_load_result;
 mod icon_loader;
 #[path = "IconLoaderCommand.rs"]
 mod icon_loader_command;
+mod interactive_row;
+#[path = "InteractiveRowContent.rs"]
+mod interactive_row_content;
+#[path = "InteractiveRowStyle.rs"]
+mod interactive_row_style;
 #[path = "InvocationPresentation.rs"]
 mod invocation_presentation;
 #[path = "OverlayMotion.rs"]
@@ -121,6 +131,10 @@ mod pending_host_settings;
 mod render_preparation;
 #[path = "SearchInput.rs"]
 mod search_input;
+#[path = "SearchInputStyle.rs"]
+mod search_input_style;
+#[path = "SectionHeader.rs"]
+mod section_header;
 #[path = "SettingsAction.rs"]
 mod settings_action;
 #[path = "SettingsState.rs"]
@@ -142,6 +156,9 @@ pub(crate) use activation_trace::*;
 pub(crate) use bounded_log_writer::*;
 pub(crate) use builtin_command_spec::*;
 pub(crate) use builtin_extension_spec::*;
+pub(crate) use design_palette::*;
+pub(crate) use design_system::*;
+pub(crate) use detail_panel::*;
 pub(crate) use diagnostic_record_key::*;
 pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
@@ -189,6 +206,9 @@ pub(crate) use icon_identity::*;
 pub(crate) use icon_load_result::*;
 pub(crate) use icon_loader::*;
 pub(crate) use icon_loader_command::*;
+pub(crate) use interactive_row::*;
+pub(crate) use interactive_row_content::*;
+pub(crate) use interactive_row_style::*;
 pub(crate) use invocation_presentation::*;
 pub use nanika_core::{DiagnosticCategory, DiagnosticCode};
 pub(crate) use overlay_motion::*;
@@ -196,6 +216,8 @@ pub(crate) use pending_extension::*;
 pub(crate) use pending_host_settings::*;
 pub use render_preparation::*;
 pub(crate) use search_input::*;
+pub(crate) use search_input_style::*;
+pub(crate) use section_header::*;
 pub(crate) use settings_action::*;
 pub(crate) use settings_state::*;
 pub use supervisor_error::*;
@@ -223,6 +245,7 @@ pub fn publish_extension_snapshot(
                 entry.action_id,
                 entry.aliases,
             )
+            .with_subtitle(entry.subtitle)
             .with_icon_key(icon_key)
         })
         .collect();
@@ -238,6 +261,9 @@ mod activation_trace_tests;
 #[cfg(test)]
 #[path = "../tests/BoundedLogWriter.rs"]
 mod bounded_log_writer_tests;
+#[cfg(test)]
+#[path = "../tests/DesignSystem.rs"]
+mod design_system_tests;
 #[cfg(test)]
 #[path = "../tests/Diagnostics.rs"]
 mod diagnostics_tests;
@@ -263,6 +289,9 @@ mod host_diagnostic_tests;
 #[cfg(test)]
 #[path = "../tests/IconLoader.rs"]
 mod icon_loader_tests;
+#[cfg(test)]
+#[path = "../tests/interactive_row.rs"]
+mod interactive_row_tests;
 #[cfg(test)]
 #[path = "../tests/InvocationPresentation.rs"]
 mod invocation_presentation_tests;

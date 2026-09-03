@@ -11,7 +11,7 @@ fn loader_decodes_an_extension_scoped_rgba_icon() {
         .join("icons")
         .join("com.nanika.application")
         .join("test-icon")
-        .join("32.png");
+        .join("128.png");
     std::fs::create_dir_all(icon_path.parent().expect("icon parent"))
         .expect("icon directory should be created");
     write_icon(&icon_path);

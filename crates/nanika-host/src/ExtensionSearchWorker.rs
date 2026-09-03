@@ -595,6 +595,10 @@ pub(crate) fn contribution_candidates(
             nanika_protocol::Candidate {
                 entry_id: command.id.clone(),
                 title: command.title.clone(),
+                subtitle: command
+                    .subtitle
+                    .clone()
+                    .or_else(|| Some("Command".to_owned())),
                 action_id: "command.execute".to_owned(),
                 aliases,
                 icon: None,
