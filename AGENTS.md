@@ -20,6 +20,9 @@
 
 - Rust remains the application core for search, extension supervision, storage, configuration, diagnostics, and platform services.
 - Tauri is the only desktop shell and UI baseline. The frontend uses the latest mutually compatible stable Svelte 5, TypeScript, Vite, and pnpm releases. Use plain CSS for the design system.
+- Extensions are Nanika's only first-class domain capability unit. The bare host provides infrastructure, orchestration, and shared surfaces only; it must not implement application search, commands, scripts, calculation, clipboard history, agents, or any future domain capability.
+- Built-in and external extensions use the same manifest schema, protocol, process boundary, permissions, host services, settings contribution, declarative view contract, lifecycle, failure policy, and diagnostics. Built-in identity comes only from host-owned distribution inventory, never from an extension-controlled manifest field. Production verifies that inventory as part of the signed release. Built-in identity grants no architectural or runtime shortcut.
+- The shared Svelte frontend renders every launcher, Settings, diagnostic, and extension view surface. The Tauri shell owns only unavoidable operating-system surfaces and recovery before the WebView is available. Extensions provide data, bounded declarative views, and typed actions only; they never provide or inject HTML, CSS, JavaScript, Svelte components, DOM access, WebView access, or Tauri access.
 - Organize repository source by product responsibility, not implementation language. Deployable processes belong under `apps`, reusable UI-independent application behavior belongs under `engine`, and repository-only quality and release support belongs under `tooling`.
 - Keep the desktop presentation layer in `apps/desktop/frontend` and the privileged desktop boundary in `apps/desktop/shell`. Do not mix Svelte source, frontend tests, or browser assets with Rust shell source, Tauri configuration, capabilities, native resources, or platform lifecycle code.
 - Do not add top-level `crates`, `extensions`, `src-tauri`, `web`, `rust`, `scripts`, `packaging`, or generated `dist` directories. Built-in extension executables and extension test fixtures belong under `apps/extensions`; the CLI belongs under `apps/cli`.
@@ -38,6 +41,7 @@
 - Run `svelte-check`, ESLint with Svelte support, and Prettier with Svelte support. Treat warnings as failures in CI. All test and validation packages are development-only and must not enter production assets.
 - Mock Tauri only at the typed frontend bridge. Browser tests do not replace release-equivalent Tauri black-box and physical acceptance testing on Windows and macOS.
 - Test user-visible behavior through semantic roles, accessible names, keyboard and pointer input, focus, rendered state, and stable contracts. Do not test private component implementation.
+- Prove the extension-first model with zero-extension host tests, built-in and external equivalence tests, extension failure-isolation tests, protocol contract tests, and release inventory checks that reject extension-supplied frontend code.
 
 ## UI
 

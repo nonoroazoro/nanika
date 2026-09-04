@@ -11,6 +11,7 @@ Performance results are evidence, not pass or fail gates on ordinary machines. C
 - No frontend long task above 50 ms during summon, typing, navigation, or scrolling.
 - Hidden idle: no animation frame loop, no frontend polling, and near-zero CPU.
 - No filesystem, SQLite, image decoding, or blocking extension work on the Tauri event-loop or WebView main thread.
+- No extension-owned JavaScript context, WebView, DOM subtree, stylesheet runtime, animation loop, or frontend bundle.
 - The Tauri Isolation Pattern remains inside the same input-to-visual and query-to-results budgets; its cryptographic IPC work does not create a separate allowance.
 
 ## Reference machines
@@ -34,6 +35,7 @@ Measure production frontend builds with bundled local assets. Record:
 - keydown to selected-row update;
 - query input to committed result snapshot;
 - Isolation Pattern command validation and encryption, plus channel serialization, dispatch, and frontend delivery overhead;
+- extension protocol validation through shared Svelte component commit for declarative views, and user action return through the typed bridge to the owning extension;
 - continuous keyboard navigation and trackpad scrolling through 100 results;
 - icon request, decode, cache hit, and visible presentation timing;
 - native window-effect compositor cost, startup flash, and fallback behavior when an effect is enabled;
@@ -69,6 +71,7 @@ Validate on physical Windows and macOS machines:
 - foreground and background second launches;
 - startup enable, disable, repair, approval, and hidden idle launch;
 - stable Root Search publication while extensions return initial snapshots;
+- zero-extension startup, built-in and external rendering-path equivalence, and continued host responsiveness while one extension is slow, failed, restarting, or disabled;
 - native text editing, query selection on reopen, listbox navigation, scroll boundary behavior, and pointer activation;
 - icon protocol validation, cache hits, decode cost, sharp high-DPI presentation, and scrolling responsiveness;
 - 60 Hz and 120 Hz motion, interruption, and reduced motion;

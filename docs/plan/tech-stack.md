@@ -30,7 +30,7 @@ Status: current pre-1.0 baseline. Tauri is the only desktop UI solution. The Rus
 | Clipboard | `clipboard-rs` | Native Windows monitoring and measured macOS pasteboard polling. |
 | Calculator | `fend-core` | Deterministic, interruptible, arbitrary-precision local evaluation. |
 | Startup | `windows-registry` and `objc2-service-management` | Current-user Windows Run entry and macOS `SMAppService.mainAppService`. |
-| Tray and menu bar | Tauri `tray` and `menu` Rust APIs | Build and handle the tray entirely in the Rust shell. Expose only Open Nanika, Settings, Rescan applications, and Quit. The frontend receives no tray or menu mutation permission. |
+| Tray and menu bar | Tauri `tray` and `menu` Rust APIs | Build and handle the tray entirely in the Rust shell. Expose only Open Nanika, Settings, and Quit. Domain actions such as application refresh belong to their extensions. The frontend receives no tray or menu mutation permission. |
 | Single instance | Nanika per-user Windows and macOS activation adapter | A foreground second launch emits an activation event to the Tauri shell; a background launch exits without activation. The official plugin remains unsuitable until it guarantees the same per-user transport and activation contract. |
 | Serialization | `serde`, `serde_json`, `jsonc-parser` | JSONC only for human-edited files and manifests. Internal APIs use typed Rust values. |
 | Extension IDs and versions | `uuid` and `semver` | UUID v4 for opaque IDs and Semantic Versioning for packages. |
@@ -41,9 +41,9 @@ Status: current pre-1.0 baseline. Tauri is the only desktop UI solution. The Rus
 | Diagnostics | `tracing`, `tracing-subscriber`, and `tracing-appender` | Non-blocking local logs with duplicate suppression and a hard byte cap; no content-bearing query or clipboard fields. |
 | Benchmarks | `criterion` as a dev dependency | Default features disabled; targets stay outside runtime crates. |
 | Frontend tests | Vitest, Vitest Browser Mode, `@vitest/browser-playwright`, and `vitest-browser-svelte` | Use a Node project for pure TypeScript and real Chromium and WebKit projects for Svelte components. Test roles, accessible names, keyboard and pointer input, focus, CSS layout, and observable state. Mock Tauri only at the typed bridge. All test packages are development-only. Release acceptance still exercises packaged WebView2 and WKWebView applications. |
-| Extension runtime | Host-supervised child processes | Every extension uses the same lifecycle and failure boundary; a versioned schema selects its wire adapter. |
+| Extension runtime | Host-supervised native child processes | Every domain capability runs through the same extension supervisor and versioned protocol. Built-in status provides no in-process, frontend, permission, lifecycle, or failure-handling shortcut. |
 | ACP | Official `agent-client-protocol` SDK with `async-io`, `async-channel`, `async-process`, `futures`, and `futures-lite` | Stable ACP v1 only. One isolated supervisor thread drives each ACP process; `rustix` terminates the macOS process group. No project-wide executor. |
-| Extension package | ZIP with `.nanika` suffix | `zip` default features disabled; only `deflate-flate2-zlib-rs`. |
+| Extension package | Native executable and declarative metadata in a ZIP with `.nanika` suffix | `zip` default features disabled; only `deflate-flate2-zlib-rs`. Packages contain no frontend entrypoint and are never loaded into the WebView. |
 | Package integrity | `sha2` | SHA-256 for corruption detection. |
 
 Use the latest mutually compatible stable releases when adding or updating dependencies. Commit `Cargo.lock`. Do not use Git dependencies, wildcard versions, or pre-release versions by default. Review each non-standard-library dependency for necessity, features, transitive cost, maintenance, and platform support.
@@ -158,16 +158,42 @@ Shared core, frontend, diagnostics, protocol, configuration, storage, search, an
 
 Every platform adapter contract must preserve the same user-visible semantics, failure boundary, cancellation behavior, and diagnostics shape on Windows and macOS. Platform implementations may use native APIs, but platform details must not leak into shared state or wire protocols. Linux-specific behavior is not an acceptable fallback and must not enter shared paths unless Linux becomes an explicit supported target through a baseline update.
 
-## Host and extension boundary
+## Extension-first product model
 
-The Rust host foundation provides scheduling, persistence boundaries, diagnostics, permissions, platform services, extension lifecycle, search orchestration, and shared interaction state. The Tauri shell provides desktop lifecycle and the privileged frontend boundary. The frontend provides presentation and local interaction. None of these layers contributes application, command, script, calculator, clipboard history, or agent capability.
+Extensions are Nanika's only first-class domain capability unit. The bare host is deliberately useful as infrastructure but empty as a product capability provider. It can start, show Root Search, manage extensions, expose control-plane settings and diagnostics, and render an empty or degraded state, but it contributes no candidates, commands, content sources, or domain actions itself.
 
-Every domain capability is an extension. This follows the relevant VS Code model. There is no first-party capability class.
+Application discovery, command execution, script discovery, calculation, clipboard history, agents, and every future domain capability must enter through the extension contract. Adding capability-specific logic to the frontend, Tauri shell, runtime, search engine, storage layer, or platform layer is an architecture violation. Shared infrastructure may provide a generic service only when it is capability-neutral and exposed through the same permission-checked host-service contract to every authorized extension.
+
+The ownership boundaries are:
+
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| Shared frontend | All launcher, Settings, diagnostic, and extension view UI, plus DOM, CSS, accessibility, local interaction, and presentation state | Domain execution, extension-specific components, extension-supplied markup or code, privileged side effects, native tray or pre-WebView recovery |
+| Tauri shell | Window and application lifecycle, IPC, capabilities, custom protocols, tray, global shortcut integration, and native boundary wiring | Domain capability logic, extension rendering, direct candidate contribution |
+| Engine | Extension supervision, generic host services, search aggregation and ranking, storage, configuration, diagnostics, and platform adapters | First-party capability implementations, extension-specific presentation, Tauri or WebView types outside the shell boundary |
+| Extension process | One or more declared domain capabilities, candidates, declarative views, settings contributions, and typed action handling | Host memory, another extension's state, DOM, WebView, Tauri APIs, native window handles, arbitrary frontend code |
+
+The only domain interaction path is:
+
+```text
+Extension process
+  -> versioned extension protocol
+  -> UI-independent Rust runtime
+  -> typed Tauri command or channel
+  -> shared Svelte component
+  -> WebView
+```
+
+User input and actions return through the inverse typed path to the owning extension. The frontend may update ephemeral presentation state synchronously, but it never executes a domain action. No domain capability may bypass the extension process, protocol validation, Rust authorization, typed bridge, or shared renderer.
+
+There is no first-party capability class. This follows the relevant VS Code extension-host model while retaining a single product-owned Web UI. Nanika does not adopt the Chrome Web Extension execution model: an extension package contains a native executable and declarative metadata, not a frontend bundle that is loaded into the WebView.
+
+Extension classes are distribution classes only:
 
 - `Built-in`: an extension executable shipped with the default Nanika distribution and enabled by default. It cannot be uninstalled because it belongs to that distribution.
 - `External`: an extension executable installed from a `.nanika` package.
 
-Both forms use the same capability contract, lifecycle, settings contribution, permissions, host services, process supervisor, and failure policy. Built-in status grants no extra privilege. The bare host has no domain capability. The default distribution enables command, application, script, calculator, and clipboard history extensions.
+Both forms use the same manifest schema, version negotiation, capability contract, lifecycle, settings contribution, permissions, host services, process supervisor, declarative view schema, action routing, failure policy, and diagnostics. Built-in identity is host-owned metadata derived from distribution inventory; it is not an extension manifest field and cannot be self-asserted by an external package. Development uses reviewed version-controlled inventory, while production verifies the inventory as part of the signed release. Built-in status grants no extra privilege, protocol surface, in-process API, frontend component, or direct host registration. The default distribution enables command, application, script, calculator, and clipboard history extensions by shipping their ordinary extension executables and manifests.
 
 A development launch builds the Tauri desktop application and all built-in extension packages. The packaged Rust shell resolves companion executables from validated bundled resource locations. Building or copying only the shell is an invalid development or packaging layout and produces feature-specific startup diagnostics.
 
@@ -184,6 +210,8 @@ Do not load extensions in-process or through Rust dynamic libraries. This is pro
 The product owns Root Search. Rust owns input history, search aggregation, contextual ranking, final ordering, execution, and durable state. The frontend owns the focused text field, active option, local keyboard interaction, and scroll presentation. Extensions may contribute static commands and bounded dynamic candidates. They do not control cross-extension ordering.
 
 A command may complete without a view or push a route-local declarative view. The extension supplies a bounded `ListView` or `DetailView`; the shared frontend owns pixels, typography, accessibility, keyboard behavior, focus, and platform consistency. A list may request the semantic `Plain` or `Split` layout, sections, selection, detail content, filters, pagination, and typed item actions. A standalone detail may declare actions; actions for a detail nested in a list belong to its selected list item. The extension never receives HTML, CSS, JavaScript, a DOM reference, a WebView handle, a native handle, or an arbitrary drawing surface.
+
+An extension package cannot contain a frontend entrypoint, executable Web asset, stylesheet, Svelte component, WebView preload, content script, or remote UI URL. Bounded static presentation data such as text, metadata, and validated icon references crosses the extension protocol as data. The Rust runtime validates it, and the shared frontend maps it to product-owned components and tokens.
 
 Each pushed view has an extension-scoped ID and monotonic revision. Rust validates every view document and serializes extension operations. The frontend applies only matching revisions, keeps local text editing and selection synchronous, and coalesces outbound search and selection updates. Back closes the active frontend route immediately. Overlay dismissal closes every extension route in reverse stack order through one bounded command. Nested routes are bounded, and stale updates cannot mutate a different route.
 
@@ -211,7 +239,9 @@ The MVP includes a minimal desktop-shell-owned tray or menu-bar item:
 
 - Windows notification-area tray icon.
 - macOS `NSStatusItem`.
-- `Open Nanika`, `Settings`, `Rescan applications`, and `Quit`.
+- `Open Nanika`, `Settings`, and `Quit`.
+
+Application refresh is an Application Extension command rendered in Root Search or its extension view. It is not a native tray item or shell event.
 
 The Settings view contains host settings and dynamically contributed settings from every enabled extension. Built-in and external extensions use the same settings schema and validation path. JSONC remains available as an advanced editing path.
 
@@ -401,7 +431,7 @@ Windows uses a quoted absolute executable path under the current-user `Run` key.
 
 Startup status and mutations run through a bounded platform owner and report their effective state back to the host. Windows treats an unexpected existing Run value as needing repair. macOS preserves `RequiresApproval` and `NotFound` instead of collapsing them into a Boolean; approval opens Login Items rather than repeating registration.
 
-The Tauri shell creates the tray and menu with `tauri::tray::TrayIconBuilder` and `tauri::menu` on both platforms. Rust handlers emit only typed `Open Nanika`, `Settings`, `Rescan applications`, and `Quit` application events. Tray behavior never crosses into frontend authority.
+The Tauri shell creates the tray and menu with `tauri::tray::TrayIconBuilder` and `tauri::menu` on both platforms. Rust handlers emit only typed `Open Nanika`, `Settings`, and `Quit` control-plane events. Tray behavior never crosses into frontend authority and never exposes a domain capability action.
 
 ## Extension protocol and package
 
@@ -430,6 +460,10 @@ resources/
 README.md
 LICENSE
 ```
+
+Built-in and external extensions use the same manifest schema. A built-in manifest is bundled beside its native executable and admitted only by host-owned distribution inventory. Development inventory is version controlled; packaged production inventory is signed and verified. An external manifest is admitted only through validated `.nanika` installation. Neither manifest can declare itself built-in.
+
+The manifest declares no frontend contribution or WebView entrypoint. `resources` contains inert extension-owned data for the native extension process; the shell never mounts an extension resource directory into the frontend, and the WebView never loads extension HTML, CSS, JavaScript, modules, preload code, or remote UI. A visible static resource requires a dedicated bounded protocol type and host validation before the shared frontend renders it.
 
 Manifest version 1 requires `runtime: { protocol, protocolVersion }`; current values are Nanika v1 and ACP v1. Unknown protocols, versions, fields, targets, unsupported or duplicate permissions, and unsafe entrypoints are rejected. IDs and dependency IDs are lowercase reverse-DNS segments, and package versions use Semantic Versioning. The MVP supports `process.launch` and `clipboard.write`. Nanika extensions may declare bounded static commands and Root Search participation through `contributions`; ACP extensions retain their existing prompt activation path. Capabilities, dependencies, and activation events remain reserved.
 

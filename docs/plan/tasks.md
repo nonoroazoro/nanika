@@ -8,6 +8,8 @@ Nanika is a keyboard-driven capability host for Windows 10 and macOS 13 or later
 
 Built-in and external extensions run as independent host-supervised processes with the same lifecycle, settings, permissions, diagnostics, and failure policy. Built-in status grants no additional privilege. A failed extension must not prevent the host or unaffected features from starting.
 
+Extensions are Nanika's only first-class domain capability unit. The bare host owns infrastructure, orchestration, shared control-plane surfaces, and an empty Root Search surface, but contributes no candidates or domain actions. The shared frontend renders every in-app surface; the shell retains only unavoidable operating-system surfaces and pre-WebView recovery. No extension ships or injects frontend code.
+
 Rust owns search, ranking, storage, configuration, diagnostics, extension supervision, host services, and platform integration. Tauri owns the desktop shell. A shared Svelte 5 and TypeScript frontend built with Vite and pnpm owns presentation and local interaction. Native behavior remains isolated behind typed Windows and macOS adapters.
 
 The Tauri solution is the current design. Reusable UI-independent Rust code stays. UI-specific code outside the Tauri solution is deleted. There is no compatibility layer or parallel UI.
@@ -40,6 +42,18 @@ Retain these source boundaries:
 - Native hotkey delivery timing, activation IDs, the slow-activation threshold, and redacted performance diagnostics. Replace renderer milestones with Tauri visibility, frontend readiness, and focus milestones.
 - Every built-in and external extension process and its existing protocol boundary.
 
+## Extension-first architecture
+
+- [ ] Define and enforce the bare-host boundary: lifecycle, extension management, permission-checked generic host services, search aggregation and ranking, storage, diagnostics, configuration, platform adapters, Root Search composition, Settings composition, and shared presentation contracts. The bare host must start with zero extensions and show coherent empty and diagnostic states without contributing a domain candidate or action.
+- [ ] Audit the frontend, shell, engine, storage schemas, and platform adapters for application, command, script, calculator, clipboard, agent, or other capability-specific branches. Move every such implementation behind an extension protocol boundary or delete it when obsolete.
+- [ ] Preserve one extension path for built-in and external packages. Built-in status may affect default installation, enablement, update ownership, and uninstall policy only; it must not change protocol negotiation, permissions, process isolation, host services, view rendering, action routing, failure handling, or diagnostics.
+- [ ] Make built-in identity host-owned distribution metadata. Bundle each built-in executable with a manifest using the ordinary extension schema, use reviewed version-controlled inventory for development, verify signed inventory in production, and reject any external package or manifest that attempts to self-assert built-in status.
+- [ ] Keep all extension execution in host-supervised child processes. Reject in-process extension loading, Rust dynamic libraries, frontend plugins, WebView scripts, content scripts, Svelte components, stylesheets, remote UI entrypoints, and direct Tauri access.
+- [ ] Treat extension output as bounded data only. Validate protocol frames, candidate payloads, declarative view nodes, settings contributions, icon references, action identities, revisions, sizes, and rates in Rust before publishing typed DTOs to the frontend.
+- [ ] Route every extension view through shared Svelte components and semantic design tokens. Route every user action back through the typed Tauri bridge, Rust authorization, and versioned extension protocol to the owning extension.
+- [ ] Add architecture checks that reject domain capability implementations outside `apps/extensions`, extension-specific components in the frontend, extension-supplied executable Web assets, and built-in-only runtime or protocol APIs.
+- [ ] Add contract tests proving zero-extension startup, built-in and external equivalence, unsupported protocol rejection, malformed declarative content rejection, permission denial, action ownership, stale-revision rejection, process crash isolation, restart policy, disablement, and independent host operation after extension failure.
+
 ## Delete
 
 Delete these source files and modules after the Tauri shell provides their required behavior:
@@ -61,6 +75,7 @@ Delete these source files and modules after the Tauri shell provides their requi
 - The `nanika-host` desktop-binary build and copy assumptions in `scripts/package-windows.ps1` and `scripts/package-macos.sh`. Rewrite only their desktop packaging paths for the Tauri application while retaining CLI, extension, signing, notarization, archive, and inventory behavior.
 - `MacMenuTarget.rs`, `MacMenuTargetIvars.rs`, `MacNativeMenu.rs`, and `NativeMenu.rs` after the Tauri tray and menu implementation is validated. Remove Windows notification-icon and tray-menu ownership from `windows_instance.rs` while retaining its single-instance activation behavior.
 - `HotkeyRegistration.rs` and its global event-dispatch glue after registration moves to `tauri-plugin-global-shortcut`. Retain the passive native timing observer and consume its matching delivery sample from the plugin's Rust callback without installing a competing `global-hotkey` event handler.
+- `BuiltinCommandSpec.rs`, `BuiltinExtensionSpec.rs`, `builtins.rs`, and every compiled capability-specific registration path after equivalent extension manifests and host-owned distribution inventory loading are validated. Production must verify that inventory as part of the signed release. Do not replace these files with another hard-coded first-party registry.
 
 Do not delete Rust behavior merely because it currently lives in a UI-owned file. First move search orchestration, extension coordination, platform events, settings commands, diagnostics, and lifecycle ownership behind UI-independent interfaces. Do not preserve any old UI type while doing so.
 
@@ -97,6 +112,7 @@ Do not delete Rust behavior merely because it currently lives in a UI-owned file
 - [ ] Add a validated `nanika-icon` custom protocol that accepts only required read requests, binds access to authorized window labels, and resolves opaque icon identities inside the Rust-owned cache without base64 payloads or frontend filesystem access. Serve only atomically completed variants as immutable content. Publish the fallback identity while extraction is incomplete or failed, never expose retry entries, and publish a new snapshot after successful completion. Keep Tauri's built-in asset protocol disabled.
 - [ ] Declare built-in extension executables through `bundle.externalBin`, stage build inputs with the required target-triple suffixes, and keep all launch, containment, cancellation, and reaping inside the Rust process supervisor. Do not expose the Tauri shell plugin or process permissions to the frontend.
 - [ ] Replace custom tray and menu implementations with Tauri `TrayIconBuilder` and `menu` Rust APIs. Replace direct global-hotkey registration and event dispatch with the official Tauri global-shortcut plugin Rust API. Install the retained passive timing observer from the shell and consume timing in the plugin callback. Grant neither feature to the frontend.
+- [ ] Limit native tray and menu actions to Open Nanika, Settings, and Quit. Expose application refresh through an Application Extension command or view action, not through a shell-owned tray item or event.
 - [ ] Implement hidden startup, logical-pixel active-monitor placement, summon, focus, dismissal, second-instance activation, tray or menu-bar actions, settings windows, and shutdown through the Tauri shell and platform adapters. Convert physical monitor geometry with the active scale factor.
 - [ ] Set the macOS deployment target to 13.0. Record that launcher transparency requires `app.macOSPrivateApi` and therefore excludes Mac App Store distribution. Validate transparent-window startup and border behavior before enabling Windows-specific composition options or native shadow.
 - [ ] Evaluate current stable Tauri native window effects as platform-specific progressive enhancement. Keep a complete semantic CSS fallback and accept an effect only after contrast, startup, focus, compositor, and fallback validation on physical Windows and macOS systems.
@@ -117,7 +133,7 @@ Do not delete Rust behavior merely because it currently lives in a UI-owned file
 - [ ] Use browser scrolling as the source of truth. Reveal the active option only when it crosses the scrollport boundary, with no custom per-row scroll offset model.
 - [ ] Virtualize only after measurement proves it is needed. The initial 100-result bound must remain smooth without continuous work while idle.
 - [ ] Implement Root Search with localized title, optional subtitle, optional category, normalized icon, accessory text, pointer activation, Enter activation, input history, query selection on reopen, and stable publication while typing.
-- [ ] Render extension List, Split, Detail, filters, pagination, nested navigation, Back, and typed actions from the existing declarative protocol. Extensions never provide frontend code or styling.
+- [ ] Render extension List, Split, Detail, filters, pagination, nested navigation, Back, and typed actions from the existing declarative protocol. Use the same shared components for built-in and external extensions. Extensions never provide frontend code, styling, components, DOM behavior, or raw design tokens.
 - [ ] Implement Settings from the bounded declarative settings contract while preserving JSONC as an advanced editing path.
 - [ ] Define coherent empty, loading, degraded, error, and unavailable states before feature completion.
 
@@ -137,6 +153,7 @@ Do not delete Rust behavior merely because it currently lives in a UI-owned file
 - [ ] Use the official `vitest-browser-svelte` renderer and Vitest browser locators, assertions, and interaction APIs. Do not add a simulated DOM environment or Testing Library by default.
 - [ ] Keep Vitest, its browser packages, Playwright, and every test harness development-only and exclude them from production assets and runtime imports.
 - [ ] Mock Tauri only at the typed bridge using the official Tauri mock APIs. Contract-test every request, response, channel message, lifecycle event, stale-generation rule, and error mapping against Rust fixtures.
+- [ ] Test the complete extension presentation path from validated declarative fixtures through typed Tauri DTOs to shared Svelte components, then test typed actions returning to the owning extension identity. Do not mount extension-owned frontend code because none is allowed.
 - [ ] Test every shared component through semantic roles, accessible names, keyboard and pointer behavior, focus, visible state, light and dark themes, reduced motion, loading, empty, degraded, and failure states.
 - [ ] Use Vitest Browser Mode screenshots for bounded visual-regression coverage of stable shared primitives and launcher states. Keep operating-system captures as the authority for final visual acceptance.
 - [ ] Cover Root Search typing, IME composition boundaries, Enter activation, Up and Down clamping, boundary-only scrolling, pointer activation, snapshot stability, query selection on reopen, icon fallback completion, and action state as component integration tests.

@@ -12,7 +12,7 @@ Nanika uses immutable versioned artifacts. The MVP has no installer, background 
 
 Every archive has a sibling `.sha256` file. The Windows archive contains the Tauri-built `Nanika.exe`, `nanika-cli.exe`, and the built-in extension executables. It relies on the system Evergreen WebView2 runtime and does not bundle a fixed runtime. The macOS archive contains the Tauri-built `Nanika.app`, the same extension process boundary, and `nanika-cli` under `Contents/MacOS`. Built-in extension executables are declared through `bundle.externalBin`; packaging inputs carry the required target-triple suffix and release inventory verifies the final bundle names and locations.
 
-Only assets and binaries required by the current Tauri application may appear in release artifacts.
+Only assets and binaries required by the current Tauri application may appear in release artifacts. Extension packages and bundled extension resources must not declare frontend entrypoints or remote UI. The WebView must never load HTML, CSS, JavaScript, Svelte components, preload code, or content scripts from an extension location.
 
 ## Build and trust
 
@@ -24,6 +24,8 @@ Official macOS builds use the Tauri application bundle target rather than hand-a
 
 Tauri versions, stable feature flags, Isolation Pattern assets, command pruning, capabilities, Content Security Policy, custom protocols, official plugins, bundled resources, application identifier, icons, minimum operating-system versions, and the disabled updater configuration are release-controlled and must be reviewed from the packaged artifact.
 
+The signed release inventory is the only authority that marks an extension as built-in. Every bundled extension must have an ordinary extension manifest paired with its native executable. Packaging must reject missing, duplicate, mismatched, externally supplied, or self-asserted built-in identity.
+
 ## Checklist
 
 1. Confirm a clean tree, the intended version, committed root `Cargo.lock` and `apps/desktop/pnpm-lock.yaml`, the pinned pnpm version, and the pinned Active LTS Node.js line.
@@ -33,16 +35,16 @@ Tauri versions, stable feature flags, Isolation Pattern assets, command pruning,
 5. Run the Tauri desktop benchmark on fixed Windows and macOS reference machines and retain schema-versioned reports.
 6. Complete the platform acceptance list in `performance.md` on physical Windows and macOS machines.
 7. Validate every rule in `ui.md` through automated tests, approved captures, or recorded physical platform acceptance.
-8. Verify the packaged production Isolation Pattern, command-pruning output, Content Security Policy, Tauri capabilities, custom protocol scope, disabled built-in asset protocol, absence of frontend shell, process, tray, menu, and global-shortcut permissions, absence of WebDriver or test-access plugins, absence of test tooling, development assets, and source maps, bundled asset inventory, recorded JavaScript and CSS sizes, and absence of remote code.
+8. Verify the packaged production Isolation Pattern, command-pruning output, Content Security Policy, Tauri capabilities, custom protocol scope, disabled built-in asset protocol, absence of frontend shell, process, tray, menu, and global-shortcut permissions, absence of WebDriver or test-access plugins, absence of test tooling, development assets, and source maps, bundled asset inventory, recorded JavaScript and CSS sizes, absence of remote code, and absence of extension-supplied frontend code or entrypoints.
 9. Build with release credentials and verify signatures, notarization, archive contents, and SHA-256 files.
 10. Extract each archive into a clean user profile and verify first run, summon, settings, actions, diagnostics, removal, WebView runtime availability, and missing-runtime behavior.
-11. Confirm the desktop application starts every built-in extension and one failed extension does not prevent other features from loading.
+11. Confirm the bare host starts coherently with zero extensions, the desktop application starts every enabled built-in extension through the ordinary extension supervisor, and one failed extension does not prevent the host or other features from loading.
 12. Confirm user-visible failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
 13. Confirm Root Search and extension inputs support Latin and CJK IME composition, candidate-window placement, aligned text and caret geometry, and query selection after reopen.
 14. Confirm Root Search Enter and pointer activation, Up and Down selection, boundary-only scrolling, input history, and stable result publication while typing.
 15. Confirm operating-system locale selection, bundled shell translations, deterministic English fallback, locale-sensitive formatting, localized application names, and original-name aliases. Confirm normalized cached icons remain sharp and responsive on standard and high-DPI displays, incomplete icon entries are never served, and fallback-to-complete transitions cannot be trapped by immutable WebView caching.
 16. Confirm calculator results appear for explicit symbolic and word operators and do not appear for plain search terms.
-17. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the frontend-rendered declarative protocol path.
+17. Confirm built-in and external extensions use the same manifest schema, protocol, permissions, process, host-service, declarative-view, action, failure, and diagnostics paths. Confirm built-in identity originates only from the signed release inventory. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the shared frontend-rendered declarative protocol path.
 18. Confirm Settings preserves typed validation and atomic JSONC persistence.
 19. Confirm accessibility roles, active option state, focus order, keyboard operation, contrast, reduced motion, and operating-system text scaling.
 20. Confirm hidden idle has no frontend polling or animation frame loop and meets CPU, memory, process, and thread targets.

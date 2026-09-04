@@ -116,14 +116,16 @@ Use the browser scroll container as the source of truth. Do not maintain a paral
 
 ## Extension views
 
-Extensions provide bounded declarative content. The frontend maps semantic view types to shared components.
+Every launcher, Settings, diagnostic, and extension view surface is rendered by the shared Svelte frontend. Native tray, menu, and pre-WebView recovery surfaces remain shell-owned operating-system integration. Extensions provide bounded declarative content through the versioned extension protocol, and the frontend maps semantic view types to product-owned components. Built-in and external extensions use exactly the same rendering path.
 
 - List: search or filter controls, sections, options, pagination, and actions.
 - Split: list selection on the left and detail for the active item on the right.
 - Detail: title, bounded body, metadata, and actions.
 - Settings: typed controls generated from the shared settings schema.
 
-Extensions cannot provide markup, styles, scripts, URLs for executable content, or arbitrary drawing. All visible states and interactions belong to the shared frontend design system.
+Extensions cannot provide markup, styles, scripts, Svelte components, WebView preload code, URLs for executable content, DOM access, Tauri access, or arbitrary drawing. They cannot select raw colors, spacing, typography, elevation, animation, or platform-specific widgets. All pixels, visible states, interactions, accessibility behavior, and motion belong to the shared frontend design system.
+
+Extension content remains data. Text is escaped, icon references are resolved through validated host-owned protocols, declarative nodes are bounded and schema-validated, and typed actions are returned to the owning extension through the Rust runtime. No extension package is loaded as a frontend bundle.
 
 Nested navigation uses a stable route stack. Back is visually quiet, placed consistently, and returns immediately. Route updates preserve local input and selection when their stable identities remain valid.
 
