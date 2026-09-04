@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nanika",
+  "version": "0.1.0",
+  "identifier": "com.nanika.nanika",
+  "build": {
+    "beforeDevCommand": "pnpm frontend:dev",
+    "beforeBuildCommand": "pnpm frontend:build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../frontend/dist",
+    "removeUnusedCommands": true
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "launcher",
+        "title": "Nanika",
+        "url": "index.html",
+        "width": 760,
+        "height": 520,
+        "minWidth": 760,
+        "minHeight": 520,
+        "maxWidth": 760,
+        "maxHeight": 520,
+        "visible": false,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": true,
+        "focus": true,
+        "devtools": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "freezePrototype": true,
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "img-src": "'self' nanika-icon: http://nanika-icon.localhost",
+        "style-src": "'self'"
+      },
+      "pattern": {
+        "use": "isolation",
+        "options": {
+          "dir": "isolation"
+        }
+      },
+      "assetProtocol": {
+        "enable": false
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

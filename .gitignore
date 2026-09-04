@@ -1,3 +1,7 @@
 target/
 /dist/
+apps/desktop/node_modules/
+apps/desktop/frontend/node_modules/
+apps/desktop/frontend/dist/
+apps/desktop/shell/gen/
 **/*.rs.bk

@@ -1,0 +1,49 @@
+{
+  "extensions": [
+    {
+      "id": "com.nanika.application",
+      "binaryName": "nanika-extension-application",
+      "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+      "permissions": ["process.launch"],
+      "contributions": { "rootSearch": true }
+    },
+    {
+      "id": "com.nanika.command",
+      "binaryName": "nanika-extension-command",
+      "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+      "permissions": ["process.launch"],
+      "contributions": { "rootSearch": true }
+    },
+    {
+      "id": "com.nanika.script",
+      "binaryName": "nanika-extension-script",
+      "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+      "permissions": ["process.launch"],
+      "contributions": { "rootSearch": true }
+    },
+    {
+      "id": "com.nanika.calculator",
+      "binaryName": "nanika-extension-calculator",
+      "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+      "permissions": ["clipboard.write"],
+      "contributions": { "rootSearch": true }
+    },
+    {
+      "id": "com.nanika.clipboard",
+      "binaryName": "nanika-extension-clipboard",
+      "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+      "permissions": ["clipboard.write"],
+      "contributions": {
+        "commands": [
+          {
+            "id": "clipboard.history",
+            "title": "Clipboard History",
+            "description": "Search and copy previous clipboard content.",
+            "mode": "view",
+            "keywords": ["clipboard", "history", "paste"]
+          }
+        ]
+      }
+    }
+  ]
+}

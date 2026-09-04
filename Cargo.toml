@@ -1,22 +1,23 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/nanika-core",
-    "crates/nanika-host",
-    "crates/nanika-platform",
-    "crates/nanika-protocol",
-    "crates/nanika-storage",
-    "crates/nanika-config",
-    "crates/nanika-search",
-    "crates/nanika-extension-package",
-    "crates/nanika-cli",
-    "extensions/nanika-extension-fixture",
-    "extensions/nanika-extension-application",
-    "extensions/nanika-extension-command",
-    "extensions/nanika-extension-script",
-    "extensions/nanika-extension-calculator",
-    "extensions/nanika-extension-clipboard",
-    "extensions/nanika-extension-acp-dummy",
+    "apps/cli",
+    "apps/desktop/shell",
+    "apps/extensions/built-in/application",
+    "apps/extensions/built-in/calculator",
+    "apps/extensions/built-in/clipboard",
+    "apps/extensions/built-in/command",
+    "apps/extensions/built-in/script",
+    "apps/extensions/fixtures/acp",
+    "apps/extensions/fixtures/protocol",
+    "engine/configuration",
+    "engine/domain",
+    "engine/extension-management",
+    "engine/extension-protocol",
+    "engine/platform",
+    "engine/runtime",
+    "engine/search",
+    "engine/storage",
 ]
 
 [workspace.package]
@@ -32,15 +33,6 @@ directories = "6.0.0"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
 jsonc-parser = { version = "0.33.1", default-features = false, features = ["serde", "cst"] }
 uuid = { version = "1.24.1", default-features = false, features = ["serde", "v4"] }
-accesskit_winit = "0.32.2"
-egui = { version = "0.36.1", default-features = false, features = ["default_fonts"] }
-egui-wgpu = { version = "0.36.1", default-features = false, features = ["winit"] }
-egui-winit = { version = "0.36.1", default-features = false, features = ["accesskit", "clipboard"] }
-pollster = "0.4.0"
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
-raw-window-handle = "0.6.2"
-wgpu = { version = "30.0.0", default-features = false }
-global-hotkey = "0.8.0"
 nucleo-matcher = "0.3.1"
 criterion = { version = "0.8.2", default-features = false }
 semver = "1.0.27"
@@ -58,7 +50,6 @@ windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
 fend-core = "1.5.8"
-fontdb = { version = "0.24.0", default-features = false, features = ["fs"] }
 windows-registry = "0.6.1"
 objc2-service-management = { version = "0.3.2", default-features = false }
 objc2 = { version = "0.6.4", default-features = false }
@@ -72,6 +63,10 @@ async-process = "2.5.0"
 futures = { version = "0.3.32", default-features = false, features = ["async-await", "std"] }
 futures-lite = "2.6.1"
 rustix = { version = "1.1.4", default-features = false, features = ["process"] }
+sys-locale = "0.3.2"
+tauri = { version = "=2.11.5", default-features = false }
+tauri-build = { version = "=2.6.3", default-features = false }
+tauri-plugin-global-shortcut = "=2.3.2"
 
 [workspace.lints.rust]
 unsafe_code = "warn"

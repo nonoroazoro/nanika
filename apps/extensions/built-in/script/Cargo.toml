@@ -1,0 +1,15 @@
+[package]
+name = "nanika-extension-script"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nanika-config = { path = "../../../../engine/configuration" }
+nanika-protocol = { path = "../../../../engine/extension-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

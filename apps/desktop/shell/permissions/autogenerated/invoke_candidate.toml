@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invoke-candidate"
+description = "Enables the invoke_candidate command without any pre-configured scope."
+commands.allow = ["invoke_candidate"]
+
+[[permission]]
+identifier = "deny-invoke-candidate"
+description = "Denies the invoke_candidate command without any pre-configured scope."
+commands.deny = ["invoke_candidate"]

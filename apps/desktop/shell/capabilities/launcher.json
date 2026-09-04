@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "launcher",
+  "description": "Root Search can access only Nanika's bounded application commands.",
+  "windows": ["launcher"],
+  "permissions": [
+    "allow-dismiss-launcher",
+    "allow-invoke-candidate",
+    "allow-open-session",
+    "allow-publish-query"
+  ]
+}

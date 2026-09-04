@@ -1,0 +1,32 @@
+[package]
+name = "nanika-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "nanika_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { workspace = true, features = ["codegen", "isolation"] }
+
+[dependencies]
+nanika-core = { path = "../../../engine/domain" }
+nanika-platform = { path = "../../../engine/platform" }
+nanika-protocol = { path = "../../../engine/extension-protocol" }
+nanika-host = { path = "../../../engine/runtime" }
+nanika-search = { path = "../../../engine/search" }
+nanika-storage = { path = "../../../engine/storage" }
+serde.workspace = true
+tauri = { workspace = true, features = ["common-controls-v6", "compression", "isolation", "macos-private-api", "tray-icon", "wry"] }
+tauri-plugin-global-shortcut.workspace = true
+tracing.workspace = true
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints]
+workspace = true

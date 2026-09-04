@@ -1,0 +1,16 @@
+[package]
+name = "nanika-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+directories.workspace = true
+rusqlite.workspace = true
+nanika-core = { path = "../domain" }
+nanika-search = { path = "../search" }
+
+[lints]
+workspace = true

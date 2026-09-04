@@ -1,0 +1,28 @@
+[package]
+name = "nanika-extension-clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+clipboard-rs.workspace = true
+nanika-protocol = { path = "../../../../engine/extension-protocol" }
+rusqlite.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[test]]
+name = "ExtensionProcess"
+path = "tests/ExtensionProcess.rs"
+
+[[bench]]
+name = "persistence"
+harness = false

@@ -1,0 +1,75 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --font-search: 1.25rem;
+  --font-row: 0.9375rem;
+  --font-meta: 0.8125rem;
+  --search-height: 4.25rem;
+  --row-height: 3.25rem;
+  --icon-size: 2rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --radius-icon: 0.5rem;
+  --radius-row: 0.75rem;
+  --radius-window: 1rem;
+  --accent: light-dark(#2563eb, #8ab4ff);
+  --text-primary: light-dark(#17181a, #f4f4f5);
+  --text-secondary: light-dark(#666a73, #a9abb3);
+  --text-tertiary: light-dark(#969aa3, #747780);
+  --surface-window: light-dark(rgba(248, 248, 250, 0.96), rgba(25, 26, 30, 0.96));
+  --surface-raised: light-dark(#e8e9ed, #34363d);
+  --surface-selected: light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.1));
+  --border-window: light-dark(rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.14));
+  --border-subtle: light-dark(rgba(0, 0, 0, 0.09), rgba(255, 255, 255, 0.08));
+  --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.24);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

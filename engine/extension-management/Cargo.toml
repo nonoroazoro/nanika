@@ -1,0 +1,23 @@
+[package]
+name = "nanika-extension-package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+jsonc-parser.workspace = true
+nanika-config = { path = "../configuration" }
+nanika-core = { path = "../domain" }
+nanika-storage = { path = "../storage" }
+rusqlite.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true
