@@ -36,20 +36,17 @@ fn comments_are_accepted_at_the_typed_boundary() {
 }
 
 #[test]
-fn malformed_bootstrap_recovers_initial_backup_and_becomes_read_only() {
+fn malformed_bootstrap_fails_explicitly() {
     let root = std::env::temp_dir().join(format!("nanika-config-recovery-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let store = ConfigStore::open(&root, root.join("config")).expect("store should open");
-    let bootstrap: BootstrapConfig = store.load(store.bootstrap_path()).expect("bootstrap");
     std::fs::write(store.bootstrap_path(), "{ malformed").expect("corrupt bootstrap");
-    let recovered = ConfigStore::open(&root, root.join("config")).expect("backup should recover");
-    assert!(recovered.is_read_only());
-    assert!(recovered.save(recovered.config_file(), &bootstrap).is_err());
+    assert!(ConfigStore::open(&root, root.join("config")).is_err());
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn valid_relocation_refreshes_the_recovery_boundary() {
+fn valid_relocation_is_loaded_from_the_primary_bootstrap() {
     let root =
         std::env::temp_dir().join(format!("nanika-config-relocation-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -64,16 +61,11 @@ fn valid_relocation_refreshes_the_recovery_boundary() {
 
     let relocated = ConfigStore::open(&root, root.join("config")).expect("relocation should load");
     assert_eq!(relocated.config_root(), bootstrap.config_root);
-    std::fs::write(relocated.bootstrap_path(), "{ malformed")
-        .expect("bootstrap should become malformed");
-    let recovered = ConfigStore::open(&root, root.join("config")).expect("backup should recover");
-    assert!(recovered.is_read_only());
-    assert_eq!(recovered.config_root(), bootstrap.config_root);
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn invalid_bootstrap_fields_recover_the_last_known_good_file() {
+fn invalid_bootstrap_fields_fail_explicitly() {
     let root = std::env::temp_dir().join(format!(
         "nanika-config-invalid-bootstrap-{}",
         std::process::id()
@@ -86,9 +78,7 @@ fn invalid_bootstrap_fields_recover_the_last_known_good_file() {
     )
     .expect("invalid bootstrap should save");
 
-    let recovered = ConfigStore::open(&root, root.join("config")).expect("backup should recover");
-    assert!(recovered.is_read_only());
-    assert_eq!(recovered.config_root(), root.join("config"));
+    assert!(ConfigStore::open(&root, root.join("config")).is_err());
     let _ = std::fs::remove_dir_all(root);
 }
 

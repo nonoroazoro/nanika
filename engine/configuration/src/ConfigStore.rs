@@ -20,7 +20,6 @@ pub struct ConfigStore {
     bootstrap_path: PathBuf,
     config_root: PathBuf,
     machine_root: PathBuf,
-    read_only: bool,
 }
 
 impl ConfigStore {
@@ -38,21 +37,11 @@ impl ConfigStore {
         fs::create_dir_all(machine_root)?;
         let bootstrap_path = machine_root.join("bootstrap.jsonc");
         let bootstrap_backup = backup_path(machine_root, None, &bootstrap_path)?;
-        let (bootstrap, read_only, refresh_backup) = if bootstrap_path.is_file() {
-            match load_jsonc::<BootstrapConfig>(&bootstrap_path).and_then(|bootstrap| {
+        let bootstrap = if bootstrap_path.is_file() {
+            load_jsonc::<BootstrapConfig>(&bootstrap_path).and_then(|bootstrap| {
                 validate_bootstrap(&bootstrap)?;
                 Ok(bootstrap)
-            }) {
-                Ok(bootstrap) => (bootstrap, false, true),
-                Err(error) => {
-                    if !bootstrap_backup.is_file() {
-                        return Err(error);
-                    }
-                    let bootstrap = load_jsonc(&bootstrap_backup)?;
-                    validate_bootstrap(&bootstrap)?;
-                    (bootstrap, true, false)
-                }
-            }
+            })?
         } else {
             let bootstrap = BootstrapConfig {
                 format_version: CONFIG_FORMAT_VERSION,
@@ -61,17 +50,14 @@ impl ConfigStore {
             };
             validate_bootstrap(&bootstrap)?;
             save_jsonc(&bootstrap_path, &bootstrap, None)?;
-            (bootstrap, false, true)
+            bootstrap
         };
         fs::create_dir_all(&bootstrap.config_root)?;
-        if refresh_backup {
-            copy_if_changed(&bootstrap_path, &bootstrap_backup)?;
-        }
+        copy_if_changed(&bootstrap_path, &bootstrap_backup)?;
         Ok(Self {
             bootstrap_path,
             config_root: bootstrap.config_root,
             machine_root: machine_root.to_path_buf(),
-            read_only,
         })
     }
 
@@ -81,10 +67,6 @@ impl ConfigStore {
 
     pub fn config_root(&self) -> &Path {
         &self.config_root
-    }
-
-    pub fn is_read_only(&self) -> bool {
-        self.read_only
     }
 
     pub fn config_file(&self) -> PathBuf {
@@ -106,11 +88,6 @@ impl ConfigStore {
 
     /// Serialize a typed value and replace a config file with a synced temporary file.
     pub fn save<T: Serialize>(&self, path: impl AsRef<Path>, value: &T) -> Result<(), ConfigError> {
-        if self.read_only {
-            return Err(ConfigError::Invalid(
-                "configuration is read-only after recovery".to_owned(),
-            ));
-        }
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
@@ -129,11 +106,6 @@ impl ConfigStore {
         updates: impl IntoIterator<Item = (String, Value)>,
         validate: impl FnOnce(&T) -> Result<(), String>,
     ) -> Result<T, ConfigError> {
-        if self.read_only {
-            return Err(ConfigError::Invalid(
-                "configuration is read-only after recovery".to_owned(),
-            ));
-        }
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
@@ -178,11 +150,6 @@ impl ConfigStore {
         updates: impl IntoIterator<Item = (String, Option<Value>)>,
         validate: impl FnOnce(&T) -> Result<(), String>,
     ) -> Result<T, ConfigError> {
-        if self.read_only {
-            return Err(ConfigError::Invalid(
-                "configuration is read-only after recovery".to_owned(),
-            ));
-        }
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
