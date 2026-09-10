@@ -4,12 +4,7 @@
 mod command;
 
 use std::process::ExitCode;
-use std::{
-    ffi::OsStr,
-    fs,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{ffi::OsStr, fs, io::Write, path::Path};
 
 use command::Command;
 use nanika_config::ConfigStore;
@@ -17,9 +12,6 @@ use nanika_extension_package::{
     install_package, remove_extension, set_extension_enabled, update_package,
 };
 use nanika_platform::InstanceRole;
-
-const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_DIAGNOSTIC_LOG_FILES: usize = 8;
 
 fn main() -> ExitCode {
     match run() {
@@ -134,7 +126,6 @@ fn export_diagnostics(app_data_root: &Path, destination: &Path) -> Result<(), St
             .map_err(|error| error.to_string())?;
 
         let log_root = app_data_root.join("logs");
-        let mut total_bytes = 0_u64;
         let log_root_metadata = fs::symlink_metadata(&log_root);
         if log_root_metadata
             .as_ref()
@@ -149,17 +140,15 @@ fn export_diagnostics(app_data_root: &Path, destination: &Path) -> Result<(), St
                 }
             }
             logs.sort_by_key(|entry| entry.file_name());
-            for entry in logs.into_iter().rev().take(MAX_DIAGNOSTIC_LOG_FILES).rev() {
+            for entry in logs {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
                 archive
                     .start_file(format!("logs/{name}"), options)
                     .map_err(|error| error.to_string())?;
-                let input = open_regular_file(&entry.path()).map_err(|error| error.to_string())?;
-                let remaining = MAX_DIAGNOSTIC_LOG_BYTES.saturating_sub(total_bytes);
-                let copied = copy_bounded(input, &mut archive, remaining)
-                    .map_err(|error| error.to_string())?;
-                total_bytes = total_bytes.saturating_add(copied);
+                let mut input =
+                    open_regular_file(&entry.path()).map_err(|error| error.to_string())?;
+                std::io::copy(&mut input, &mut archive).map_err(|error| error.to_string())?;
             }
         } else if let Err(error) = log_root_metadata
             && error.kind() != std::io::ErrorKind::NotFound
@@ -172,11 +161,17 @@ fn export_diagnostics(app_data_root: &Path, destination: &Path) -> Result<(), St
             .sync_all()
             .map_err(|error| error.to_string())?;
         fs::hard_link(&temporary, destination).map_err(|error| error.to_string())?;
-        let _ = fs::remove_file(&temporary);
+        fs::remove_file(&temporary).map_err(|error| error.to_string())?;
         Ok(())
     })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+    if result.is_err()
+        && let Err(cleanup_error) = fs::remove_file(&temporary)
+        && cleanup_error.kind() != std::io::ErrorKind::NotFound
+    {
+        eprintln!(
+            "Nanika: failed to remove incomplete diagnostics file {}: {cleanup_error}",
+            temporary.display()
+        );
     }
     result
 }
@@ -199,21 +194,6 @@ fn is_nanika_log_name(name: &OsStr) -> bool {
             .iter()
             .enumerate()
             .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
-}
-
-fn copy_bounded(
-    input: impl Read,
-    output: &mut impl Write,
-    maximum_bytes: u64,
-) -> std::io::Result<u64> {
-    let copied = std::io::copy(&mut input.take(maximum_bytes.saturating_add(1)), output)?;
-    if copied > maximum_bytes {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "diagnostic logs exceed the 32 MiB export limit",
-        ));
-    }
-    Ok(copied)
 }
 
 #[cfg(unix)]
@@ -326,15 +306,6 @@ mod tests {
             "keep"
         );
         std::fs::remove_dir_all(root).expect("test directory should be removed");
-    }
-
-    #[test]
-    fn bounded_copy_rejects_growth_beyond_the_limit() {
-        let mut output = Vec::new();
-        let error = super::copy_bounded(&b"12345"[..], &mut output, 4)
-            .expect_err("oversized input should fail");
-
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     fn temporary_root(name: &str) -> std::path::PathBuf {
