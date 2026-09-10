@@ -1,9 +1,10 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { onMount, tick } from "svelte";
 
 import { tauriBridge } from "./bridge";
 import { RootSearch } from "./components";
 import type { ApplicationSnapshot, RootSearchSnapshot, SearchResult } from "./types";
+import type { SearchObservation } from "./development";
 
 let application = $state<ApplicationSnapshot | null>(null);
 let failure = $state<string | null>(null);
@@ -74,6 +75,10 @@ function fail(error: unknown): void
         return;
     }
     failure = error instanceof Error ? error.message : String(error);
+    if (import.meta.env.DEV)
+    {
+        observeSearch(latestRequestId, "failed");
+    }
     console.error("Search window failed", failure);
 }
 
@@ -81,6 +86,10 @@ async function publishQuery(query: string): Promise<void>
 {
     operationFailure = null;
     const requestId = ++latestRequestId;
+    if (import.meta.env.DEV)
+    {
+        observeSearch(requestId, "input");
+    }
     desiredQuery = query;
     queryFailure = null;
     await submitQuery(requestId, query);
@@ -95,6 +104,10 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     if ([...query].length > application.maxQueryChars)
     {
         queryFailure = `Search supports up to ${application.maxQueryChars} characters. Edit the input to continue.`;
+        if (import.meta.env.DEV)
+        {
+            observeSearch(requestId, "rejected");
+        }
         return;
     }
     try
@@ -108,6 +121,10 @@ async function submitQuery(requestId: number, query: string): Promise<void>
         if (requestId === latestRequestId)
         {
             queryFailure = error instanceof Error ? error.message : String(error);
+            if (import.meta.env.DEV)
+            {
+                observeSearch(requestId, "rejected");
+            }
         }
     }
 }
@@ -175,8 +192,31 @@ function updateRootSearch(next: RootSearchSnapshot): void
     if (next.phase === "ready")
     {
         hasCompletedSearch = true;
+        if (import.meta.env.DEV)
+        {
+            observeSearch(next.requestId, "received");
+        }
     }
     rootSearch = next.phase === "searching" ? { ...next, results: rootSearch.results } : next;
+    if (import.meta.env.DEV && next.phase === "ready")
+    {
+        void tick().then(() =>
+        {
+            if (!disposed && next.requestId === latestRequestId && next.revision === lastRevision)
+            {
+                observeSearch(next.requestId, "committed");
+            }
+        });
+    }
+}
+
+function observeSearch(requestId: number, stage: SearchObservation["stage"]): void
+{
+    document.dispatchEvent(
+        new CustomEvent<SearchObservation>("nanika:search-observation", {
+            detail: { requestId, stage, time: performance.now() }
+        })
+    );
 }
 </script>
 

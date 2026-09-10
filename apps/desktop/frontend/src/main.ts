@@ -12,3 +12,11 @@ if (!target)
 }
 
 mount(App, { target });
+
+if (import.meta.env.DEV)
+{
+    void import("./development").then(({ mountPerformanceMonitor }) =>
+    {
+        mountPerformanceMonitor();
+    });
+}

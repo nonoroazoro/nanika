@@ -55,6 +55,16 @@ Performance instrumentation must not ship in production artifacts. The controlle
 
 Use computer-use to exercise UI interactions and rendering in the actual Tauri application using WebView2 on Windows and WKWebView on macOS. Synthetic application catalogs must pass through extension processes, Rust search, and Tauri IPC before reaching the shared frontend. Record total process-start-to-interactive time and separate runtime initialization, result delivery, DOM update, and frame timing. Isolated component timings are not end-to-end application results.
 
+## Development monitor
+
+During `pnpm --dir apps/desktop dev`, use the Performance button or `Cmd/Ctrl+Shift+P` to toggle an independent frontend overlay. Sampling starts disabled. Closing the monitor, losing window focus, hiding the document, or disposing the component cancels its animation-frame callback and detaches its search observation listener. Resuming starts a fresh sample window and excludes the hidden interval.
+
+The overlay reports estimated FPS, P95 and maximum frame intervals over the most recent 120 positive `requestAnimationFrame` intervals. It refreshes frame statistics at most every 250 ms. This rolling window is an explicit diagnostic sampling policy, not retained benchmark history. The active sampler adds work even on an otherwise static page; its readings include monitoring overhead.
+
+Search timing follows the current request from the frontend input handler through an accepted ready Channel snapshot, Svelte DOM commit, and two frame callbacks. The last timing estimates a rendering opportunity, not physical display presentation. Superseded requests do not produce completion samples. Rejected queries and explicit failures remain labeled, without measurement deadlines. Observations contain only request identifiers, stages, and timestamps; they do not retain query text or results.
+
+The monitor is loaded only through Vite's development branch. Production builds reject emitted chunks containing development-monitor modules, including builds accidentally run with a development `NODE_ENV`. The overlay, its CSS, keyboard shortcut, and search observation hooks must be absent from production assets. Use platform profilers for release acceptance and compositor measurements.
+
 ## Activation trace
 
 The activation trace covers native hotkey delivery, Rust event handling, active-monitor placement, Tauri window visibility, frontend visibility acknowledgement, input focus, and interactive readiness. Native timing uses Carbon `EventTime` on macOS and `MSG.time` on Windows when available. Missing native timing marks a sample incomplete instead of substituting callback time.

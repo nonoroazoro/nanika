@@ -10,10 +10,6 @@ export const tauriBridge: NanikaBridge = {
         {
             try
             {
-                if (import.meta.env.VITE_PERFORMANCE_OBSERVATION === "1")
-                {
-                    document.dispatchEvent(new CustomEvent("nanika:search-received", { detail: snapshot }));
-                }
                 listener(snapshot);
                 void invoke("acknowledge_search", {
                     sessionId: snapshot.sessionId,
