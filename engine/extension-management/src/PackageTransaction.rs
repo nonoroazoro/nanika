@@ -9,7 +9,7 @@ use crate::ExtensionPackageError;
 
 const TRANSACTION_FILE: &str = ".package-transaction.json";
 
-/// Durable recovery record for one destructive package artifact mutation.
+/// Durable evidence that one destructive package artifact mutation was interrupted.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageTransaction {
@@ -43,7 +43,7 @@ impl PackageTransaction {
         match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map(Some).map_err(|error| {
                 ExtensionPackageError::Manifest(format!(
-                    "package recovery journal is invalid: {error}"
+                    "package transaction journal is invalid: {error}"
                 ))
             }),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -55,7 +55,7 @@ impl PackageTransaction {
         let path = root.join(TRANSACTION_FILE);
         if path.exists() {
             return Err(ExtensionPackageError::Manifest(
-                "an incomplete package transaction requires recovery".to_owned(),
+                "an incomplete package transaction requires explicit repair".to_owned(),
             ));
         }
         let temporary = root.join(format!(".package-transaction-{}.partial", Uuid::new_v4()));
@@ -66,7 +66,7 @@ impl PackageTransaction {
                 .open(&temporary)?;
             let bytes = serde_json::to_vec(self).map_err(|error| {
                 ExtensionPackageError::Manifest(format!(
-                    "package recovery journal could not be encoded: {error}"
+                    "package transaction journal could not be encoded: {error}"
                 ))
             })?;
             file.write_all(&bytes)?;
@@ -92,7 +92,7 @@ impl PackageTransaction {
     pub(crate) fn validate(&self) -> Result<(), ExtensionPackageError> {
         if !nanika_storage::is_valid_extension_id(&self.extension_id) {
             return Err(ExtensionPackageError::Manifest(
-                "package recovery journal has an invalid extension id".to_owned(),
+                "package transaction journal has an invalid extension id".to_owned(),
             ));
         }
         let mut backup_components = Path::new(&self.backup_name).components();
@@ -100,14 +100,14 @@ impl PackageTransaction {
             || backup_components.next().is_some()
         {
             return Err(ExtensionPackageError::Manifest(
-                "package recovery journal has an invalid backup name".to_owned(),
+                "package transaction journal has an invalid backup name".to_owned(),
             ));
         }
         match self.operation.as_str() {
             "replace" => {
                 let version = self.version.as_deref().ok_or_else(|| {
                     ExtensionPackageError::Manifest(
-                        "replacement recovery journal has no version".to_owned(),
+                        "replacement transaction journal has no version".to_owned(),
                     )
                 })?;
                 semver::Version::parse(version)
@@ -116,12 +116,12 @@ impl PackageTransaction {
             "remove" if self.version.is_none() => {}
             "remove" => {
                 return Err(ExtensionPackageError::Manifest(
-                    "removal recovery journal unexpectedly has a version".to_owned(),
+                    "removal transaction journal unexpectedly has a version".to_owned(),
                 ));
             }
             _ => {
                 return Err(ExtensionPackageError::Manifest(
-                    "package recovery journal has an invalid operation".to_owned(),
+                    "package transaction journal has an invalid operation".to_owned(),
                 ));
             }
         }

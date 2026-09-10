@@ -53,7 +53,7 @@ fn apply_package(
     validate_package_path(package_path)?;
     let extension_root = paths.app_data_root().join("extensions");
     fs::create_dir_all(&extension_root)?;
-    recover_package_artifacts(paths)?;
+    reject_incomplete_package_transaction(paths)?;
     let staged_package = StagedPackage::create(
         package_path,
         extension_root.join(format!(".package-{}.partial", Uuid::new_v4())),
@@ -172,7 +172,7 @@ fn apply_package(
         return Err(error.into());
     }
     if let Some(replaced) = replaced_root {
-        let _ = fs::remove_dir_all(replaced);
+        fs::remove_dir_all(replaced)?;
     }
     if replacement_transaction.is_some() {
         PackageTransaction::clear(&extension_root)?;
@@ -200,7 +200,7 @@ pub fn set_extension_enabled(
             "invalid extension id".to_owned(),
         ));
     }
-    recover_package_artifacts(paths)?;
+    reject_incomplete_package_transaction(paths)?;
     let database = HostDatabase::open(paths.host_database())?;
     let installed = database
         .extension(extension_id)?
@@ -250,7 +250,7 @@ pub fn remove_extension(
             "invalid extension id".to_owned(),
         ));
     }
-    recover_package_artifacts(paths)?;
+    reject_incomplete_package_transaction(paths)?;
     let database = HostDatabase::open(paths.host_database())?;
     let installed = database
         .extension(extension_id)?
@@ -333,7 +333,7 @@ pub fn remove_extension(
         };
     }
     if removed_root.exists() {
-        let _ = fs::remove_dir_all(removed_root);
+        fs::remove_dir_all(removed_root)?;
     }
     if removal_transaction.is_some() {
         PackageTransaction::clear(&extensions_root)?;
@@ -349,11 +349,12 @@ pub fn resolve_active_extensions(
 ) -> (Vec<ActiveExtension>, Vec<ExtensionResolutionError>) {
     let mut active = Vec::new();
     let mut errors = Vec::new();
-    if let Err(error) = recover_package_artifacts(paths) {
+    if let Err(error) = reject_incomplete_package_transaction(paths) {
         errors.push(ExtensionResolutionError::new(
-            "package-recovery",
-            format!("package recovery failed: {error}"),
+            "package-transaction",
+            error.to_string(),
         ));
+        return (active, errors);
     }
     for extension in installed
         .iter()
@@ -451,67 +452,17 @@ fn validate_package_operation(
     }
 }
 
-fn recover_package_artifacts(paths: &NanikaPaths) -> Result<(), ExtensionPackageError> {
+fn reject_incomplete_package_transaction(paths: &NanikaPaths) -> Result<(), ExtensionPackageError> {
     let extensions_root = paths.app_data_root().join("extensions");
     fs::create_dir_all(&extensions_root)?;
     let Some(transaction) = PackageTransaction::load(&extensions_root)? else {
         return Ok(());
     };
     transaction.validate()?;
-    let extension_root = extensions_root.join(&transaction.extension_id);
-    validate_managed_path(&extensions_root, &extension_root)?;
-    match transaction.operation.as_str() {
-        "replace" => {
-            let version = transaction.version.as_deref().ok_or_else(|| {
-                ExtensionPackageError::Manifest(
-                    "replacement recovery journal has no version".to_owned(),
-                )
-            })?;
-            let version_root = extension_root.join(version);
-            let backup_root = extension_root.join(&transaction.backup_name);
-            validate_managed_path(&extension_root, &version_root)?;
-            validate_managed_path(&extension_root, &backup_root)?;
-            let expected_prefix = format!(".replaced-{version}-");
-            if !transaction.backup_name.starts_with(&expected_prefix) {
-                return Err(ExtensionPackageError::Manifest(
-                    "replacement recovery journal has an unexpected backup name".to_owned(),
-                ));
-            }
-            if version_root.exists() {
-                if backup_root.exists() {
-                    fs::remove_dir_all(backup_root)?;
-                }
-            } else if backup_root.exists() {
-                fs::rename(backup_root, version_root)?;
-            } else {
-                return Err(ExtensionPackageError::Manifest(
-                    "replacement recovery artifacts are missing".to_owned(),
-                ));
-            }
-        }
-        "remove" => {
-            let backup_root = extensions_root.join(&transaction.backup_name);
-            validate_managed_path(&extensions_root, &backup_root)?;
-            let expected_prefix = format!(".removed-{}-", transaction.extension_id);
-            if !transaction.backup_name.starts_with(&expected_prefix) {
-                return Err(ExtensionPackageError::Manifest(
-                    "removal recovery journal has an unexpected backup name".to_owned(),
-                ));
-            }
-            if backup_root.exists() {
-                let installed = HostDatabase::open(paths.host_database())?
-                    .extension(&transaction.extension_id)?
-                    .is_some();
-                if installed && !extension_root.exists() {
-                    fs::rename(backup_root, extension_root)?;
-                } else {
-                    fs::remove_dir_all(backup_root)?;
-                }
-            }
-        }
-        _ => unreachable!("validated package transaction operation"),
-    }
-    PackageTransaction::clear(&extensions_root)
+    Err(ExtensionPackageError::Manifest(format!(
+        "incomplete extension package transaction detected: operation={}, extension={}; no files were changed; an explicit repair operation is required",
+        transaction.operation, transaction.extension_id
+    )))
 }
 
 fn validate_package_path(path: &Path) -> Result<(), ExtensionPackageError> {

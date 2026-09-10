@@ -532,7 +532,7 @@ fn package_rejects_unicode_filesystem_collisions() {
 }
 
 #[test]
-fn interrupted_same_version_replacement_recovers_before_resolution() {
+fn interrupted_same_version_replacement_fails_without_mutation() {
     let root = temporary_root("replacement-recovery");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
@@ -572,11 +572,13 @@ fn interrupted_same_version_replacement_recovers_before_resolution() {
 
     let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
 
-    assert!(errors.is_empty());
-    assert_eq!(active.len(), 1);
-    assert!(version_root.is_dir());
+    assert!(active.is_empty());
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("explicit repair"));
+    assert!(!version_root.exists());
+    assert!(extension_root.join(backup_name).is_dir());
     assert!(
-        !paths
+        paths
             .app_data_root()
             .join("extensions")
             .join(".package-transaction.json")
@@ -587,7 +589,7 @@ fn interrupted_same_version_replacement_recovers_before_resolution() {
 }
 
 #[test]
-fn interrupted_removal_recovers_before_resolution() {
+fn interrupted_removal_fails_without_mutation() {
     let root = temporary_root("removal-recovery");
     cleanup(&root);
     let paths = NanikaPaths::from_roots(
@@ -625,10 +627,12 @@ fn interrupted_removal_recovers_before_resolution() {
 
     let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
 
-    assert!(errors.is_empty());
-    assert_eq!(active.len(), 1);
-    assert!(extension_root.is_dir());
-    assert!(!extensions_root.join(".package-transaction.json").exists());
+    assert!(active.is_empty());
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("explicit repair"));
+    assert!(!extension_root.exists());
+    assert!(extensions_root.join(backup_name).is_dir());
+    assert!(extensions_root.join(".package-transaction.json").exists());
     drop(database);
     cleanup(&root);
 }
