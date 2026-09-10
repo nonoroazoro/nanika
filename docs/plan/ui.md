@@ -155,7 +155,7 @@ Loading does not replace stable results with an empty flash. Existing content re
 
 Search text is submitted through Tauri `invoke`; one Channel per page lifetime supplies all search states and result lists. RPC responses do not change the list. Initial empty-query results appear without typing, and later discovery updates replace them through the same Channel. Typing during startup is preserved. Old session, request, or revision messages cannot replace the current view.
 
-While a new request is pending, keep the previous list visible and mark the results region busy. Retained entries cannot execute until results for the current request arrive. A ready empty list means no matches; a searching empty list means work is still pending. Runtime startup failures, communication failures, and render failures show an accessible error. Nanika does not convert slow work into failure through a hidden frontend deadline.
+While a new request is pending, keep the previous completed view visible, including its empty-result message, and mark the results region busy. Retained entries cannot execute until results for the current request arrive. Before any search has completed, leave the result content empty. Do not display a searching message or alternate loading and empty-result views on keystrokes. Keep list nodes keyed by result identity and isolate collection rendering from request metadata updates. An empty result does not permit the host to skip longer queries: extensions can produce new results when an expression or command becomes complete. Runtime startup failures, communication failures, and render failures show an accessible error. Nanika does not convert slow work into failure through a hidden frontend deadline.
 
 ## Theme
 

@@ -8,6 +8,7 @@ import ResultRow from "./ResultRow.svelte";
 interface Props
 {
     snapshot: RootSearchSnapshot;
+    hasCompletedSearch: boolean;
     busy?: boolean;
     inputError?: string | null;
     onQuery: (query: string) => void;
@@ -15,16 +16,19 @@ interface Props
     onInvoke: (result: SearchResult) => void;
 }
 
-const { snapshot, busy = false, inputError = null, onQuery, onDismiss, onInvoke }: Props = $props();
+const { snapshot, hasCompletedSearch, busy = false, inputError = null, onQuery, onDismiss, onInvoke }: Props = $props();
 let query = $state("");
 let requestedActiveIndex = $state(0);
 let input: HTMLInputElement;
 let list = $state<HTMLUListElement>();
 
+// Transport metadata changes during submission without changing the visible list.
+const results = $derived(snapshot.results);
+const warning = $derived(snapshot.warnings.join("\n"));
 const activeIndex = $derived(
-    snapshot.results.length === 0 ? -1 : clampIndex(requestedActiveIndex, snapshot.results.length)
+    results.length === 0 ? -1 : clampIndex(requestedActiveIndex, results.length)
 );
-const activeResult = $derived(snapshot.results[activeIndex] ?? null);
+const activeResult = $derived(results[activeIndex] ?? null);
 const activeId = $derived(
     activeResult ? `result-${activeResult.extensionId}-${activeResult.entryId}` : undefined
 );
@@ -32,12 +36,14 @@ const activeId = $derived(
 onMount(() =>
 {
     query = snapshot.query;
-    input.focus();
-    if (query.length > 0)
-    {
-        input.select();
-    }
+    focusQuery();
 });
+
+function focusQuery(): void
+{
+    input.focus({ preventScroll: true });
+    input.select();
+}
 
 function handleKeydown(event: KeyboardEvent): void
 {
@@ -72,7 +78,7 @@ function handleKeydown(event: KeyboardEvent): void
 
 function moveSelection(delta: number): void
 {
-    requestedActiveIndex = clampIndex(activeIndex + delta, snapshot.results.length);
+    requestedActiveIndex = clampIndex(activeIndex + delta, results.length);
     // aria-activedescendant preserves input focus but does not scroll the option.
     // Let the browser reveal only the nearest edge, only for keyboard navigation.
     list?.children.item(requestedActiveIndex)?.scrollIntoView({
@@ -82,6 +88,8 @@ function moveSelection(delta: number): void
     });
 }
 </script>
+
+<svelte:window onfocus={focusQuery} />
 
 <main class="launcher" aria-label="Nanika launcher">
     <div class="search-shell">
@@ -95,7 +103,7 @@ function moveSelection(delta: number): void
             aria-invalid={inputError !== null}
             aria-describedby={inputError ? "query-error" : undefined}
             aria-controls="root-results"
-            aria-expanded={snapshot.results.length > 0}
+            aria-expanded={results.length > 0}
             aria-activedescendant={activeId}
             autocomplete="off"
             spellcheck="false"
@@ -113,14 +121,14 @@ function moveSelection(delta: number): void
         {#if inputError}
             <div id="query-error" class="warning" role="alert">{inputError}</div>
         {/if}
-        {#if snapshot.warnings.length > 0}
+        {#if warning}
             <div class="warning" role="status">
-                {snapshot.warnings.join("\n")}
+                {warning}
             </div>
         {/if}
-        {#if snapshot.results.length > 0}
+        {#if results.length > 0}
             <ul bind:this={list} id="root-results" role="listbox">
-                {#each snapshot.results as result, index (`${result.extensionId}:${result.entryId}`)}
+                {#each results as result, index (`${result.extensionId}:${result.entryId}`)}
                     <ResultRow
                         {result}
                         active={index === activeIndex}
@@ -138,13 +146,11 @@ function moveSelection(delta: number): void
                     />
                 {/each}
             </ul>
-        {:else if snapshot.phase === "ready" && !busy}
+        {:else if hasCompletedSearch}
             <div class="empty" role="status">
                 <span>No results</span>
                 <small>Enable an extension or try another search.</small>
             </div>
-        {:else}
-            <div class="empty" role="status">Searching...</div>
         {/if}
     </section>
 </main>

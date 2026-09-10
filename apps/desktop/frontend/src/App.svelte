@@ -10,7 +10,9 @@ let failure = $state<string | null>(null);
 let queryFailure = $state<string | null>(null);
 let invoking = $state(false);
 let operationFailure = $state<string | null>(null);
-let rootSearch = $state<RootSearchSnapshot>({
+// A completed empty view survives pending queries just like a completed list.
+let hasCompletedSearch = $state(false);
+let rootSearch = $state.raw<RootSearchSnapshot>({
     sessionId: 0,
     requestId: 0,
     revision: 0,
@@ -170,6 +172,10 @@ function updateRootSearch(next: RootSearchSnapshot): void
     }
     // Pending work preserves the last coherent list. Its entries cannot be invoked
     // until the current request has produced results and Rust can validate them.
+    if (next.phase === "ready")
+    {
+        hasCompletedSearch = true;
+    }
     rootSearch = next.phase === "searching" ? { ...next, results: rootSearch.results } : next;
 }
 </script>
@@ -184,6 +190,7 @@ function updateRootSearch(next: RootSearchSnapshot): void
     <svelte:boundary onerror={(error => fail(error))}>
         <RootSearch
             snapshot={rootSearch}
+            {hasCompletedSearch}
             inputError={queryFailure}
             busy={invoking || !application
             || rootSearch.requestId !== latestRequestId
