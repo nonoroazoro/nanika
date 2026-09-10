@@ -2519,6 +2519,7 @@ version = "0.1.0"
 name = "nanika-desktop"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "nanika-core",
  "nanika-host",
  "nanika-platform",
@@ -2613,6 +2614,8 @@ dependencies = [
  "nanika-host",
  "nanika-protocol",
  "nanika-search",
+ "nanika-storage",
+ "serde_json",
 ]
 
 [[package]]
@@ -2683,6 +2686,7 @@ dependencies = [
  "objc2-service-management",
  "png 0.18.1",
  "sys-locale",
+ "tracing",
  "windows-registry",
  "windows-sys 0.61.2",
 ]
@@ -2701,6 +2705,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "nucleo-matcher",
+ "tracing",
 ]
 
 [[package]]
@@ -2711,6 +2716,7 @@ dependencies = [
  "nanika-core",
  "nanika-search",
  "rusqlite",
+ "tracing",
 ]
 
 [[package]]

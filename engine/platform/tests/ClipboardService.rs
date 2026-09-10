@@ -1,6 +1,4 @@
-use std::time::{Duration, Instant};
-
-use crate::clipboard_service::{ensure_before_deadline, read_validated_png};
+use crate::clipboard_service::read_validated_png;
 
 #[test]
 fn clipboard_images_enforce_encoded_and_decoded_resource_limits() {
@@ -37,13 +35,4 @@ fn clipboard_images_enforce_encoded_and_decoded_resource_limits() {
             .contains("dimension")
     );
     let _ = std::fs::remove_dir_all(root);
-}
-
-#[test]
-fn expired_clipboard_requests_are_rejected_before_writing() {
-    assert!(
-        ensure_before_deadline(Instant::now() - Duration::from_millis(1))
-            .expect_err("expired request should fail")
-            .contains("expired")
-    );
 }

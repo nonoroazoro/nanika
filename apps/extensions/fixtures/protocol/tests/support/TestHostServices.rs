@@ -1,6 +1,5 @@
 use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver};
-use std::time::Instant;
 
 use nanika_host::HostServiceHandler;
 use nanika_protocol::{HostServiceRequest, HostServiceResponse};
@@ -29,7 +28,6 @@ impl HostServiceHandler for TestHostServices {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        _deadline: Instant,
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         self.requests
             .lock()

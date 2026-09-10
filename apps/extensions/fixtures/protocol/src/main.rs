@@ -9,28 +9,12 @@ use nanika_protocol::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let hang_initialize = arguments
+    let error_after_initialize = arguments
         .iter()
-        .any(|argument| argument == "--hang-initialize");
-    let exit_after_initialize = arguments
-        .iter()
-        .any(|argument| argument == "--exit-after-initialize");
-    let delay_first_query = arguments
-        .iter()
-        .any(|argument| argument == "--delay-first-query");
+        .any(|argument| argument == "--error-after-initialize");
     let incremental_query = arguments
         .iter()
         .any(|argument| argument == "--incremental-query");
-    let crash_query_once = arguments.iter().find_map(|argument| {
-        argument
-            .strip_prefix("--crash-query-once=")
-            .map(std::path::PathBuf::from)
-    });
-    let hang_query_once = arguments.iter().find_map(|argument| {
-        argument
-            .strip_prefix("--hang-query-once=")
-            .map(std::path::PathBuf::from)
-    });
     let hang_invoke = arguments.iter().find_map(|argument| {
         argument
             .strip_prefix("--hang-invoke=")
@@ -50,16 +34,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         eprint!("{}", "fixture-stderr-".repeat(1024));
     }
+    let cancellation_query = arguments.iter().find_map(|value| {
+        value
+            .strip_prefix("--cancel-query=")
+            .map(std::path::PathBuf::from)
+    });
+    let cancellation_invoke = arguments.iter().find_map(|value| {
+        value
+            .strip_prefix("--cancel-invoke=")
+            .map(std::path::PathBuf::from)
+    });
+    let complete_on_cancel = arguments
+        .iter()
+        .any(|value| value == "--complete-on-cancel");
+    let mut pending_query = None;
+    let mut pending_invoke = None;
+    let mut previous_result = None;
     let mut input = stdin().lock();
     let mut output = stdout().lock();
-    let mut query_count = 0_u32;
 
     while let Some(message) = read_frame(&mut input)? {
         match message {
             Message::Initialize { request_id, .. } => {
-                if hang_initialize {
-                    std::thread::sleep(std::time::Duration::from_secs(60));
-                }
+                wait_for_release(&arguments, &request_id)?;
                 write_frame(
                     &mut output,
                     &Message::Initialized {
@@ -67,8 +64,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         protocol: PROTOCOL_NAME.to_owned(),
                     },
                 )?;
-                if exit_after_initialize {
-                    return Ok(());
+                if error_after_initialize {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: None,
+                            code: "background_failure".to_owned(),
+                            message: "fixture background operation failed".to_owned(),
+                        },
+                    )?;
                 }
             }
             Message::Shutdown { request_id } => {
@@ -80,21 +84,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 generation,
                 query,
             } => {
-                query_count = query_count.saturating_add(1);
-                if let Some(marker) = &crash_query_once
-                    && !marker.exists()
+                if let Some(marker) = &cancellation_query
+                    && query == "blocked"
                 {
-                    std::fs::write(marker, b"crashed")?;
-                    return Ok(());
+                    std::fs::write(marker, b"query waiting")?;
+                    pending_query = Some(request_id);
+                    continue;
                 }
-                if let Some(marker) = &hang_query_once
-                    && !marker.exists()
+                if let Some(root) = data_root(&arguments)
+                    && let Some(extension_id) = request_id
+                        .strip_prefix("search-")
+                        .and_then(|id| id.rsplit_once('-').map(|(id, _)| id))
+                    && root.join(format!("fail-search-{extension_id}")).exists()
                 {
-                    std::fs::write(marker, b"hung")?;
-                    std::thread::sleep(std::time::Duration::from_secs(60));
-                }
-                if delay_first_query && query_count == 1 {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            code: "fixture_query_failure".to_owned(),
+                            message: "fixture query failed with an internal cause".to_owned(),
+                        },
+                    )?;
+                    continue;
                 }
                 if incremental_query {
                     write_frame(
@@ -126,6 +137,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entry_id,
                 action_id,
             } => {
+                if let Some(marker) = &cancellation_invoke {
+                    std::fs::write(marker, request_id.as_bytes())?;
+                    if let Some(previous) = &previous_result {
+                        // A duplicate old completion must never complete the next action.
+                        write_frame(&mut output, previous)?;
+                    }
+                    pending_invoke = Some((request_id, generation));
+                    continue;
+                }
                 if let Some(marker) = &hang_invoke {
                     std::fs::write(marker, b"hung")?;
                     std::thread::sleep(std::time::Duration::from_secs(60));
@@ -185,7 +205,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 write_frame(&mut output, &response)?;
             }
-            Message::Cancel { .. } => {}
+            Message::Cancel {
+                request_id,
+                generation,
+            } => {
+                if pending_query.as_ref() == Some(&request_id) {
+                    pending_query = None;
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            code: "cancelled".to_owned(),
+                            message: "superseded query cancelled".to_owned(),
+                        },
+                    )?;
+                } else if pending_invoke.as_ref() == Some(&(request_id.clone(), generation)) {
+                    pending_invoke = None;
+                    let terminal = if complete_on_cancel {
+                        Message::Result {
+                            request_id,
+                            generation,
+                            effect: nanika_protocol::NavigationEffect::Close,
+                        }
+                    } else {
+                        Message::Error {
+                            request_id: Some(request_id),
+                            code: "cancelled".to_owned(),
+                            message: "action cancelled".to_owned(),
+                        }
+                    };
+                    if matches!(terminal, Message::Result { .. }) {
+                        previous_result = Some(terminal.clone());
+                    }
+                    write_frame(&mut output, &terminal)?;
+                }
+            }
             Message::Refresh {
                 request_id,
                 generation,
@@ -201,30 +255,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )?;
             }
-            Message::GetSettings { request_id } => write_frame(
-                &mut output,
-                &Message::Settings {
-                    request_id,
-                    contribution: nanika_protocol::SettingsContribution {
-                        title: "Fixture".to_owned(),
-                        fields: Vec::new(),
+            Message::GetSettings { request_id } => {
+                wait_for_release(&arguments, &request_id)?;
+                write_frame(
+                    &mut output,
+                    &Message::Settings {
+                        request_id,
+                        contribution: nanika_protocol::SettingsContribution {
+                            title: "Fixture".to_owned(),
+                            fields: Vec::new(),
+                        },
                     },
-                },
-            )?,
+                )?;
+            }
             Message::UpdateSettings {
                 request_id,
                 updates,
-            } if updates.is_empty() => write_frame(
-                &mut output,
-                &Message::SettingsUpdated {
-                    request_id,
-                    contribution: nanika_protocol::SettingsContribution {
-                        title: "Fixture".to_owned(),
-                        fields: Vec::new(),
+            } if updates.is_empty() => {
+                wait_for_release(&arguments, &request_id)?;
+                write_frame(
+                    &mut output,
+                    &Message::SettingsUpdated {
+                        request_id,
+                        contribution: nanika_protocol::SettingsContribution {
+                            title: "Fixture".to_owned(),
+                            fields: Vec::new(),
+                        },
                     },
-                },
-            )?,
+                )?;
+            }
             Message::Snapshot { .. }
+            | Message::CandidatesChanged
             | Message::Result { .. }
             | Message::ViewEvent { .. }
             | Message::ViewUpdated { .. }
@@ -262,4 +323,24 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         aliases: vec!["fixture alias".to_owned()],
         icon: None,
     }
+}
+
+fn data_root(arguments: &[String]) -> Option<std::path::PathBuf> {
+    arguments
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--data-root=").map(Into::into))
+}
+
+fn wait_for_release(arguments: &[String], request_id: &str) -> io::Result<()> {
+    let Some(root) = data_root(arguments) else {
+        return Ok(());
+    };
+    let blocker = root.join(format!("{request_id}.block"));
+    if blocker.exists() {
+        std::fs::write(root.join(format!("{request_id}.entered")), b"waiting")?;
+        while blocker.exists() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    Ok(())
 }

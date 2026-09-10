@@ -23,23 +23,24 @@ fn database_initializes_and_recovers_an_interrupted_scan() {
 }
 
 #[test]
-fn corrupt_generated_database_is_rebuilt() {
+fn corrupt_generated_database_fails_explicitly() {
     let root = test_root("corrupt");
     let path = root.join("application.db");
     std::fs::write(&path, b"not a sqlite database").expect("corrupt database should exist");
 
-    let database = ApplicationDatabase::open_recovering(&path)
-        .expect("corrupt generated database should rebuild");
-
-    drop(database);
+    assert!(ApplicationDatabase::open(&path).is_err());
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[test]
-fn corrupt_application_table_is_rebuilt() {
+fn corrupt_application_table_fails_explicitly() {
     let root = test_root("corrupt-table");
     let path = root.join("application.db");
-    let database = ApplicationDatabase::open(&path).expect("database should open");
+    let mut database = ApplicationDatabase::open(&path).expect("database should open");
+    database.begin_scan(1).expect("scan should begin");
+    database
+        .commit_scan(report(1, true), &[entry("app.corrupt", 1)], None)
+        .expect("application row should persist");
     drop(database);
     let connection = rusqlite::Connection::open(&path).expect("database should reopen");
     connection
@@ -68,11 +69,9 @@ fn corrupt_application_table_is_rebuilt() {
         .expect("table page should be corrupted");
     drop(file);
 
-    let database = ApplicationDatabase::open_recovering(&path)
-        .expect("localized corruption should rebuild the generated index");
-
-    assert!(database.load_active_entries().expect("entries").is_empty());
-    drop(database);
+    let result = ApplicationDatabase::open(&path)
+        .and_then(|database| database.load_active_entries().map(|_| database));
+    assert!(result.is_err());
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 

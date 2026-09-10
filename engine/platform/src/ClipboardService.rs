@@ -1,6 +1,5 @@
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
-use std::time::Instant;
 use std::{fs::File, io::Read};
 
 use clipboard_rs::common::RustImage;
@@ -37,11 +36,16 @@ impl ClipboardService {
                         ClipboardServiceCommand::Write {
                             content,
                             payload_root,
-                            deadline,
                             response,
                         } => {
-                            let _ =
-                                response.send(write(&context, content, &payload_root, deadline));
+                            if response
+                                .send(write(&context, content, &payload_root))
+                                .is_err()
+                            {
+                                tracing::warn!(
+                                    "clipboard requester closed before receiving the result"
+                                );
+                            }
                         }
                         ClipboardServiceCommand::Shutdown => break,
                     }
@@ -49,8 +53,8 @@ impl ClipboardService {
             })
             .map_err(|error| error.to_string())?;
         initialized
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .map_err(|_| "clipboard service initialization timed out".to_owned())??;
+            .recv()
+            .map_err(|_| "clipboard service closed during initialization".to_owned())??;
         Ok(Self {
             commands,
             thread: Some(thread),
@@ -61,26 +65,31 @@ impl ClipboardService {
         &self,
         content: ClipboardContent,
         payload_root: Option<std::path::PathBuf>,
-        deadline: Instant,
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
-            .try_send(ClipboardServiceCommand::Write {
+            .send(ClipboardServiceCommand::Write {
                 content,
                 payload_root,
-                deadline,
                 response,
             })
-            .map_err(|error| match error {
-                TrySendError::Full(_) => "clipboard service queue is full".to_owned(),
-                TrySendError::Disconnected(_) => "clipboard service is closed".to_owned(),
-            })?;
+            .map_err(|_| "clipboard service is closed".to_owned())?;
         Ok(result)
     }
 
     fn stop(&mut self) {
-        let _ = self.commands.try_send(ClipboardServiceCommand::Shutdown);
-        self.thread.take();
+        if self
+            .commands
+            .send(ClipboardServiceCommand::Shutdown)
+            .is_err()
+        {
+            tracing::error!("clipboard service closed before shutdown was requested");
+        }
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            tracing::error!("clipboard service thread panicked during shutdown");
+        }
     }
 }
 
@@ -94,9 +103,7 @@ fn write(
     context: &ClipboardContext,
     content: ClipboardContent,
     payload_root: &Option<std::path::PathBuf>,
-    deadline: Instant,
 ) -> Result<HostServiceResponse, String> {
-    ensure_before_deadline(deadline)?;
     match content {
         ClipboardContent::Text { value } => context.set_text(value),
         ClipboardContent::Files { paths } => context.set_files(paths),
@@ -106,7 +113,6 @@ fn write(
                 .ok_or_else(|| "clipboard image payload root is unavailable".to_owned())?;
             let bytes = read_validated_png(&path, payload_root)?;
             let image = RustImageData::from_bytes(&bytes).map_err(|error| error.to_string())?;
-            ensure_before_deadline(deadline)?;
             context.set_image(image)
         }
     }
@@ -153,12 +159,4 @@ pub(crate) fn read_validated_png(
         return Err("clipboard image exceeds the dimension limit".to_owned());
     }
     Ok(bytes)
-}
-
-pub(crate) fn ensure_before_deadline(deadline: Instant) -> Result<(), String> {
-    if Instant::now() >= deadline {
-        Err("clipboard request expired before execution".to_owned())
-    } else {
-        Ok(())
-    }
 }

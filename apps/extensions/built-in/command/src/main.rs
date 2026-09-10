@@ -225,6 +225,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
+        Message::CandidatesChanged => None,
     }
 }
 

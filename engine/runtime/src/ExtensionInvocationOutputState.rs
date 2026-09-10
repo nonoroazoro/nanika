@@ -2,9 +2,7 @@ use std::collections::VecDeque;
 
 use crate::ExtensionInvocationOutput;
 
-const MAX_PENDING_OUTPUTS: usize = 16;
-
-/// Bounded action-output deltas shared by one extension worker and the UI thread.
+/// Action-output deltas shared by one extension worker and the UI thread.
 #[derive(Debug, Default)]
 pub(crate) struct ExtensionInvocationOutputState {
     pending: VecDeque<ExtensionInvocationOutput>,
@@ -26,9 +24,6 @@ impl ExtensionInvocationOutputState {
         {
             output.text.push_str(chunk);
         } else {
-            if self.pending.len() == MAX_PENDING_OUTPUTS {
-                self.pending.pop_front();
-            }
             self.pending.push_back(ExtensionInvocationOutput {
                 invocation_id,
                 extension_id: extension_id.to_owned(),

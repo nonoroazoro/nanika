@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use crate::constants::{
-    MAX_EXTENSION_CANDIDATES, MAX_USAGE_COUNT, MAX_USAGE_ROWS, SEARCH_QUEUE_CAPACITY,
-    USAGE_RETENTION_DAYS,
+use crate::constants::SEARCH_QUEUE_CAPACITY;
+use crate::{
+    Candidate, PendingSearchQuery, SearchCommand, SearchEngine, SearchHandle, SearchSnapshot,
+    UsageMap,
 };
-use crate::{Candidate, SearchCommand, SearchEngine, SearchHandle, SearchSnapshot, UsageMap};
 
 /// Named owner thread for aggregation, stale-generation rejection, and ranking.
 pub struct SearchOwner {
@@ -18,7 +18,6 @@ pub struct SearchOwner {
 
 impl SearchOwner {
     pub fn spawn(mut initial_usage: UsageMap) -> std::io::Result<Self> {
-        prune_usage(&mut initial_usage, unix_timestamp());
         let (commands, receiver) = mpsc::sync_channel(SEARCH_QUEUE_CAPACITY);
         let pending_query = Arc::new(Mutex::new(None));
         let latest = Arc::new(Mutex::new(None));
@@ -33,19 +32,15 @@ impl SearchOwner {
                 let mut generation = 0;
                 let mut query = String::new();
                 let mut extension_results: HashMap<String, Vec<Candidate>> = HashMap::new();
-                let mut expected_extensions = 0;
-                let mut waiting_for_initial_snapshots = false;
+                let mut expected_extensions = HashSet::new();
 
                 while let Ok(command) = receiver.recv() {
-                    if let Some((next_generation, next_query, next_expected_extensions)) =
-                        take_pending_query(&owner_pending_query)
-                    {
-                        generation = next_generation;
-                        query = next_query;
-                        expected_extensions = next_expected_extensions;
-                        waiting_for_initial_snapshots = expected_extensions > 0;
+                    if let Some(next_query) = take_pending_query(&owner_pending_query) {
+                        generation = next_query.generation;
+                        query = next_query.query;
+                        expected_extensions = next_query.expected_extensions;
                         extension_results.clear();
-                        if !waiting_for_initial_snapshots {
+                        if expected_extensions.is_empty() {
                             publish_current(
                                 &mut engine,
                                 generation,
@@ -64,12 +59,9 @@ impl SearchOwner {
                             extension_id,
                             candidates,
                         } if snapshot_generation == generation => {
-                            let mut unique = HashMap::with_capacity(
-                                candidates.len().min(MAX_EXTENSION_CANDIDATES),
-                            );
-                            for mut candidate in
-                                candidates.into_iter().take(MAX_EXTENSION_CANDIDATES)
-                            {
+                            expected_extensions.remove(&extension_id);
+                            let mut unique = HashMap::with_capacity(candidates.len());
+                            for mut candidate in candidates {
                                 candidate.set_extension_id(&extension_id);
                                 unique.insert(
                                     (
@@ -80,12 +72,9 @@ impl SearchOwner {
                                 );
                             }
                             extension_results.insert(extension_id, unique.into_values().collect());
-                            if waiting_for_initial_snapshots
-                                && extension_results.len() < expected_extensions
-                            {
+                            if !expected_extensions.is_empty() {
                                 continue;
                             }
-                            waiting_for_initial_snapshots = false;
                             publish_current(
                                 &mut engine,
                                 generation,
@@ -99,10 +88,8 @@ impl SearchOwner {
                         SearchCommand::ExtensionSnapshot { .. } => {}
                         SearchCommand::ApplyPersistedExecution { key, executed_at } => {
                             let stat = initial_usage.entry(key).or_default();
-                            stat.execution_count =
-                                stat.execution_count.saturating_add(1).min(MAX_USAGE_COUNT);
+                            stat.execution_count = stat.execution_count.saturating_add(1);
                             stat.last_executed_at = executed_at;
-                            prune_usage(&mut initial_usage, executed_at);
                             publish_current(
                                 &mut engine,
                                 generation,
@@ -150,16 +137,23 @@ impl SearchOwner {
     }
 
     fn stop(&mut self) {
-        let _ = self.handle.commands.send(SearchCommand::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if self.thread.is_none() {
+            return;
+        }
+        if self.handle.commands.send(SearchCommand::Shutdown).is_err() {
+            tracing::error!("search owner closed before shutdown was requested");
+        }
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            tracing::error!("search owner thread panicked");
         }
     }
 }
 
 fn take_pending_query(
-    pending_query: &Mutex<Option<(u64, String, usize)>>,
-) -> Option<(u64, String, usize)> {
+    pending_query: &Mutex<Option<PendingSearchQuery>>,
+) -> Option<PendingSearchQuery> {
     pending_query
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -192,22 +186,6 @@ fn publish_current(
         .clone();
     if let Some(notify) = notify {
         notify();
-    }
-}
-
-fn prune_usage(usage: &mut UsageMap, now: u64) {
-    let cutoff = now.saturating_sub(USAGE_RETENTION_DAYS.saturating_mul(86_400));
-    usage.retain(|_, stat| stat.last_executed_at >= cutoff);
-    if usage.len() <= MAX_USAGE_ROWS {
-        return;
-    }
-    let mut oldest = usage
-        .iter()
-        .map(|(key, stat)| (stat.last_executed_at, key.clone()))
-        .collect::<Vec<_>>();
-    oldest.sort_unstable();
-    for (_, key) in oldest.into_iter().take(usage.len() - MAX_USAGE_ROWS) {
-        usage.remove(&key);
     }
 }
 

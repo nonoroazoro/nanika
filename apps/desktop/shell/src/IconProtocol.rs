@@ -1,23 +1,24 @@
 use std::path::PathBuf;
-use std::sync::mpsc::{self, SyncSender, TrySendError};
 
 use tauri::http::{Method, Request, Response, StatusCode};
 
 use crate::icon_request::IconRequest;
 
-const REQUEST_CAPACITY: usize = 64;
+// Limit queued disk reads independently of catalog size. Senders wait for space;
+// the reader processes one cached icon at a time.
+const REQUEST_CAPACITY: usize = 400;
 
 pub(crate) struct IconProtocol {
-    requests: SyncSender<IconRequest>,
+    requests: async_channel::Sender<IconRequest>,
 }
 
 impl IconProtocol {
     pub(crate) fn spawn(cache_root: PathBuf) -> Result<Self, String> {
-        let (requests, receiver) = mpsc::sync_channel::<IconRequest>(REQUEST_CAPACITY);
+        let (requests, receiver) = async_channel::bounded::<IconRequest>(REQUEST_CAPACITY);
         std::thread::Builder::new()
             .name("nanika-icon-protocol".to_owned())
             .spawn(move || {
-                while let Ok(request) = receiver.recv() {
+                while let Ok(request) = receiver.recv_blocking() {
                     request.responder.respond(resolve_request(
                         &cache_root,
                         &request.webview_label,
@@ -40,19 +41,16 @@ impl IconProtocol {
             request,
             responder,
         };
-        match self.requests.try_send(request) {
-            Ok(()) => {}
-            Err(TrySendError::Full(request)) => request.responder.respond(response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "text/plain",
-                Vec::new(),
-            )),
-            Err(TrySendError::Disconnected(request)) => request.responder.respond(response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "text/plain",
-                Vec::new(),
-            )),
-        }
+        let requests = self.requests.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = requests.send(request).await {
+                error.into_inner().responder.respond(response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "text/plain",
+                    Vec::new(),
+                ));
+            }
+        });
     }
 }
 

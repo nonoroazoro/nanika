@@ -1,15 +1,21 @@
 use crate::ExtensionKind;
+use nanika_search::UsageKey;
+use std::sync::mpsc::SyncSender;
+
+pub(crate) type StorageResponse = SyncSender<Result<(), String>>;
 
 pub(crate) enum SearchStorageCommand {
     RegisterExtension {
         extension_id: String,
         kind: ExtensionKind,
         updated_at: u64,
+        response: StorageResponse,
     },
     RecordHistory {
         history_key: String,
         display_query: String,
         used_at: u64,
+        response: StorageResponse,
     },
     RecordUsage {
         extension_id: String,
@@ -17,7 +23,18 @@ pub(crate) enum SearchStorageCommand {
         action_id: String,
         query_context: String,
         executed_at: u64,
+        response: StorageResponse,
     },
-    ResetUsage,
+    RecordExecution {
+        history_key: String,
+        display_query: String,
+        usage: UsageKey,
+        history_used_at: u64,
+        executed_at: u64,
+        response: StorageResponse,
+    },
+    ResetUsage {
+        response: StorageResponse,
+    },
     Shutdown,
 }

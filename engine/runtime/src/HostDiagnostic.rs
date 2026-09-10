@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::error::Error;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
-use crate::{DiagnosticCode, DiagnosticRecordKey, DiagnosticSource};
+use crate::{DiagnosticCode, DiagnosticSource};
 
 /// Redaction-safe host diagnostic with an explicit technical source chain.
 #[derive(Clone)]
@@ -14,9 +12,6 @@ pub struct HostDiagnostic {
     safe_context: Option<String>,
     source: Option<Arc<dyn Error + Send + Sync>>,
 }
-
-const RECORD_INTERVAL: Duration = Duration::from_secs(30);
-const MAX_RECORD_KEYS: usize = 256;
 
 impl HostDiagnostic {
     pub fn new(
@@ -82,28 +77,36 @@ impl HostDiagnostic {
         &self.user_message
     }
 
+    /// User-visible failure with the concrete source retained as plain text.
+    pub fn detailed_message(&self) -> String {
+        self.source.as_ref().map_or_else(
+            || self.user_message.clone(),
+            |source| format!("{} Cause: {source}", self.user_message),
+        )
+    }
+
     pub fn record_warning(&self) {
-        if !should_record(self, false) {
-            return;
-        }
+        let source = self.source.as_ref().map(ToString::to_string);
         tracing::warn!(
             diagnostic.code = self.code.as_str(),
             diagnostic.category = self.code.category().as_str(),
             diagnostic.operation = self.operation,
             diagnostic.context = self.safe_context.as_deref().unwrap_or(""),
+            diagnostic.source = source.as_deref().unwrap_or(""),
+            diagnostic.message = self.user_message,
             "host operation failed"
         );
     }
 
     pub fn record_error(&self) {
-        if !should_record(self, true) {
-            return;
-        }
+        let source = self.source.as_ref().map(ToString::to_string);
         tracing::error!(
             diagnostic.code = self.code.as_str(),
             diagnostic.category = self.code.category().as_str(),
             diagnostic.operation = self.operation,
             diagnostic.context = self.safe_context.as_deref().unwrap_or(""),
+            diagnostic.source = source.as_deref().unwrap_or(""),
+            diagnostic.message = self.user_message,
             "host operation failed"
         );
     }
@@ -134,23 +137,4 @@ impl Error for HostDiagnostic {
             .as_deref()
             .map(|source| source as &(dyn Error + 'static))
     }
-}
-
-pub(crate) fn should_record(diagnostic: &HostDiagnostic, error: bool) -> bool {
-    static RECENT: OnceLock<Mutex<HashMap<DiagnosticRecordKey, Instant>>> = OnceLock::new();
-    let now = Instant::now();
-    let recent = RECENT.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut recent = recent.lock().unwrap_or_else(|error| error.into_inner());
-    recent.retain(|_, recorded| now.duration_since(*recorded) < RECORD_INTERVAL);
-    let key = DiagnosticRecordKey::new(
-        diagnostic.code,
-        diagnostic.operation,
-        diagnostic.safe_context.clone(),
-        error,
-    );
-    if recent.contains_key(&key) || recent.len() >= MAX_RECORD_KEYS {
-        return false;
-    }
-    recent.insert(key, now);
-    true
 }

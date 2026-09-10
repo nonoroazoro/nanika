@@ -57,6 +57,11 @@ fn main() {
 }
 
 async fn run() -> Result<()> {
+    let blocked_initialization = std::env::args().find_map(|argument| {
+        argument
+            .strip_prefix("--hang-initialize=")
+            .map(str::to_owned)
+    });
     let state = Arc::new(DummyAgentState::default());
     let new_session_state = Arc::clone(&state);
     let prompt_state = Arc::clone(&state);
@@ -66,6 +71,12 @@ async fn run() -> Result<()> {
         .name("nanika-acp-dummy")
         .on_receive_request(
             async move |_request: InitializeRequest, responder, _connection| {
+                if let Some(marker) = &blocked_initialization {
+                    std::fs::write(marker, b"initializing").map_err(|error| {
+                        agent_client_protocol::util::internal_error(error.to_string())
+                    })?;
+                    return future::pending().await;
+                }
                 responder.respond(
                     InitializeResponse::new(ProtocolVersion::V1)
                         .agent_capabilities(AgentCapabilities::new()),

@@ -1,1 +1,1 @@
-export * from './clampIndex'
+export * from "./clampIndex";

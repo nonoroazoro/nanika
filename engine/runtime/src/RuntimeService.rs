@@ -3,15 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
-use nanika_extension_package::{CommandMode, ExtensionProtocol, resolve_active_extensions};
+use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
 use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
     DistributionInventory, ExtensionInvocationOutcome, ExtensionRuntime,
-    ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter, RuntimeInvocationCompletion,
-    RuntimeInvocationUpdate, RuntimeOutputUpdate, RuntimeSettingsUpdate, RuntimeUpdateBatch,
-    RuntimeViewCompletion, RuntimeViewUpdate,
+    ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter, RuntimeOutputUpdate,
+    RuntimeSettingsUpdate, RuntimeUpdateBatch, RuntimeViewCompletion, RuntimeViewUpdate,
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
@@ -27,26 +26,13 @@ impl RuntimeService {
     pub fn start(paths: &NanikaPaths, inventory_source: &str) -> Result<Self, String> {
         let inventory = DistributionInventory::parse(inventory_source)?;
         let mut diagnostics = Vec::new();
-        let registry = match ConfigStore::open(paths.app_data_root(), paths.config_root()) {
-            Ok(store) => match ExtensionRegistryConfig::load(&store) {
-                Ok(registry) => registry,
-                Err(error) => {
-                    diagnostics.push(format!("extension settings are unavailable: {error}"));
-                    ExtensionRegistryConfig::default()
-                }
-            },
-            Err(error) => {
-                diagnostics.push(format!("configuration is unavailable: {error}"));
-                ExtensionRegistryConfig::default()
-            }
-        };
-        let (storage, storage_state) = match SearchStorageWorker::spawn(paths.host_database(), 50) {
-            Ok((worker, state)) => (Some(worker), state),
-            Err(error) => {
-                diagnostics.push(format!("host storage is unavailable: {error}"));
-                (None, Default::default())
-            }
-        };
+        let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
+            .map_err(|error| format!("configuration is unavailable: {error}"))?;
+        let registry = ExtensionRegistryConfig::load(&config_store)
+            .map_err(|error| format!("extension settings are unavailable: {error}"))?;
+        let (storage_worker, storage_state) = SearchStorageWorker::spawn(paths.host_database())
+            .map_err(|error| format!("host storage is unavailable: {error}"))?;
+        let storage = Some(storage_worker);
         diagnostics.extend(storage_state.extension_errors);
         let usage = storage_state
             .usage
@@ -103,11 +89,14 @@ impl RuntimeService {
                 }
             };
             if let Some(storage) = &storage {
-                let _ = storage.register_extension(
-                    &extension.id,
-                    ExtensionKind::BuiltIn,
-                    unix_timestamp(),
-                );
+                storage
+                    .register_extension(&extension.id, ExtensionKind::BuiltIn, unix_timestamp())
+                    .map_err(|error| {
+                        format!(
+                            "extension {} metadata could not be recorded: {error}",
+                            extension.id
+                        )
+                    })?;
             }
             if let Err(error) = extensions.register(
                 &extension.id,
@@ -154,7 +143,6 @@ impl RuntimeService {
                 ));
             }
         }
-
         Ok(Self {
             search_owner: Some(owner),
             search,
@@ -166,13 +154,19 @@ impl RuntimeService {
 
     pub fn begin_query(&self, query: impl Into<String>) -> Result<u64, String> {
         let query = query.into();
+        let extension_ids = self.extensions.ready_extension_ids();
         let generation = self
             .search
-            .begin_query_with_expected_extensions(
-                query.clone(),
-                self.extensions.ready_query_count(),
-            )
+            .begin_query_with_expected_extensions(query.clone(), extension_ids.iter().cloned())
             .map_err(|error| error.to_string())?;
+        tracing::debug!(
+            generation,
+            expected_extensions = extension_ids.len(),
+            extension_ids = ?extension_ids,
+            "search query dispatched"
+        );
+        // Pending workers retain only the latest query and publish it once ready.
+        // They must not hold the barrier for extensions that can already answer.
         self.extensions.query(generation, &query);
         Ok(generation)
     }
@@ -193,7 +187,7 @@ impl RuntimeService {
         entry_id: &str,
         action_id: &str,
         query_context: &str,
-    ) -> Result<bool, String> {
+    ) -> Result<std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, String>>, String> {
         let snapshot = self
             .latest_snapshot()
             .filter(|snapshot| snapshot.generation == generation)
@@ -216,31 +210,60 @@ impl RuntimeService {
                 candidate.action_id(),
                 query_context,
             )
-            .map_err(|error| error.to_string())?;
-        if !query_context.trim().is_empty()
-            && let Some(storage) = &self.storage
-        {
-            let _ = storage.record_history(
-                nanika_search::normalize_history_key(query_context),
-                query_context,
-                unix_timestamp_millis(),
-            );
-            let _ = storage.record_usage(
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn record_execution(
+        &self,
+        extension_id: &str,
+        entry_id: &str,
+        action_id: &str,
+        query_context: &str,
+    ) -> Result<(), String> {
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| "host storage is unavailable".to_owned())?;
+        let result = if query_context.trim().is_empty() {
+            storage.record_usage(
                 extension_id,
                 entry_id,
                 action_id,
                 query_context,
                 unix_timestamp(),
-            );
-        }
-        Ok(matches!(
-            self.extensions.command_mode(extension_id, entry_id),
-            Some(CommandMode::View)
-        ))
+            )
+        } else {
+            storage.record_execution(
+                nanika_search::normalize_history_key(query_context),
+                query_context,
+                UsageKey::new(extension_id, entry_id, action_id, query_context),
+                unix_timestamp_millis(),
+                unix_timestamp(),
+            )
+        };
+        result.map_err(|error| format!("could not record completed action: {error}"))
     }
 
     pub fn startup_diagnostics(&self) -> &[String] {
         &self.startup_diagnostics
+    }
+
+    pub fn search_warnings(&self) -> Vec<String> {
+        let mut warnings = self.startup_diagnostics.clone();
+        warnings.extend(self.extensions.warnings());
+        warnings
+    }
+
+    pub fn active_error(&self) -> Option<String> {
+        self.storage
+            .as_ref()
+            .and_then(SearchStorageWorker::last_failure)
+            .map(|failure| {
+                format!(
+                    "Host storage failed while trying to {}. Open diagnostics for details.",
+                    failure.operation()
+                )
+            })
     }
 
     pub fn view_event(
@@ -280,33 +303,6 @@ impl RuntimeService {
     }
 
     pub fn take_updates(&self) -> RuntimeUpdateBatch {
-        let invocations = self
-            .extensions
-            .take_results()
-            .into_iter()
-            .map(|update| RuntimeInvocationUpdate {
-                invocation_id: update.invocation_id,
-                extension_id: update.extension_id,
-                generation: update.generation,
-                entry_id: update.entry_id,
-                action_id: update.action_id,
-                query_context: update.query_context,
-                result: update.result.map(|outcome| match outcome {
-                    ExtensionInvocationOutcome::Completed { effect, has_output } => {
-                        RuntimeInvocationCompletion {
-                            effect: Some(effect),
-                            has_output,
-                            cancelled: false,
-                        }
-                    }
-                    ExtensionInvocationOutcome::Cancelled => RuntimeInvocationCompletion {
-                        effect: None,
-                        has_output: false,
-                        cancelled: true,
-                    },
-                }),
-            })
-            .collect();
         let outputs = self
             .extensions
             .take_invocation_outputs()
@@ -345,7 +341,6 @@ impl RuntimeService {
             })
             .collect();
         RuntimeUpdateBatch {
-            invocations,
             outputs,
             settings,
             views,

@@ -11,9 +11,6 @@ use crate::{
     IconCache, ScanReport,
 };
 
-const MAX_SCAN_DEPTH: usize = 32;
-const MAX_DISCOVERED_PATHS: usize = 100_000;
-
 /// Cancellable discovery and transactional indexing boundary.
 pub struct ApplicationIndex {
     database: ApplicationDatabase,
@@ -36,15 +33,15 @@ impl ApplicationIndex {
         self.database.load_active_entries()
     }
 
-    pub(crate) fn rebuild_database(self, database_path: &Path) -> Result<Self, ApplicationError> {
-        let Self {
-            database,
-            icon_cache,
-            ..
-        } = self;
-        drop(database);
-        let database = ApplicationDatabase::rebuild(database_path)?;
-        Ok(Self::new(database, icon_cache))
+    pub(crate) fn load_presentable(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
+        let mut entries = self.load()?;
+        if let Err(error) = self.icon_cache.use_available_icons(&mut entries) {
+            eprintln!("application icon cache is unavailable: {error}");
+            for entry in &mut entries {
+                entry.icon_key.clear();
+            }
+        }
+        Ok(entries)
     }
 
     pub fn scan(
@@ -58,7 +55,11 @@ impl ApplicationIndex {
         let standard_roots = match platform::standard_roots() {
             Ok(roots) => roots,
             Err(error) => {
-                let _ = self.database.fail_scan(generation, &error.to_string());
+                if let Err(record_error) = self.database.fail_scan(generation, &error.to_string()) {
+                    eprintln!(
+                        "application scan failure could not be recorded: {record_error}; original failure: {error}"
+                    );
+                }
                 return Err(error);
             }
         };
@@ -72,7 +73,6 @@ impl ApplicationIndex {
         let mut entries = HashMap::<String, ApplicationEntry>::new();
         let mut warnings = 0_usize;
         let mut complete = true;
-        let mut visited = 0_usize;
         let seen_at = unix_timestamp();
         for (root, priority) in &roots {
             if is_cancelled(cancelled_through, generation) {
@@ -85,7 +85,9 @@ impl ApplicationIndex {
                 .symlink_metadata()
                 .is_ok_and(|metadata| metadata.file_type().is_symlink())
             {
+                eprintln!("application scan skipped symlink root: {}", root.display());
                 warnings = warnings.saturating_add(1);
+                complete = false;
                 continue;
             }
             if root.is_file() || platform::is_application_bundle(root) {
@@ -100,27 +102,20 @@ impl ApplicationIndex {
                 continue;
             }
             if !root.is_dir() {
+                eprintln!("application scan root is unavailable: {}", root.display());
                 warnings = warnings.saturating_add(1);
                 complete = false;
                 continue;
             }
-            let mut walker = WalkDir::new(root)
-                .follow_links(false)
-                .max_depth(MAX_SCAN_DEPTH)
-                .into_iter();
+            let mut walker = WalkDir::new(root).follow_links(false).into_iter();
             while let Some(result) = walker.next() {
                 if is_cancelled(cancelled_through, generation) {
                     break;
                 }
-                if visited >= MAX_DISCOVERED_PATHS {
-                    warnings = warnings.saturating_add(1);
-                    complete = false;
-                    break;
-                }
-                visited = visited.saturating_add(1);
                 let entry = match result {
                     Ok(entry) => entry,
-                    Err(_) => {
+                    Err(error) => {
+                        eprintln!("application scan could not read a path: {error}");
                         warnings = warnings.saturating_add(1);
                         complete = false;
                         continue;
@@ -173,9 +168,18 @@ impl ApplicationIndex {
                 .key_with_state(entry, &mut self.discovery_state)
             {
                 Ok(key) => entry.icon_key = key,
-                Err(_) => {
+                Err(error) => {
+                    eprintln!(
+                        "application icon key failed for {}: {error}",
+                        entry.target_path
+                    );
                     entry.icon_source = None;
-                    let _ = self.icon_cache.prepare(entry);
+                    if let Err(fallback_error) = self.icon_cache.prepare(entry) {
+                        eprintln!(
+                            "application fallback icon failed for {}: {fallback_error}",
+                            entry.target_path
+                        );
+                    }
                     entry.icon_key = IconCache::fallback_key().to_owned();
                 }
             }
@@ -194,35 +198,35 @@ impl ApplicationIndex {
             .database
             .commit_scan(report, &entries, error.as_deref())
         {
-            let _ = self
+            if let Err(record_error) = self
                 .database
-                .fail_scan(generation, &commit_error.to_string());
+                .fail_scan(generation, &commit_error.to_string())
+            {
+                eprintln!(
+                    "application scan commit failure could not be recorded: {record_error}; original failure: {commit_error}"
+                );
+            }
             return Err(commit_error);
         }
         self.pending_icons = entries;
-        Ok((report, self.database.load_active_entries()?))
+        Ok((report, self.load_presentable()?))
     }
 
     pub fn populate_icons(
         &mut self,
         cancelled_through: &AtomicU64,
         generation: u64,
-        prune_unused: bool,
-    ) -> Result<usize, ApplicationError> {
-        let mut failures = 0_usize;
+    ) -> Result<Vec<String>, ApplicationError> {
+        let mut failures = Vec::new();
         for entry in &mut self.pending_icons {
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
-            if self.icon_cache.prepare(entry).is_err() {
-                failures = failures.saturating_add(1);
+            if let Err(error) = self.icon_cache.prepare(entry) {
+                failures.push(format!("{}: {error}", entry.target_path));
             }
         }
-        let prune_result = prune_unused
-            .then(|| self.icon_cache.prune(&self.pending_icons))
-            .transpose();
         self.pending_icons.clear();
-        prune_result?;
         Ok(failures)
     }
 }
@@ -251,6 +255,10 @@ fn collect_entry(
         },
         Ok(None) => {}
         Err(error) => {
+            eprintln!(
+                "application entry could not be read at {}: {error}",
+                path.display()
+            );
             *warnings = warnings.saturating_add(1);
             return !matches!(error, ApplicationError::Io(_));
         }

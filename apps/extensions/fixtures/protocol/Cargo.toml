@@ -13,6 +13,8 @@ criterion.workspace = true
 nanika-extension-package = { path = "../../../../engine/extension-management" }
 nanika-host = { path = "../../../../engine/runtime" }
 nanika-search = { path = "../../../../engine/search" }
+nanika-storage = { path = "../../../../engine/storage" }
+serde_json.workspace = true
 
 [lints]
 workspace = true

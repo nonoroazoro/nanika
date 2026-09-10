@@ -1,8 +1,13 @@
-import type { SearchResult } from './index'
+import type { SearchPhase, SearchResult } from "./index";
 
-export interface RootSearchSnapshot {
-  generation: number
-  query: string
-  results: SearchResult[]
-  complete: boolean
+export interface RootSearchSnapshot
+{
+    sessionId: number;
+    requestId: number;
+    revision: number;
+    query: string;
+    results: SearchResult[];
+    phase: SearchPhase;
+    error: string | null;
+    warnings: string[];
 }

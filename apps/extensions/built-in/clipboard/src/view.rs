@@ -143,8 +143,8 @@ fn matches_content_type(entry: &ClipboardEntry, selected: &str) -> bool {
 
 fn searchable_values(entry: &ClipboardEntry) -> Vec<String> {
     match &entry.content {
-        ClipboardContent::Text { value } => vec![value.chars().take(2_048).collect()],
-        ClipboardContent::Files { paths } => paths.iter().take(32).cloned().collect(),
+        ClipboardContent::Text { value } => vec![value.clone()],
+        ClipboardContent::Files { paths } => paths.clone(),
         ClipboardContent::PngFile { .. } => Vec::new(),
     }
 }

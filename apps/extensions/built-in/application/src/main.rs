@@ -20,7 +20,6 @@ mod pending_invocation;
 use pending_invocation::PendingInvocation;
 
 const EVENT_CAPACITY: usize = 8;
-const MAX_CANDIDATES: usize = 5_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::resolve(std::env::args().skip(1))?;
@@ -40,9 +39,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
-    let mut startup_error = None::<String>;
-    let mut active_scans = 1_usize;
-    let mut pending_query = None::<(String, u64, String)>;
     let mut refresh_requests = HashMap::<String, u64>::new();
     let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
     let mut latest_generation = 1_u64;
@@ -61,9 +57,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             protocol: PROTOCOL_NAME.to_owned(),
                         },
                     )?;
-                    if let Some(message) = startup_error.take() {
-                        write_error(&mut output, None, "startup_refresh_failed", &message)?;
-                    }
                 }
                 Message::Initialize { request_id, .. } => write_error(
                     &mut output,
@@ -83,31 +76,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     query,
                 } => {
                     latest_generation = latest_generation.max(generation);
-                    let complete = active_scans == 0;
-                    write_snapshot(
-                        &mut output,
-                        &entries,
-                        &request_id,
-                        generation,
-                        &query,
-                        complete,
-                    )?;
-                    pending_query = (!complete).then_some((request_id, generation, query));
+                    write_snapshot(&mut output, &entries, &request_id, generation, &query, true)?;
                 }
                 Message::Refresh {
                     request_id,
                     generation,
                 } => {
                     latest_generation = latest_generation.max(generation);
-                    if !worker.refresh(Some(request_id.clone()), generation) {
-                        write_error(
-                            &mut output,
-                            Some(request_id),
-                            "refresh_queue_full",
-                            "application refresh queue is full",
-                        )?;
+                    if let Err(message) = worker.refresh(Some(request_id.clone()), generation) {
+                        write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
                     } else {
-                        active_scans = active_scans.saturating_add(1);
                         refresh_requests.insert(request_id, generation);
                     }
                 }
@@ -115,14 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                 } => {
-                    if pending_query
-                        .as_ref()
-                        .is_some_and(|(pending_id, pending_generation, _)| {
-                            *pending_id == request_id && *pending_generation == generation
-                        })
-                    {
-                        pending_query = None;
-                    }
                     if refresh_requests.get(&request_id) == Some(&generation) {
                         worker.cancel(generation);
                     }
@@ -187,20 +157,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(updated) => {
                         config = updated;
                         latest_generation = latest_generation.saturating_add(1);
-                        if worker.refresh(None, latest_generation) {
-                            active_scans = active_scans.saturating_add(1);
-                        } else {
-                            eprintln!(
-                                "application settings saved; automatic refresh queue is full"
-                            );
+                        match worker.refresh(None, latest_generation) {
+                            Ok(()) => write_frame(
+                                &mut output,
+                                &Message::SettingsUpdated {
+                                    request_id,
+                                    contribution: config.settings(),
+                                },
+                            )?,
+                            Err(message) => write_error(
+                                &mut output,
+                                Some(request_id),
+                                "settings_refresh_failed",
+                                &message,
+                            )?,
                         }
-                        write_frame(
-                            &mut output,
-                            &Message::SettingsUpdated {
-                                request_id,
-                                contribution: config.settings(),
-                            },
-                        )?;
                     }
                     Err(error) => write_error(
                         &mut output,
@@ -257,74 +228,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "the application extension received an unsupported message",
                 )?,
             },
+            RuntimeEvent::CandidatesChanged => {
+                if initialized {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+            }
             RuntimeEvent::ProtocolClosed => break,
             RuntimeEvent::ProtocolError(message) => {
-                write_error(&mut output, None, "protocol_error", &message)?;
-                break;
+                return Err(std::io::Error::other(format!(
+                    "application protocol input failed: {message}"
+                ))
+                .into());
             }
             RuntimeEvent::ScanFinished {
                 request_id: Some(request_id),
                 response_generation,
                 result: Ok(report),
             } if !report.cancelled => {
-                active_scans = active_scans.saturating_sub(1);
                 refresh_requests.remove(&request_id);
-                complete_pending_query(&mut output, &entries, active_scans, &mut pending_query)?;
-                write_frame(
-                    &mut output,
-                    &Message::Refreshed {
-                        request_id,
-                        generation: response_generation,
-                    },
-                )?;
-            }
-            RuntimeEvent::ScanFinished {
-                request_id: Some(request_id),
-                result: Err(message),
-                ..
-            } => {
-                active_scans = active_scans.saturating_sub(1);
-                refresh_requests.remove(&request_id);
-                complete_pending_query(&mut output, &entries, active_scans, &mut pending_query)?;
-                write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
-            }
-            RuntimeEvent::ScanFinished {
-                request_id: None,
-                result: Err(message),
-                ..
-            } => {
-                active_scans = active_scans.saturating_sub(1);
-                complete_pending_query(&mut output, &entries, active_scans, &mut pending_query)?;
                 if initialized {
-                    write_error(&mut output, None, "startup_refresh_failed", &message)?;
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+                if report.complete && report.warnings == 0 {
+                    write_frame(
+                        &mut output,
+                        &Message::Refreshed {
+                            request_id,
+                            generation: response_generation,
+                        },
+                    )?;
                 } else {
-                    startup_error = Some(message);
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "refresh_incomplete",
+                        &format!(
+                            "application scan was incomplete with {} path errors",
+                            report.warnings
+                        ),
+                    )?;
                 }
             }
-            RuntimeEvent::ScanFinished { request_id, .. } => {
-                active_scans = active_scans.saturating_sub(1);
+            RuntimeEvent::ScanFinished {
+                request_id,
+                response_generation: _,
+                result: Err(message),
+            } => {
+                if initialized {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+                if let Some(request_id) = request_id {
+                    refresh_requests.remove(&request_id);
+                    write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
+                }
+                return Err(std::io::Error::other(format!(
+                    "application discovery failed: {message}"
+                ))
+                .into());
+            }
+            RuntimeEvent::ScanFinished {
+                request_id,
+                result: Ok(report),
+                ..
+            } => {
                 if let Some(request_id) = request_id {
                     refresh_requests.remove(&request_id);
                 }
-                complete_pending_query(&mut output, &entries, active_scans, &mut pending_query)?;
+                if initialized {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+                if !report.cancelled && (!report.complete || report.warnings > 0) {
+                    eprintln!(
+                        "application scan was incomplete with {} path errors",
+                        report.warnings
+                    );
+                }
             }
         }
     }
     worker.shutdown();
-    Ok(())
-}
-
-fn complete_pending_query(
-    output: &mut impl std::io::Write,
-    entries: &RwLock<Vec<ApplicationEntry>>,
-    active_scans: usize,
-    pending_query: &mut Option<(String, u64, String)>,
-) -> Result<(), nanika_protocol::FrameError> {
-    if active_scans == 0
-        && let Some((request_id, generation, query)) = pending_query.take()
-    {
-        write_snapshot(output, entries, &request_id, generation, &query, true)?;
-    }
     Ok(())
 }
 
@@ -337,7 +319,7 @@ fn write_snapshot(
     complete: bool,
 ) -> Result<(), nanika_protocol::FrameError> {
     let entries = entries.read().unwrap_or_else(|error| error.into_inner());
-    let candidates = select_candidates(&entries, query, MAX_CANDIDATES);
+    let candidates = select_candidates(&entries, query);
     write_frame(
         output,
         &Message::Snapshot {
@@ -416,5 +398,6 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Initialized { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
+        Message::CandidatesChanged => None,
     }
 }

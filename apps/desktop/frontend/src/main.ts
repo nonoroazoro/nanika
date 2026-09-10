@@ -1,12 +1,14 @@
-import { mount } from 'svelte'
+import { mount } from "svelte";
 
-import App from './App.svelte'
-import './styles/global.css'
+import App from "./App.svelte";
 
-const target = document.getElementById('app')
+import "./styles/global.css";
 
-if (!target) {
-  throw new Error('Nanika frontend mount point is missing')
+const target = document.getElementById("app");
+
+if (!target)
+{
+    throw new Error("Nanika frontend mount point is missing");
 }
 
-mount(App, { target })
+mount(App, { target });

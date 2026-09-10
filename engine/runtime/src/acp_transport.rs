@@ -1,12 +1,10 @@
 use std::collections::VecDeque;
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use async_process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use futures::{Sink, Stream};
-use futures_lite::future;
 
 use crate::ExtensionProcessTree;
 
@@ -40,13 +38,26 @@ pub(crate) fn outgoing_lines(
     })
 }
 
-pub(crate) async fn drain_stderr(mut stderr: ChildStderr, tail: Arc<Mutex<VecDeque<u8>>>) {
+pub(crate) async fn drain_stderr(
+    mut stderr: ChildStderr,
+    tail: Arc<Mutex<VecDeque<u8>>>,
+    extension_id: String,
+) {
     let mut chunk = [0_u8; 4_096];
     loop {
         let read = match stderr.read(&mut chunk).await {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return,
+            Err(error) => {
+                tracing::error!(%extension_id, %error, "could not read ACP extension stderr");
+                return;
+            }
             Ok(read) => read,
         };
+        tracing::info!(
+            %extension_id,
+            message = %String::from_utf8_lossy(&chunk[..read]),
+            "ACP extension stderr"
+        );
         let mut tail = tail.lock().unwrap_or_else(|error| error.into_inner());
         tail.extend(&chunk[..read]);
         while tail.len() > ACP_STDERR_LIMIT {
@@ -58,7 +69,6 @@ pub(crate) async fn drain_stderr(mut stderr: ChildStderr, tail: Arc<Mutex<VecDeq
 pub(crate) async fn terminate_child(
     child: &mut Child,
     process_tree: &ExtensionProcessTree,
-    timeout: Duration,
 ) -> io::Result<()> {
     let mut first_error = process_tree.terminate(child.id()).err();
     match child.kill() {
@@ -67,15 +77,7 @@ pub(crate) async fn terminate_child(
         Err(error) if first_error.is_none() => first_error = Some(error),
         Err(_) => {}
     }
-    let wait = child.status();
-    future::race(wait, async move {
-        async_io::Timer::after(timeout).await;
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "ACP child did not exit after termination",
-        ))
-    })
-    .await?;
+    child.status().await?;
     first_error.map_or(Ok(()), Err)
 }
 

@@ -1,8 +1,6 @@
 use std::time::{Duration, Instant};
 
-use nanika_search::{
-    Candidate, SearchOwner, USAGE_RETENTION_DAYS, UsageMap, normalize_history_key,
-};
+use nanika_search::{Candidate, SearchOwner, UsageMap, normalize_history_key};
 
 use crate::{ExtensionKind, HostDatabase, SearchStorageWorker, StorageQueueError, unix_timestamp};
 
@@ -12,7 +10,7 @@ fn history_persists_with_punctuation_preserving_identity() {
     let _ = std::fs::remove_dir_all(&root);
     let database = root.join("nanika.db");
     let (worker, state) =
-        SearchStorageWorker::spawn(&database, 10).expect("storage owner should start");
+        SearchStorageWorker::spawn(&database).expect("storage owner should start");
     assert!(state.input_history.is_empty());
     for query in ["git --help", "git help", "C++", "C#"] {
         worker
@@ -21,7 +19,7 @@ fn history_persists_with_punctuation_preserving_identity() {
     }
     worker.shutdown();
     let reopened = HostDatabase::open(&database).expect("database should reopen");
-    assert_eq!(reopened.load_input_history(10).expect("history").len(), 4);
+    assert_eq!(reopened.load_input_history().expect("history").len(), 4);
     drop(reopened);
     let _ = std::fs::remove_dir_all(root);
 }
@@ -31,8 +29,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
     let database =
         std::env::temp_dir().join(format!("nanika-storage-usage-{}.db", std::process::id()));
     cleanup(&database);
-    let (worker, _) =
-        SearchStorageWorker::spawn(&database, 50).expect("storage owner should start");
+    let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
     worker.attach_search(search.clone());
@@ -80,8 +77,7 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
     let database =
         std::env::temp_dir().join(format!("nanika-storage-invalid-{}.db", std::process::id()));
     cleanup(&database);
-    let (worker, _) =
-        SearchStorageWorker::spawn(&database, 50).expect("storage owner should start");
+    let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
     assert_eq!(
         worker.register_extension("../escape", ExtensionKind::External, unix_timestamp()),
         Err(StorageQueueError::InvalidExtensionId)
@@ -91,29 +87,24 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
 }
 
 #[test]
-fn asynchronous_failures_keep_typed_operation_and_source() {
+fn operation_failures_return_the_source_and_remain_available_to_diagnostics() {
     let database =
         std::env::temp_dir().join(format!("nanika-storage-failure-{}.db", std::process::id()));
     cleanup(&database);
-    let (worker, _) =
-        SearchStorageWorker::spawn(&database, 50).expect("storage owner should start");
+    let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
     let connection = rusqlite::Connection::open(&database).expect("database should reopen");
     connection
         .execute("DROP TABLE input_history", [])
         .expect("history table should be removed");
     drop(connection);
-    worker
-        .record_history("query", "query", unix_timestamp())
-        .expect("history write should enqueue");
+    let result = worker.record_history("query", "query", unix_timestamp());
+    assert!(
+        matches!(&result, Err(StorageQueueError::Operation(source)) if source.contains("input_history"))
+    );
 
-    let deadline = Instant::now() + Duration::from_secs(1);
-    let failure = loop {
-        if let Some(failure) = worker.last_failure() {
-            break failure;
-        }
-        assert!(Instant::now() < deadline, "storage failure should surface");
-        std::thread::yield_now();
-    };
+    let failure = worker
+        .last_failure()
+        .expect("storage failure should remain available to diagnostics");
 
     assert_eq!(failure.operation(), "record input history");
     assert!(failure.source().contains("input_history"));
@@ -123,9 +114,9 @@ fn asynchronous_failures_keep_typed_operation_and_source() {
 }
 
 #[test]
-fn usage_retention_and_reset_remove_persisted_rows() {
+fn usage_is_preserved_until_an_explicit_reset() {
     let database = std::env::temp_dir().join(format!(
-        "nanika-storage-retention-{}.db",
+        "nanika-storage-persistence-{}.db",
         std::process::id()
     ));
     cleanup(&database);
@@ -134,12 +125,10 @@ fn usage_retention_and_reset_remove_persisted_rows() {
         .expect("extension should register");
     host.record_usage("test.extension", "old", "open", "old", 1)
         .expect("old usage should persist");
-    let now = USAGE_RETENTION_DAYS * 86_400 + 2;
-    host.record_usage("test.extension", "new", "open", "new", now)
+    host.record_usage("test.extension", "new", "open", "new", u64::MAX)
         .expect("new usage should persist");
     let usage = host.load_usage().expect("usage should load");
-    assert_eq!(usage.len(), 1);
-    assert_eq!(usage[0].entry_id, "new");
+    assert_eq!(usage.len(), 2);
     host.reset_usage().expect("usage should reset");
     assert!(host.load_usage().expect("usage should load").is_empty());
     drop(host);
@@ -186,7 +175,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
     drop(connection);
 
     let (worker, state) =
-        SearchStorageWorker::spawn(&database, 50).expect("storage owner should still start");
+        SearchStorageWorker::spawn(&database).expect("storage owner should still start");
     assert_eq!(state.extensions.len(), 1);
     assert_eq!(state.extensions[0].extension_id, "com.example.valid");
     assert_eq!(state.extension_errors.len(), 3);

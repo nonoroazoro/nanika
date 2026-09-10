@@ -13,7 +13,7 @@ fn baseline_applies_once() {
 }
 
 #[test]
-fn baseline_schema_contains_entry_identity_and_retention_index() {
+fn baseline_schema_contains_entry_identity_and_usage_ordering_index() {
     let database = std::env::temp_dir().join(format!(
         "nanika-storage-baseline-schema-{}.db",
         std::process::id()
@@ -42,7 +42,7 @@ fn baseline_schema_contains_entry_identity_and_retention_index() {
             "last_executed_at",
         ]
     );
-    let retention_index: bool = connection
+    let usage_ordering_index: bool = connection
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM sqlite_schema
@@ -51,8 +51,8 @@ fn baseline_schema_contains_entry_identity_and_retention_index() {
             [],
             |row| row.get(0),
         )
-        .expect("retention index should load");
-    assert!(retention_index);
+        .expect("usage ordering index should load");
+    assert!(usage_ordering_index);
     drop(connection);
     cleanup(&database);
 }

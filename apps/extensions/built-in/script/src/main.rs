@@ -55,11 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                     complete: true,
-                    entries: scripts
-                        .values()
-                        .take(5_000)
-                        .map(|script| script.candidate())
-                        .collect(),
+                    entries: scripts.values().map(|script| script.candidate()).collect(),
                 },
             )?,
             Message::Invoke {
@@ -254,5 +250,6 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
+        Message::CandidatesChanged => None,
     }
 }

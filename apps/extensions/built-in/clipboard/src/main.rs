@@ -2,7 +2,6 @@
 
 use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use nanika_extension_clipboard::{
     COPY_ACTION_ID, ClipboardEntry, ClipboardMonitor, ClipboardViewState, ClipboardWorker,
@@ -24,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&entries),
     )?;
     let monitor = ClipboardMonitor::spawn(&worker)?;
-    worker.capture_background();
+    worker.capture_background()?;
     let mut input = BufReader::new(stdin().lock());
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
@@ -221,7 +220,7 @@ fn handle_view_event(
     }
     match event {
         ViewEvent::SearchChanged { text } => {
-            state.query = text.chars().take(4_096).collect();
+            state.query = text;
             state.visible_limit = 100;
         }
         ViewEvent::SelectionChanged { item_id } => state.selected_item_id = item_id,
@@ -233,7 +232,7 @@ fn handle_view_event(
             state.visible_limit = 100;
         }
         ViewEvent::LoadMore { cursor } if cursor == state.visible_limit.to_string() => {
-            state.visible_limit = state.visible_limit.saturating_add(100).min(500);
+            state.visible_limit = state.visible_limit.saturating_add(100);
         }
         ViewEvent::ActionInvoked { item_id, action_id } if action_id == COPY_ACTION_ID => {
             let content = item_id.as_deref().and_then(|item_id| {
@@ -253,8 +252,15 @@ fn handle_view_event(
                 );
             };
             if write_clipboard(input, output, &request_id, generation, content)? {
-                if let Some(item_id) = item_id {
-                    worker.mark_used(item_id);
+                if let Some(item_id) = item_id
+                    && let Err(message) = worker.mark_used(item_id)
+                {
+                    return write_error(
+                        output,
+                        Some(request_id),
+                        "clipboard_history_update_failed",
+                        &message,
+                    );
                 }
                 write_frame(
                     output,
@@ -300,8 +306,8 @@ fn handle_view_event(
 fn capture_now(worker: &ClipboardWorker) -> Result<(), String> {
     worker
         .capture()?
-        .recv_timeout(Duration::from_secs(5))
-        .map_err(|_| "clipboard capture did not finish before the deadline".to_owned())?
+        .recv()
+        .map_err(|_| "clipboard capture owner closed without reporting the result".to_owned())?
 }
 
 fn write_clipboard(
@@ -388,6 +394,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
+        Message::CandidatesChanged => None,
     }
 }
 

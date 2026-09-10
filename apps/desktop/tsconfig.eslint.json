@@ -1,0 +1,9 @@
+{
+    "extends": "./frontend/tsconfig.app.json",
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": false,
+        "types": ["node", "svelte", "vite/client"]
+    },
+    "include": ["frontend/**/*.js", "frontend/**/*.svelte", "frontend/**/*.ts"]
+}

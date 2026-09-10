@@ -5,6 +5,7 @@ use crate::ScanReport;
 /// Protocol input and discovery completion serialized onto the runtime loop.
 pub enum RuntimeEvent {
     Protocol(Message),
+    CandidatesChanged,
     ProtocolClosed,
     ProtocolError(String),
     ScanFinished {

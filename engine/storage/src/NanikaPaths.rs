@@ -18,10 +18,13 @@ impl NanikaPaths {
             PROJECT_IDENTITY.organization,
             PROJECT_IDENTITY.application,
         )
-        .map(|dirs| Self {
-            app_data_root: dirs.data_local_dir().to_path_buf(),
-            cache_root: dirs.cache_dir().to_path_buf(),
-            config_root: dirs.config_dir().to_path_buf(),
+        .map(|dirs| {
+            let app_data_root = dirs.data_local_dir().to_path_buf();
+            Self {
+                cache_root: app_data_root.join("cache"),
+                config_root: app_data_root.join("user"),
+                app_data_root,
+            }
         })
     }
 

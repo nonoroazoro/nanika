@@ -1,21 +1,28 @@
 //! Calculator extension process entry point.
 
 use std::collections::HashMap;
-use std::io::{BufReader, BufWriter, stdin, stdout};
+use std::io::{BufWriter, stdout};
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
+mod input;
+#[path = "ProtocolInput.rs"]
+mod protocol_input;
+use protocol_input::ProtocolInput;
 
 use nanika_extension_calculator::{COPY_ACTION_ID, CalculatorEngine};
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME,
-    SettingsContribution, read_frame, write_frame,
+    SettingsContribution, write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut input = BufReader::new(stdin().lock());
+    let mut input = input::spawn()?;
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
     let engine = CalculatorEngine::new();
     let mut results = HashMap::<String, String>::new();
-    while let Some(message) = read_frame(&mut input)? {
+    while let Ok(received) = input.recv() {
+        let ProtocolInput { message, cancelled } = received?;
         match message {
             Message::Initialize {
                 request_id,
@@ -49,12 +56,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 results.clear();
                 let entries = engine
-                    .evaluate(&query)
+                    .evaluate_cancellable(&query, &cancelled)
                     .map(|(candidate, result)| {
                         results.insert(candidate.entry_id.clone(), result);
                         vec![candidate]
                     })
                     .unwrap_or_default();
+                if cancelled.load(Ordering::Acquire) {
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "cancelled",
+                        "query was cancelled",
+                    )?;
+                    continue;
+                }
                 write_frame(
                     &mut output,
                     &Message::Snapshot {
@@ -127,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn invoke_host(
-    input: &mut impl std::io::Read,
+    input: &mut Receiver<Result<ProtocolInput, nanika_protocol::FrameError>>,
     output: &mut impl std::io::Write,
     request_id: String,
     generation: u64,
@@ -146,7 +162,7 @@ fn invoke_host(
         },
     )?;
     loop {
-        match read_frame(input)? {
+        match input.recv().ok().transpose()?.map(|input| input.message) {
             Some(Message::HostResponse {
                 request_id: response_id,
                 parent_request_id,
@@ -218,6 +234,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
+        Message::CandidatesChanged => None,
     }
 }
 

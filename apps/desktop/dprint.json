@@ -1,0 +1,29 @@
+{
+    "indentWidth": 4,
+    "lineWidth": 120,
+    "newLineKind": "lf",
+    "useTabs": false,
+    "typescript": {
+        "arrowFunction.useParentheses": "preferNone",
+        "bracePosition": "nextLine",
+        "module.sortImportDeclarations": "maintain",
+        "nextControlFlowPosition": "nextLine",
+        "quoteStyle": "preferDouble",
+        "semiColons": "always",
+        "singleBodyPosition": "nextLine",
+        "trailingCommas": "never"
+    },
+    "markdown": {
+        "textWrap": "maintain"
+    },
+    "json": {
+        "trailingCommas": "never"
+    },
+    "excludes": ["**/dist", "**/node_modules", "shell/**"],
+    "plugins": [
+        "npm:dprint-plugin-markup@0.27.3",
+        "npm:@dprint/json@0.23.0",
+        "npm:@dprint/markdown@0.22.1",
+        "npm:@dprint/typescript@0.96.1"
+    ]
+}

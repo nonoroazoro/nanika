@@ -24,7 +24,11 @@ pub(crate) fn capture(
         if !paths.is_empty() {
             let encoded = serde_json::to_vec(&paths).map_err(|error| error.to_string())?;
             if !files_within_limits(&paths, encoded.len()) {
-                return Ok(None);
+                return Err(format!(
+                    "clipboard file list exceeds the supported limit: {} files, {} encoded bytes",
+                    paths.len(),
+                    encoded.len()
+                ));
             }
             let hash = stable_hash("files", &encoded);
             return Ok(Some(ClipboardEntry {
@@ -41,7 +45,10 @@ pub(crate) fn capture(
     if context.has(ContentFormat::Text) {
         let value = context.get_text().map_err(|error| error.to_string())?;
         if !text_within_limits(&value) {
-            return Ok(None);
+            return Err(format!(
+                "clipboard text exceeds the supported limit: {} bytes",
+                value.len()
+            ));
         }
         if !value.trim().is_empty() {
             let hash = stable_hash("text", value.as_bytes());
@@ -63,12 +70,17 @@ pub(crate) fn capture(
             || height > MAX_IMAGE_DIMENSION
             || u64::from(width).saturating_mul(u64::from(height)) > MAX_IMAGE_PIXELS
         {
-            return Ok(None);
+            return Err(format!(
+                "clipboard image exceeds the supported dimensions: {width} x {height}"
+            ));
         }
         let encoded = image.to_png().map_err(|error| error.to_string())?;
         let bytes = encoded.get_bytes();
         if bytes.len() > MAX_IMAGE_BYTES {
-            return Ok(None);
+            return Err(format!(
+                "clipboard image exceeds the supported encoded size: {} bytes",
+                bytes.len()
+            ));
         }
         let hash = stable_hash("image", bytes);
         std::fs::create_dir_all(payload_root).map_err(|error| error.to_string())?;

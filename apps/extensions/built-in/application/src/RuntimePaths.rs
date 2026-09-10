@@ -22,10 +22,11 @@ impl RuntimePaths {
         .ok_or_else(|| {
             ApplicationError::Configuration("platform data directories are unavailable".to_owned())
         })?;
+        let data_root = dirs.data_local_dir().to_path_buf();
         let mut paths = Self {
-            data_root: dirs.data_local_dir().to_path_buf(),
-            cache_root: dirs.cache_dir().to_path_buf(),
-            config_root: dirs.config_dir().to_path_buf(),
+            cache_root: data_root.join("cache"),
+            config_root: data_root.join("user"),
+            data_root,
         };
         for argument in arguments {
             if let Some(value) = argument.strip_prefix("--data-root=") {

@@ -11,8 +11,12 @@ pub(crate) struct ClipboardWatcherHandler {
 
 impl ClipboardHandler for ClipboardWatcherHandler {
     fn on_clipboard_change(&mut self) {
-        let _ = self
+        if self
             .commands
-            .try_send(ClipboardCommand::Capture { response: None });
+            .send(ClipboardCommand::Capture { response: None })
+            .is_err()
+        {
+            eprintln!("clipboard capture owner closed while delivering a change event");
+        }
     }
 }

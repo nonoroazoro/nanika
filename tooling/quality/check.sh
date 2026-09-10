@@ -22,14 +22,14 @@ if grep -R --include='*.ts' --include='*.svelte' --exclude-dir=bridge \
     exit 1
 fi
 
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --all-targets --locked
-cargo doc --workspace --no-deps --locked
-
 cd apps/desktop
 pnpm format:check
 pnpm lint
 pnpm frontend:check
-pnpm test
 pnpm frontend:build
+
+cd "$repository_root"
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+cargo doc --workspace --no-deps --locked

@@ -34,7 +34,7 @@ pub(crate) fn acquire(app_data_root: &Path) -> Result<InstanceRole, PlatformErro
         std::fs::remove_file(&activation_path)?;
     }
     let socket = UnixDatagram::bind(&activation_path)?;
-    let (events, event_receiver) = mpsc::sync_channel(8);
+    let (events, event_receiver) = mpsc::channel();
     let event_thread = std::thread::Builder::new()
         .name("nanika-instance-events".to_owned())
         .spawn(move || run_event_loop(socket, events))?;
@@ -68,7 +68,7 @@ pub(crate) fn signal_activate(app_data_root: &Path) -> Result<(), PlatformError>
     }
 }
 
-fn run_event_loop(socket: UnixDatagram, events: mpsc::SyncSender<PlatformEvent>) {
+fn run_event_loop(socket: UnixDatagram, events: mpsc::Sender<PlatformEvent>) {
     loop {
         let mut request = [0; 1];
         match socket.recv(&mut request) {
@@ -79,7 +79,10 @@ fn run_event_loop(socket: UnixDatagram, events: mpsc::SyncSender<PlatformEvent>)
         };
         match request[0] {
             ACTIVATE_REQUEST => {
-                let _ = events.try_send(PlatformEvent::Open);
+                if events.send(PlatformEvent::Open).is_err() {
+                    eprintln!("single-instance event receiver closed during activation");
+                    break;
+                }
             }
             STOP_REQUEST => break,
             _ => {}

@@ -1,110 +1,143 @@
 <script lang="ts">
-  import type { SearchResult } from '../types'
+import type { SearchResult } from "../types";
 
-  interface Props {
-    result: SearchResult
-    active: boolean
-    onActivate: () => void
-    onInvoke: () => void
-  }
+interface Props
+{
+    result: SearchResult;
+    active: boolean;
+    onActivate: () => void;
+    onInvoke: () => void;
+}
 
-  let { result, active, onActivate, onInvoke }: Props = $props()
+const { result, active, onActivate, onInvoke }: Props = $props();
+let iconFailed = $state(false);
 </script>
 
 <li
-  id={`result-${result.extensionId}-${result.entryId}`}
-  role="option"
-  aria-selected={active}
-  class:active
-  onpointermove={onActivate}
-  onmousedown={(event) => event.preventDefault()}
-  onclick={onInvoke}
-  onkeydown={(event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      onInvoke()
-    }
-  }}
-  tabindex="-1"
+    id={`result-${result.extensionId}-${result.entryId}`}
+    role="option"
+    aria-selected={active}
+    class:active
+    onpointermove={onActivate}
+    onmousedown={(event => event.preventDefault())}
+    onclick={onInvoke}
+    onkeydown={(event =>
+    {
+        if (event.key === "Enter" || event.key === " ")
+        {
+            event.preventDefault();
+            onInvoke();
+        }
+    })}
+    tabindex="-1"
 >
-  <span class="icon" aria-hidden="true">
-    {#if result.iconUrl}
-      <img src={result.iconUrl} alt="" />
-    {:else}
-      <span class="fallback">{result.title.slice(0, 1)}</span>
-    {/if}
-  </span>
-  <span class="copy">
-    <span class="title">{result.title}</span>
-    {#if result.subtitle}
-      <span class="subtitle">{result.subtitle}</span>
-    {/if}
-  </span>
-  <span class="kind">{result.kind}</span>
+    <span class="icon" aria-hidden="true">
+        <span class="fallback">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="5" y="4" width="14" height="16" rx="3" />
+                <path d="M9 9h6M9 12h6M9 15h3" />
+            </svg>
+        </span>
+        {#if result.iconUrl}
+            <img
+                src={result.iconUrl}
+                alt=""
+                hidden={iconFailed}
+                onerror={() =>
+                {
+                    iconFailed = true;
+                }}
+                onload={() =>
+                {
+                    iconFailed = false;
+                }}
+            />
+        {/if}
+    </span>
+    <span class="copy">
+        <span class="title">{result.title}</span>
+        {#if result.subtitle}
+            <span class="subtitle">{result.subtitle}</span>
+        {/if}
+    </span>
+    <span class="kind">{result.kind}</span>
 </li>
 
 <style>
-  li {
-    display: grid;
-    grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
-    align-items: center;
-    min-height: var(--row-height);
-    gap: var(--space-3);
-    padding: 0 var(--space-3);
-    border-radius: var(--radius-row);
-    color: var(--text-primary);
-    cursor: default;
-  }
+li {
+  display: grid;
+  grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: var(--row-height);
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-row);
+  color: var(--text-primary);
+  cursor: default;
+}
 
-  li.active {
-    background: var(--surface-selected);
-  }
+li.active {
+  background: var(--surface-selected);
+}
 
-  .icon,
-  img,
-  .fallback {
-    width: var(--icon-size);
-    height: var(--icon-size);
-  }
+.icon,
+img,
+.fallback {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
 
-  img {
-    display: block;
-    object-fit: contain;
-  }
+.icon {
+  position: relative;
+}
 
-  .fallback {
-    display: grid;
-    place-items: center;
-    border-radius: var(--radius-icon);
-    background: var(--surface-raised);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
+img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  object-fit: contain;
+}
 
-  .copy {
-    display: flex;
-    min-width: 0;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
+img[hidden] {
+  display: none;
+}
 
-  .title,
-  .subtitle,
-  .kind {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.fallback {
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-icon);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
 
-  .title {
-    font-size: var(--font-row);
-    font-weight: 500;
-  }
+.fallback svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
 
-  .subtitle,
-  .kind {
-    color: var(--text-secondary);
-    font-size: var(--font-meta);
-  }
+.copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.title,
+.subtitle,
+.kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  font-size: var(--font-row);
+  font-weight: 500;
+}
+
+.subtitle,
+.kind {
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+}
 </style>

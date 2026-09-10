@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -27,11 +26,10 @@ impl IconCache {
 
     pub(crate) fn key(&self, entry: &ApplicationEntry) -> Result<String, ApplicationError> {
         let Some(source) = entry.icon_source.as_deref() else {
-            self.ensure_fallback()?;
             return Ok(FALLBACK_KEY.to_owned());
         };
         let metadata = source.metadata()?;
-        Ok(icon_key(entry, source, &metadata))
+        icon_key(entry, source, &metadata)
     }
 
     pub(crate) fn key_with_state(
@@ -40,11 +38,10 @@ impl IconCache {
         state: &mut DiscoveryState,
     ) -> Result<String, ApplicationError> {
         let Some(source) = entry.icon_source.as_deref() else {
-            self.ensure_fallback()?;
             return Ok(FALLBACK_KEY.to_owned());
         };
         let metadata = state.metadata(source)?;
-        Ok(icon_key(entry, source, metadata))
+        icon_key(entry, source, metadata)
     }
 
     pub fn prepare(&self, entry: &mut ApplicationEntry) -> Result<(), ApplicationError> {
@@ -54,6 +51,7 @@ impl IconCache {
             entry.icon_key.clone()
         };
         if key == FALLBACK_KEY {
+            self.ensure_fallback()?;
             entry.icon_key = key;
             return Ok(());
         }
@@ -99,29 +97,14 @@ impl IconCache {
         Ok(())
     }
 
-    pub(crate) fn prune(&self, entries: &[ApplicationEntry]) -> Result<(), ApplicationError> {
-        let mut retained = entries
-            .iter()
-            .map(|entry| entry.icon_key.as_str())
-            .filter(|key| !key.is_empty())
-            .collect::<HashSet<_>>();
-        retained.insert(FALLBACK_KEY);
-        let children = match fs::read_dir(&self.root) {
-            Ok(children) => children,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error.into()),
-        };
-        for child in children {
-            let child = child?;
-            let name = child.file_name();
-            if name.to_str().is_some_and(|name| retained.contains(name)) {
-                continue;
-            }
-            let file_type = child.file_type()?;
-            if file_type.is_dir() {
-                fs::remove_dir_all(child.path())?;
-            } else {
-                fs::remove_file(child.path())?;
+    pub(crate) fn use_available_icons(
+        &self,
+        entries: &mut [ApplicationEntry],
+    ) -> Result<(), ApplicationError> {
+        self.ensure_fallback()?;
+        for entry in entries {
+            if !self.is_ready(&entry.icon_key) {
+                entry.icon_key = FALLBACK_KEY.to_owned();
             }
         }
         Ok(())
@@ -139,6 +122,20 @@ impl IconCache {
         Ok(())
     }
 
+    fn is_ready(&self, key: &str) -> bool {
+        if key == FALLBACK_KEY {
+            return true;
+        }
+        if nanika_protocol::IconReference::new(key).is_err() {
+            return false;
+        }
+        let directory = self.root.join(key);
+        !directory.join("fallback.marker").is_file()
+            && ICON_SIZES
+                .iter()
+                .all(|size| directory.join(format!("{size}.png")).is_file())
+    }
+
     fn copy_fallback_to(&self, target: &Path) -> Result<(), ApplicationError> {
         self.ensure_fallback()?;
         let source = self.root.join(FALLBACK_KEY);
@@ -150,13 +147,25 @@ impl IconCache {
     }
 }
 
-fn icon_key(entry: &ApplicationEntry, source: &Path, metadata: &std::fs::Metadata) -> String {
+fn icon_key(
+    entry: &ApplicationEntry,
+    source: &Path,
+    metadata: &std::fs::Metadata,
+) -> Result<String, ApplicationError> {
     let modified = metadata
         .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |value| value.as_nanos());
-    key_from_stamp(source, entry.icon_index, metadata.len(), modified)
+        .and_then(|value| {
+            value
+                .duration_since(UNIX_EPOCH)
+                .map_err(std::io::Error::other)
+        })?
+        .as_nanos();
+    Ok(key_from_stamp(
+        source,
+        entry.icon_index,
+        metadata.len(),
+        modified,
+    ))
 }
 
 pub(crate) fn key_from_stamp(

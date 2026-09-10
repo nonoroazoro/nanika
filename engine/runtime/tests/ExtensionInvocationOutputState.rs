@@ -41,14 +41,14 @@ fn distinct_invocations_are_not_coalesced() {
 }
 
 #[test]
-fn pending_output_batches_remain_bounded() {
+fn pending_output_batches_are_not_dropped_before_the_ui_observes_them() {
     let mut state = ExtensionInvocationOutputState::default();
     for invocation_id in 1..=17 {
         state.append(invocation_id, "com.example.agent", 1, "output");
     }
 
     let outputs = state.take_changed().expect("output batch");
-    assert_eq!(outputs.len(), 16);
-    assert_eq!(outputs[0].invocation_id, 2);
-    assert_eq!(outputs[15].invocation_id, 17);
+    assert_eq!(outputs.len(), 17);
+    assert_eq!(outputs[0].invocation_id, 1);
+    assert_eq!(outputs[16].invocation_id, 17);
 }

@@ -1,13 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Arc;
-
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
 mod commands;
+#[path = "DesktopRuntime.rs"]
+mod desktop_runtime;
 #[path = "DesktopState.rs"]
 mod desktop_state;
 #[path = "IconProtocol.rs"]
@@ -16,20 +16,37 @@ mod icon_protocol;
 mod icon_request;
 #[path = "InvokeCandidateRequest.rs"]
 mod invoke_candidate_request;
+#[path = "PublishQueryRequest.rs"]
+mod publish_query_request;
 #[path = "RootSearchSnapshot.rs"]
 mod root_search_snapshot;
+#[path = "SearchDelivery.rs"]
+mod search_delivery;
+#[path = "SearchPhase.rs"]
+mod search_phase;
 #[path = "SearchResult.rs"]
 mod search_result;
+#[path = "SearchSession.rs"]
+mod search_session;
 mod tray;
 mod window;
 
 use application_snapshot::*;
 use commands::*;
+use desktop_runtime::*;
 use desktop_state::*;
 use invoke_candidate_request::*;
+use publish_query_request::*;
 use root_search_snapshot::*;
+use search_delivery::*;
+use search_phase::*;
 use search_result::*;
+use search_session::*;
 use window::*;
+
+#[cfg(test)]
+#[path = "../tests/unit/SearchDelivery.rs"]
+mod search_delivery_tests;
 
 #[cfg(target_os = "macos")]
 const DEFAULT_HOTKEY: &str = "Ctrl+Space";
@@ -63,21 +80,18 @@ pub fn run() -> Result<(), String> {
             },
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(DesktopState::new(instance, diagnostics))
+        .manage(DesktopState::new(instance, diagnostics)?)
         .invoke_handler(tauri::generate_handler![
             dismiss_launcher,
+            acknowledge_search,
+            close_session,
             invoke_candidate,
             open_session,
             publish_query,
         ])
+        .on_window_event(handle_window_event)
         .setup(move |app| {
             tray::install(app.handle())?;
-            let notification_handle = app.handle().clone();
-            app.state::<DesktopState>().set_notifier(Arc::new(move || {
-                notification_handle
-                    .state::<DesktopState>()
-                    .notify_search_updates();
-            }));
             let runtime_handle = app.handle().clone();
             let runtime_paths = paths.clone();
             std::thread::Builder::new()
@@ -88,29 +102,38 @@ pub fn run() -> Result<(), String> {
                         include_str!("../../../extensions/distribution.json"),
                     ) {
                         Ok(runtime) => {
-                            if !runtime.startup_diagnostics().is_empty() {
+                            for diagnostic in runtime.startup_diagnostics() {
                                 tracing::warn!(
-                                    count = runtime.startup_diagnostics().len(),
-                                    "one or more runtime capabilities are unavailable"
+                                    message = diagnostic,
+                                    "runtime capability unavailable"
                                 );
                             }
                             if let Err(error) = runtime_handle
                                 .state::<DesktopState>()
                                 .install_runtime(runtime)
                             {
-                                tracing::error!(%error, "runtime initialization failed");
+                                runtime_handle.state::<DesktopState>().fail_startup(error);
                             }
                         }
                         Err(error) => {
-                            tracing::error!(%error, "runtime initialization failed");
+                            runtime_handle.state::<DesktopState>().fail_startup(error);
                         }
                     }
                 })?;
             app.global_shortcut()
                 .on_shortcut(DEFAULT_HOTKEY, |app, shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        let _ = nanika_platform::current_hotkey_delivery_delay(shortcut.id());
-                        let _ = toggle_launcher(app);
+                        if let Some(delay) =
+                            nanika_platform::current_hotkey_delivery_delay(shortcut.id())
+                        {
+                            tracing::debug!(
+                                delay_ms = delay.as_millis(),
+                                "global shortcut delivered"
+                            );
+                        }
+                        if let Err(error) = toggle_launcher(app) {
+                            tracing::error!(%error, "global shortcut could not toggle launcher");
+                        }
                     }
                 })?;
             let handle = app.handle().clone();
@@ -118,8 +141,10 @@ pub fn run() -> Result<(), String> {
                 .name("nanika-instance-bridge".to_owned())
                 .spawn(move || {
                     while let Ok(event) = events.recv() {
-                        if event == nanika_platform::PlatformEvent::Open {
-                            let _ = show_launcher(&handle);
+                        if event == nanika_platform::PlatformEvent::Open
+                            && let Err(error) = show_launcher(&handle)
+                        {
+                            tracing::error!(%error, "instance activation could not show launcher");
                         }
                     }
                 })?;
@@ -129,6 +154,6 @@ pub fn run() -> Result<(), String> {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(tauri::tauri_build_context!())
         .map_err(|error| error.to_string())
 }

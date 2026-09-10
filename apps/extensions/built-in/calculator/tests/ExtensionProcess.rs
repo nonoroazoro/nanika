@@ -94,3 +94,86 @@ fn calculator_process_contributes_and_copies_through_the_host() {
     ));
     assert!(child.wait().expect("child should exit").success());
 }
+
+#[test]
+fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nanika-extension-calculator"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = BufWriter::new(child.stdin.take().unwrap());
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let (sender, receiver) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        while let Ok(Some(message)) = read_frame(&mut output) {
+            if sender.send(message).is_err() {
+                break;
+            }
+        }
+    });
+    let result = (|| -> Result<(), String> {
+        write_frame(
+            &mut input,
+            &Message::Initialize {
+                request_id: "init".to_owned(),
+                protocol: PROTOCOL_NAME.to_owned(),
+            },
+        )
+        .unwrap();
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|error| error.to_string())?;
+        write_frame(
+            &mut input,
+            &Message::Query {
+                request_id: "slow".to_owned(),
+                generation: 1,
+                query: "100000!".to_owned(),
+            },
+        )
+        .unwrap();
+        // Test-only observation interval verifies cancellation interrupts active work.
+        if receiver.recv_timeout(Duration::from_millis(100)).is_ok() {
+            return Err("expected the expensive evaluation to remain active".to_owned());
+        }
+        write_frame(
+            &mut input,
+            &Message::Cancel {
+                request_id: "slow".to_owned(),
+                generation: 1,
+            },
+        )
+        .unwrap();
+        write_frame(
+            &mut input,
+            &Message::Query {
+                request_id: "latest".to_owned(),
+                generation: 2,
+                query: "1+1".to_owned(),
+            },
+        )
+        .unwrap();
+        let cancelled = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|error| error.to_string())?;
+        if !matches!(cancelled, Message::Error { request_id: Some(id), code, .. } if id == "slow" && code == "cancelled")
+        {
+            return Err("old query must report explicit cancellation".to_owned());
+        }
+        let latest = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|error| error.to_string())?;
+        if !matches!(latest, Message::Snapshot { request_id, entries, complete: true, .. } if request_id == "latest" && entries.len() == 1 && entries[0].title == "= 2")
+        {
+            return Err("latest query must complete after cancellation".to_owned());
+        }
+        Ok(())
+    })();
+    let _ = child.kill();
+    child.wait().unwrap();
+    reader.join().unwrap();
+    result.unwrap();
+}

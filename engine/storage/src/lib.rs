@@ -25,6 +25,7 @@ mod stored_extension;
 mod stored_extension_load;
 #[path = "StoredUsage.rs"]
 mod stored_usage;
+#[cfg(test)]
 mod time;
 
 pub use extension_id::*;
@@ -39,6 +40,7 @@ pub use storage_queue_error::*;
 pub use stored_extension::*;
 pub use stored_extension_load::*;
 pub use stored_usage::*;
+#[cfg(test)]
 pub(crate) use time::*;
 
 #[cfg(test)]

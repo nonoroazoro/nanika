@@ -14,7 +14,9 @@ pub(crate) fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => {
-                let _ = crate::show_launcher(app);
+                if let Err(error) = crate::show_launcher(app) {
+                    tracing::error!(%error, "tray command could not show launcher");
+                }
             }
             "quit" => app.exit(0),
             _ => {}
@@ -25,8 +27,9 @@ pub(crate) fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
                 button_state: MouseButtonState::Up,
                 ..
             } = event
+                && let Err(error) = crate::toggle_launcher(tray.app_handle())
             {
-                let _ = crate::toggle_launcher(tray.app_handle());
+                tracing::error!(%error, "tray click could not toggle launcher");
             }
         })
         .build(app)?;

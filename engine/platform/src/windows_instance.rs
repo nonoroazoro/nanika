@@ -41,7 +41,7 @@ pub(crate) fn acquire(identity: &str) -> Result<InstanceRole, PlatformError> {
         return Ok(InstanceRole::Secondary);
     }
 
-    let (events, event_receiver) = mpsc::sync_channel(8);
+    let (events, event_receiver) = mpsc::channel();
     let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
     let thread_identity = identity.to_owned();
     let event_thread = match std::thread::Builder::new()
@@ -116,7 +116,7 @@ pub(crate) fn stop(window: isize) {
 
 fn run_event_loop(
     identity: &str,
-    events: mpsc::SyncSender<PlatformEvent>,
+    events: mpsc::Sender<PlatformEvent>,
     ready: mpsc::SyncSender<Result<isize, PlatformError>>,
 ) {
     let window = match create_activation_window(identity) {
@@ -140,7 +140,10 @@ fn run_event_loop(
             break;
         }
         if message.message == ACTIVATE_MESSAGE {
-            let _ = events.try_send(PlatformEvent::Open);
+            if events.send(PlatformEvent::Open).is_err() {
+                eprintln!("single-instance event receiver closed during activation");
+                break;
+            }
         }
     }
     unsafe {

@@ -41,7 +41,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_frame(&mut output).expect("initialize response"),
+        read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
     ));
     write_frame(
@@ -52,26 +52,19 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("settings request should write");
     let Some(Message::Settings { contribution, .. }) =
-        read_frame(&mut output).expect("settings response")
+        read_response(&mut output, "settings response")
     else {
         panic!("application extension should contribute settings");
     };
     assert_eq!(contribution.title, "Applications");
     assert_eq!(contribution.fields.len(), 2);
-    write_frame(
+    query_until_candidate(
         &mut input,
-        &Message::Query {
-            request_id: "startup-query".to_owned(),
-            generation: 1,
-            query: "nanika sample".to_owned(),
-        },
-    )
-    .expect("startup query should write");
-    let startup_entries = read_complete_snapshot(&mut output);
-    assert!(
-        startup_entries
-            .iter()
-            .any(|entry| entry.title == "Nanika Sample")
+        &mut output,
+        "startup-query",
+        1,
+        "nanika sample",
+        "Nanika Sample",
     );
     write_frame(
         &mut input,
@@ -82,7 +75,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("refresh should write");
     assert!(matches!(
-        read_frame(&mut output).expect("refresh response"),
+        read_response(&mut output, "refresh response"),
         Some(Message::Refreshed { generation: 2, .. })
     ));
     write_frame(
@@ -94,7 +87,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         },
     )
     .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).expect("query response")
+    let Some(Message::Snapshot { entries, .. }) = read_response(&mut output, "query response")
     else {
         panic!("application extension should return a snapshot");
     };
@@ -131,7 +124,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         parent_request_id,
         generation,
         ..
-    }) = read_frame(&mut output).expect("host request")
+    }) = read_response(&mut output, "host request")
     else {
         panic!("application extension should request host launch");
     };
@@ -146,7 +139,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("host response should write");
     assert!(matches!(
-        read_frame(&mut output).expect("invoke result"),
+        read_response(&mut output, "invoke result"),
         Some(Message::Result { generation: 3, .. })
     ));
     write_frame(
@@ -164,7 +157,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         parent_request_id,
         generation,
         ..
-    }) = read_frame(&mut output).expect("second host request")
+    }) = read_response(&mut output, "second host request")
     else {
         panic!("application extension should request host launch");
     };
@@ -179,7 +172,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("invalid host response should write");
     assert!(matches!(
-        read_frame(&mut output).expect("invalid invoke result"),
+        read_response(&mut output, "invalid invoke result"),
         Some(Message::Error {
             request_id: Some(request_id),
             code,
@@ -194,7 +187,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )
     .expect("shutdown should write");
     assert!(matches!(
-        read_frame(&mut output).expect("shutdown response"),
+        read_response(&mut output, "shutdown response"),
         Some(Message::ShutdownAck { .. })
     ));
     drop(input);
@@ -203,7 +196,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
 }
 
 #[test]
-fn process_reports_startup_cache_failure_after_handshake() {
+fn process_keeps_search_available_when_startup_icon_cache_fails() {
     let root = test_root("startup-cache-failure");
     let data_root = root.join("data");
     let cache_root = root.join("cache");
@@ -240,7 +233,7 @@ fn process_reports_startup_cache_failure_after_handshake() {
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_frame(&mut output).expect("initialize response"),
+        read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
     ));
     write_frame(
@@ -250,19 +243,38 @@ fn process_reports_startup_cache_failure_after_handshake() {
         },
     )
     .expect("settings request should write");
-    let mut saw_failure = false;
-    for _ in 0..2 {
-        match read_frame(&mut output).expect("startup response") {
-            Some(Message::Error {
-                request_id: None,
-                code,
-                ..
-            }) if code == "startup_refresh_failed" => saw_failure = true,
-            Some(Message::Settings { .. }) => {}
-            message => panic!("unexpected startup response: {message:?}"),
-        }
-    }
-    assert!(saw_failure);
+    assert!(matches!(
+        read_response(&mut output, "settings response"),
+        Some(Message::Settings { .. })
+    ));
+    let entries = query_until_candidate(
+        &mut input,
+        &mut output,
+        "startup-query-without-icons",
+        1,
+        "nanika sample",
+        "Nanika Sample",
+    );
+    let entry = entries
+        .iter()
+        .find(|entry| entry.title == "Nanika Sample")
+        .expect("search should remain available");
+    assert!(entry.icon.is_none());
+    write_frame(
+        &mut input,
+        &Message::Query {
+            request_id: "cleared-query-without-icons".to_owned(),
+            generation: 2,
+            query: String::new(),
+        },
+    )
+    .expect("cleared query should write");
+    let cleared_entries = read_complete_snapshot(&mut output);
+    assert!(
+        cleared_entries
+            .iter()
+            .any(|entry| entry.title == "Nanika Sample")
+    );
     write_frame(
         &mut input,
         &Message::Shutdown {
@@ -272,7 +284,7 @@ fn process_reports_startup_cache_failure_after_handshake() {
     .expect("shutdown should write");
     loop {
         if matches!(
-            read_frame(&mut output).expect("shutdown response"),
+            read_response(&mut output, "shutdown response"),
             Some(Message::ShutdownAck { .. })
         ) {
             break;
@@ -285,14 +297,56 @@ fn process_reports_startup_cache_failure_after_handshake() {
 
 fn read_complete_snapshot(output: &mut impl std::io::Read) -> Vec<nanika_protocol::Candidate> {
     loop {
-        let Some(Message::Snapshot {
-            complete, entries, ..
-        }) = read_frame(output).expect("startup query response")
-        else {
-            panic!("application extension should return a startup snapshot");
-        };
-        if complete {
+        match read_frame(output).expect("query response") {
+            Some(Message::Snapshot {
+                complete: true,
+                entries,
+                ..
+            }) => return entries,
+            Some(Message::Snapshot { .. } | Message::CandidatesChanged) => {}
+            message => panic!("application extension should return a snapshot, got {message:?}"),
+        }
+    }
+}
+
+fn query_until_candidate(
+    input: &mut impl std::io::Write,
+    output: &mut impl std::io::Read,
+    request_id: &str,
+    generation: u64,
+    query: &str,
+    title: &str,
+) -> Vec<nanika_protocol::Candidate> {
+    loop {
+        write_frame(
+            &mut *input,
+            &Message::Query {
+                request_id: request_id.to_owned(),
+                generation,
+                query: query.to_owned(),
+            },
+        )
+        .expect("query should write");
+        let entries = read_complete_snapshot(output);
+        if entries.iter().any(|entry| entry.title == title) {
             return entries;
+        }
+        loop {
+            if matches!(
+                read_frame(&mut *output).expect("candidate change"),
+                Some(Message::CandidatesChanged)
+            ) {
+                break;
+            }
+        }
+    }
+}
+
+fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Message> {
+    loop {
+        match read_frame(output).expect(context) {
+            Some(Message::CandidatesChanged) => {}
+            response => return response,
         }
     }
 }

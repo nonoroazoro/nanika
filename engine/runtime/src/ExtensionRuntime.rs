@@ -2,14 +2,14 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::AtomicBool;
 
 use nanika_extension_package::ExtensionProtocol;
 use nanika_protocol::{Candidate, SettingUpdate, SettingsContribution};
 
 use crate::{
-    AcpExtensionProcess, ExtensionLimits, ExtensionProcess, ExtensionRuntimeInvocation,
-    HostServiceHandler, SupervisorError,
+    AcpExtensionProcess, ExtensionInterruption, ExtensionLimits, ExtensionProcess,
+    ExtensionRuntimeInvocation, HostServiceHandler, SupervisorError,
 };
 
 /// Protocol-aware process supervisor shared by built-in and external extensions.
@@ -25,6 +25,13 @@ impl From<ExtensionProcess> for ExtensionRuntime {
 }
 
 impl ExtensionRuntime {
+    pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
+        match self {
+            Self::Nanika(process) => process.set_shutdown_signal(signal),
+            Self::Acp(process) => process.set_shutdown_signal(signal),
+        }
+    }
+
     pub fn spawn_with(
         extension_id: impl Into<String>,
         protocol: ExtensionProtocol,
@@ -45,6 +52,12 @@ impl ExtensionRuntime {
                 io::ErrorKind::InvalidInput,
                 "unsupported extension protocol",
             )),
+        }
+    }
+
+    pub(crate) fn set_candidate_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
+        if let Self::Nanika(process) = self {
+            process.set_candidate_notifier(notify);
         }
     }
 
@@ -99,12 +112,11 @@ impl ExtensionRuntime {
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
-        timeout: Duration,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
         match self {
             Self::Nanika(process) => {
-                process.refresh_cancellable(request_id, generation, timeout, should_cancel)
+                process.refresh_cancellable(request_id, generation, should_cancel)
             }
             Self::Acp(_) => Ok(!should_cancel()),
         }
@@ -115,19 +127,13 @@ impl ExtensionRuntime {
         request_id: impl Into<String>,
         generation: u64,
         query: impl Into<String>,
-        timeout: Duration,
         mut publish: impl FnMut(Vec<Candidate>) -> Result<(), SupervisorError>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
         match self {
-            Self::Nanika(process) => process.query_incremental(
-                request_id,
-                generation,
-                query,
-                timeout,
-                publish,
-                should_cancel,
-            ),
+            Self::Nanika(process) => {
+                process.query_incremental(request_id, generation, query, publish, should_cancel)
+            }
             Self::Acp(_) if should_cancel() => Ok(false),
             Self::Acp(process) => {
                 let query = query.into();
@@ -153,16 +159,31 @@ impl ExtensionRuntime {
         &mut self,
         invocation: ExtensionRuntimeInvocation,
         publish: Arc<dyn Fn(String) + Send + Sync>,
-        should_cancel: impl FnMut() -> bool,
+        mut should_cancel: impl FnMut() -> bool,
+    ) -> Result<(nanika_protocol::NavigationEffect, bool), SupervisorError> {
+        self.invoke_interruptible(invocation, publish, || {
+            if should_cancel() {
+                ExtensionInterruption::Cancel
+            } else {
+                ExtensionInterruption::None
+            }
+        })
+    }
+
+    pub(crate) fn invoke_interruptible(
+        &mut self,
+        invocation: ExtensionRuntimeInvocation,
+        publish: Arc<dyn Fn(String) + Send + Sync>,
+        interruption: impl FnMut() -> ExtensionInterruption,
     ) -> Result<(nanika_protocol::NavigationEffect, bool), SupervisorError> {
         match self {
             Self::Nanika(process) => process
-                .invoke_cancellable(
+                .invoke_interruptible(
                     invocation.request_id,
                     invocation.generation,
                     invocation.entry_id,
                     invocation.action_id,
-                    should_cancel,
+                    interruption,
                 )
                 .map(|effect| (effect, false)),
             Self::Acp(process) => {
@@ -178,19 +199,16 @@ impl ExtensionRuntime {
                         )
                     })?;
                 process
-                    .prompt_cancellable(prompt, publish, should_cancel)
+                    .prompt_interruptible(prompt, publish, interruption)
                     .map(|()| (nanika_protocol::NavigationEffect::None, true))
             }
         }
     }
 
-    pub fn recover_if_exited(
-        &mut self,
-        request_id: impl Into<String>,
-    ) -> Result<bool, SupervisorError> {
+    pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
         match self {
-            Self::Nanika(process) => process.recover_if_exited(request_id),
-            Self::Acp(process) => process.recover_if_exited(),
+            Self::Nanika(process) => process.ensure_running(),
+            Self::Acp(process) => process.ensure_running(),
         }
     }
 
@@ -236,23 +254,6 @@ impl ExtensionRuntime {
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
                 "ACP extensions cannot own host-rendered views".to_owned(),
             )),
-        }
-    }
-
-    pub(crate) fn recover_after_cancellation(
-        &mut self,
-        request_id: impl Into<String>,
-    ) -> Result<bool, SupervisorError> {
-        match self {
-            Self::Nanika(process) => process.recover_after_cancellation(request_id),
-            Self::Acp(process) => process.recover_after_cancellation(),
-        }
-    }
-
-    pub fn restart(&mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
-        match self {
-            Self::Nanika(process) => process.restart(request_id),
-            Self::Acp(process) => process.restart(),
         }
     }
 

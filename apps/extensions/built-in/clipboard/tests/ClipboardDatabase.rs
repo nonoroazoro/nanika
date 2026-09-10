@@ -32,9 +32,9 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
 }
 
 #[test]
-fn clipboard_retention_removes_expired_unpinned_entries() {
+fn clipboard_history_is_not_deleted_without_an_explicit_user_action() {
     let root =
-        std::env::temp_dir().join(format!("nanika-clipboard-retention-{}", std::process::id()));
+        std::env::temp_dir().join(format!("nanika-clipboard-storage-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
     database
@@ -50,57 +50,7 @@ fn clipboard_retention_removes_expired_unpinned_entries() {
             pinned: false,
         })
         .expect("old capture");
-    database.prune(31 * 86_400).expect("retention");
-    assert!(database.load().expect("history").is_empty());
-    drop(database);
-    std::fs::remove_dir_all(root).expect("test root should be removable");
-}
-
-#[test]
-fn clipboard_payload_cleanup_removes_only_unreferenced_managed_files() {
-    let root = std::env::temp_dir().join(format!(
-        "nanika-clipboard-payload-cleanup-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    let payload_root = root.join("payloads");
-    std::fs::create_dir_all(&payload_root).expect("payload root");
-    let referenced = payload_root.join(format!("{}.png", "a".repeat(64)));
-    let orphan = payload_root.join(format!("{}.png", "b".repeat(64)));
-    let temporary = payload_root.join(format!("{}.tmp-1", "c".repeat(64)));
-    let unrelated_png = payload_root.join("keep.png");
-    let unrelated_temporary = payload_root.join(format!("{}.tmp-active", "d".repeat(64)));
-    for path in [
-        &referenced,
-        &orphan,
-        &temporary,
-        &unrelated_png,
-        &unrelated_temporary,
-    ] {
-        std::fs::write(path, b"payload").expect("payload should write");
-    }
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
-    database
-        .upsert(&ClipboardEntry {
-            entry_id: "clipboard.image".to_owned(),
-            content_hash: "image".to_owned(),
-            title: "image".to_owned(),
-            content: ClipboardContent::PngFile {
-                path: referenced.to_string_lossy().into_owned(),
-            },
-            byte_size: 7,
-            captured_at: 1,
-            pinned: false,
-        })
-        .expect("image should persist");
-    database
-        .cleanup_payloads(&payload_root)
-        .expect("payload cleanup");
-    assert!(referenced.is_file());
-    assert!(!orphan.exists());
-    assert!(!temporary.exists());
-    assert!(unrelated_png.is_file());
-    assert!(unrelated_temporary.is_file());
+    assert_eq!(database.load().expect("history").len(), 1);
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }

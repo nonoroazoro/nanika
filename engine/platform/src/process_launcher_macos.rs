@@ -4,7 +4,6 @@ use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::Instant;
 
 use nanika_protocol::HostServiceResponse;
 
@@ -65,20 +64,19 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32, shutdown: Arc
                 match receiver.try_recv() {
                     Ok(LauncherCommand::Launch {
                         descriptor,
-                        deadline,
                         response,
                     }) => {
-                        let result = if Instant::now() >= deadline {
-                            Err("process launch request expired before execution".to_owned())
-                        } else {
-                            process_launch(&descriptor)
-                                .and_then(|child| register_child(queue, child, &mut children))
-                                .map(|()| HostServiceResponse::Launched)
-                                .map_err(|error| error.to_string())
-                        };
-                        let _ = response.send(result);
+                        let result = process_launch(&descriptor)
+                            .and_then(|child| register_child(queue, child, &mut children))
+                            .map(|()| HostServiceResponse::Launched)
+                            .map_err(|error| error.to_string());
+                        if response.send(result).is_err() {
+                            tracing::warn!(
+                                "process launch requester closed before receiving the result"
+                            );
+                        }
                     }
-                    Ok(LauncherCommand::Shutdown) | Err(TryRecvError::Disconnected) => {
+                    Err(TryRecvError::Disconnected) => {
                         break 'owner;
                     }
                     Err(TryRecvError::Empty) => break,

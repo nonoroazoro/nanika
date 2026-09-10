@@ -7,12 +7,9 @@ use nanika_protocol::FrameError;
 pub enum SupervisorError {
     Io(io::Error),
     Protocol(FrameError),
-    Timeout(&'static str),
     ChannelClosed,
     Cancelled(&'static str),
-    QueueFull,
     UnexpectedMessage(String),
-    RestartLimit,
 }
 
 impl std::fmt::Display for SupervisorError {
@@ -20,14 +17,11 @@ impl std::fmt::Display for SupervisorError {
         match self {
             Self::Io(error) => write!(formatter, "I/O error: {error}"),
             Self::Protocol(error) => write!(formatter, "protocol error: {error}"),
-            Self::Timeout(operation) => write!(formatter, "extension timed out during {operation}"),
             Self::ChannelClosed => write!(formatter, "extension protocol channel closed"),
             Self::Cancelled(operation) => {
                 write!(formatter, "extension cancelled during {operation}")
             }
-            Self::QueueFull => write!(formatter, "extension action queue is full"),
             Self::UnexpectedMessage(message) => write!(formatter, "unexpected message: {message}"),
-            Self::RestartLimit => write!(formatter, "extension restart limit reached"),
         }
     }
 }
@@ -37,12 +31,7 @@ impl std::error::Error for SupervisorError {
         match self {
             Self::Io(error) => Some(error),
             Self::Protocol(error) => Some(error),
-            Self::Timeout(_)
-            | Self::ChannelClosed
-            | Self::Cancelled(_)
-            | Self::QueueFull
-            | Self::UnexpectedMessage(_)
-            | Self::RestartLimit => None,
+            Self::ChannelClosed | Self::Cancelled(_) | Self::UnexpectedMessage(_) => None,
         }
     }
 }

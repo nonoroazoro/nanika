@@ -7,6 +7,7 @@ pub(crate) enum ClipboardCommand {
     MarkUsed {
         entry_id: String,
         used_at: u64,
+        response: SyncSender<Result<(), String>>,
     },
     Shutdown,
 }

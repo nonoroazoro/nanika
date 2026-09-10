@@ -1,20 +1,18 @@
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
 
 use crate::{PlatformError, StartupCommand, StartupStatus};
 
-const COMMAND_CAPACITY: usize = 4;
-
-/// Bounded owner for login startup status and mutations.
+/// Owner for login startup status and mutations. Submission applies backpressure.
 pub struct StartupService {
-    commands: SyncSender<StartupCommand>,
+    commands: Sender<StartupCommand>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl StartupService {
     pub fn spawn(executable: PathBuf) -> std::io::Result<Self> {
-        let (commands, receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+        let (commands, receiver) = mpsc::channel();
         let thread = std::thread::Builder::new()
             .name("nanika-startup-owner".to_owned())
             .spawn(move || {
@@ -53,26 +51,31 @@ impl StartupService {
 
     fn submit(&self, command: StartupCommand) -> Result<(), PlatformError> {
         self.commands
-            .try_send(command)
-            .map_err(|error| match error {
-                TrySendError::Full(_) => PlatformError::QueueFull("startup"),
-                TrySendError::Disconnected(_) => PlatformError::EventChannelClosed("startup"),
-            })
+            .send(command)
+            .map_err(|_| PlatformError::EventChannelClosed("startup"))
     }
 
     pub fn shutdown(mut self) {
-        let _ = self.commands.send(StartupCommand::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        self.stop();
+    }
+
+    fn stop(&mut self) {
+        if self.thread.is_none() {
+            return;
+        }
+        if self.commands.send(StartupCommand::Shutdown).is_err() {
+            tracing::error!("startup service closed before shutdown was requested");
+        }
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            tracing::error!("startup service owner thread panicked");
         }
     }
 }
 
 impl Drop for StartupService {
     fn drop(&mut self) {
-        let _ = self.commands.send(StartupCommand::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        self.stop();
     }
 }

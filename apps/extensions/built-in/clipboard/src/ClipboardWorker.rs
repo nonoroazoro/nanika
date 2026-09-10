@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
@@ -7,7 +7,7 @@ use clipboard_rs::ClipboardContext;
 
 use crate::{ClipboardCommand, ClipboardDatabase, ClipboardEntry, capture};
 
-/// Single owner for clipboard capture, retention, and SQLite writes.
+/// Single owner for clipboard capture and SQLite writes.
 pub struct ClipboardWorker {
     commands: SyncSender<ClipboardCommand>,
     last_error: Arc<Mutex<Option<String>>>,
@@ -41,10 +41,7 @@ impl ClipboardWorker {
                         return;
                     }
                 };
-                let initial = database
-                    .prune(unix_timestamp())
-                    .and_then(|()| database.cleanup_payloads(&payload_root))
-                    .and_then(|()| database.load());
+                let initial = database.load();
                 let Ok(initial) = initial else {
                     let _ = ready.send(initial);
                     return;
@@ -60,27 +57,40 @@ impl ClipboardWorker {
                                 .and_then(|entry| {
                                     if let Some(entry) = entry {
                                         database.upsert(&entry)?;
-                                        database.prune(entry.captured_at)?;
                                         let loaded = database.load()?;
                                         *entries
                                             .write()
                                             .unwrap_or_else(|error| error.into_inner()) = loaded;
                                     }
                                     Ok(())
-                                })
-                                .and(database.cleanup_payloads(&payload_root));
+                                });
                             *worker_error
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
-                            if let Some(response) = response {
-                                let _ = response.send(result.clone());
+                            if let Some(response) = response
+                                && response.send(result.clone()).is_err()
+                            {
+                                eprintln!(
+                                    "clipboard capture requester closed before receiving result"
+                                );
                             }
                         }
-                        ClipboardCommand::MarkUsed { entry_id, used_at } => {
-                            if let Err(error) = database.mark_used(&entry_id, used_at) {
+                        ClipboardCommand::MarkUsed {
+                            entry_id,
+                            used_at,
+                            response,
+                        } => {
+                            let result = database.mark_used(&entry_id, used_at);
+                            if let Err(error) = &result {
                                 *worker_error
                                     .lock()
-                                    .unwrap_or_else(|error| error.into_inner()) = Some(error);
+                                    .unwrap_or_else(|error| error.into_inner()) =
+                                    Some(error.clone());
+                            }
+                            if response.send(result).is_err() {
+                                eprintln!(
+                                    "clipboard history requester closed before receiving result"
+                                );
                             }
                         }
                         ClipboardCommand::Shutdown => break,
@@ -105,27 +115,31 @@ impl ClipboardWorker {
     pub fn capture(&self) -> Result<Receiver<Result<(), String>>, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
-            .try_send(ClipboardCommand::Capture {
+            .send(ClipboardCommand::Capture {
                 response: Some(response),
             })
-            .map_err(|error| match error {
-                TrySendError::Full(_) => "clipboard capture queue is full".to_owned(),
-                TrySendError::Disconnected(_) => "clipboard capture owner is closed".to_owned(),
-            })?;
+            .map_err(|_| "clipboard capture owner is closed".to_owned())?;
         Ok(result)
     }
 
-    pub fn capture_background(&self) {
-        let _ = self
-            .commands
-            .try_send(ClipboardCommand::Capture { response: None });
+    pub fn capture_background(&self) -> Result<(), String> {
+        self.commands
+            .send(ClipboardCommand::Capture { response: None })
+            .map_err(|_| "clipboard capture owner is closed".to_owned())
     }
 
-    pub fn mark_used(&self, entry_id: impl Into<String>) {
-        let _ = self.commands.try_send(ClipboardCommand::MarkUsed {
-            entry_id: entry_id.into(),
-            used_at: unix_timestamp(),
-        });
+    pub fn mark_used(&self, entry_id: impl Into<String>) -> Result<(), String> {
+        let (response, result) = mpsc::sync_channel(1);
+        self.commands
+            .send(ClipboardCommand::MarkUsed {
+                entry_id: entry_id.into(),
+                used_at: unix_timestamp(),
+                response,
+            })
+            .map_err(|_| "clipboard capture owner is closed".to_owned())?;
+        result
+            .recv()
+            .map_err(|_| "clipboard capture owner closed without reporting the update".to_owned())?
     }
 
     pub fn last_error(&self) -> Option<String> {
@@ -140,9 +154,16 @@ impl ClipboardWorker {
     }
 
     fn stop(&mut self) {
-        let _ = self.commands.send(ClipboardCommand::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if self.thread.is_none() {
+            return;
+        }
+        if self.commands.send(ClipboardCommand::Shutdown).is_err() {
+            eprintln!("clipboard worker closed before shutdown was requested");
+        }
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            eprintln!("clipboard worker panicked");
         }
     }
 }

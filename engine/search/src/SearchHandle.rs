@@ -3,15 +3,15 @@ use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    Candidate, MAX_QUERY_CHARS, SearchCommand, SearchNotifier, SearchQueueError, SearchSnapshot,
-    UsageKey,
+    Candidate, MAX_QUERY_CHARS, PendingSearchQuery, SearchCommand, SearchNotifier,
+    SearchQueueError, SearchSnapshot, UsageKey,
 };
 
 /// Cloneable boundary used by UI, extension workers, and the storage owner.
 #[derive(Clone)]
 pub struct SearchHandle {
     pub(crate) commands: SyncSender<SearchCommand>,
-    pub(crate) pending_query: Arc<Mutex<Option<(u64, String, usize)>>>,
+    pub(crate) pending_query: Arc<Mutex<Option<PendingSearchQuery>>>,
     pub(crate) latest: Arc<Mutex<Option<Arc<SearchSnapshot>>>>,
     pub(crate) next_generation: Arc<AtomicU64>,
     pub(crate) notifier: SearchNotifier,
@@ -19,13 +19,13 @@ pub struct SearchHandle {
 
 impl SearchHandle {
     pub fn begin_query(&self, query: impl Into<String>) -> Result<u64, SearchQueueError> {
-        self.begin_query_with_expected_extensions(query, 0)
+        self.begin_query_with_expected_extensions(query, std::iter::empty())
     }
 
     pub fn begin_query_with_expected_extensions(
         &self,
         query: impl Into<String>,
-        expected_extensions: usize,
+        expected_extensions: impl IntoIterator<Item = String>,
     ) -> Result<u64, SearchQueueError> {
         let query = query.into();
         if query.chars().count() > MAX_QUERY_CHARS {
@@ -36,11 +36,15 @@ impl SearchHandle {
             .fetch_add(1, Ordering::Relaxed)
             .wrapping_add(1)
             .max(1);
+        let expected_extensions = expected_extensions.into_iter().collect();
         *self
             .pending_query
             .lock()
-            .unwrap_or_else(|error| error.into_inner()) =
-            Some((generation, query, expected_extensions));
+            .unwrap_or_else(|error| error.into_inner()) = Some(PendingSearchQuery {
+            generation,
+            query,
+            expected_extensions,
+        });
         match self.commands.try_send(SearchCommand::WakeQuery) {
             Ok(()) | Err(TrySendError::Full(_)) => Ok(generation),
             Err(TrySendError::Disconnected(_)) => Err(SearchQueueError::Closed),

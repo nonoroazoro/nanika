@@ -1,13 +1,10 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use nanika_protocol::ClipboardContent;
 use rusqlite::{Connection, params};
 
 use crate::{ClipboardEntry, EncodedClipboardContent};
 
-const RETENTION_SECONDS: u64 = 30 * 86_400;
-const MAX_UNPINNED_ENTRIES: usize = 500;
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS clipboard_entries (
     entry_id TEXT PRIMARY KEY,
@@ -23,7 +20,7 @@ CREATE TABLE IF NOT EXISTS clipboard_entries (
     pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     UNIQUE(content_kind, content_hash)
 );
-CREATE INDEX IF NOT EXISTS clipboard_entries_retention
+CREATE INDEX IF NOT EXISTS clipboard_entries_ordering
 ON clipboard_entries(pinned DESC, captured_at DESC);
 ";
 
@@ -89,8 +86,7 @@ impl ClipboardDatabase {
                 "SELECT entry_id, content_kind, content_hash, title, text_payload, files_json,
                         image_path, byte_size, captured_at, pinned
                  FROM clipboard_entries
-                 ORDER BY pinned DESC, captured_at DESC, entry_id
-                 LIMIT 5000",
+                 ORDER BY pinned DESC, captured_at DESC, entry_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
@@ -148,79 +144,6 @@ impl ClipboardDatabase {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
-
-    pub fn prune(&self, now: u64) -> Result<(), String> {
-        let cutoff = now.saturating_sub(RETENTION_SECONDS);
-        let transaction = self
-            .connection
-            .unchecked_transaction()
-            .map_err(|error| error.to_string())?;
-        transaction
-            .execute(
-                "DELETE FROM clipboard_entries WHERE pinned = 0 AND captured_at < ?1",
-                [integer(cutoff)],
-            )
-            .map_err(|error| error.to_string())?;
-        transaction
-            .execute(
-                "DELETE FROM clipboard_entries
-                 WHERE pinned = 0 AND entry_id NOT IN (
-                    SELECT entry_id FROM clipboard_entries
-                    WHERE pinned = 0
-                    ORDER BY captured_at DESC, entry_id
-                    LIMIT ?1
-                 )",
-                [i64::try_from(MAX_UNPINNED_ENTRIES).unwrap_or(i64::MAX)],
-            )
-            .map_err(|error| error.to_string())?;
-        transaction.commit().map_err(|error| error.to_string())?;
-        Ok(())
-    }
-
-    pub fn cleanup_payloads(&self, payload_root: &Path) -> Result<(), String> {
-        std::fs::create_dir_all(payload_root).map_err(|error| error.to_string())?;
-        let referenced = self.image_paths()?;
-        for entry in std::fs::read_dir(payload_root).map_err(|error| error.to_string())? {
-            let entry = entry.map_err(|error| error.to_string())?;
-            let path = entry.path();
-            if !path.is_file() || referenced.contains(&path) {
-                continue;
-            }
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if is_managed_payload(&name) {
-                std::fs::remove_file(path).map_err(|error| error.to_string())?;
-            }
-        }
-        Ok(())
-    }
-
-    fn image_paths(&self) -> Result<HashSet<PathBuf>, String> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT image_path FROM clipboard_entries WHERE image_path IS NOT NULL")
-            .map_err(|error| error.to_string())?;
-        statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| error.to_string())?
-            .map(|path| path.map(PathBuf::from).map_err(|error| error.to_string()))
-            .collect()
-    }
-}
-
-fn is_managed_payload(name: &str) -> bool {
-    let Some((hash, suffix)) = name.split_once('.') else {
-        return false;
-    };
-    let valid_hash = hash.len() == 64
-        && hash
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
-    valid_hash
-        && (suffix == "png"
-            || suffix.strip_prefix("tmp-").is_some_and(|pid| {
-                !pid.is_empty() && pid.bytes().all(|byte| byte.is_ascii_digit())
-            }))
 }
 
 fn encode_content(content: &ClipboardContent) -> Result<EncodedClipboardContent, String> {

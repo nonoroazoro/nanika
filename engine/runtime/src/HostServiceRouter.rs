@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 
 use nanika_platform::{ClipboardService, ProcessLauncher};
 use nanika_protocol::{ClipboardContent, HostServiceRequest, HostServiceResponse};
@@ -104,7 +103,6 @@ impl HostServiceHandler for HostServiceRouter {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        deadline: Instant,
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         if !is_valid_extension_id(extension_id) {
             HostDiagnostic::new(
@@ -119,7 +117,7 @@ impl HostServiceHandler for HostServiceRouter {
         match request {
             HostServiceRequest::Launch { descriptor } => {
                 self.require_permission(extension_id, "process.launch")?;
-                self.launcher()?.submit(descriptor, deadline)
+                self.launcher()?.submit(descriptor)
             }
             HostServiceRequest::WriteClipboard { content } => {
                 self.require_permission(extension_id, "clipboard.write")?;
@@ -129,7 +127,7 @@ impl HostServiceHandler for HostServiceRouter {
                     }
                     ClipboardContent::Text { .. } | ClipboardContent::Files { .. } => None,
                 };
-                self.clipboard()?.submit(content, payload_root, deadline)
+                self.clipboard()?.submit(content, payload_root)
             }
         }
     }
@@ -162,7 +160,6 @@ mod tests {
                         working_directory: None,
                     },
                 },
-                std::time::Instant::now() + std::time::Duration::from_secs(1),
             )
             .expect("launch service should remain available")
             .recv_timeout(std::time::Duration::from_secs(1))
@@ -185,7 +182,6 @@ mod tests {
                     path: "value.png".to_owned(),
                 },
             },
-            std::time::Instant::now() + std::time::Duration::from_secs(1),
         );
         assert!(
             result
@@ -210,7 +206,6 @@ mod tests {
                         value: "value".to_owned(),
                     },
                 },
-                std::time::Instant::now() + std::time::Duration::from_secs(1),
             )
             .expect_err("missing permission should fail");
         assert!(error.contains("clipboard.write"));

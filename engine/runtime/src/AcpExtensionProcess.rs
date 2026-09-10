@@ -7,14 +7,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use agent_client_protocol::role::HasPeer;
 use agent_client_protocol::schema::{
     ProtocolVersion,
     v1::{
         CancelNotification, ContentBlock, ContentChunk, InitializeRequest, SessionNotification,
-        SessionUpdate,
+        SessionUpdate, StopReason,
     },
 };
 use agent_client_protocol::util::MatchDispatch;
@@ -22,23 +22,18 @@ use agent_client_protocol::{ActiveSession, Agent, Client, ConnectionTo, Lines, S
 use futures_lite::future;
 
 use crate::{
-    AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionLimits,
-    ExtensionProcessTree, SupervisorError, configure_extension_command, drain_stderr,
-    incoming_lines, outgoing_lines, terminate_child,
+    AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionInterruption,
+    ExtensionLimits, ExtensionProcessTree, SupervisorError, configure_extension_command,
+    drain_stderr, incoming_lines, outgoing_lines, terminate_child,
 };
 
-const ACP_OUTPUT_LIMIT: usize = 256 * 1024;
 const ACP_POLL_INTERVAL: Duration = Duration::from_millis(25);
-const ACP_CANCEL_GRACE: Duration = Duration::from_millis(100);
 
 /// A supervised stable ACP v1 extension child process.
 pub struct AcpExtensionProcess {
     extension_id: String,
-    command: ExtensionCommand,
-    working_directory: PathBuf,
-    limits: ExtensionLimits,
-    restart_count: u32,
     initialized: bool,
+    shutdown_requested: Arc<AtomicBool>,
     commands: Option<async_channel::Sender<AcpExtensionCommand>>,
     shutdown: Option<async_channel::Sender<()>>,
     ready: Receiver<Result<(), String>>,
@@ -62,15 +57,14 @@ impl AcpExtensionProcess {
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| io::Error::other("ACP extension has no working directory"))?;
-        Self::start(extension_id.into(), command, working_directory, limits, 0)
+        Self::start(extension_id.into(), command, working_directory, limits)
     }
 
     fn start(
         extension_id: String,
         command: ExtensionCommand,
         working_directory: PathBuf,
-        limits: ExtensionLimits,
-        restart_count: u32,
+        _limits: ExtensionLimits,
     ) -> io::Result<Self> {
         let arguments = command
             .arguments
@@ -94,17 +88,15 @@ impl AcpExtensionProcess {
         let thread_error = Arc::clone(&last_error);
         let thread_command = command.clone();
         let thread_working_directory = working_directory.clone();
-        let handshake_timeout = limits.handshake_timeout;
-        let shutdown_timeout = limits.shutdown_timeout;
+        let thread_extension_id = extension_id.clone();
         let thread = std::thread::Builder::new()
             .name(format!("nanika-acp-extension-{extension_id}"))
             .spawn(move || {
                 let result = async_io::block_on(run_connection(AcpConnectionContext {
+                    extension_id: thread_extension_id,
                     command: thread_command,
                     arguments,
                     working_directory: thread_working_directory,
-                    handshake_timeout,
-                    shutdown_timeout,
                     commands: command_receiver,
                     shutdown: shutdown_receiver,
                     ready: ready_sender,
@@ -121,11 +113,8 @@ impl AcpExtensionProcess {
             })?;
         Ok(Self {
             extension_id,
-            command,
-            working_directory,
-            limits,
-            restart_count,
             initialized: false,
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
             commands: Some(commands),
             shutdown: Some(shutdown),
             ready,
@@ -134,15 +123,25 @@ impl AcpExtensionProcess {
         })
     }
 
+    pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
+        self.shutdown_requested = signal;
+    }
+
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         if self.initialized {
             return Ok(());
         }
-        let result = match self.ready.recv_timeout(self.limits.handshake_timeout) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(SupervisorError::UnexpectedMessage(error)),
-            Err(RecvTimeoutError::Timeout) => Err(SupervisorError::Timeout("ACP initialization")),
-            Err(RecvTimeoutError::Disconnected) => Err(SupervisorError::ChannelClosed),
+        let result = loop {
+            if self.shutdown_requested.load(Ordering::Acquire) {
+                self.terminate()?;
+                break Err(SupervisorError::Cancelled("ACP initialization"));
+            }
+            match self.ready.recv_timeout(ACP_POLL_INTERVAL) {
+                Ok(Ok(())) => break Ok(()),
+                Ok(Err(error)) => break Err(SupervisorError::UnexpectedMessage(error)),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => break Err(SupervisorError::ChannelClosed),
+            }
         };
         if result.is_ok() {
             self.initialized = true;
@@ -162,6 +161,21 @@ impl AcpExtensionProcess {
         publish: Arc<dyn Fn(String) + Send + Sync>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<(), SupervisorError> {
+        self.prompt_interruptible(prompt, publish, || {
+            if should_cancel() {
+                ExtensionInterruption::Cancel
+            } else {
+                ExtensionInterruption::None
+            }
+        })
+    }
+
+    pub(crate) fn prompt_interruptible(
+        &mut self,
+        prompt: impl Into<String>,
+        publish: Arc<dyn Fn(String) + Send + Sync>,
+        mut interruption: impl FnMut() -> ExtensionInterruption,
+    ) -> Result<(), SupervisorError> {
         if !self.initialized {
             return Err(SupervisorError::UnexpectedMessage(
                 "ACP extension is not initialized".to_owned(),
@@ -179,36 +193,25 @@ impl AcpExtensionProcess {
                 response: response_sender,
             })
             .map_err(|_| SupervisorError::ChannelClosed)?;
-        let deadline = Instant::now() + self.limits.action_timeout;
         let mut cancellation_requested = false;
-        let mut cancellation_deadline = None;
         loop {
-            if !cancellation_requested && should_cancel() {
-                cancelled.store(true, Ordering::Release);
-                cancellation_requested = true;
-                cancellation_deadline = Some(Instant::now() + ACP_CANCEL_GRACE);
-            }
-            let active_deadline = cancellation_deadline.map_or(deadline, |cancellation_deadline| {
-                deadline.min(cancellation_deadline)
-            });
-            let remaining = active_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                cancelled.store(true, Ordering::Release);
-                let _ = self.terminate();
-                return if cancellation_requested {
-                    Err(SupervisorError::Cancelled("ACP prompt"))
-                } else {
-                    Err(SupervisorError::Timeout("ACP prompt"))
-                };
-            }
-            match response.recv_timeout(remaining.min(ACP_POLL_INTERVAL)) {
-                Ok(Ok(_)) if cancellation_requested => {
+            match interruption() {
+                ExtensionInterruption::None => {}
+                ExtensionInterruption::Cancel if !cancellation_requested => {
+                    cancelled.store(true, Ordering::Release);
+                    cancellation_requested = true;
+                }
+                ExtensionInterruption::Cancel => {}
+                ExtensionInterruption::Terminate => {
+                    self.terminate()?;
                     return Err(SupervisorError::Cancelled("ACP prompt"));
                 }
-                Ok(Ok(())) => return Ok(()),
-                Ok(Err(_)) if cancellation_requested => {
+            }
+            match response.recv_timeout(ACP_POLL_INTERVAL) {
+                Ok(Ok(StopReason::Cancelled)) => {
                     return Err(SupervisorError::Cancelled("ACP prompt"));
                 }
+                Ok(Ok(_)) => return Ok(()),
                 Ok(Err(error)) => return Err(SupervisorError::UnexpectedMessage(error)),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
@@ -218,45 +221,14 @@ impl AcpExtensionProcess {
         }
     }
 
-    pub fn recover_if_exited(&mut self) -> Result<bool, SupervisorError> {
-        if self.thread.is_none() || self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
-            self.restart()?;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    pub fn restart(&mut self) -> Result<(), SupervisorError> {
-        if self.restart_count >= self.limits.max_restarts {
-            return Err(SupervisorError::RestartLimit);
-        }
-        self.restart_with_count(self.restart_count + 1)
-    }
-
-    pub(crate) fn recover_after_cancellation(&mut self) -> Result<bool, SupervisorError> {
+    pub fn ensure_running(&self) -> Result<(), SupervisorError> {
         if self.thread.is_some() && !self.thread.as_ref().is_some_and(JoinHandle::is_finished) {
-            return Ok(false);
+            return Ok(());
         }
-        self.restart_with_count(self.restart_count)?;
-        Ok(true)
-    }
-
-    fn restart_with_count(&mut self, restart_count: u32) -> Result<(), SupervisorError> {
-        let extension_id = self.extension_id.clone();
-        let command = self.command.clone();
-        let working_directory = self.working_directory.clone();
-        let limits = self.limits.clone();
-        self.terminate()?;
-        let mut replacement = Self::start(
-            extension_id,
-            command,
-            working_directory,
-            limits,
-            restart_count,
-        )?;
-        replacement.initialize()?;
-        *self = replacement;
-        Ok(())
+        let detail = self.last_error().unwrap_or_else(|| {
+            "ACP extension process exited without reporting an error".to_owned()
+        });
+        Err(SupervisorError::UnexpectedMessage(detail))
     }
 
     pub fn last_error(&self) -> Option<String> {
@@ -291,13 +263,9 @@ impl AcpExtensionProcess {
                     response: response_sender,
                 })
                 .map_err(|_| SupervisorError::ChannelClosed)?;
-            match response.recv_timeout(self.limits.shutdown_timeout) {
+            match response.recv() {
                 Ok(()) => {}
-                Err(RecvTimeoutError::Timeout) => {
-                    let _ = self.terminate();
-                    return Err(SupervisorError::Timeout("ACP shutdown"));
-                }
-                Err(RecvTimeoutError::Disconnected) => {
+                Err(_) => {
                     let _ = self.terminate();
                     return Err(SupervisorError::ChannelClosed);
                 }
@@ -339,23 +307,22 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
     let (Some(stdin), Some(stdout), Some(stderr)) =
         (child.stdin.take(), child.stdout.take(), child.stderr.take())
     else {
-        let _ = terminate_child(&mut child, &process_tree, context.shutdown_timeout).await;
+        let _ = terminate_child(&mut child, &process_tree).await;
         return Err(agent_client_protocol::util::internal_error(
             "ACP extension stdio was not piped",
         ));
     };
     let shutdown = context.shutdown.clone();
-    let shutdown_timeout = context.shutdown_timeout;
     let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
     let drain_tail = Arc::clone(&stderr_tail);
+    let stderr_extension_id = context.extension_id.clone();
     let connection = Client.builder().name("nanika").connect_with(
         Lines::new(outgoing_lines(stdin), incoming_lines(stdout)),
         |connection: ConnectionTo<Agent>| async move {
-            let initialized = race_handshake(
+            let initialized = cancel_on_shutdown(
                 connection
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task(),
-                context.handshake_timeout,
                 context.shutdown.clone(),
             )
             .await?;
@@ -368,12 +335,11 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
                 let _ = context.ready.send(Err(message.clone()));
                 return Err(agent_client_protocol::util::internal_error(message));
             }
-            let mut session = race_handshake(
+            let mut session = cancel_on_shutdown(
                 connection
                     .build_session(context.working_directory)
                     .block_task()
                     .start_session(),
-                context.handshake_timeout,
                 context.shutdown.clone(),
             )
             .await?;
@@ -426,11 +392,11 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
         ))
     });
     let result = future::race(result, async move {
-        drain_stderr(stderr, drain_tail).await;
+        drain_stderr(stderr, drain_tail, stderr_extension_id).await;
         future::pending::<agent_client_protocol::Result<()>>().await
     })
     .await;
-    let cleanup = terminate_child(&mut child, &process_tree, shutdown_timeout).await;
+    let cleanup = terminate_child(&mut child, &process_tree).await;
     match (result, cleanup) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) => {
@@ -454,28 +420,16 @@ fn bounded_tail_string(tail: &Mutex<VecDeque<u8>>) -> String {
     String::from_utf8_lossy(tail.make_contiguous()).into_owned()
 }
 
-async fn race_handshake<T>(
+async fn cancel_on_shutdown<T>(
     operation: impl Future<Output = agent_client_protocol::Result<T>>,
-    timeout: Duration,
     shutdown: async_channel::Receiver<()>,
 ) -> agent_client_protocol::Result<T> {
-    future::race(
-        operation,
-        future::race(
-            async move {
-                async_io::Timer::after(timeout).await;
-                Err(agent_client_protocol::util::internal_error(
-                    "ACP handshake timed out",
-                ))
-            },
-            async move {
-                let _ = shutdown.recv().await;
-                Err(agent_client_protocol::util::internal_error(
-                    "ACP extension shutting down",
-                ))
-            },
-        ),
-    )
+    future::race(operation, async move {
+        let _ = shutdown.recv().await;
+        Err(agent_client_protocol::util::internal_error(
+            "ACP extension shutting down",
+        ))
+    })
     .await
 }
 
@@ -484,14 +438,12 @@ async fn run_prompt<Link>(
     prompt: String,
     cancelled: Arc<AtomicBool>,
     publish: Arc<dyn Fn(String) + Send + Sync>,
-) -> agent_client_protocol::Result<()>
+) -> agent_client_protocol::Result<StopReason>
 where
     Link: HasPeer<Agent>,
 {
     session.send_prompt(prompt)?;
-    let mut output_bytes = 0_usize;
     let mut cancellation_sent = false;
-    let mut output_limited = false;
     loop {
         if cancelled.load(Ordering::Acquire) && !cancellation_sent {
             session.connection().send_notification_to(
@@ -524,37 +476,12 @@ where
                     })
                     .await
                     .otherwise_ignore()?;
-                if let Some(chunk) = chunk
-                    && !output_limited
-                {
-                    if output_bytes.saturating_add(chunk.len()) > ACP_OUTPUT_LIMIT {
-                        output_limited = true;
-                        if !cancellation_sent {
-                            session.connection().send_notification_to(
-                                Agent,
-                                CancelNotification::new(session.session_id().clone()),
-                            )?;
-                            cancellation_sent = true;
-                        }
-                    } else {
-                        output_bytes += chunk.len();
-                        publish(chunk);
-                    }
+                if let Some(chunk) = chunk {
+                    publish(chunk);
                 }
             }
-            SessionMessage::StopReason(_) => break,
+            SessionMessage::StopReason(reason) => return Ok(reason),
             _ => {}
         }
     }
-    if cancelled.load(Ordering::Acquire) {
-        return Err(agent_client_protocol::util::internal_error(
-            "ACP prompt cancelled",
-        ));
-    }
-    if output_limited {
-        return Err(agent_client_protocol::util::internal_error(format!(
-            "ACP prompt output exceeds {ACP_OUTPUT_LIMIT} bytes"
-        )));
-    }
-    Ok(())
 }

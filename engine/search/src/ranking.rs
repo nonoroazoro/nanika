@@ -2,9 +2,7 @@ use std::cmp::Ordering;
 
 use nucleo_matcher::{Matcher, Utf32Str};
 
-use crate::constants::{
-    MAX_RESULTS, MAX_USAGE_COUNT, MIN_FUZZY_SCORE_PER_CHARACTER, RECENCY_HALF_LIFE_DAYS,
-};
+use crate::constants::{MIN_FUZZY_SCORE_PER_CHARACTER, RECENCY_HALF_LIFE_DAYS};
 use crate::{
     Candidate, MatchContext, RankedCandidate, SearchSnapshot, UsageKey, UsageMap, UsageStat,
     normalize_query,
@@ -35,10 +33,6 @@ pub(crate) fn rank<'a>(
         })
         .collect::<Vec<_>>();
 
-    if scored.len() > MAX_RESULTS {
-        scored.select_nth_unstable_by(MAX_RESULTS, compare_scored);
-        scored.truncate(MAX_RESULTS);
-    }
     scored.sort_by(compare_scored);
 
     SearchSnapshot {
@@ -127,7 +121,7 @@ fn fuzzy_cutoff(query: &str) -> u32 {
 }
 
 fn contextual_boost(stat: UsageStat, now: u64) -> u32 {
-    let count = stat.execution_count.min(MAX_USAGE_COUNT);
+    let count = stat.execution_count;
     let days = now.saturating_sub(stat.last_executed_at) / 86_400;
     let half_lives = u32::try_from(days / RECENCY_HALF_LIFE_DAYS).unwrap_or(u32::MAX);
     let recency = 1_000_u32.checked_shr(half_lives).unwrap_or(0);

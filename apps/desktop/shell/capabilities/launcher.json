@@ -4,6 +4,8 @@
   "description": "Root Search can access only Nanika's bounded application commands.",
   "windows": ["launcher"],
   "permissions": [
+    "allow-acknowledge-search",
+    "allow-close-session",
     "allow-dismiss-launcher",
     "allow-invoke-candidate",
     "allow-open-session",

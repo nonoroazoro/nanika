@@ -17,6 +17,8 @@ pub enum Message {
         request_id: String,
         protocol: String,
     },
+    /// The searchable catalog changed. The host re-queries its current input.
+    CandidatesChanged,
     Query {
         request_id: String,
         generation: u64,

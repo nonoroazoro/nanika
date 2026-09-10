@@ -49,7 +49,6 @@ fn runtime_foundation_startup_benchmark(criterion: &mut Criterion) {
                     .expect("configuration should open");
                 let (storage, state) = SearchStorageWorker::spawn(
                     root.join("data").join("databases").join("nanika.db"),
-                    100,
                 )
                 .expect("storage owner should start");
                 let usage = state

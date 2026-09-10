@@ -1,15 +1,14 @@
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
-use std::time::Duration;
 
-use nanika_extension_package::{CommandMode, ExtensionContributions};
+use nanika_extension_package::ExtensionContributions;
 use nanika_search::SearchHandle;
 
 use crate::{
-    DiagnosticCode, ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput,
-    ExtensionInvocationOutputState, ExtensionInvocationResult, ExtensionNotifier, ExtensionRefresh,
+    DiagnosticCode, ExtensionInterruption, ExtensionInvocation, ExtensionInvocationOutcome,
+    ExtensionInvocationOutput, ExtensionInvocationOutputState, ExtensionNotifier, ExtensionRefresh,
     ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
     ExtensionSearchWorkerContext, ExtensionSettingsResult, ExtensionSettingsUpdate,
     ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate,
@@ -17,14 +16,9 @@ use crate::{
     publish_extension_snapshot,
 };
 
-const MAX_PENDING_INVOCATIONS: usize = 16;
-const MAX_PENDING_SETTINGS: usize = 4;
-const MAX_PENDING_VIEW_EVENTS: usize = 16;
-
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
-    contributions: ExtensionContributions,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
@@ -47,11 +41,29 @@ impl ExtensionSearchWorker {
         if let Some(host_services) = context.host_services {
             runtime.set_host_services(extension_id.clone(), host_services);
         }
-        let invocation_results = context.invocation_results;
         let view_updates = context.view_updates;
         let notifier = context.notifier;
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
+        runtime.set_shutdown_signal(Arc::clone(
+            &state
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .shutdown,
+        ));
         let worker_state = Arc::clone(&state);
+        if contributions.root_search {
+            let changed = Arc::clone(&state);
+            runtime.set_candidate_notifier(Arc::new(move || {
+                let (lock, ready) = &*changed;
+                let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+                // Coalesce invalidations into one current query. User actions retain priority.
+                if !state.shutdown.load(Ordering::Acquire) && state.query.is_none() {
+                    state.query = state.latest_query.clone();
+                    ready.notify_one();
+                }
+            }));
+        }
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
         let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
@@ -64,6 +76,7 @@ impl ExtensionSearchWorker {
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
+                let _lifetime = crate::ExtensionWorkerLifetime(Arc::clone(&worker_state));
                 if let Err(error) = runtime.initialize(format!("initialize-{worker_extension_id}"))
                 {
                     set_error(
@@ -108,14 +121,37 @@ impl ExtensionSearchWorker {
                         break;
                     };
                     let result = match work {
-                        ExtensionWork::Query(query) => run_query(
-                            &mut runtime,
-                            &worker_extension_id,
-                            query,
-                            &search,
-                            &worker_state,
-                            &worker_contributions,
-                        ),
+                        ExtensionWork::Query(query) => {
+                            let generation = query.generation;
+                            let result = run_query(
+                                &mut runtime,
+                                &worker_extension_id,
+                                query,
+                                &search,
+                                &worker_state,
+                                &worker_contributions,
+                            );
+                            match result {
+                                Ok(completed) => Ok(completed),
+                                Err(query_error) => {
+                                // A failed query still completes this worker's barrier slot so
+                                // one unavailable extension cannot leave the launcher pending.
+                                    match publish_extension_snapshot(
+                                        &search,
+                                        &worker_extension_id,
+                                        generation,
+                                        contribution_candidates(&worker_contributions),
+                                    ) {
+                                        Ok(()) => Err(query_error),
+                                        Err(publish_error) => {
+                                            Err(SupervisorError::UnexpectedMessage(format!(
+                                                "extension query failed: {query_error}; publishing its explicit failure state also failed: {publish_error}"
+                                            )))
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
                                 &mut runtime,
@@ -125,25 +161,20 @@ impl ExtensionSearchWorker {
                                 &worker_invocation_output,
                                 &notifier,
                             );
-                            let report = ExtensionInvocationResult {
-                                invocation_id: invocation.invocation_id,
-                                extension_id: worker_extension_id.clone(),
-                                generation: invocation.generation,
-                                entry_id: invocation.entry_id,
-                                action_id: invocation.action_id,
-                                query_context: invocation.query_context,
-                                result: result
-                                    .as_ref()
-                                    .map(Clone::clone)
-                                    .map_err(ToString::to_string),
-                            };
-                            if invocation_results.send(report).is_err() {
-                                Err(SupervisorError::ChannelClosed)
-                            } else {
-                                result.map(|outcome| {
-                                    matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
-                                })
+                            let response = result
+                                .as_ref()
+                                .map(Clone::clone)
+                                .map_err(ToString::to_string);
+                            if invocation.response.send(response).is_err() {
+                                tracing::warn!(
+                                    extension_id = worker_extension_id,
+                                    invocation_id = invocation.invocation_id,
+                                    "invocation receiver closed before completion"
+                                );
                             }
+                            result.map(|outcome| {
+                                matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
+                            })
                         }
                         ExtensionWork::ViewEvent(request) => {
                             let request_id = request.request_id;
@@ -165,7 +196,7 @@ impl ExtensionSearchWorker {
                                     .map(Clone::clone)
                                     .map_err(ToString::to_string),
                             };
-                            if view_updates.send(report).is_err() {
+                            if view_updates.send_blocking(report).is_err() {
                                 Err(SupervisorError::ChannelClosed)
                             } else {
                                 result.map(|_| true)
@@ -176,8 +207,7 @@ impl ExtensionSearchWorker {
                         }
                         ExtensionWork::UpdateSettings(update) => {
                             let request_id = update.request_id.clone();
-                            let result =
-                                run_settings_update(&mut runtime, &worker_extension_id, update);
+                            let result = run_settings_update(&mut runtime, update);
                             let report = ExtensionSettingsResult {
                                 extension_id: worker_extension_id.clone(),
                                 request_id: Some(request_id),
@@ -207,11 +237,11 @@ impl ExtensionSearchWorker {
                     }
                     notify(&notifier);
                 }
-                if let Err(error) = runtime.shutdown(format!("shutdown-{worker_extension_id}")) {
+                if let Err(error) = runtime.terminate() {
                     HostDiagnostic::from_error(
                         DiagnosticCode::ExtensionUnavailable,
-                        "shut down extension",
-                        "An extension did not shut down cleanly.",
+                        "terminate extension",
+                        "An extension process could not be terminated cleanly.",
                         error,
                     )
                     .with_safe_context(&worker_extension_id)
@@ -220,7 +250,6 @@ impl ExtensionSearchWorker {
             })?;
         Ok(Self {
             extension_id,
-            contributions,
             state,
             last_error,
             invocation_output,
@@ -233,19 +262,13 @@ impl ExtensionSearchWorker {
     pub fn query(&self, generation: u64, query: impl Into<String>) {
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-        state.query = Some(ExtensionSearchQuery {
+        let query = ExtensionSearchQuery {
             generation,
             query: query.into(),
-        });
+        };
+        state.latest_query = Some(query.clone());
+        state.query = Some(query);
         ready.notify_one();
-    }
-
-    pub(crate) fn command_mode(&self, entry_id: &str) -> Option<CommandMode> {
-        self.contributions
-            .commands
-            .iter()
-            .find(|command| command.id == entry_id)
-            .map(|command| command.mode)
     }
 
     pub(crate) fn refresh(&self, generation: u64) {
@@ -258,10 +281,7 @@ impl ExtensionSearchWorker {
 
     pub(crate) fn invoke(&self, invocation: ExtensionInvocation) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
-        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-        if state.invocations.len() >= MAX_PENDING_INVOCATIONS {
-            return Err(SupervisorError::QueueFull);
-        }
+        let mut state = wait_for_capacity(lock, ready)?;
         state.invocations.push_back(invocation);
         ready.notify_one();
         Ok(())
@@ -269,10 +289,7 @@ impl ExtensionSearchWorker {
 
     pub(crate) fn view_event(&self, request: ExtensionViewRequest) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
-        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-        if state.view_events.len() >= MAX_PENDING_VIEW_EVENTS {
-            return Err(SupervisorError::QueueFull);
-        }
+        let mut state = wait_for_capacity(lock, ready)?;
         state.view_events.push_back(request);
         ready.notify_one();
         Ok(())
@@ -300,10 +317,7 @@ impl ExtensionSearchWorker {
         updates: Vec<nanika_protocol::SettingUpdate>,
     ) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
-        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-        if state.settings.len() >= MAX_PENDING_SETTINGS {
-            return Err(SupervisorError::QueueFull);
-        }
+        let mut state = wait_for_capacity(lock, ready)?;
         state.settings.push_back(ExtensionSettingsUpdate {
             request_id,
             updates,
@@ -355,13 +369,19 @@ impl ExtensionSearchWorker {
         let (lock, ready) = &*self.state;
         lock.lock()
             .unwrap_or_else(|error| error.into_inner())
-            .shutdown = true;
-        ready.notify_one();
+            .shutdown
+            .store(true, Ordering::Release);
+        ready.notify_all();
     }
 
     pub(crate) fn join(&mut self) {
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            tracing::error!(
+                extension_id = self.extension_id,
+                "extension worker panicked"
+            );
         }
     }
 }
@@ -382,13 +402,15 @@ pub(crate) fn next_work(
         && state.invocations.is_empty()
         && state.view_events.is_empty()
         && state.settings.is_empty()
-        && !state.shutdown
+        && !state.shutdown.load(Ordering::Acquire)
+        && !state.closed
     {
         state = ready.wait(state).unwrap_or_else(|error| error.into_inner());
     }
-    if state.shutdown {
+    if state.closed || state.shutdown.load(Ordering::Acquire) {
         return None;
     }
+    ready.notify_all();
     if let Some(invocation) = state.invocations.pop_front() {
         state.active_invocation_id = Some(invocation.invocation_id);
         return Some(ExtensionWork::Invoke(invocation));
@@ -410,9 +432,9 @@ fn run_view_event(
     request: ExtensionViewRequest,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
 ) -> Result<ExtensionViewUpdatePayload, SupervisorError> {
-    recover_if_exited(runtime, extension_id, request.generation)?;
+    runtime.ensure_running()?;
     let request_id = request.request_id;
-    let result = match request.kind {
+    match request.kind {
         ExtensionViewRequestKind::Event(event) => runtime
             .view_event_cancellable(
                 format!("view-{extension_id}-{request_id}"),
@@ -425,6 +447,7 @@ fn run_view_event(
                     lock.lock()
                         .unwrap_or_else(|error| error.into_inner())
                         .shutdown
+                        .load(Ordering::Acquire)
                 },
             )
             .map(|(revision, effect, view)| ExtensionViewUpdatePayload {
@@ -442,34 +465,15 @@ fn run_view_event(
                 effect: nanika_protocol::NavigationEffect::Pop,
                 view: None,
             }),
-    };
-    if matches!(
-        &result,
-        Err(SupervisorError::ChannelClosed
-            | SupervisorError::Protocol(_)
-            | SupervisorError::Timeout(_))
-    ) {
-        restart_or_terminate(runtime, format!("restart-view-{extension_id}-{request_id}"))?;
     }
-    result
 }
 
 fn run_settings_update(
     runtime: &mut ExtensionRuntime,
-    extension_id: &str,
     update: ExtensionSettingsUpdate,
 ) -> Result<nanika_protocol::SettingsContribution, SupervisorError> {
-    recover_if_exited(runtime, extension_id, 0)?;
-    let result = runtime.update_settings(update.request_id, update.updates);
-    if matches!(
-        &result,
-        Err(SupervisorError::ChannelClosed
-            | SupervisorError::Protocol(_)
-            | SupervisorError::Timeout(_))
-    ) {
-        restart_or_terminate(runtime, format!("restart-settings-{extension_id}"))?;
-    }
-    result
+    runtime.ensure_running()?;
+    runtime.update_settings(update.request_id, update.updates)
 }
 
 fn run_refresh(
@@ -478,33 +482,16 @@ fn run_refresh(
     refresh: ExtensionRefresh,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
 ) -> Result<bool, SupervisorError> {
-    recover_if_exited(runtime, extension_id, refresh.generation)?;
-    let result = runtime.refresh_cancellable(
+    runtime.ensure_running()?;
+    runtime.refresh_cancellable(
         format!("refresh-{extension_id}-{}", refresh.generation),
         refresh.generation,
-        Duration::from_secs(30),
         || {
             let (lock, _) = &**state;
             let state = lock.lock().unwrap_or_else(|error| error.into_inner());
-            state.shutdown
-                || state.query.is_some()
-                || !state.invocations.is_empty()
-                || !state.view_events.is_empty()
-                || state.refresh.is_some()
+            state.shutdown.load(Ordering::Acquire)
         },
-    );
-    if matches!(
-        &result,
-        Err(SupervisorError::ChannelClosed
-            | SupervisorError::Protocol(_)
-            | SupervisorError::Timeout(_))
-    ) {
-        restart_or_terminate(
-            runtime,
-            format!("restart-refresh-{extension_id}-{}", refresh.generation),
-        )?;
-    }
-    result
+    )
 }
 
 fn run_query(
@@ -515,53 +502,31 @@ fn run_query(
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     contributions: &ExtensionContributions,
 ) -> Result<bool, SupervisorError> {
-    recover_if_exited(runtime, extension_id, query.generation)?;
+    runtime.ensure_running()?;
     if !contributions.root_search {
         return publish_contributions(search, extension_id, query.generation, contributions);
     }
     if !contributions.commands.is_empty() {
         publish_contributions(search, extension_id, query.generation, contributions)?;
     }
-    let mut retried = false;
-    loop {
-        let result = runtime.query_incremental(
-            format!("search-{extension_id}-{}", query.generation),
-            query.generation,
-            query.query.clone(),
-            Duration::from_secs(2),
-            |mut entries| {
-                entries.extend(contribution_candidates(contributions));
-                publish_extension_snapshot(search, extension_id, query.generation, entries)
-                    .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
-            },
-            || {
-                let (lock, _) = &**state;
-                let state = lock.lock().unwrap_or_else(|error| error.into_inner());
-                state.shutdown
-                    || state.query.is_some()
-                    || !state.invocations.is_empty()
-                    || !state.view_events.is_empty()
-            },
-        );
-        let restartable = matches!(
-            &result,
-            Err(SupervisorError::ChannelClosed
-                | SupervisorError::Protocol(_)
-                | SupervisorError::Timeout(_))
-        );
-        if result.is_ok() || !restartable {
-            return result;
-        }
-        if retried {
-            let _ = runtime.terminate();
-            return result;
-        }
-        restart_or_terminate(
-            runtime,
-            format!("restart-{extension_id}-{}", query.generation),
-        )?;
-        retried = true;
-    }
+    runtime.query_incremental(
+        format!("search-{extension_id}-{}", query.generation),
+        query.generation,
+        query.query.clone(),
+        |mut entries| {
+            entries.extend(contribution_candidates(contributions));
+            publish_extension_snapshot(search, extension_id, query.generation, entries)
+                .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
+        },
+        || {
+            let (lock, _) = &**state;
+            let state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            state.shutdown.load(Ordering::Acquire)
+                || state.query.is_some()
+                || !state.invocations.is_empty()
+                || !state.view_events.is_empty()
+        },
+    )
 }
 
 fn publish_contributions(
@@ -615,7 +580,17 @@ fn run_invocation(
     invocation_output: &Arc<Mutex<ExtensionInvocationOutputState>>,
     notifier: &ExtensionNotifier,
 ) -> Result<ExtensionInvocationOutcome, SupervisorError> {
-    recover_if_exited(runtime, extension_id, invocation.generation)?;
+    {
+        let mut pending = state.0.lock().unwrap_or_else(|error| error.into_inner());
+        if pending
+            .cancelled_invocations
+            .remove(&invocation.invocation_id)
+        {
+            pending.active_invocation_id = None;
+            return Ok(ExtensionInvocationOutcome::Cancelled);
+        }
+    }
+    runtime.ensure_running()?;
     let output_state = Arc::clone(invocation_output);
     let output_notifier = Arc::clone(notifier);
     let output_extension_id = extension_id.to_owned();
@@ -635,9 +610,9 @@ fn run_invocation(
             notify(&output_notifier);
         }
     });
-    let result = runtime.invoke_cancellable(
+    let result = runtime.invoke_interruptible(
         ExtensionRuntimeInvocation::new(
-            format!("invoke-{extension_id}-{}", invocation.generation),
+            format!("invoke-{extension_id}-{}", invocation.invocation_id),
             invocation.generation,
             invocation.entry_id.clone(),
             invocation.action_id.clone(),
@@ -647,66 +622,29 @@ fn run_invocation(
         || {
             let (lock, _) = &**state;
             let state = lock.lock().unwrap_or_else(|error| error.into_inner());
-            state.shutdown
-                || state
-                    .cancelled_invocations
-                    .contains(&invocation.invocation_id)
+            if state.shutdown.load(Ordering::Acquire) {
+                ExtensionInterruption::Terminate
+            } else if state
+                .cancelled_invocations
+                .contains(&invocation.invocation_id)
+            {
+                ExtensionInterruption::Cancel
+            } else {
+                ExtensionInterruption::None
+            }
         },
     );
     let (lock, _) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-    let shutting_down = state.shutdown;
-    let user_cancelled = state
+    state
         .cancelled_invocations
         .remove(&invocation.invocation_id);
     state.active_invocation_id = None;
     drop(state);
     if matches!(&result, Err(SupervisorError::Cancelled(_))) {
-        if user_cancelled && !shutting_down {
-            runtime.recover_after_cancellation(format!(
-                "recover-cancelled-{extension_id}-{}",
-                invocation.generation
-            ))?;
-        }
         return Ok(ExtensionInvocationOutcome::Cancelled);
     }
-    if !shutting_down
-        && matches!(
-            &result,
-            Err(SupervisorError::ChannelClosed
-                | SupervisorError::Protocol(_)
-                | SupervisorError::Timeout(_))
-        )
-    {
-        restart_or_terminate(
-            runtime,
-            format!("restart-invoke-{extension_id}-{}", invocation.generation),
-        )?;
-    }
     result.map(|(effect, has_output)| ExtensionInvocationOutcome::Completed { effect, has_output })
-}
-
-fn restart_or_terminate(
-    runtime: &mut ExtensionRuntime,
-    request_id: String,
-) -> Result<(), SupervisorError> {
-    match runtime.restart(request_id) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = runtime.terminate();
-            Err(error)
-        }
-    }
-}
-
-fn recover_if_exited(
-    runtime: &mut ExtensionRuntime,
-    extension_id: &str,
-    generation: u64,
-) -> Result<(), SupervisorError> {
-    runtime
-        .recover_if_exited(format!("recover-{extension_id}-{generation}"))
-        .map(|_| ())
 }
 
 fn set_error(error: &Mutex<Option<HostDiagnostic>>, value: Option<HostDiagnostic>) {
@@ -738,5 +676,29 @@ fn notify(notifier: &ExtensionNotifier) {
         .clone();
     if let Some(notify) = notify {
         notify();
+    }
+}
+
+// Capacity is an in-memory admission bound, not a timeout or a policy that drops
+// accepted work. Waiting releases the state lock so cancellation and shutdown work.
+const PENDING_WORK_CAPACITY: usize = 16;
+
+fn wait_for_capacity<'a>(
+    lock: &'a Mutex<ExtensionSearchState>,
+    changed: &Condvar,
+) -> Result<MutexGuard<'a, ExtensionSearchState>, SupervisorError> {
+    let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+    loop {
+        if state.closed || state.shutdown.load(Ordering::Acquire) {
+            return Err(SupervisorError::ChannelClosed);
+        }
+        if state.invocations.len() + state.view_events.len() + state.settings.len()
+            < PENDING_WORK_CAPACITY
+        {
+            return Ok(state);
+        }
+        state = changed
+            .wait(state)
+            .unwrap_or_else(|error| error.into_inner());
     }
 }

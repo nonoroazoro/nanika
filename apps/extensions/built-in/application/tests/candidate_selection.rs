@@ -1,18 +1,21 @@
 use crate::{ApplicationEntry, select_candidates};
 
 #[test]
-fn exact_matches_beyond_the_snapshot_limit_remain_searchable() {
+fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
     let mut entries = (0..5_001)
         .map(|index| entry(index, &format!("Application {index:04}")))
         .collect::<Vec<_>>();
     entries.push(entry(5_001, "Zettelkasten"));
 
-    let selected = select_candidates(&entries, "zettelkasten", 5_000);
+    let selected = select_candidates(&entries, "zettelkasten");
 
-    assert_eq!(selected.len(), 5_000);
-    assert_eq!(selected[0].title, "Zettelkasten");
+    assert_eq!(selected.len(), 5_002);
+    let candidate = selected
+        .last()
+        .expect("exact match should remain available");
+    assert_eq!(candidate.title, "Zettelkasten");
     assert_eq!(
-        selected[0].icon.as_ref().map(|icon| icon.key()),
+        candidate.icon.as_ref().map(|icon| icon.key()),
         Some("fallback")
     );
 }
@@ -21,7 +24,7 @@ fn exact_matches_beyond_the_snapshot_limit_remain_searchable() {
 fn small_snapshots_preserve_the_full_host_ranking_input() {
     let entries = vec![entry(0, "Zulu"), entry(1, "Alpha")];
 
-    let selected = select_candidates(&entries, "alpha", 5_000);
+    let selected = select_candidates(&entries, "alpha");
 
     assert_eq!(selected.len(), 2);
     assert_eq!(selected[0].title, "Zulu");
@@ -40,7 +43,7 @@ fn localized_names_keep_complete_original_names_searchable() {
 }
 
 #[test]
-fn aliases_beyond_the_snapshot_limit_remain_searchable() {
+fn complete_catalog_keeps_aliases_available_to_host_ranking() {
     let mut entries = (0..5_001)
         .map(|index| entry(index, &format!("Application {index:04}")))
         .collect::<Vec<_>>();
@@ -48,9 +51,11 @@ fn aliases_beyond_the_snapshot_limit_remain_searchable() {
     localized.normalized_tokens = "books".to_owned();
     entries.push(localized);
 
-    let selected = select_candidates(&entries, "books", 5_000);
+    let selected = select_candidates(&entries, "books");
 
-    assert_eq!(selected[0].title, "图书");
+    let candidate = selected.last().expect("alias should remain available");
+    assert_eq!(candidate.title, "图书");
+    assert_eq!(candidate.aliases, ["books"]);
 }
 
 fn entry(index: usize, name: &str) -> ApplicationEntry {

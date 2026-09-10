@@ -9,19 +9,6 @@ pub enum ApplicationError {
     Serialization(serde_json::Error),
 }
 
-impl ApplicationError {
-    pub(crate) fn is_corrupt_database(&self) -> bool {
-        matches!(
-            self,
-            Self::Database(rusqlite::Error::SqliteFailure(error, _))
-                if matches!(
-                    error.code,
-                    rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
-                )
-        )
-    }
-}
-
 impl Display for ApplicationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

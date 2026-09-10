@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use nanika_search::{MAX_USAGE_ROWS, USAGE_RETENTION_DAYS};
+use nanika_search::UsageKey;
 use rusqlite::{Connection, OptionalExtension, Result as SqlResult, params};
 
 use crate::{
@@ -63,14 +63,12 @@ impl HostDatabase {
         Ok(Self { connection })
     }
 
-    pub fn load_input_history(&self, limit: usize) -> SqlResult<Vec<String>> {
+    pub fn load_input_history(&self) -> SqlResult<Vec<String>> {
         let mut statement = self.connection.prepare(
-            "SELECT display_query FROM input_history ORDER BY last_used_at DESC, id DESC LIMIT ?1",
+            "SELECT display_query FROM input_history ORDER BY last_used_at DESC, id DESC",
         )?;
         let mut entries = statement
-            .query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
-                row.get(0)
-            })?
+            .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<String>>>()?;
         entries.reverse();
         Ok(entries)
@@ -231,7 +229,6 @@ impl HostDatabase {
         history_key: &str,
         display_query: &str,
         used_at: u64,
-        limit: usize,
     ) -> SqlResult<()> {
         let transaction = self.connection.unchecked_transaction()?;
         transaction.execute(
@@ -247,12 +244,6 @@ impl HostDatabase {
                 display_query,
                 i64::try_from(used_at).unwrap_or(i64::MAX),
             ],
-        )?;
-        transaction.execute(
-            "DELETE FROM input_history WHERE id NOT IN (
-                SELECT id FROM input_history ORDER BY last_used_at DESC, id DESC LIMIT ?1
-             )",
-            params![i64::try_from(limit).unwrap_or(i64::MAX)],
         )?;
         transaction.commit()
     }
@@ -271,7 +262,7 @@ impl HostDatabase {
                 extension_id, entry_id, action_id, query_context, execution_count, last_executed_at
              ) VALUES (?1, ?2, ?3, ?4, 1, ?5)
              ON CONFLICT(extension_id, entry_id, action_id, query_context) DO UPDATE SET
-                execution_count = MIN(usage_stats.execution_count + 1, 100),
+                execution_count = usage_stats.execution_count + 1,
                 last_executed_at = excluded.last_executed_at",
             params![
                 extension_id,
@@ -281,18 +272,46 @@ impl HostDatabase {
                 i64::try_from(executed_at).unwrap_or(i64::MAX),
             ],
         )?;
-        let cutoff = executed_at.saturating_sub(USAGE_RETENTION_DAYS.saturating_mul(86_400));
+        transaction.commit()
+    }
+
+    pub(crate) fn record_execution(
+        &self,
+        history_key: &str,
+        display_query: &str,
+        usage: &UsageKey,
+        history_used_at: u64,
+        executed_at: u64,
+    ) -> SqlResult<()> {
+        let transaction = self.connection.unchecked_transaction()?;
         transaction.execute(
-            "DELETE FROM usage_stats WHERE last_executed_at < ?1",
-            params![i64::try_from(cutoff).unwrap_or(i64::MAX)],
+            "INSERT INTO input_history (
+                normalized_query, display_query, use_count, first_used_at, last_used_at
+             ) VALUES (?1, ?2, 1, ?3, ?3)
+             ON CONFLICT(normalized_query) DO UPDATE SET
+                display_query = excluded.display_query,
+                use_count = input_history.use_count + 1,
+                last_used_at = excluded.last_used_at",
+            params![
+                history_key,
+                display_query,
+                i64::try_from(history_used_at).unwrap_or(i64::MAX),
+            ],
         )?;
         transaction.execute(
-            "DELETE FROM usage_stats WHERE rowid IN (
-                SELECT rowid FROM usage_stats
-                ORDER BY last_executed_at DESC, rowid DESC
-                LIMIT -1 OFFSET ?1
-             )",
-            params![i64::try_from(MAX_USAGE_ROWS).unwrap_or(i64::MAX)],
+            "INSERT INTO usage_stats (
+                extension_id, entry_id, action_id, query_context, execution_count, last_executed_at
+             ) VALUES (?1, ?2, ?3, ?4, 1, ?5)
+             ON CONFLICT(extension_id, entry_id, action_id, query_context) DO UPDATE SET
+                execution_count = usage_stats.execution_count + 1,
+                last_executed_at = excluded.last_executed_at",
+            params![
+                usage.extension_id,
+                usage.entry_id,
+                usage.action_id,
+                usage.query_context,
+                i64::try_from(executed_at).unwrap_or(i64::MAX),
+            ],
         )?;
         transaction.commit()
     }
@@ -322,23 +341,6 @@ impl HostDatabase {
                 kind.as_str(),
                 i64::try_from(updated_at).unwrap_or(i64::MAX),
             ],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn prune_usage(&self, now: u64) -> SqlResult<()> {
-        let cutoff = now.saturating_sub(USAGE_RETENTION_DAYS.saturating_mul(86_400));
-        self.connection.execute(
-            "DELETE FROM usage_stats WHERE last_executed_at < ?1",
-            params![i64::try_from(cutoff).unwrap_or(i64::MAX)],
-        )?;
-        self.connection.execute(
-            "DELETE FROM usage_stats WHERE rowid IN (
-                SELECT rowid FROM usage_stats
-                ORDER BY last_executed_at DESC, rowid DESC
-                LIMIT -1 OFFSET ?1
-             )",
-            params![i64::try_from(MAX_USAGE_ROWS).unwrap_or(i64::MAX)],
         )?;
         Ok(())
     }

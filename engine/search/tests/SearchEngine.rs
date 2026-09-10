@@ -91,3 +91,27 @@ fn ranking_tie_breaker_is_stable() {
     let snapshot = SearchEngine::new().query("tool", &candidates, &UsageMap::new(), 0);
     assert_eq!(snapshot.results[0].candidate.entry_id(), "a");
 }
+
+#[test]
+fn complete_catalog_remains_browsable_and_searchable() {
+    let entries = (0..2_000)
+        .map(|index| {
+            candidate(
+                &format!("entry-{index}"),
+                &format!("Application {index:04}"),
+                "open",
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut engine = SearchEngine::new();
+    for query in ["", "application"] {
+        let snapshot = engine.query(query, &entries, &UsageMap::new(), 0);
+        assert_eq!(snapshot.results.len(), entries.len());
+        assert_eq!(
+            snapshot.results.last().unwrap().candidate.entry_id(),
+            "entry-1999"
+        );
+    }
+    let snapshot = engine.query("Application 1999", &entries, &UsageMap::new(), 0);
+    assert_eq!(snapshot.results[0].candidate.entry_id(), "entry-1999");
+}

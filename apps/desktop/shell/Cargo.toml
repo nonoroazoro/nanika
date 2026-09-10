@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { workspace = true, features = ["codegen", "isolation"] }
 
 [dependencies]
+async-channel.workspace = true
 nanika-core = { path = "../../../engine/domain" }
 nanika-platform = { path = "../../../engine/platform" }
 nanika-protocol = { path = "../../../engine/extension-protocol" }

@@ -3,10 +3,11 @@ use std::ffi::OsString;
 use std::io::{self, BufReader, BufWriter, Read};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use nanika_protocol::{
     FrameError, Message, PROTOCOL_NAME, SettingUpdate, SettingsContribution, read_frame,
@@ -14,16 +15,20 @@ use nanika_protocol::{
 };
 
 use crate::{
-    ExtensionCommand, ExtensionLimits, ExtensionProcessTree, HostServiceHandler, SupervisorError,
-    configure_extension_command,
+    ExtensionCommand, ExtensionInterruption, ExtensionLimits, ExtensionNotifier,
+    ExtensionProcessTree, HostServiceHandler, SupervisorError, configure_extension_command,
 };
+
+enum ReceivePoll {
+    Message(Option<Message>),
+    Pending,
+}
 
 /// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
-    command: ExtensionCommand,
-    limits: ExtensionLimits,
-    restart_count: u32,
+    candidate_changes: ExtensionNotifier,
     initialized: bool,
+    shutdown_requested: Arc<AtomicBool>,
     child: Child,
     process_tree: ExtensionProcessTree,
     input: Option<BufWriter<ChildStdin>>,
@@ -53,13 +58,13 @@ impl ExtensionProcess {
             program: program.as_ref().to_path_buf(),
             arguments: arguments.into_iter().collect(),
         };
-        Self::start(command, limits, 0)
+        Self::start(command, limits, Arc::new(Mutex::new(None)))
     }
 
     fn start(
         command: ExtensionCommand,
         limits: ExtensionLimits,
-        restart_count: u32,
+        candidate_changes: ExtensionNotifier,
     ) -> io::Result<Self> {
         let mut process = Command::new(&command.program);
         process
@@ -90,12 +95,23 @@ impl ExtensionProcess {
         };
 
         let (sender, receiver) = mpsc::sync_channel(limits.frame_queue_capacity.max(1));
+        let changes = Arc::clone(&candidate_changes);
         let reader_thread = match std::thread::Builder::new()
             .name("nanika-extension-protocol".to_owned())
             .spawn(move || {
                 let mut reader = BufReader::new(output);
                 loop {
                     let frame = read_frame(&mut reader);
+                    if matches!(frame, Ok(Some(Message::CandidatesChanged))) {
+                        let notify = changes
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .clone();
+                        if let Some(notify) = notify {
+                            notify();
+                        }
+                        continue;
+                    }
                     let finished = !matches!(frame, Ok(Some(_)));
                     if sender.send(frame).is_err() || finished {
                         break;
@@ -112,9 +128,10 @@ impl ExtensionProcess {
         let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
         let stderr_output = Arc::clone(&stderr_tail);
         let stderr_limit = limits.stderr_tail_bytes;
+        let stderr_source = command.program.display().to_string();
         let stderr_thread = match std::thread::Builder::new()
             .name("nanika-extension-stderr".to_owned())
-            .spawn(move || drain_stderr(stderr, &stderr_output, stderr_limit))
+            .spawn(move || drain_stderr(stderr, &stderr_output, stderr_limit, &stderr_source))
         {
             Ok(thread) => thread,
             Err(error) => {
@@ -126,10 +143,9 @@ impl ExtensionProcess {
         };
 
         Ok(Self {
-            command,
-            limits,
-            restart_count,
+            candidate_changes,
             initialized: false,
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
             process_tree,
             input: Some(BufWriter::new(input)),
@@ -142,6 +158,13 @@ impl ExtensionProcess {
         })
     }
 
+    pub(crate) fn set_candidate_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
+        *self
+            .candidate_changes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(notify);
+    }
+
     pub(crate) fn set_host_services(
         &mut self,
         extension_id: String,
@@ -151,25 +174,48 @@ impl ExtensionProcess {
         self.host_services = Some(host_services);
     }
 
+    pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
+        self.shutdown_requested = signal;
+    }
+
+    fn check_shutdown(&mut self) -> Result<(), SupervisorError> {
+        if self.shutdown_requested.load(Ordering::Acquire) {
+            self.terminate()?;
+            return Err(SupervisorError::Cancelled("application shutdown"));
+        }
+        Ok(())
+    }
+
     fn send(&mut self, message: &Message) -> Result<(), SupervisorError> {
+        self.check_shutdown()?;
         let input = self.input.as_mut().ok_or(SupervisorError::ChannelClosed)?;
         write_frame(input, message).map_err(SupervisorError::Protocol)
     }
 
-    fn receive_timeout(
-        &mut self,
-        timeout: Duration,
-        operation: &'static str,
-    ) -> Result<Option<Message>, SupervisorError> {
+    fn poll_receive(&mut self, interval: Duration) -> Result<ReceivePoll, SupervisorError> {
+        self.check_shutdown()?;
         match self
             .output
             .as_ref()
             .ok_or(SupervisorError::ChannelClosed)?
-            .recv_timeout(timeout)
+            .recv_timeout(interval)
         {
-            Ok(frame) => frame.map_err(SupervisorError::Protocol),
-            Err(RecvTimeoutError::Timeout) => Err(SupervisorError::Timeout(operation)),
+            Ok(frame) => frame
+                .map(ReceivePoll::Message)
+                .map_err(SupervisorError::Protocol),
+            Err(RecvTimeoutError::Timeout) => Ok(ReceivePoll::Pending),
             Err(RecvTimeoutError::Disconnected) => Err(SupervisorError::ChannelClosed),
+        }
+    }
+
+    fn receive(&mut self) -> Result<Option<Message>, SupervisorError> {
+        // This interval observes explicit shutdown; it never expires an operation.
+        // All protocol waits, including initialization and settings, use this path.
+        loop {
+            match self.poll_receive(Duration::from_millis(25))? {
+                ReceivePoll::Message(message) => return Ok(message),
+                ReceivePoll::Pending => {}
+            }
         }
     }
 
@@ -185,7 +231,7 @@ impl ExtensionProcess {
             let _ = self.terminate();
             return Err(error);
         }
-        let result = match self.receive_timeout(self.limits.handshake_timeout, "initialization") {
+        let result = match self.receive() {
             Err(error) => Err(error),
             Ok(Some(Message::Initialized {
                 request_id: response_id,
@@ -208,14 +254,12 @@ impl ExtensionProcess {
         request_id: impl Into<String>,
         generation: u64,
         query: impl Into<String>,
-        timeout: Duration,
     ) -> Result<Vec<nanika_protocol::Candidate>, SupervisorError> {
         let mut latest = Vec::new();
         self.query_incremental(
             request_id,
             generation,
             query,
-            timeout,
             |entries| {
                 latest = entries;
                 Ok(())
@@ -240,9 +284,8 @@ impl ExtensionProcess {
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
-        timeout: Duration,
     ) -> Result<(), SupervisorError> {
-        self.refresh_cancellable(request_id, generation, timeout, || false)
+        self.refresh_cancellable(request_id, generation, || false)
             .map(|_| ())
     }
 
@@ -255,11 +298,7 @@ impl ExtensionProcess {
         self.send(&Message::GetSettings {
             request_id: request_id.clone(),
         })?;
-        let result = self.receive_settings(request_id, false);
-        if settings_transport_failed(&result) {
-            let _ = self.terminate();
-        }
-        result
+        self.receive_settings(request_id, false)
     }
 
     pub fn update_settings(
@@ -273,18 +312,13 @@ impl ExtensionProcess {
             request_id: request_id.clone(),
             updates,
         })?;
-        let result = self.receive_settings(request_id, true);
-        if settings_transport_failed(&result) {
-            let _ = self.terminate();
-        }
-        result
+        self.receive_settings(request_id, true)
     }
 
     pub(crate) fn refresh_cancellable(
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
-        timeout: Duration,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
         self.ensure_initialized()?;
@@ -293,7 +327,6 @@ impl ExtensionProcess {
             request_id: request_id.clone(),
             generation,
         })?;
-        let deadline = Instant::now() + timeout;
         loop {
             if should_cancel() {
                 self.send(&Message::Cancel {
@@ -302,19 +335,9 @@ impl ExtensionProcess {
                 })?;
                 return Ok(false);
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                let _ = self.send(&Message::Cancel {
-                    request_id: request_id.clone(),
-                    generation,
-                });
-                return Err(SupervisorError::Timeout("extension refresh"));
-            }
-            let wait = remaining.min(Duration::from_millis(25));
-            let message = match self.receive_timeout(wait, "extension refresh") {
-                Ok(message) => message,
-                Err(SupervisorError::Timeout(_)) => continue,
-                Err(error) => return Err(error),
+            let message = match self.poll_receive(Duration::from_millis(25))? {
+                ReceivePoll::Message(message) => message,
+                ReceivePoll::Pending => continue,
             };
             match message {
                 Some(Message::Refreshed {
@@ -327,10 +350,14 @@ impl ExtensionProcess {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension refresh failed with {code}: {message}"
-                    )));
+                }) => {
+                    return Err(extension_reported_error(
+                        "refresh",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -346,6 +373,26 @@ impl ExtensionProcess {
         action_id: impl Into<String>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
+        self.invoke_interruptible(request_id, generation, entry_id, action_id, || {
+            if should_cancel() {
+                ExtensionInterruption::Cancel
+            } else {
+                ExtensionInterruption::None
+            }
+        })
+    }
+
+    pub(crate) fn invoke_interruptible(
+        &mut self,
+        request_id: impl Into<String>,
+        generation: u64,
+        entry_id: impl Into<String>,
+        action_id: impl Into<String>,
+        mut interruption: impl FnMut() -> ExtensionInterruption,
+    ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
+        if matches!(interruption(), ExtensionInterruption::Cancel) {
+            return Err(SupervisorError::Cancelled("action"));
+        }
         self.ensure_initialized()?;
         let request_id = request_id.into();
         self.send(&Message::Invoke {
@@ -354,22 +401,26 @@ impl ExtensionProcess {
             entry_id: entry_id.into(),
             action_id: action_id.into(),
         })?;
-        let deadline = Instant::now() + self.limits.action_timeout;
+        let mut cancellation_sent = false;
         loop {
-            if should_cancel() {
-                self.terminate()?;
-                return Err(SupervisorError::Cancelled("action"));
+            match interruption() {
+                ExtensionInterruption::None => {}
+                ExtensionInterruption::Cancel if !cancellation_sent => {
+                    self.send(&Message::Cancel {
+                        request_id: request_id.clone(),
+                        generation,
+                    })?;
+                    cancellation_sent = true;
+                }
+                ExtensionInterruption::Cancel => {}
+                ExtensionInterruption::Terminate => {
+                    self.terminate()?;
+                    return Err(SupervisorError::Cancelled("action"));
+                }
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                self.terminate()?;
-                return Err(SupervisorError::Timeout("action result"));
-            }
-            let wait = remaining.min(Duration::from_millis(25));
-            let message = match self.receive_timeout(wait, "action result") {
-                Ok(message) => message,
-                Err(SupervisorError::Timeout(_)) => continue,
-                Err(error) => return Err(error),
+            let message = match self.poll_receive(Duration::from_millis(25))? {
+                ReceivePoll::Message(message) => message,
+                ReceivePoll::Pending => continue,
             };
             match message {
                 Some(Message::Result {
@@ -393,18 +444,24 @@ impl ExtensionProcess {
                         parent_request_id,
                         service_generation,
                         request,
-                        deadline,
-                        &mut should_cancel,
+                        &mut interruption,
                     )?;
                 }
                 Some(Message::Error {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension action failed with {code}: {message}"
-                    )));
+                }) => {
+                    if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
+                        return Err(SupervisorError::Cancelled("action"));
+                    }
+                    return Err(extension_reported_error(
+                        "action",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -417,7 +474,6 @@ impl ExtensionProcess {
         request_id: impl Into<String>,
         generation: u64,
         query: impl Into<String>,
-        timeout: Duration,
         mut publish: impl FnMut(Vec<nanika_protocol::Candidate>) -> Result<(), SupervisorError>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
@@ -428,30 +484,18 @@ impl ExtensionProcess {
             generation,
             query: query.into(),
         })?;
-        let deadline = Instant::now() + timeout;
+        let mut cancellation_sent = false;
         loop {
-            if should_cancel() {
+            if should_cancel() && !cancellation_sent {
                 self.send(&Message::Cancel {
                     request_id: request_id.clone(),
                     generation,
                 })?;
-                return Ok(false);
+                cancellation_sent = true;
             }
-            let now = Instant::now();
-            if now >= deadline {
-                let _ = self.send(&Message::Cancel {
-                    request_id: request_id.clone(),
-                    generation,
-                });
-                return Err(SupervisorError::Timeout("query snapshot"));
-            }
-            let wait = deadline
-                .saturating_duration_since(now)
-                .min(Duration::from_millis(25));
-            let message = match self.receive_timeout(wait, "query snapshot") {
-                Ok(message) => message,
-                Err(SupervisorError::Timeout(_)) => continue,
-                Err(error) => return Err(error),
+            let message = match self.poll_receive(Duration::from_millis(25))? {
+                ReceivePoll::Message(message) => message,
+                ReceivePoll::Pending => continue,
             };
             match message {
                 Some(Message::Snapshot {
@@ -460,19 +504,31 @@ impl ExtensionProcess {
                     complete,
                     entries,
                 }) if response_id == request_id && response_generation == generation => {
-                    publish(entries)?;
+                    if !cancellation_sent {
+                        publish(entries)?;
+                    }
                     if complete {
-                        return Ok(true);
+                        return Ok(!cancellation_sent);
                     }
                 }
                 Some(Message::Error {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension query failed with {code}: {message}"
-                    )));
+                }) => {
+                    if cancellation_sent && response_id.as_deref() == Some(&request_id) {
+                        if code != "cancelled" {
+                            tracing::warn!(%request_id, %code, %message, "superseded query failed");
+                        }
+                        return Ok(false);
+                    }
+                    return Err(extension_reported_error(
+                        "query",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -507,23 +563,17 @@ impl ExtensionProcess {
             revision,
             event,
         })?;
-        let deadline = Instant::now() + self.limits.action_timeout;
         loop {
             if should_cancel() {
-                self.terminate()?;
+                self.send(&Message::Cancel {
+                    request_id: request_id.clone(),
+                    generation,
+                })?;
                 return Err(SupervisorError::Cancelled("view event"));
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                self.terminate()?;
-                return Err(SupervisorError::Timeout("view update"));
-            }
-            let message = match self
-                .receive_timeout(remaining.min(Duration::from_millis(25)), "view update")
-            {
-                Ok(message) => message,
-                Err(SupervisorError::Timeout(_)) => continue,
-                Err(error) => return Err(error),
+            let message = match self.poll_receive(Duration::from_millis(25))? {
+                ReceivePoll::Message(message) => message,
+                ReceivePoll::Pending => continue,
             };
             match message {
                 Some(Message::ViewUpdated {
@@ -561,23 +611,33 @@ impl ExtensionProcess {
                     generation: service_generation,
                     request,
                 }) if parent_request_id == request_id && service_generation == generation => {
+                    let mut interruption = || {
+                        if should_cancel() {
+                            ExtensionInterruption::Cancel
+                        } else {
+                            ExtensionInterruption::None
+                        }
+                    };
                     self.handle_host_request(
                         service_request_id,
                         parent_request_id,
                         service_generation,
                         request,
-                        deadline,
-                        &mut should_cancel,
+                        &mut interruption,
                     )?;
                 }
                 Some(Message::Error {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension view event failed with {code}: {message}"
-                    )));
+                }) => {
+                    return Err(extension_reported_error(
+                        "view event",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -597,13 +657,8 @@ impl ExtensionProcess {
             request_id: request_id.clone(),
             view_id: view_id.clone(),
         })?;
-        let deadline = Instant::now() + self.limits.action_timeout;
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(SupervisorError::Timeout("view close"));
-            }
-            match self.receive_timeout(remaining.min(Duration::from_millis(25)), "view close")? {
+            match self.receive()? {
                 Some(Message::ViewClosed {
                     request_id: response_id,
                     view_id: response_view_id,
@@ -612,10 +667,14 @@ impl ExtensionProcess {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension view close failed with {code}: {message}"
-                    )));
+                }) => {
+                    return Err(extension_reported_error(
+                        "view close",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -627,49 +686,17 @@ impl ExtensionProcess {
         self.child.try_wait()
     }
 
-    pub fn restart(&mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
-        if self.restart_count >= self.limits.max_restarts {
-            return Err(SupervisorError::RestartLimit);
-        }
-        self.restart_with_count(request_id, self.restart_count + 1)
-    }
-
-    pub(crate) fn recover_after_cancellation(
-        &mut self,
-        request_id: impl Into<String>,
-    ) -> Result<bool, SupervisorError> {
-        if self.child.try_wait()?.is_none() {
-            return Ok(false);
-        }
-        self.restart_with_count(request_id, self.restart_count)?;
-        Ok(true)
-    }
-
-    fn restart_with_count(
-        &mut self,
-        request_id: impl Into<String>,
-        restart_count: u32,
-    ) -> Result<(), SupervisorError> {
-        let extension_id = self.extension_id.clone();
-        let host_services = self.host_services.clone();
-        self.terminate()?;
-        let mut replacement =
-            Self::start(self.command.clone(), self.limits.clone(), restart_count)?;
-        replacement.extension_id = extension_id;
-        replacement.host_services = host_services;
-        *self = replacement;
-        self.initialize(request_id)
-    }
-
-    pub fn recover_if_exited(
-        &mut self,
-        request_id: impl Into<String>,
-    ) -> Result<bool, SupervisorError> {
-        if self.child.try_wait()?.is_none() {
-            return Ok(false);
-        }
-        self.restart(request_id)?;
-        Ok(true)
+    pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
+        let Some(status) = self.child.try_wait()? else {
+            return Ok(());
+        };
+        let stderr = self.stderr_tail();
+        let detail = if stderr.trim().is_empty() {
+            format!("extension process exited with {status}")
+        } else {
+            format!("extension process exited with {status}; stderr: {stderr}")
+        };
+        Err(SupervisorError::UnexpectedMessage(detail))
     }
 
     pub fn stderr_tail(&self) -> String {
@@ -720,13 +747,8 @@ impl ExtensionProcess {
         self.send(&Message::Shutdown {
             request_id: request_id.clone(),
         })?;
-        let acknowledgement_deadline = Instant::now() + self.limits.shutdown_timeout;
         loop {
-            let remaining = acknowledgement_deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(SupervisorError::Timeout("shutdown acknowledgement"));
-            }
-            match self.receive_timeout(remaining, "shutdown acknowledgement")? {
+            match self.receive()? {
                 Some(Message::ShutdownAck {
                     request_id: response_id,
                 }) if response_id == request_id => break,
@@ -734,14 +756,7 @@ impl ExtensionProcess {
                 None => return Err(SupervisorError::ChannelClosed),
             }
         }
-        let deadline = Instant::now() + self.limits.shutdown_timeout;
-        while self.child.try_wait()?.is_none() {
-            if Instant::now() >= deadline {
-                self.terminate()?;
-                return Err(SupervisorError::Timeout("process exit"));
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        self.child.wait()?;
         self.input.take();
         self.output.take();
         self.join_threads();
@@ -772,13 +787,8 @@ impl ExtensionProcess {
         request_id: String,
         updated: bool,
     ) -> Result<SettingsContribution, SupervisorError> {
-        let deadline = Instant::now() + self.limits.settings_timeout;
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(SupervisorError::Timeout("extension settings"));
-            }
-            match self.receive_timeout(remaining, "extension settings")? {
+            match self.receive()? {
                 Some(Message::Settings {
                     request_id: response_id,
                     contribution,
@@ -801,10 +811,14 @@ impl ExtensionProcess {
                     request_id: response_id,
                     code,
                     message,
-                }) if response_id.as_deref().is_none_or(|id| id == request_id) => {
-                    return Err(SupervisorError::UnexpectedMessage(format!(
-                        "extension settings failed with {code}: {message}"
-                    )));
+                }) => {
+                    return Err(extension_reported_error(
+                        "settings",
+                        &request_id,
+                        response_id.as_deref(),
+                        &code,
+                        &message,
+                    ));
                 }
                 Some(_) => {}
                 None => return Err(SupervisorError::ChannelClosed),
@@ -818,27 +832,34 @@ impl ExtensionProcess {
         parent_request_id: String,
         generation: u64,
         request: nanika_protocol::HostServiceRequest,
-        deadline: Instant,
-        should_cancel: &mut impl FnMut() -> bool,
+        interruption: &mut impl FnMut() -> ExtensionInterruption,
     ) -> Result<(), SupervisorError> {
+        if matches!(interruption(), ExtensionInterruption::Cancel) {
+            return self.send(&Message::Error {
+                request_id: Some(request_id),
+                code: "cancelled".to_owned(),
+                message: "action was cancelled before host service submission".to_owned(),
+            });
+        }
         let receiver = self
             .extension_id
             .as_deref()
             .zip(self.host_services.as_deref())
             .ok_or_else(|| "host services are unavailable".to_owned())
-            .and_then(|(extension_id, services)| services.submit(extension_id, request, deadline));
+            .and_then(|(extension_id, services)| services.submit(extension_id, request));
         let result = match receiver {
             Ok(receiver) => loop {
-                if should_cancel() {
-                    self.terminate()?;
-                    return Err(SupervisorError::Cancelled("host service"));
+                match interruption() {
+                    ExtensionInterruption::None => {}
+                    // Submission already accepted a potentially side-effecting operation.
+                    // Cancellation cannot retract it. Deliver its concrete outcome first.
+                    ExtensionInterruption::Cancel => {}
+                    ExtensionInterruption::Terminate => {
+                        self.terminate()?;
+                        return Err(SupervisorError::Cancelled("host service"));
+                    }
                 }
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    self.terminate()?;
-                    return Err(SupervisorError::Timeout("host service"));
-                }
-                match receiver.recv_timeout(remaining.min(Duration::from_millis(25))) {
+                match receiver.recv_timeout(Duration::from_millis(25)) {
                     Ok(result) => break result,
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => {
@@ -870,13 +891,27 @@ impl Drop for ExtensionProcess {
     }
 }
 
-fn drain_stderr(mut stderr: impl Read, output: &Arc<Mutex<VecDeque<u8>>>, byte_limit: usize) {
+fn drain_stderr(
+    mut stderr: impl Read,
+    output: &Arc<Mutex<VecDeque<u8>>>,
+    byte_limit: usize,
+    source: &str,
+) {
     let mut chunk = [0; 4096];
     loop {
         let read = match stderr.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
+            Err(error) => {
+                tracing::error!(extension_process = source, %error, "could not read extension stderr");
+                break;
+            }
             Ok(read) => read,
         };
+        tracing::info!(
+            extension_process = source,
+            message = %String::from_utf8_lossy(&chunk[..read]),
+            "extension stderr"
+        );
         if byte_limit == 0 {
             continue;
         }
@@ -893,11 +928,23 @@ fn cleanup_failed_spawn(child: &mut Child) {
     let _ = child.wait();
 }
 
-fn settings_transport_failed<T>(result: &Result<T, SupervisorError>) -> bool {
-    matches!(
-        result,
-        Err(SupervisorError::ChannelClosed
-            | SupervisorError::Protocol(_)
-            | SupervisorError::Timeout(_))
-    )
+fn extension_reported_error(
+    operation: &str,
+    expected_request_id: &str,
+    response_request_id: Option<&str>,
+    code: &str,
+    message: &str,
+) -> SupervisorError {
+    let correlation = match response_request_id {
+        Some(response_request_id) if response_request_id == expected_request_id => String::new(),
+        Some(response_request_id) => format!(
+            "uncorrelated error response for request {response_request_id} while waiting for {expected_request_id}: "
+        ),
+        None => format!(
+            "uncorrelated error response without a request id while waiting for {expected_request_id}: "
+        ),
+    };
+    SupervisorError::UnexpectedMessage(format!(
+        "{correlation}extension {operation} failed with {code}: {message}"
+    ))
 }

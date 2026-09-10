@@ -1,5 +1,4 @@
 use std::sync::mpsc::Receiver;
-use std::time::Instant;
 
 use nanika_protocol::{HostServiceRequest, HostServiceResponse};
 
@@ -9,6 +8,5 @@ pub trait HostServiceHandler: Send + Sync {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        deadline: Instant,
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String>;
 }

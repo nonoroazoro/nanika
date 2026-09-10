@@ -46,9 +46,14 @@ impl ClipboardMonitor {
     }
 
     fn stop(&mut self) {
+        if self.thread.is_none() {
+            return;
+        }
         self.shutdown.take();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            eprintln!("clipboard watcher thread panicked");
         }
     }
 }

@@ -1,0 +1,267 @@
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use nanika_host::RuntimeService;
+use nanika_storage::NanikaPaths;
+
+static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
+
+const WAIT: Duration = Duration::from_secs(5);
+const HEALTHY: &str = "com.nanika.application";
+const DELAYED: &str = "com.nanika.script";
+
+struct Fixture {
+    paths: NanikaPaths,
+    binary: PathBuf,
+    inventory: String,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let sequence = NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed);
+        let name = format!(
+            "nanika-runtime-fixture-{}-{unique}-{sequence}",
+            std::process::id()
+        );
+        let root = std::env::temp_dir().join(&name);
+        std::fs::create_dir_all(&root).unwrap();
+        let binary = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        std::fs::copy(env!("CARGO_BIN_EXE_nanika-extension-fixture"), &binary).unwrap();
+        let extensions = [HEALTHY, DELAYED].map(|id| {
+            serde_json::json!({
+                "id": id,
+                "binaryName": name,
+                "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+                "contributions": { "rootSearch": true }
+            })
+        });
+        let inventory = serde_json::json!({ "extensions": extensions }).to_string();
+        Self {
+            paths: NanikaPaths::from_roots(&root, root.join("cache"), root.join("config")),
+            binary,
+            inventory,
+        }
+    }
+
+    fn block(&self, operation: &str) {
+        std::fs::write(
+            self.paths
+                .app_data_root()
+                .join(format!("{operation}.block")),
+            b"block",
+        )
+        .unwrap();
+    }
+
+    fn release(&self, operation: &str) {
+        std::fs::remove_file(
+            self.paths
+                .app_data_root()
+                .join(format!("{operation}.block")),
+        )
+        .unwrap();
+    }
+
+    fn entered(&self, operation: &str) -> bool {
+        self.paths
+            .app_data_root()
+            .join(format!("{operation}.entered"))
+            .exists()
+    }
+
+    fn start(&self) -> RuntimeService {
+        let paths = self.paths.clone();
+        let inventory = self.inventory.clone();
+        let (sender, receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let _ = sender.send(RuntimeService::start(&paths, &inventory));
+        });
+        let result = receiver.recv_timeout(WAIT);
+        if result.is_err() {
+            self.release_all();
+            thread.join().unwrap();
+        }
+        result
+            .expect("one pending extension must not block runtime startup")
+            .expect("runtime starts")
+    }
+
+    fn stop(&self, runtime: RuntimeService) {
+        let (sender, receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            drop(runtime);
+            let _ = sender.send(());
+        });
+        let result = receiver.recv_timeout(WAIT);
+        // Release the fixture on regression so a failing test never strands a process.
+        self.release_all();
+        thread.join().unwrap();
+        result.expect("shutdown must interrupt pending extension requests");
+    }
+
+    fn release_all(&self) {
+        for entry in std::fs::read_dir(self.paths.app_data_root())
+            .unwrap()
+            .flatten()
+        {
+            if entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "block")
+            {
+                std::fs::remove_file(entry.path()).unwrap();
+            }
+        }
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.release_all();
+        std::fs::remove_dir_all(self.paths.app_data_root()).unwrap();
+        std::fs::remove_file(&self.binary).unwrap();
+    }
+}
+
+fn wait_until(mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !condition() {
+        assert!(
+            Instant::now() < deadline,
+            "fixture condition was not observed"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn has_result(runtime: &RuntimeService, generation: u64, extension_id: &str) -> bool {
+    runtime.latest_snapshot().is_some_and(|snapshot| {
+        snapshot.generation == generation
+            && snapshot
+                .results
+                .iter()
+                .any(|result| result.candidate.extension_id() == extension_id)
+    })
+}
+
+#[test]
+fn pending_initialization_is_isolated_and_late_worker_uses_latest_query() {
+    let fixture = Fixture::new();
+    let operation = format!("initialize-{DELAYED}");
+    fixture.block(&operation);
+    let runtime = fixture.start();
+    wait_until(|| fixture.entered(&operation));
+    let first = runtime.begin_query("first").unwrap();
+    wait_until(|| has_result(&runtime, first, HEALTHY));
+    assert!(!has_result(&runtime, first, DELAYED));
+
+    let latest = runtime.begin_query("latest").unwrap();
+    wait_until(|| has_result(&runtime, latest, HEALTHY));
+    fixture.release(&operation);
+    wait_until(|| has_result(&runtime, latest, DELAYED));
+    assert!(
+        runtime
+            .latest_snapshot()
+            .unwrap()
+            .results
+            .iter()
+            .all(|result| result.candidate.title() == "latest")
+    );
+    fixture.stop(runtime);
+}
+
+#[test]
+fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let first = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, first, HEALTHY) && has_result(&runtime, first, DELAYED));
+    std::fs::write(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("fail-search-{DELAYED}")),
+        b"fail",
+    )
+    .unwrap();
+    let generation = runtime.begin_query("failure").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY)
+            && runtime
+                .search_warnings()
+                .iter()
+                .any(|warning| warning.contains(DELAYED))
+    });
+    assert!(runtime.active_error().is_none());
+    assert!(!has_result(&runtime, generation, DELAYED));
+    assert!(
+        runtime
+            .search_warnings()
+            .iter()
+            .all(|warning| !warning.contains("internal cause"))
+    );
+    runtime
+        .invoke(
+            generation,
+            HEALTHY,
+            "fixture.entry",
+            "fixture.run",
+            "failure",
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    fixture.stop(runtime);
+}
+
+#[test]
+fn shutdown_interrupts_initialization_and_initial_settings() {
+    for prefix in ["initialize", "settings"] {
+        let fixture = Fixture::new();
+        let operation = format!("{prefix}-{DELAYED}");
+        fixture.block(&operation);
+        let runtime = fixture.start();
+        wait_until(|| fixture.entered(&operation));
+        fixture.stop(runtime);
+    }
+}
+
+#[test]
+fn shutdown_interrupts_a_pending_settings_update() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, DELAYED));
+    fixture.block("update-settings");
+    runtime
+        .update_settings(DELAYED, "update-settings", Vec::new())
+        .unwrap();
+    wait_until(|| fixture.entered("update-settings"));
+    fixture.stop(runtime);
+}
+
+#[test]
+fn zero_extension_host_is_ready_without_an_initialization_barrier() {
+    let mut fixture = Fixture::new();
+    fixture.inventory = "{\"extensions\":[]}".to_owned();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("empty").unwrap();
+    wait_until(|| {
+        runtime
+            .latest_snapshot()
+            .is_some_and(|snapshot| snapshot.generation == generation)
+    });
+    assert!(runtime.latest_snapshot().unwrap().results.is_empty());
+    fixture.stop(runtime);
+}

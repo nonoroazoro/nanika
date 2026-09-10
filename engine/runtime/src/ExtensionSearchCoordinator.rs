@@ -1,28 +1,24 @@
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 
-use nanika_extension_package::{CommandMode, ExtensionContributions};
+use nanika_extension_package::ExtensionContributions;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationOutput, ExtensionInvocationResult, ExtensionNotifier,
+    ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
     ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionSettingsResult,
     ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate, HostServiceHandler,
     SupervisorError,
 };
 
-const INVOCATION_RESULT_CAPACITY: usize = 16;
 const VIEW_UPDATE_CAPACITY: usize = 16;
 
 /// Collection of fixed extension workers queried by one host generation.
 pub struct ExtensionSearchCoordinator {
     workers: Vec<ExtensionSearchWorker>,
-    results: Receiver<ExtensionInvocationResult>,
-    result_sender: SyncSender<ExtensionInvocationResult>,
-    view_updates: Receiver<ExtensionViewUpdate>,
-    view_update_sender: SyncSender<ExtensionViewUpdate>,
-    pending_invocations: AtomicUsize,
+    view_updates: async_channel::Receiver<ExtensionViewUpdate>,
+    view_update_sender: async_channel::Sender<ExtensionViewUpdate>,
     next_invocation_id: AtomicU64,
     next_view_request_id: AtomicU64,
     notifier: ExtensionNotifier,
@@ -31,15 +27,11 @@ pub struct ExtensionSearchCoordinator {
 
 impl ExtensionSearchCoordinator {
     pub fn new() -> Self {
-        let (result_sender, results) = mpsc::sync_channel(INVOCATION_RESULT_CAPACITY);
-        let (view_update_sender, view_updates) = mpsc::sync_channel(VIEW_UPDATE_CAPACITY);
+        let (view_update_sender, view_updates) = async_channel::bounded(VIEW_UPDATE_CAPACITY);
         Self {
             workers: Vec::new(),
-            results,
-            result_sender,
             view_updates,
             view_update_sender,
-            pending_invocations: AtomicUsize::new(0),
             next_invocation_id: AtomicU64::new(1),
             next_view_request_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
@@ -76,7 +68,6 @@ impl ExtensionSearchCoordinator {
             search,
             contributions,
             ExtensionSearchWorkerContext {
-                invocation_results: self.result_sender.clone(),
                 view_updates: self.view_update_sender.clone(),
                 notifier: Arc::clone(&self.notifier),
                 host_services: self.host_services.clone(),
@@ -85,24 +76,18 @@ impl ExtensionSearchCoordinator {
         Ok(())
     }
 
-    pub(crate) fn command_mode(&self, extension_id: &str, entry_id: &str) -> Option<CommandMode> {
-        self.workers
-            .iter()
-            .find(|worker| worker.extension_id() == extension_id)
-            .and_then(|worker| worker.command_mode(entry_id))
-    }
-
     pub fn query(&self, generation: u64, query: &str) {
         for worker in &self.workers {
             worker.query(generation, query);
         }
     }
 
-    pub(crate) fn ready_query_count(&self) -> usize {
+    pub(crate) fn ready_extension_ids(&self) -> Vec<String> {
         self.workers
             .iter()
             .filter(|worker| worker.is_query_ready())
-            .count()
+            .map(|worker| worker.extension_id().to_owned())
+            .collect()
     }
 
     pub fn refresh(&self, extension_id: &str, generation: u64) -> Result<(), SupervisorError> {
@@ -124,6 +109,17 @@ impl ExtensionSearchCoordinator {
             .find_map(ExtensionSearchWorker::last_error)
     }
 
+    pub(crate) fn warnings(&self) -> Vec<String> {
+        self.workers
+            .iter()
+            .filter_map(|worker| {
+                worker.last_error().map(|diagnostic| {
+                    format!("{}: {}", worker.extension_id(), diagnostic.user_message())
+                })
+            })
+            .collect()
+    }
+
     pub fn invoke(
         &self,
         extension_id: &str,
@@ -131,7 +127,7 @@ impl ExtensionSearchCoordinator {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
         query_context: impl Into<String>,
-    ) -> Result<u64, SupervisorError> {
+    ) -> Result<Receiver<Result<ExtensionInvocationOutcome, String>>, SupervisorError> {
         let worker = self
             .workers
             .iter()
@@ -141,24 +137,18 @@ impl ExtensionSearchCoordinator {
                     "extension search worker does not exist: {extension_id}"
                 ))
             })?;
-        self.pending_invocations
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
-                (pending < INVOCATION_RESULT_CAPACITY).then_some(pending + 1)
-            })
-            .map_err(|_| SupervisorError::QueueFull)?;
         let invocation_id = self.next_invocation_id.fetch_add(1, Ordering::Relaxed);
+        let (response, completion) = mpsc::sync_channel(1);
         let invocation = ExtensionInvocation {
             invocation_id,
             generation,
             entry_id: entry_id.into(),
             action_id: action_id.into(),
             query_context: query_context.into(),
+            response,
         };
-        if let Err(error) = worker.invoke(invocation) {
-            self.pending_invocations.fetch_sub(1, Ordering::AcqRel);
-            return Err(error);
-        }
-        Ok(invocation_id)
+        worker.invoke(invocation)?;
+        Ok(completion)
     }
 
     pub fn cancel_invocation(
@@ -234,15 +224,12 @@ impl ExtensionSearchCoordinator {
         Ok(request_id)
     }
 
-    pub(crate) fn take_results(&self) -> Vec<ExtensionInvocationResult> {
-        let results = self.results.try_iter().collect::<Vec<_>>();
-        self.pending_invocations
-            .fetch_sub(results.len(), Ordering::AcqRel);
-        results
-    }
-
     pub(crate) fn take_view_updates(&self) -> Vec<ExtensionViewUpdate> {
-        self.view_updates.try_iter().collect()
+        let mut updates = Vec::new();
+        while let Ok(update) = self.view_updates.try_recv() {
+            updates.push(update);
+        }
+        updates
     }
 
     pub(crate) fn take_settings(&self) -> Vec<ExtensionSettingsResult> {
@@ -288,6 +275,7 @@ impl ExtensionSearchCoordinator {
     }
 
     pub fn shutdown(&mut self) {
+        self.view_updates.close();
         for worker in &self.workers {
             worker.request_stop();
         }

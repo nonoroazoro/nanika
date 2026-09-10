@@ -1,13 +1,11 @@
+use crate::QueryInterrupt;
 use std::fmt::Write;
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicBool;
 
 use nanika_protocol::Candidate;
 use sha2::{Digest, Sha256};
 
-use crate::{COPY_ACTION_ID, DeadlineInterrupt};
-
-const EVALUATION_LIMIT: Duration = Duration::from_millis(50);
-const MAX_INPUT_CHARS: usize = 4_096;
+use crate::COPY_ACTION_ID;
 
 /// Deterministic calculator preview context reused by the extension process.
 pub struct CalculatorEngine {
@@ -22,16 +20,19 @@ impl CalculatorEngine {
     }
 
     pub fn evaluate(&self, query: &str) -> Option<(Candidate, String)> {
+        self.evaluate_cancellable(query, &AtomicBool::new(false))
+    }
+
+    pub fn evaluate_cancellable(
+        &self,
+        query: &str,
+        cancelled: &AtomicBool,
+    ) -> Option<(Candidate, String)> {
         let query = query.trim();
-        if query.is_empty()
-            || query.chars().count() > MAX_INPUT_CHARS
-            || !has_explicit_operator(query)
-        {
+        if query.is_empty() || !has_explicit_operator(query) {
             return None;
         }
-        let interrupt = DeadlineInterrupt {
-            deadline: Instant::now() + EVALUATION_LIMIT,
-        };
+        let interrupt = QueryInterrupt::new(cancelled);
         let evaluated =
             fend_core::evaluate_preview_with_interrupt(query, &self.context, &interrupt);
         let result = evaluated.get_main_result();

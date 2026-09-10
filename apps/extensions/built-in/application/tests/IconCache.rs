@@ -127,56 +127,62 @@ fn fallback_icons_are_valid_png_files() {
 }
 
 #[test]
-fn prune_removes_only_unreferenced_cache_entries() {
-    let root = test_root("prune");
+fn unavailable_icons_use_the_shared_fallback_until_the_cache_is_complete() {
+    let root = test_root("presentation-fallback");
     let cache = IconCache::new(&root);
-    let retained = root.join("retained");
-    let stale = root.join("stale");
-    std::fs::create_dir_all(&retained).expect("retained cache should exist");
-    std::fs::create_dir_all(&stale).expect("stale cache should exist");
-    std::fs::write(root.join("orphan.tmp"), []).expect("orphan should exist");
-    let entry = crate::ApplicationEntry {
-        entry_id: "app.retained".to_owned(),
-        source_key: "retained".to_owned(),
-        display_name: "Retained".to_owned(),
-        normalized_name: "retained".to_owned(),
-        normalized_tokens: "retained".to_owned(),
-        launch_kind: "executable".to_owned(),
-        target_path: "retained".to_owned(),
-        working_directory: None,
-        arguments_json: ApplicationArguments::empty()
-            .to_json()
-            .expect("arguments should encode"),
-        bundle_id: None,
-        icon_key: "retained".to_owned(),
-        file_identity: "retained".to_owned(),
-        last_seen_at: 1,
-        stale: false,
-        icon_source: None,
-        icon_index: 0,
-        priority: 0,
-    };
+    let mut entries = vec![test_entry("pending-icon")];
 
-    cache.prune(&[entry]).expect("cache should prune");
+    cache
+        .use_available_icons(&mut entries)
+        .expect("presentation icons should resolve");
 
-    assert!(retained.is_dir());
-    assert!(!stale.exists());
-    assert!(!root.join("orphan.tmp").exists());
+    assert_eq!(entries[0].icon_key, IconCache::fallback_key());
+    assert!(
+        root.join(IconCache::fallback_key())
+            .join("128.png")
+            .is_file()
+    );
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[test]
-fn prune_reports_an_invalid_cache_root() {
-    let root = test_root("invalid-prune-root");
-    let cache_path = root.join("icons");
-    std::fs::write(&cache_path, []).expect("invalid cache root should exist");
-    let cache = IconCache::new(&cache_path);
+fn complete_cached_icons_are_exposed_to_the_frontend() {
+    let root = test_root("presentation-ready");
+    let cache = IconCache::new(&root);
+    let key = "ready-icon";
+    let directory = root.join(key);
+    std::fs::create_dir_all(&directory).expect("icon directory should exist");
+    for size in [32, 64, 128] {
+        std::fs::write(directory.join(format!("{size}.png")), []).expect("icon should exist");
+    }
+    let mut entries = vec![test_entry(key)];
 
-    let error = cache
-        .prune(&[])
-        .expect_err("invalid cache root should be reported");
+    cache
+        .use_available_icons(&mut entries)
+        .expect("presentation icons should resolve");
 
-    assert!(matches!(error, crate::ApplicationError::Io(_)));
+    assert_eq!(entries[0].icon_key, key);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
+fn fallback_markers_keep_failed_extractions_out_of_the_frontend() {
+    let root = test_root("presentation-marker");
+    let cache = IconCache::new(&root);
+    let key = "failed-icon";
+    let directory = root.join(key);
+    std::fs::create_dir_all(&directory).expect("icon directory should exist");
+    for size in [32, 64, 128] {
+        std::fs::write(directory.join(format!("{size}.png")), []).expect("icon should exist");
+    }
+    std::fs::write(directory.join("fallback.marker"), []).expect("marker should exist");
+    let mut entries = vec![test_entry(key)];
+
+    cache
+        .use_available_icons(&mut entries)
+        .expect("presentation icons should resolve");
+
+    assert_eq!(entries[0].icon_key, IconCache::fallback_key());
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -223,4 +229,28 @@ fn test_root(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("test root should exist");
     root
+}
+
+fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
+    crate::ApplicationEntry {
+        entry_id: "app.test".to_owned(),
+        source_key: "test".to_owned(),
+        display_name: "Test".to_owned(),
+        normalized_name: "test".to_owned(),
+        normalized_tokens: "test".to_owned(),
+        launch_kind: "executable".to_owned(),
+        target_path: "test".to_owned(),
+        working_directory: None,
+        arguments_json: ApplicationArguments::empty()
+            .to_json()
+            .expect("arguments should encode"),
+        bundle_id: None,
+        icon_key: icon_key.to_owned(),
+        file_identity: "test".to_owned(),
+        last_seen_at: 1,
+        stale: false,
+        icon_source: None,
+        icon_index: 0,
+        priority: 0,
+    }
 }

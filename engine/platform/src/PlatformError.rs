@@ -7,7 +7,6 @@ pub enum PlatformError {
     Timeout(&'static str),
     ActivationChannelClosed,
     EventChannelClosed(&'static str),
-    QueueFull(&'static str),
     Message(String),
 }
 
@@ -24,7 +23,6 @@ impl std::fmt::Display for PlatformError {
             Self::Timeout(operation) => write!(formatter, "platform timed out during {operation}"),
             Self::ActivationChannelClosed => write!(formatter, "activation channel closed"),
             Self::EventChannelClosed(owner) => write!(formatter, "{owner} event channel closed"),
-            Self::QueueFull(owner) => write!(formatter, "{owner} queue is full"),
             Self::Message(message) => formatter.write_str(message),
         }
     }
@@ -39,7 +37,6 @@ impl std::error::Error for PlatformError {
             | Self::Timeout(_)
             | Self::ActivationChannelClosed
             | Self::EventChannelClosed(_)
-            | Self::QueueFull(_)
             | Self::Message(_) => None,
         }
     }

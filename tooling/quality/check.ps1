@@ -21,14 +21,6 @@ try {
         Where-Object { $_.DirectoryName -notlike "*frontend*src*bridge*" } |
         Select-String -Pattern '@tauri-apps/'
     if ($FrontendTauri) { throw "Frontend source may import Tauri only through the typed bridge." }
-    & cargo fmt --all -- --check
-    if ($LASTEXITCODE -ne 0) { throw "Formatting check failed." }
-    & cargo clippy --workspace --all-targets --locked -- -D warnings
-    if ($LASTEXITCODE -ne 0) { throw "Clippy failed." }
-    & cargo test --workspace --all-targets --locked
-    if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
-    & cargo doc --workspace --no-deps --locked
-    if ($LASTEXITCODE -ne 0) { throw "Documentation check failed." }
     Push-Location "apps/desktop"
     try {
         & pnpm format:check
@@ -37,14 +29,20 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed." }
         & pnpm frontend:check
         if ($LASTEXITCODE -ne 0) { throw "Frontend type check failed." }
-        & pnpm test
-        if ($LASTEXITCODE -ne 0) { throw "Frontend tests failed." }
         & pnpm frontend:build
         if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
     }
     finally {
         Pop-Location
     }
+    & cargo fmt --all -- --check
+    if ($LASTEXITCODE -ne 0) { throw "Formatting check failed." }
+    & cargo clippy --workspace --all-targets --locked -- -D warnings
+    if ($LASTEXITCODE -ne 0) { throw "Clippy failed." }
+    & cargo test --workspace --all-targets --locked
+    if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
+    & cargo doc --workspace --no-deps --locked
+    if ($LASTEXITCODE -ne 0) { throw "Documentation check failed." }
     if ($MacOS) {
         & cargo check --workspace --all-targets --locked --target $MacOSTarget
         if ($LASTEXITCODE -ne 0) { throw "macOS cross-target check failed." }

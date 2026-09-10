@@ -1,3 +1,7 @@
+use std::sync::mpsc::SyncSender;
+
+use crate::ExtensionInvocationOutcome;
+
 #[derive(Debug, Clone)]
 pub(crate) struct ExtensionInvocation {
     pub(crate) invocation_id: u64,
@@ -5,4 +9,5 @@ pub(crate) struct ExtensionInvocation {
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
     pub(crate) query_context: String,
+    pub(crate) response: SyncSender<Result<ExtensionInvocationOutcome, String>>,
 }

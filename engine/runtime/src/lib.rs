@@ -7,10 +7,6 @@ mod acp_extension_command;
 #[path = "AcpExtensionProcess.rs"]
 mod acp_extension_process;
 mod acp_transport;
-#[path = "BoundedLogWriter.rs"]
-mod bounded_log_writer;
-#[path = "DiagnosticRecordKey.rs"]
-mod diagnostic_record_key;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
@@ -21,6 +17,8 @@ mod distribution_extension;
 mod distribution_inventory;
 #[path = "ExtensionCommand.rs"]
 mod extension_command;
+#[path = "ExtensionInterruption.rs"]
+mod extension_interruption;
 #[path = "ExtensionInvocation.rs"]
 mod extension_invocation;
 #[path = "ExtensionInvocationOutcome.rs"]
@@ -29,8 +27,6 @@ mod extension_invocation_outcome;
 mod extension_invocation_output;
 #[path = "ExtensionInvocationOutputState.rs"]
 mod extension_invocation_output_state;
-#[path = "ExtensionInvocationResult.rs"]
-mod extension_invocation_result;
 #[path = "ExtensionLimits.rs"]
 mod extension_limits;
 #[path = "ExtensionNotifier.rs"]
@@ -77,10 +73,6 @@ mod host_diagnostic;
 mod host_service_handler;
 #[path = "HostServiceRouter.rs"]
 mod host_service_router;
-#[path = "RuntimeInvocationCompletion.rs"]
-mod runtime_invocation_completion;
-#[path = "RuntimeInvocationUpdate.rs"]
-mod runtime_invocation_update;
 #[path = "RuntimeOutputUpdate.rs"]
 mod runtime_output_update;
 #[path = "RuntimeService.rs"]
@@ -100,18 +92,16 @@ pub(crate) use acp_connection_context::*;
 pub(crate) use acp_extension_command::*;
 pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
-pub(crate) use bounded_log_writer::*;
-pub(crate) use diagnostic_record_key::*;
 pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
 pub use distribution_extension::*;
 pub use distribution_inventory::*;
 pub(crate) use extension_command::*;
+pub(crate) use extension_interruption::*;
 pub(crate) use extension_invocation::*;
-pub(crate) use extension_invocation_outcome::*;
+pub use extension_invocation_outcome::*;
 pub(crate) use extension_invocation_output::*;
 pub(crate) use extension_invocation_output_state::*;
-pub(crate) use extension_invocation_result::*;
 pub use extension_limits::*;
 pub(crate) use extension_notifier::*;
 pub use extension_process::*;
@@ -135,8 +125,6 @@ pub(crate) use extension_work::*;
 pub use host_diagnostic::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
-pub use runtime_invocation_completion::*;
-pub use runtime_invocation_update::*;
 pub use runtime_output_update::*;
 pub use runtime_service::*;
 pub use runtime_settings_update::*;
@@ -154,6 +142,12 @@ pub fn publish_extension_snapshot(
     generation: u64,
     entries: Vec<nanika_protocol::Candidate>,
 ) -> Result<(), nanika_search::SearchQueueError> {
+    tracing::debug!(
+        extension_id,
+        generation,
+        candidates = entries.len(),
+        "extension search snapshot received"
+    );
     let candidates = entries
         .into_iter()
         .map(|entry| {
@@ -179,9 +173,6 @@ pub fn publish_extension_snapshot(
 #[path = "../tests/acp_transport.rs"]
 mod acp_transport_tests;
 #[cfg(test)]
-#[path = "../tests/BoundedLogWriter.rs"]
-mod bounded_log_writer_tests;
-#[cfg(test)]
 #[path = "../tests/Diagnostics.rs"]
 mod diagnostics_tests;
 #[cfg(test)]
@@ -196,3 +187,7 @@ mod extension_search_worker_tests;
 #[cfg(test)]
 #[path = "../tests/HostDiagnostic.rs"]
 mod host_diagnostic_tests;
+
+#[path = "ExtensionWorkerLifetime.rs"]
+mod extension_worker_lifetime;
+use extension_worker_lifetime::ExtensionWorkerLifetime;
