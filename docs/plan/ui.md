@@ -112,7 +112,7 @@ Selection contract:
 - Pointer click activates the clicked result directly.
 - Keyboard and pointer state use the same action identity.
 
-Use the browser scroll container as the source of truth. Do not maintain a parallel pixel scroll model. Prefer `scrollIntoView({ block: "nearest" })` only after an actual boundary check. Do not animate selection-following scroll.
+Use the browser scroll container as the source of truth. Keyboard navigation calls `scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })` on the active option. The browser determines whether scrolling is needed and the minimum distance; do not duplicate its geometry checks or maintain a parallel pixel scroll model. Pointer selection does not request scrolling. DOM focus remains in the input, so changing `aria-activedescendant` alone does not reveal an off-screen option, as explained in the [W3C combobox guidance](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/#accessibilityfeatures).
 
 ## Extension views
 
@@ -148,10 +148,14 @@ Every screen defines these states before completion:
 - Ready with content.
 - Ready without content.
 - Partial capability failure.
-- Recoverable action failure.
+- Actionable failure.
 - Unavailable capability.
 
-Loading does not replace stable results with an empty flash. Existing content remains until the next coherent snapshot is ready. Diagnostics identify the unavailable capability and provide one concrete recovery action without exposing internal protocol or process terminology.
+Loading does not replace stable results with an empty flash. Existing content remains until the next coherent snapshot is ready. A failure identifies the unavailable capability in plain language and makes its complete technical cause available through diagnostics.
+
+Search text is submitted through Tauri `invoke`; one Channel per page lifetime supplies all search states and result lists. RPC responses do not change the list. Initial empty-query results appear without typing, and later discovery updates replace them through the same Channel. Typing during startup is preserved. Old session, request, or revision messages cannot replace the current view.
+
+While a new request is pending, keep the previous list visible and mark the results region busy. Retained entries cannot execute until results for the current request arrive. A ready empty list means no matches; a searching empty list means work is still pending. Runtime startup failures, communication failures, and render failures show an accessible error. Nanika does not convert slow work into failure through a hidden frontend deadline.
 
 ## Theme
 
@@ -182,7 +186,7 @@ Motion is state-driven and interruptible.
 - Loading indicators animate only while work is active.
 - `prefers-reduced-motion` disables non-essential movement and reduces essential transitions to immediate state changes.
 
-Do not run timers or animation frames while the launcher is hidden or visually stable.
+Do not run polling timers, repeating timers, or animation frames while the launcher is hidden or visually stable. Outstanding operations are driven by completion, explicit cancellation, or transport closure rather than frontend watchdog timers.
 
 Use CSS transitions for hover, pressed, focus, opacity, and transform changes. Use Svelte's built-in transition, animation, and motion facilities only when component lifecycle or coordinated state requires them. The initial design system has no third-party animation library.
 

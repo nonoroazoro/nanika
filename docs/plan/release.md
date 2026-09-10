@@ -29,19 +29,20 @@ The signed release inventory is the only authority that marks an extension as bu
 ## Checklist
 
 1. Confirm a clean tree, the intended version, committed root `Cargo.lock` and `apps/desktop/pnpm-lock.yaml`, the pinned pnpm version, and the pinned Active LTS Node.js line.
-2. Run Prettier verification, ESLint, `svelte-check`, Vitest Node tests, Vitest Browser Mode component and visual-regression tests in Chromium and WebKit, and the Vite production build.
+2. Run dprint verification, ESLint through `eslint-config-zoro`, `svelte-check`, and the Vite production build. Use computer-use to validate component interaction and visual behavior in the actual Tauri application on each supported platform.
 3. Run Rust workspace formatting, lint, tests, architecture checks, and cross-boundary contract tests.
 4. Run deterministic Rust benchmarks and compare them on the same reference machine.
 5. Run the Tauri desktop benchmark on fixed Windows and macOS reference machines and retain schema-versioned reports.
 6. Complete the platform acceptance list in `performance.md` on physical Windows and macOS machines.
-7. Validate every rule in `ui.md` through automated tests, approved captures, or recorded physical platform acceptance.
+7. Validate every rule in `ui.md` through computer-use, approved captures, or recorded physical platform acceptance in the actual Tauri application.
 8. Verify the packaged production Isolation Pattern, command-pruning output, Content Security Policy, Tauri capabilities, custom protocol scope, disabled built-in asset protocol, absence of frontend shell, process, tray, menu, and global-shortcut permissions, absence of WebDriver or test-access plugins, absence of test tooling, development assets, and source maps, bundled asset inventory, recorded JavaScript and CSS sizes, absence of remote code, and absence of extension-supplied frontend code or entrypoints.
 9. Build with release credentials and verify signatures, notarization, archive contents, and SHA-256 files.
 10. Extract each archive into a clean user profile and verify first run, summon, settings, actions, diagnostics, removal, WebView runtime availability, and missing-runtime behavior.
 11. Confirm the bare host starts coherently with zero extensions, the desktop application starts every enabled built-in extension through the ordinary extension supervisor, and one failed extension does not prevent the host or other features from loading.
-12. Confirm user-visible failures name affected features, provide a recovery action, and do not expose internal process, protocol, path, or storage details.
+12. Confirm user-visible failures name affected features in plain language and make the complete technical cause available through diagnostics. Confirm no accepted work is silently dropped and no undocumented timeout, retry, restart, truncation, retention, deletion, recovery, or fallback changes behavior.
 13. Confirm Root Search and extension inputs support Latin and CJK IME composition, candidate-window placement, aligned text and caret geometry, and query selection after reopen.
 14. Confirm Root Search Enter and pointer activation, Up and Down selection, boundary-only scrolling, input history, and stable result publication while typing.
+    Verify cold-start results without typing and repeated search/clear cycles using the same session Channel. Exercise a small message, a result list above Tauri's direct-delivery threshold, and a subsequent small message under the packaged Isolation policy. Confirm frontend receipt as well as visible results, session replacement on page reload, and an explicit visible failure after transport closure. Isolated logic tests are not evidence for this packaged transport check.
 15. Confirm operating-system locale selection, bundled shell translations, deterministic English fallback, locale-sensitive formatting, localized application names, and original-name aliases. Confirm normalized cached icons remain sharp and responsive on standard and high-DPI displays, incomplete icon entries are never served, and fallback-to-complete transitions cannot be trapped by immutable WebView caching.
 16. Confirm calculator results appear for explicit symbolic and word operators and do not appear for plain search terms.
 17. Confirm built-in and external extensions use the same manifest schema, protocol, permissions, process, host-service, declarative-view, action, failure, and diagnostics paths. Confirm built-in identity originates only from the signed release inventory. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the shared frontend-rendered declarative protocol path.

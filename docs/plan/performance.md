@@ -2,6 +2,13 @@
 
 Performance results are evidence, not pass or fail gates on ordinary machines. Compare results only on the same hardware, power mode, display topology, operating-system version, WebView version, build profile, and background load.
 
+## Validation responsibilities
+
+- Rust automated tests verify core behavior, concurrency, protocol and storage contracts, and failure isolation. Rust benchmarks measure core latency and resource use with representative workloads.
+- End-to-end performance observation runs the actual Nanika application. The measured path includes extension processes, Rust search, Tauri IPC, and UI rendering. Report process-start-to-interactive latency, input-to-visible-results latency, scrolling frame intervals, and process-tree CPU and memory. Component-only measurements cannot establish these results.
+- Other UI behavior and visual acceptance use computer-use in the actual application. Retain observations and diagnostic evidence rather than adding a frontend automated test framework.
+- Catalog-scale runs use a Rust-controlled 1,000- and 2,000-entry fixture only to create the workload. The unchanged Nanika executable must still start its real extension process, Rust runtime, Tauri IPC, system WebView, and production frontend. Verify that every entry remains accessible and distinguish fresh application data from a warm cache. Report complete-list rendering separately from total startup, and include search, clearing the query, scrolling, and icon costs. State build profile and sample counts, and distinguish process-cold startup from OS-cold startup.
+
 ## Targets
 
 - Warm summon to focused and interactive overlay: P95 at or below 50 ms.
@@ -23,7 +30,7 @@ Performance results are evidence, not pass or fail gates on ordinary machines. C
 
 ## Deterministic Rust benchmarks
 
-Run the project benchmark command. Criterion covers ranking, query delivery, runtime foundation startup, application indexing and preselection, extension process activation, calculator evaluation, and clipboard persistence. UI rendering is not benchmarked through Criterion. Use a named baseline only for comparisons on the same reference machine.
+Run the project benchmark command. Criterion covers ranking, query delivery, runtime foundation startup, application indexing, extension process activation, calculator evaluation, and clipboard persistence. UI rendering is not benchmarked through Criterion. Use a named baseline only for comparisons on the same reference machine.
 
 ## Frontend benchmarks
 
@@ -35,16 +42,18 @@ Measure production frontend builds with bundled local assets. Record:
 - keydown to selected-row update;
 - query input to committed result snapshot;
 - Isolation Pattern command validation and encryption, plus channel serialization, dispatch, and frontend delivery overhead;
+- small and large Channel payloads on both sides of Tauri's internal direct-delivery threshold, including acknowledgement round-trip latency;
+- the single in-flight message limit and latest-state coalescing under rapid input or a stalled consumer, including delivery of the final cleared query;
 - extension protocol validation through shared Svelte component commit for declarative views, and user action return through the typed bridge to the owning extension;
-- continuous keyboard navigation and trackpad scrolling through 100 results;
+- continuous keyboard navigation and scrolling through complete 1,000- and 2,000-application catalogs;
 - icon request, decode, cache hit, and visible presentation timing;
 - native window-effect compositor cost, startup flash, and fallback behavior when an effect is enabled;
 - heap size, DOM node count, event-listener count, long tasks, and animation frame variance;
 - hidden-idle timers, animation frames, CPU, memory, process count, and thread count.
 
-Frontend development instrumentation must not ship in production artifacts. Retain schema-versioned JSON reports under `target/performance` with the commit, worktree state, Rust and frontend lockfile hashes, application hash, machine profile, WebView version, parameters, thresholds, and raw samples.
+Performance instrumentation must not ship in production artifacts. The controller and report writer are Rust repository tooling. Browser-realm timestamps use the native Web Performance API inside the actual WebView. Retain schema-versioned JSON reports under `target/performance` with the commit, worktree state, Rust and frontend lockfile hashes, application hash, machine profile, WebView version, parameters, thresholds, and raw samples.
 
-Run pure TypeScript performance-sensitive logic through the Vitest Node project. Run component interaction and rendering checks through Vitest Browser Mode with the Playwright provider and official Svelte renderer in Chromium and WebKit. Browser Mode measurements compare frontend changes under fixed browser versions; they do not replace release-build measurements in WebView2 and WKWebView.
+Use computer-use to exercise UI interactions and rendering in the actual Tauri application using WebView2 on Windows and WKWebView on macOS. Synthetic application catalogs must pass through extension processes, Rust search, and Tauri IPC before reaching the shared frontend. Record total process-start-to-interactive time and separate runtime initialization, result delivery, DOM update, and frame timing. Isolated component timings are not end-to-end application results.
 
 ## Activation trace
 
@@ -54,11 +63,11 @@ The frontend emits a readiness acknowledgement only after the current view model
 
 ## Desktop black-box benchmark
 
-Build the Tauri desktop application in release mode. Platform harnesses must verify hidden startup, hidden-idle resource use, repeated summon and dismissal, focus ownership, first interactive paint, and warm activation P50, P95, P99, maximum, and raw samples.
+Build the Tauri desktop application in release mode. A Rust controller must launch and observe that real application rather than a component page or browser-test harness. It verifies hidden startup, hidden-idle resource use, repeated summon and dismissal, focus ownership, first interactive paint, and warm activation P50, P95, P99, maximum, and raw samples.
 
 Use at least 200 warm summons and 1,000 query updates for release evidence. Shorter runs validate the harness only. Synthetic input is valid only after the harness proves that the platform receives it through the same production input path.
 
-Unit and component tests may use Tauri's mock runtime where native behavior is irrelevant. Desktop E2E must drive a release-equivalent Tauri application on both Windows and macOS against WebView2 and WKWebView. A harness that supports only one of the two platforms is insufficient; direct `tauri-driver` coverage alone does not satisfy the macOS requirement. Any embedded WebDriver server or test-access plugin is restricted to a test build and must be absent from production binaries and release artifacts.
+Rust tests may use Tauri's mock runtime where native behavior is irrelevant. UI acceptance uses computer-use to drive a release-equivalent Tauri application on Windows and macOS against WebView2 and WKWebView. Record actual application logs and rendering measurements; Rust test results do not substitute for desktop acceptance.
 
 Acceptance starts with the first clean Tauri release build.
 
@@ -71,7 +80,8 @@ Validate on physical Windows and macOS machines:
 - foreground and background second launches;
 - startup enable, disable, repair, approval, and hidden idle launch;
 - stable Root Search publication while extensions return initial snapshots;
-- zero-extension startup, built-in and external rendering-path equivalence, and continued host responsiveness while one extension is slow, failed, restarting, or disabled;
+- cold-start empty-query results without typing, input before startup completes, repeated search/clear cycles, stale-result rejection, and an explicit transport error after Channel closure;
+- zero-extension startup, built-in and external rendering-path equivalence, and visible behavior while one extension is slow, failed, or disabled;
 - native text editing, query selection on reopen, listbox navigation, scroll boundary behavior, and pointer activation;
 - icon protocol validation, cache hits, decode cost, sharp high-DPI presentation, and scrolling responsiveness;
 - 60 Hz and 120 Hz motion, interruption, and reduced motion;
