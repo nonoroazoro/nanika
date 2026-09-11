@@ -9,7 +9,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::{OverlayPosition, PlatformError, centered_position};
 
-pub(crate) fn active_overlay_position(
+pub fn active_overlay_position(
     width_points: f32,
     height_points: f32,
     _current_scale_factor: f32,

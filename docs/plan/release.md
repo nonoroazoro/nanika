@@ -1,5 +1,9 @@
 # Release Process
 
+## Supported platform matrix
+
+Nanika releases target only macOS 13+ and Windows 10+. Each release target uses the same shared product contracts and its own platform adapter implementation where native APIs improve behavior. Linux and other platforms are unsupported and are excluded from release artifacts. Adding another platform requires an explicit baseline decision, adapter implementations, packaging target, and validation matrix.
+
 Nanika uses immutable versioned artifacts. The MVP has no installer, background updater, or release channel service.
 
 ## Artifacts

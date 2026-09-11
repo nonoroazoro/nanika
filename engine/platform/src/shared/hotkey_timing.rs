@@ -27,18 +27,6 @@ pub fn take_hotkey_delivery_delay(hotkey_id: u32) -> Option<Duration> {
 
 /// Capture delivery latency while the native hotkey callback is active.
 pub fn current_hotkey_delivery_delay(hotkey_id: u32) -> Option<Duration> {
-    #[cfg(target_os = "macos")]
-    {
-        take_hotkey_delivery_delay(hotkey_id)
-            .or_else(crate::hotkey_timing_macos::current_delivery_delay)
-    }
-    #[cfg(windows)]
-    {
-        take_hotkey_delivery_delay(hotkey_id)
-    }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = hotkey_id;
-        None
-    }
+    take_hotkey_delivery_delay(hotkey_id)
+        .or_else(crate::adapter::hotkey_timing::current_delivery_delay)
 }

@@ -4,6 +4,8 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 
 ## Product invariants
 
+- The release baseline is macOS 13+ and Windows 10+ only. Platform-specific implementations belong behind typed adapters and target-specific packaging; unsupported platforms must fail explicitly rather than consume a fallback.
+
 - Extensions are the only first-class domain capability unit.
 - The bare host owns infrastructure, orchestration, shared control-plane surfaces, and presentation contracts. It contributes no domain candidate or action.
 - Built-in and external extensions use the same process, protocol, permission, view, action, failure, and diagnostics paths.

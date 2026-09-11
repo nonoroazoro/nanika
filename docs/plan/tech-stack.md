@@ -7,7 +7,7 @@ Status: current pre-1.0 baseline. Tauri is the only desktop UI solution. The Rus
 | Area | Selection | Boundary |
 | --- | --- | --- |
 | Languages | Rust stable and TypeScript | Rust owns the core and privileged desktop boundary. TypeScript owns frontend presentation and local interaction. |
-| Platforms | Windows 10 and macOS 13 or later | Validate both platforms; keep platform code behind adapters. |
+| Platforms | Windows 10 and macOS 13 or later | These are the only supported and released platforms. Linux and all other platforms are explicitly unsupported; keep platform code behind adapters and never use them as implicit fallbacks. |
 | Desktop shell | Latest mutually compatible stable Tauri 2 ecosystem | The Rust shell owns windows, IPC, capability configuration, custom protocols, tray integration, and application lifecycle. Review current Tauri releases and official guidance at every dependency update. |
 | Frontend | Latest mutually compatible stable Svelte 5 and TypeScript | One shared local frontend for Windows and macOS. Use plain Svelte as a client-only application with no SvelteKit, server rendering, remote code, or runtime CDN assets. |
 | Frontend build | Vite and the official Svelte Vite plugin | Build one local static application into `dist`. Tauri starts the Vite development server and consumes only the production build output in release artifacts. |
@@ -155,7 +155,7 @@ Do not create top-level `crates`, `extensions`, `src-tauri`, `web`, `rust`, `scr
 
 Shared core, frontend, diagnostics, protocol, configuration, storage, search, and extension lifecycle behavior is platform-neutral. The same frontend source and Rust contracts run on Windows and macOS. Platform-specific behavior exists only behind typed adapters in `nanika-platform`, the narrow Tauri shell boundary, or an extension's explicit platform adapter. A shared feature is not complete if it works on only one supported OS.
 
-Every platform adapter contract must preserve the same user-visible semantics, failure boundary, cancellation behavior, and diagnostics shape on Windows and macOS. Platform implementations may use native APIs, but platform details must not leak into shared state or wire protocols. Linux-specific behavior is not an acceptable fallback and must not enter shared paths unless Linux becomes an explicit supported target through a baseline update.
+Every platform adapter contract must preserve the same user-visible semantics, failure boundary, cancellation behavior, and diagnostics shape on Windows and macOS. Platform implementations may use native APIs, but platform details must not leak into shared state or wire protocols. Linux and every other non-baseline platform are unsupported and must not enter shared paths or receive an implicit fallback. Adding another platform requires an explicit baseline update, adapter implementation, release decision, and validation matrix.
 
 ## Extension-first product model
 
@@ -212,7 +212,7 @@ A command may complete without a view or push a route-local declarative view. Th
 
 An extension package cannot contain a frontend entrypoint, executable Web asset, stylesheet, Svelte component, WebView preload, content script, or remote UI URL. Bounded static presentation data such as text, metadata, and validated icon references crosses the extension protocol as data. The Rust runtime validates it, and the shared frontend maps it to product-owned components and tokens.
 
-Each pushed view has an extension-scoped ID and monotonic revision. Rust validates every view document and serializes extension operations. The frontend applies only matching revisions, keeps local text editing and selection synchronous, and coalesces outbound search and selection updates. Back closes the active frontend route immediately. Overlay dismissal closes every extension route in reverse stack order through one bounded command. Nested routes are bounded, and stale updates cannot mutate a different route.
+Each pushed view has an extension-scoped ID and monotonic revision. Rust validates every view document and serializes extension operations. The frontend applies only matching revisions, keeps local text editing and selection synchronous, and coalesces outbound search and selection updates. Back closes the active frontend route immediately. The `Dismiss` navigation effect hides the launcher without closing extension routes or unmounting their frontend views. Summoning the launcher reveals the same route, with its query, selection, preview, scroll positions, focused control, and text selection intact. Only explicit back navigation (`Pop`) closes the active route; ending the WebView session releases the remaining routes in reverse stack order. Hidden views do not poll or run animation loops. Nested routes are bounded, and stale updates cannot mutate a different route.
 
 `ViewActionStyle` communicates primary, secondary, or destructive prominence. It does not grant behavior or permission. Every action is rendered by the shared frontend and returned through a typed Tauri command to the owning extension. Host services such as clipboard writes and process launches remain separately permission checked in Rust.
 

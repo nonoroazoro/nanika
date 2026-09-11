@@ -16,7 +16,9 @@
 
 - Shared host, UI, diagnostics, protocol, and extension behavior must remain platform-neutral.
 - Isolate unavoidable OS-specific behavior behind platform adapters and maintain implementations for every supported OS. Never introduce a single-OS solution into shared code.
-- Validate cross-platform changes on Windows and macOS. Linux-specific behavior must not become an implicit fallback or enter shared paths unless Linux is added to the supported baseline.
+- The supported platform baseline is macOS 13+ and Windows 10+. Release artifacts are produced only for these two platforms. Linux and every other platform are explicitly unsupported and must not receive an implicit fallback implementation.
+- Validate cross-platform changes on both macOS and Windows. Platform conditionals must name one of the supported platforms or an explicit unsupported-platform branch.
+- Before implementing any platform-facing feature, document its Windows and macOS implementations and its shared, platform-neutral contract. Platform conditionals, native handles, OS paths, and native API types are forbidden in shared engine, protocol, frontend, and extension code; an unsupported platform must fail explicitly behind the platform adapter rather than silently using another OS as a fallback. Any exception requires a review note naming the affected platforms, semantics, and validation evidence.
 
 ## Architecture
 

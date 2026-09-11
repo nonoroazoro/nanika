@@ -13,7 +13,7 @@ const SOCKET_FILE: &str = "nanika.instance.sock";
 const ACTIVATE_REQUEST: u8 = b'a';
 const STOP_REQUEST: u8 = b's';
 
-pub(crate) fn acquire(app_data_root: &Path) -> Result<InstanceRole, PlatformError> {
+pub fn acquire(_identity: &str, app_data_root: &Path) -> Result<InstanceRole, PlatformError> {
     std::fs::create_dir_all(app_data_root)?;
     let lock_file = OpenOptions::new()
         .read(true)
@@ -47,7 +47,7 @@ pub(crate) fn acquire(app_data_root: &Path) -> Result<InstanceRole, PlatformErro
     }))
 }
 
-pub(crate) fn signal_activate(app_data_root: &Path) -> Result<(), PlatformError> {
+pub fn signal_activate(_identity: &str, app_data_root: &Path) -> Result<(), PlatformError> {
     let path = app_data_root.join(SOCKET_FILE);
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {

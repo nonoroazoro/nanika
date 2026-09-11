@@ -1,213 +1,64 @@
-//! Platform adapter boundary.
+//! Shared platform services backed by the native adapter selected for this artifact.
 
-use std::path::Path;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+compile_error!("Nanika release targets are macOS 13+ and Windows 10+ only");
 
-#[path = "ClipboardService.rs"]
-mod clipboard_service;
-#[path = "ClipboardServiceCommand.rs"]
-mod clipboard_service_command;
-mod hotkey_timing;
-#[path = "HotkeyTimingObserver.rs"]
-mod hotkey_timing_observer;
-#[path = "InstanceRole.rs"]
+#[cfg(target_os = "macos")]
+#[path = "adapters/macos/mod.rs"]
+#[allow(unsafe_code)]
+mod adapter;
+#[cfg(target_os = "windows")]
+#[path = "adapters/windows/mod.rs"]
+#[allow(unsafe_code)]
+mod adapter;
+
+pub use adapter::{
+    HotkeyTimingObserver, SingleInstance, acquire_instance, active_overlay_position,
+    report_fatal_error, signal_activate, target_platform,
+};
+pub(crate) use adapter::{set_startup_enabled, startup_status};
+
+#[path = "contracts/InstanceRole.rs"]
 mod instance_role;
-#[path = "LauncherCommand.rs"]
-mod launcher_command;
-#[path = "OverlayPosition.rs"]
-mod overlay_position;
-#[path = "PlatformError.rs"]
-mod platform_error;
-#[path = "PlatformEvent.rs"]
-mod platform_event;
-mod process_launch;
-#[path = "ProcessLauncher.rs"]
-mod process_launcher;
-#[path = "SingleInstance.rs"]
-#[allow(unsafe_code)]
-mod single_instance;
-#[path = "StartupCommand.rs"]
-mod startup_command;
-#[path = "StartupService.rs"]
-mod startup_service;
-#[path = "StartupStatus.rs"]
-mod startup_status;
-mod system_locale;
-
-#[cfg(windows)]
-#[allow(unsafe_code)]
-mod fatal_error_windows;
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-mod hotkey_timing_macos;
-#[cfg(windows)]
-#[allow(unsafe_code)]
-mod hotkey_timing_windows;
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-mod macos_instance;
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-mod overlay_position_macos;
-#[cfg(windows)]
-#[allow(unsafe_code)]
-mod overlay_position_windows;
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-mod process_launcher_macos;
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-mod startup_macos;
-#[cfg(windows)]
-mod startup_windows;
-#[cfg(windows)]
-#[allow(unsafe_code)]
-mod windows_instance;
-
-pub use clipboard_service::*;
-pub(crate) use clipboard_service_command::*;
-pub use hotkey_timing::*;
-pub use hotkey_timing_observer::*;
 pub use instance_role::*;
-pub(crate) use launcher_command::*;
+#[path = "contracts/OverlayPosition.rs"]
+mod overlay_position;
 pub use overlay_position::*;
+#[path = "contracts/PlatformError.rs"]
+mod platform_error;
 pub use platform_error::*;
+#[path = "contracts/PlatformEvent.rs"]
+mod platform_event;
 pub use platform_event::*;
-pub use process_launcher::*;
-pub use single_instance::*;
-pub(crate) use startup_command::*;
-pub use startup_service::*;
+#[path = "contracts/StartupStatus.rs"]
+mod startup_status;
 pub use startup_status::*;
+#[path = "shared/ClipboardService.rs"]
+mod clipboard_service;
+pub use clipboard_service::*;
+#[path = "shared/ClipboardServiceCommand.rs"]
+mod clipboard_service_command;
+pub(crate) use clipboard_service_command::*;
+#[path = "shared/StartupCommand.rs"]
+mod startup_command;
+pub(crate) use startup_command::*;
+#[path = "shared/StartupService.rs"]
+mod startup_service;
+pub use startup_service::*;
+#[path = "shared/LauncherCommand.rs"]
+mod launcher_command;
+pub(crate) use launcher_command::*;
+#[path = "shared/ProcessLauncher.rs"]
+mod process_launcher;
+pub use process_launcher::*;
+#[path = "shared/hotkey_timing.rs"]
+mod hotkey_timing;
+pub use hotkey_timing::*;
+#[path = "shared/system_locale.rs"]
+mod system_locale;
 pub use system_locale::*;
-
-pub(crate) fn install_hotkey_timing_observer() -> Option<*mut std::ffi::c_void> {
-    #[cfg(windows)]
-    return hotkey_timing_windows::install();
-    #[cfg(target_os = "macos")]
-    return hotkey_timing_macos::install();
-    #[cfg(not(any(windows, target_os = "macos")))]
-    None
-}
-
-pub(crate) fn uninstall_hotkey_timing_observer(handle: *mut std::ffi::c_void) {
-    #[cfg(windows)]
-    hotkey_timing_windows::uninstall(handle);
-    #[cfg(target_os = "macos")]
-    hotkey_timing_macos::uninstall(handle);
-    #[cfg(not(any(windows, target_os = "macos")))]
-    let _ = handle;
-}
-
-pub(crate) fn startup_status(executable: &Path) -> Result<StartupStatus, PlatformError> {
-    #[cfg(windows)]
-    return startup_windows::status(executable);
-    #[cfg(target_os = "macos")]
-    return startup_macos::status(executable);
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = executable;
-        Err(PlatformError::Unsupported("login startup"))
-    }
-}
-
-pub(crate) fn set_startup_enabled(
-    executable: &Path,
-    enabled: bool,
-) -> Result<StartupStatus, PlatformError> {
-    #[cfg(windows)]
-    return startup_windows::set_enabled(executable, enabled);
-    #[cfg(target_os = "macos")]
-    return startup_macos::set_enabled(executable, enabled);
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = (executable, enabled);
-        Err(PlatformError::Unsupported("login startup"))
-    }
-}
-
-/// The target platform selected by the current build.
-pub const fn target_platform() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "windows"
-    } else if cfg!(target_os = "macos") {
-        "macos"
-    } else {
-        "unsupported"
-    }
-}
-
-/// Report a fatal host startup error through a platform-visible fallback.
-pub fn report_fatal_error(message: &str) {
-    #[cfg(windows)]
-    fatal_error_windows::report(message);
-    #[cfg(not(windows))]
-    eprintln!("{message}");
-}
-
-/// Acquire the current user's Nanika host instance.
-pub fn acquire_instance(
-    identity: &str,
-    app_data_root: &Path,
-) -> Result<InstanceRole, PlatformError> {
-    #[cfg(windows)]
-    {
-        let _ = app_data_root;
-        windows_instance::acquire(identity)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = identity;
-        macos_instance::acquire(app_data_root)
-    }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = (identity, app_data_root);
-        Err(PlatformError::Unsupported("single instance"))
-    }
-}
-
-/// Signal an already-running host to activate its overlay.
-pub fn signal_activate(identity: &str, app_data_root: &Path) -> Result<(), PlatformError> {
-    #[cfg(windows)]
-    {
-        let _ = app_data_root;
-        windows_instance::signal_activate(identity)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = identity;
-        macos_instance::signal_activate(app_data_root)
-    }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = (identity, app_data_root);
-        Err(PlatformError::Unsupported("instance activation"))
-    }
-}
-
-/// Center the overlay in the work area containing the pointer.
-pub fn active_overlay_position(
-    width_points: f32,
-    height_points: f32,
-    current_scale_factor: f32,
-) -> Result<OverlayPosition, PlatformError> {
-    #[cfg(windows)]
-    return overlay_position_windows::active_overlay_position(
-        width_points,
-        height_points,
-        current_scale_factor,
-    );
-    #[cfg(target_os = "macos")]
-    return overlay_position_macos::active_overlay_position(
-        width_points,
-        height_points,
-        current_scale_factor,
-    );
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        let _ = (width_points, height_points, current_scale_factor);
-        Err(PlatformError::Unsupported("active monitor placement"))
-    }
-}
+#[path = "shared/process_launch.rs"]
+mod process_launch;
 
 #[cfg(test)]
 #[path = "../tests/ClipboardService.rs"]

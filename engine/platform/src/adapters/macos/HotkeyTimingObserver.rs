@@ -5,7 +5,7 @@ pub struct HotkeyTimingObserver {
 
 impl HotkeyTimingObserver {
     pub fn install() -> Option<Self> {
-        crate::install_hotkey_timing_observer().map(|handle| Self {
+        super::hotkey_timing::install().map(|handle| Self {
             handle: handle as usize,
         })
     }
@@ -13,6 +13,6 @@ impl HotkeyTimingObserver {
 
 impl Drop for HotkeyTimingObserver {
     fn drop(&mut self) {
-        crate::uninstall_hotkey_timing_observer(self.handle as *mut std::ffi::c_void);
+        super::hotkey_timing::uninstall(self.handle as *mut std::ffi::c_void);
     }
 }

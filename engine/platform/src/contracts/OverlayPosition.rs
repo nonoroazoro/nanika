@@ -6,8 +6,7 @@ pub struct OverlayPosition {
 }
 
 impl OverlayPosition {
-    #[cfg(any(target_os = "macos", test))]
-    pub(crate) fn scaled(self, scale: f32) -> Self {
+    pub fn scaled(self, scale: f32) -> Self {
         Self {
             x: self.x * scale,
             y: self.y * scale,

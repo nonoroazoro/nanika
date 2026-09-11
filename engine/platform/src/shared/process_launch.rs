@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
+use crate::adapter::process_launch::{apply_windows_raw, mac_application, shell_command};
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
 
 pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<Child> {
@@ -65,67 +66,4 @@ fn apply_working_directory(command: &mut Command, directory: Option<&str>) -> st
     }
     command.current_dir(path);
     Ok(())
-}
-
-#[cfg(windows)]
-fn apply_windows_raw(command: &mut Command, value: &str) -> std::io::Result<()> {
-    use std::os::windows::process::CommandExt;
-
-    command.raw_arg(value);
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn apply_windows_raw(_command: &mut Command, _value: &str) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Windows raw arguments are unsupported on this platform",
-    ))
-}
-
-#[cfg(windows)]
-fn shell_command(value: &str) -> Command {
-    use std::os::windows::process::CommandExt;
-
-    let interpreter = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
-    let mut command = Command::new(interpreter);
-    command.args(["/d", "/s", "/c"]);
-    command.raw_arg(format!("\"{value}\""));
-    command
-}
-
-#[cfg(target_os = "macos")]
-fn shell_command(value: &str) -> Command {
-    let mut command = Command::new("/bin/zsh");
-    command.args(["-lc", value]);
-    command
-}
-
-#[cfg(not(any(windows, target_os = "macos")))]
-fn shell_command(value: &str) -> Command {
-    let mut command = Command::new("/bin/sh");
-    command.args(["-c", value]);
-    command
-}
-
-#[cfg(target_os = "macos")]
-fn mac_application(bundle_path: &str) -> std::io::Result<Command> {
-    let path = Path::new(bundle_path);
-    if !path.is_dir() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("application bundle does not exist: {}", path.display()),
-        ));
-    }
-    let mut command = Command::new("/usr/bin/open");
-    command.arg(path);
-    Ok(command)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn mac_application(_bundle_path: &str) -> std::io::Result<Command> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "macOS application launch is unsupported on this platform",
-    ))
 }

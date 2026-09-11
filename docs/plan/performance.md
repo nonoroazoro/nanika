@@ -1,5 +1,7 @@
 # Performance Validation
 
+Performance validation covers the two supported release targets: macOS 13+ and Windows 10+. Shared measurements and user-visible budgets must remain comparable, while platform-specific sampling or instrumentation belongs behind the platform adapter for that target. Unsupported platforms are not substituted as fallback validation targets.
+
 Performance results are evidence, not pass or fail gates on ordinary machines. Compare results only on the same hardware, power mode, display topology, operating-system version, WebView version, build profile, and background load.
 
 ## Validation responsibilities

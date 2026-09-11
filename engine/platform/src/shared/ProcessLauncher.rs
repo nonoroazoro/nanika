@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 use nanika_protocol::{HostServiceResponse, LaunchDescriptor};
 
 use crate::LauncherCommand;
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
 use crate::process_launch::process_launch;
 
 /// Single owner for processes requested through the host service boundary.
@@ -22,10 +22,10 @@ impl ProcessLauncher {
     pub fn spawn() -> std::io::Result<Self> {
         let (commands, receiver) = mpsc::sync_channel(16);
         #[cfg(target_os = "macos")]
-        let notifier = crate::process_launcher_macos::create_queue()?;
+        let notifier = crate::adapter::process_launcher::create_queue()?;
         #[cfg(target_os = "macos")]
         let owner_notifier = notifier;
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
         let owner_notifier = ();
         let shutdown = Arc::new(AtomicBool::new(false));
         let owner_shutdown = Arc::clone(&shutdown);
@@ -34,8 +34,8 @@ impl ProcessLauncher {
             .spawn(move || run_owner(receiver, owner_notifier, owner_shutdown));
         #[cfg(target_os = "macos")]
         let thread =
-            thread.inspect_err(|_| crate::process_launcher_macos::close_queue(notifier))?;
-        #[cfg(not(target_os = "macos"))]
+            thread.inspect_err(|_| crate::adapter::process_launcher::close_queue(notifier))?;
+        #[cfg(windows)]
         let thread = thread?;
         Ok(Self {
             commands,
@@ -70,7 +70,7 @@ impl ProcessLauncher {
 
     fn stop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
         if self.commands.send(LauncherCommand::Shutdown).is_err() {
             tracing::error!("process launcher closed before shutdown was requested");
         }
@@ -86,10 +86,10 @@ impl ProcessLauncher {
 
     #[cfg(target_os = "macos")]
     fn wake(&self) -> Result<(), String> {
-        crate::process_launcher_macos::wake(self.notifier).map_err(|error| error.to_string())
+        crate::adapter::process_launcher::wake(self.notifier).map_err(|error| error.to_string())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     fn wake(&self) -> Result<(), String> {
         Ok(())
     }
@@ -103,10 +103,10 @@ impl Drop for ProcessLauncher {
 
 #[cfg(target_os = "macos")]
 fn run_owner(receiver: Receiver<LauncherCommand>, notifier: i32, shutdown: Arc<AtomicBool>) {
-    crate::process_launcher_macos::run(receiver, notifier, shutdown);
+    crate::adapter::process_launcher::run(receiver, notifier, shutdown);
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
 fn run_owner(receiver: Receiver<LauncherCommand>, _notifier: (), shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Acquire) {
         let Ok(command) = receiver.recv() else {

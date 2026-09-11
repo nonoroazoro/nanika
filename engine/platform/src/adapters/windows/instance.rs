@@ -28,7 +28,10 @@ unsafe extern "system" fn window_proc(
     unsafe { DefWindowProcW(window, message, word, data) }
 }
 
-pub(crate) fn acquire(identity: &str) -> Result<InstanceRole, PlatformError> {
+pub fn acquire(
+    identity: &str,
+    _app_data_root: &std::path::Path,
+) -> Result<InstanceRole, PlatformError> {
     let mutex_name = to_wide(&format!("Local\\{identity}"));
     let mutex = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
     if mutex.is_null() {
@@ -82,7 +85,10 @@ pub(crate) fn acquire(identity: &str) -> Result<InstanceRole, PlatformError> {
     }))
 }
 
-pub(crate) fn signal_activate(identity: &str) -> Result<(), PlatformError> {
+pub fn signal_activate(
+    identity: &str,
+    _app_data_root: &std::path::Path,
+) -> Result<(), PlatformError> {
     let class_name = to_wide(&format!("{identity}.activation"));
     let window_name = to_wide(identity);
     let deadline = Instant::now() + Duration::from_secs(2);

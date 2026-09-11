@@ -1,5 +1,9 @@
 # UI Design
 
+## Platform implementation policy
+
+The UI contract and design system are shared between macOS 13+ and Windows 10+. Native differences may be implemented in the desktop shell or a typed platform adapter when they improve the target platform experience, while shared Svelte components and semantic behavior remain unchanged. Linux and other platforms are unsupported and must not receive implicit fallback behavior.
+
 Status: current pre-1.0 Tauri UI baseline. The frontend uses Svelte 5, TypeScript, Vite, pnpm, and plain CSS.
 
 ## Product character

@@ -46,3 +46,8 @@ unsafe extern "system" fn observe_message(code: i32, word: WPARAM, data: LPARAM)
     }
     unsafe { CallNextHookEx(std::ptr::null_mut(), code, word, data) }
 }
+
+// Windows timing is captured by the observer before the common callback runs.
+pub(crate) fn current_delivery_delay() -> Option<std::time::Duration> {
+    None
+}

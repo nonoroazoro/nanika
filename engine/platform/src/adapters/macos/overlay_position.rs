@@ -3,7 +3,7 @@ use objc2_app_kit::{NSEvent, NSScreen};
 
 use crate::{OverlayPosition, PlatformError, centered_position};
 
-pub(crate) fn active_overlay_position(
+pub fn active_overlay_position(
     width_points: f32,
     height_points: f32,
     current_scale_factor: f32,
