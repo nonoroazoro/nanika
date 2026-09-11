@@ -58,6 +58,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "../../../target/tauri-binaries/nanika-extension-application",
+      "../../../target/tauri-binaries/nanika-extension-command",
+      "../../../target/tauri-binaries/nanika-extension-script",
+      "../../../target/tauri-binaries/nanika-extension-calculator",
+      "../../../target/tauri-binaries/nanika-extension-clipboard"
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0"
     }
