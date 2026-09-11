@@ -11,9 +11,8 @@ use crate::{
     ExtensionInvocationOutput, ExtensionInvocationOutputState, ExtensionNotifier, ExtensionRefresh,
     ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
     ExtensionSearchWorkerContext, ExtensionSettingsResult, ExtensionSettingsUpdate,
-    ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate,
-    ExtensionViewUpdatePayload, ExtensionWork, HostDiagnostic, SupervisorError,
-    publish_extension_snapshot,
+    ExtensionViewRequest, ExtensionViewRequestKind, ExtensionWork, HostDiagnostic,
+    RuntimeViewCompletion, SupervisorError, publish_extension_snapshot,
 };
 
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
@@ -41,7 +40,6 @@ impl ExtensionSearchWorker {
         if let Some(host_services) = context.host_services {
             runtime.set_host_services(extension_id.clone(), host_services);
         }
-        let view_updates = context.view_updates;
         let notifier = context.notifier;
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
         runtime.set_shutdown_signal(Arc::clone(
@@ -177,30 +175,17 @@ impl ExtensionSearchWorker {
                             })
                         }
                         ExtensionWork::ViewEvent(request) => {
-                            let request_id = request.request_id;
-                            let generation = request.generation;
-                            let view_id = request.view_id.clone();
+                            let completion = request.completion.clone();
                             let result = run_view_event(
                                 &mut runtime,
                                 &worker_extension_id,
                                 request,
                                 &worker_state,
                             );
-                            let report = ExtensionViewUpdate {
-                                request_id,
-                                extension_id: worker_extension_id.clone(),
-                                generation,
-                                view_id,
-                                result: result
-                                    .as_ref()
-                                    .map(Clone::clone)
-                                    .map_err(ToString::to_string),
-                            };
-                            if view_updates.send_blocking(report).is_err() {
-                                Err(SupervisorError::ChannelClosed)
-                            } else {
-                                result.map(|_| true)
+                            if completion.send(result.as_ref().cloned().map_err(ToString::to_string)).is_err() {
+                                tracing::error!(extension_id = worker_extension_id, "view receiver closed before completion");
                             }
+                            result.map(|_| true)
                         }
                         ExtensionWork::Refresh(refresh) => {
                             run_refresh(&mut runtime, &worker_extension_id, refresh, &worker_state)
@@ -431,7 +416,7 @@ fn run_view_event(
     extension_id: &str,
     request: ExtensionViewRequest,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-) -> Result<ExtensionViewUpdatePayload, SupervisorError> {
+) -> Result<RuntimeViewCompletion, SupervisorError> {
     runtime.ensure_running()?;
     let request_id = request.request_id;
     match request.kind {
@@ -450,7 +435,7 @@ fn run_view_event(
                         .load(Ordering::Acquire)
                 },
             )
-            .map(|(revision, effect, view)| ExtensionViewUpdatePayload {
+            .map(|(revision, effect, view)| RuntimeViewCompletion {
                 revision,
                 effect,
                 view,
@@ -460,7 +445,7 @@ fn run_view_event(
                 format!("close-view-{extension_id}-{request_id}"),
                 request.view_id,
             )
-            .map(|()| ExtensionViewUpdatePayload {
+            .map(|()| RuntimeViewCompletion {
                 revision: request.revision,
                 effect: nanika_protocol::NavigationEffect::Pop,
                 view: None,

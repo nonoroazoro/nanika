@@ -51,29 +51,28 @@ pub(crate) async fn close_session(
 pub(crate) async fn invoke_candidate(
     window: tauri::WebviewWindow,
     request: InvokeCandidateRequest,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
-    // Both admission and durable execution recording can wait on bounded owners.
-    // Keep those waits outside Tauri's async executor and release shared shell state.
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<DesktopState>();
-        let (completion, query) = state.invoke(&request)?;
-        let outcome = completion
-            .recv()
-            .map_err(|_| "extension closed without reporting the action result".to_owned())??;
-        match outcome {
-            nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } => {
-                state.record_execution(&request, &query)?;
-                Ok(!matches!(effect, nanika_protocol::NavigationEffect::Close))
-            }
-            nanika_host::ExtensionInvocationOutcome::Cancelled => {
-                Err("The action was cancelled before it completed.".to_owned())
-            }
-        }
+        app.state::<DesktopState>().run_invocation(&request)
     })
     .await
     .map_err(|error| format!("could not wait for the action result: {error}"))?
+}
+
+#[tauri::command]
+pub(crate) async fn view_event(
+    window: tauri::WebviewWindow,
+    request: crate::ViewEventRequest,
+) -> Result<(), String> {
+    authorize_launcher(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<DesktopState>().run_view_event(request)
+    })
+    .await
+    .map_err(|error| format!("could not wait for the view result: {error}"))?
 }
 
 #[tauri::command]

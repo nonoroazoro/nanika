@@ -5,6 +5,7 @@ const allowedCommands = new Set([
   'invoke_candidate',
   'open_session',
   'publish_query',
+  'view_event',
 ])
 
 window.__TAURI_ISOLATION_HOOK__ = (message) => {

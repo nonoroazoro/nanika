@@ -10,7 +10,7 @@ use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 use crate::{
     DistributionInventory, ExtensionInvocationOutcome, ExtensionRuntime,
     ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter, RuntimeOutputUpdate,
-    RuntimeSettingsUpdate, RuntimeUpdateBatch, RuntimeViewCompletion, RuntimeViewUpdate,
+    RuntimeSettingsUpdate, RuntimeUpdateBatch, RuntimeViewCompletion,
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
@@ -273,7 +273,7 @@ impl RuntimeService {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-    ) -> Result<u64, String> {
+    ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
         self.extensions
             .view_event(extension_id, generation, view_id, revision, event)
             .map_err(|error| error.to_string())
@@ -285,7 +285,7 @@ impl RuntimeService {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
-    ) -> Result<u64, String> {
+    ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
         self.extensions
             .close_view(extension_id, generation, view_id, revision)
             .map_err(|error| error.to_string())
@@ -324,27 +324,7 @@ impl RuntimeService {
                 result: update.result,
             })
             .collect();
-        let views = self
-            .extensions
-            .take_view_updates()
-            .into_iter()
-            .map(|update| RuntimeViewUpdate {
-                request_id: update.request_id,
-                extension_id: update.extension_id,
-                generation: update.generation,
-                view_id: update.view_id,
-                result: update.result.map(|completion| RuntimeViewCompletion {
-                    revision: completion.revision,
-                    effect: completion.effect,
-                    view: completion.view,
-                }),
-            })
-            .collect();
-        RuntimeUpdateBatch {
-            outputs,
-            settings,
-            views,
-        }
+        RuntimeUpdateBatch { outputs, settings }
     }
 }
 

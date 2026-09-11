@@ -1,7 +1,8 @@
-import type { SearchPhase, SearchResult } from "./index";
+import type { NavigationSnapshot, SearchPhase, SearchResult } from "./index";
 
 export interface RootSearchSnapshot
 {
+    navigation: NavigationSnapshot;
     sessionId: number;
     requestId: number;
     revision: number;

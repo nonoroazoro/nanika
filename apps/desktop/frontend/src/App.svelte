@@ -2,8 +2,8 @@
 import { onMount, tick } from "svelte";
 
 import { tauriBridge } from "./bridge";
-import { RootSearch } from "./components";
-import type { ApplicationSnapshot, RootSearchSnapshot, SearchResult } from "./types";
+import { ExtensionView, RootSearch } from "./components";
+import type { ApplicationSnapshot, NavigationSnapshot, RootSearchSnapshot, SearchResult, ViewEvent } from "./types";
 import type { SearchObservation } from "./development";
 
 let application = $state<ApplicationSnapshot | null>(null);
@@ -13,7 +13,20 @@ let invoking = $state(false);
 let operationFailure = $state<string | null>(null);
 // A completed empty view survives pending queries just like a completed list.
 let hasCompletedSearch = $state(false);
+let navigation = $state.raw<NavigationSnapshot>({
+    revision: 0,
+    current: null,
+    busy: false,
+    error: null,
+    dismissCount: 0
+});
+let viewPending = $state(false);
+let viewInputError = $state<string | null>(null);
+let desiredViewQuery = $state<string | null>(null);
+let submittedNavigationRevision = 0;
+let viewOperation = 0;
 let rootSearch = $state.raw<RootSearchSnapshot>({
+    navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
     requestId: 0,
     revision: 0,
@@ -139,17 +152,13 @@ async function invokeCandidate(result: SearchResult): Promise<void>
     {
         invoking = true;
         operationFailure = null;
-        const keepsLauncherOpen = await tauriBridge.invokeCandidate({
+        await tauriBridge.invokeCandidate({
             sessionId: application.sessionId,
             requestId: rootSearch.requestId,
             extensionId: result.extensionId,
             entryId: result.entryId,
             actionId: result.actionId
         });
-        if (!keepsLauncherOpen)
-        {
-            await tauriBridge.dismissLauncher();
-        }
     }
     catch (error)
     {
@@ -175,13 +184,17 @@ function updateRootSearch(next: RootSearchSnapshot): void
     }
     if (
         next.sessionId !== application.sessionId
-        || next.requestId !== latestRequestId
         || next.revision <= lastRevision
     )
     {
         return;
     }
     lastRevision = next.revision;
+    updateNavigation(next.navigation);
+    if (next.requestId !== latestRequestId)
+    {
+        return;
+    }
     if (next.phase === "error")
     {
         fail(next.error ?? "Search failed. Reload the window to reconnect.");
@@ -210,6 +223,93 @@ function updateRootSearch(next: RootSearchSnapshot): void
     }
 }
 
+function updateNavigation(next: NavigationSnapshot): void
+{
+    if (next.revision <= navigation.revision)
+    {
+        return;
+    }
+    const changedRoute = next.current?.routeId !== navigation.current?.routeId;
+    const dismiss = next.dismissCount > navigation.dismissCount;
+    navigation = next;
+    if (changedRoute)
+    {
+        desiredViewQuery = next.current?.view.kind === "list" ? next.current.view.list.search_text : null;
+        viewInputError = null;
+    }
+    if (viewPending && !next.busy && next.revision > submittedNavigationRevision)
+    {
+        viewPending = false;
+    }
+    if (dismiss)
+    {
+        void tauriBridge.dismissLauncher().catch(fail);
+    }
+    if (!next.error)
+    {
+        flushViewQuery();
+    }
+}
+
+function changeViewQuery(text: string): void
+{
+    desiredViewQuery = text;
+    viewInputError = [...text].length > 4096
+        ? "View search supports up to 4096 characters. Edit the input to continue."
+        : null;
+    flushViewQuery();
+}
+
+function flushViewQuery(): void
+{
+    const current = navigation.current;
+    if (
+        viewPending || navigation.busy || viewInputError || !current || current.view.kind !== "list"
+        || desiredViewQuery === null || desiredViewQuery === current.view.list.search_text
+    )
+    {
+        return;
+    }
+    void sendViewEvent({ kind: "searchChanged", text: desiredViewQuery });
+}
+
+async function sendViewEvent(event: ViewEvent | null): Promise<void>
+{
+    const current = navigation.current;
+    const selectionOnly = event?.kind === "selectionChanged";
+    if (!application || !current)
+    {
+        return;
+    }
+    const operation = ++viewOperation;
+    submittedNavigationRevision = navigation.revision;
+    if (!selectionOnly)
+    {
+        viewPending = true;
+    }
+    operationFailure = null;
+    try
+    {
+        await tauriBridge.viewEvent({
+            sessionId: application.sessionId,
+            routeId: current.routeId,
+            revision: current.revision,
+            operation: event === null ? { kind: "back" } : { kind: "event", event }
+        });
+    }
+    catch (error)
+    {
+        if (operation === viewOperation)
+        {
+            if (!selectionOnly)
+            {
+                viewPending = false;
+            }
+            operationFailure = error instanceof Error ? error.message : String(error);
+        }
+    }
+}
+
 function observeSearch(requestId: number, stage: SearchObservation["stage"]): void
 {
     document.dispatchEvent(
@@ -228,21 +328,37 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
     </main>
 {:else}
     <svelte:boundary onerror={(error => fail(error))}>
-        <RootSearch
-            snapshot={rootSearch}
-            {hasCompletedSearch}
-            inputError={queryFailure}
-            busy={invoking || !application
-            || rootSearch.requestId !== latestRequestId
-            || rootSearch.phase !== "ready"}
-            onQuery={publishQuery}
-            onDismiss={() =>
-            {
-                tauriBridge.dismissLauncher().catch(fail);
-            }}
-            onInvoke={invokeCandidate}
-        />
-        {#if operationFailure}
+        {#if navigation.current}
+            {#key navigation.current.routeId}
+                <ExtensionView
+                    snapshot={navigation.current}
+                    busy={viewPending || viewInputError !== null}
+                    error={viewInputError ?? operationFailure ?? navigation.error}
+                    onQuery={changeViewQuery}
+                    onEvent={sendViewEvent}
+                    onBack={() =>
+                    {
+                        void sendViewEvent(null);
+                    }}
+                />
+            {/key}
+        {:else}
+            <RootSearch
+                snapshot={rootSearch}
+                {hasCompletedSearch}
+                inputError={queryFailure}
+                busy={invoking || navigation.busy || !application
+                || rootSearch.requestId !== latestRequestId
+                || rootSearch.phase !== "ready"}
+                onQuery={publishQuery}
+                onDismiss={() =>
+                {
+                    tauriBridge.dismissLauncher().catch(fail);
+                }}
+                onInvoke={invokeCandidate}
+            />
+        {/if}
+        {#if operationFailure && !navigation.current}
             <div class="operation-failure" role="alert">{operationFailure}</div>
         {/if}
         {#snippet failed()}

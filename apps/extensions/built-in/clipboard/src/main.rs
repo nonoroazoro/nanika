@@ -269,7 +269,7 @@ fn handle_view_event(
                         generation,
                         view_id: VIEW_ID.to_owned(),
                         revision: state.revision,
-                        effect: NavigationEffect::Close,
+                        effect: NavigationEffect::Dismiss,
                         view: None,
                     },
                 )?;

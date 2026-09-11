@@ -24,6 +24,7 @@ fn view_event_wakes_an_idle_worker() {
         .unwrap_or_else(|error| error.into_inner())
         .view_events
         .push_back(ExtensionViewRequest {
+            completion: mpsc::channel().0,
             request_id: 1,
             generation: 2,
             view_id: "test.view".to_owned(),

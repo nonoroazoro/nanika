@@ -1,5 +1,8 @@
 //! UI-independent host runtime and extension supervision boundaries.
 
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+compile_error!("nanika-runtime supports macOS and Windows only");
+
 #[path = "AcpConnectionContext.rs"]
 mod acp_connection_context;
 #[path = "AcpExtensionCommand.rs"]
@@ -61,10 +64,6 @@ mod extension_settings_update;
 mod extension_view_request;
 #[path = "ExtensionViewRequestKind.rs"]
 mod extension_view_request_kind;
-#[path = "ExtensionViewUpdate.rs"]
-mod extension_view_update;
-#[path = "ExtensionViewUpdatePayload.rs"]
-mod extension_view_update_payload;
 #[path = "ExtensionWork.rs"]
 mod extension_work;
 #[path = "HostDiagnostic.rs"]
@@ -83,8 +82,6 @@ mod runtime_settings_update;
 mod runtime_update_batch;
 #[path = "RuntimeViewCompletion.rs"]
 mod runtime_view_completion;
-#[path = "RuntimeViewUpdate.rs"]
-mod runtime_view_update;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
 
@@ -119,8 +116,6 @@ pub(crate) use extension_settings_result::*;
 pub(crate) use extension_settings_update::*;
 pub(crate) use extension_view_request::*;
 pub(crate) use extension_view_request_kind::*;
-pub(crate) use extension_view_update::*;
-pub(crate) use extension_view_update_payload::*;
 pub(crate) use extension_work::*;
 pub use host_diagnostic::*;
 pub use host_service_handler::*;
@@ -130,7 +125,6 @@ pub use runtime_service::*;
 pub use runtime_settings_update::*;
 pub use runtime_update_batch::*;
 pub use runtime_view_completion::*;
-pub use runtime_view_update::*;
 pub use supervisor_error::*;
 
 pub use nanika_core::{DiagnosticCategory, DiagnosticCode};

@@ -1,4 +1,10 @@
-import type { ApplicationSnapshot, InvokeCandidateRequest, PublishQueryRequest, RootSearchSnapshot } from "../types";
+import type {
+    ApplicationSnapshot,
+    InvokeCandidateRequest,
+    PublishQueryRequest,
+    RootSearchSnapshot,
+    ViewEventRequest
+} from "../types";
 
 export interface NanikaBridge
 {
@@ -8,6 +14,7 @@ export interface NanikaBridge
     ): Promise<ApplicationSnapshot>;
     closeSession(sessionId: number): Promise<void>;
     publishQuery(request: PublishQueryRequest): Promise<void>;
-    invokeCandidate(request: InvokeCandidateRequest): Promise<boolean>;
+    invokeCandidate(request: InvokeCandidateRequest): Promise<void>;
+    viewEvent(request: ViewEventRequest): Promise<void>;
     dismissLauncher(): Promise<void>;
 }

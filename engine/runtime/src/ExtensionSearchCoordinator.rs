@@ -8,17 +8,13 @@ use nanika_search::SearchHandle;
 use crate::{
     ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
     ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionSettingsResult,
-    ExtensionViewRequest, ExtensionViewRequestKind, ExtensionViewUpdate, HostServiceHandler,
+    ExtensionViewRequest, ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion,
     SupervisorError,
 };
-
-const VIEW_UPDATE_CAPACITY: usize = 16;
 
 /// Collection of fixed extension workers queried by one host generation.
 pub struct ExtensionSearchCoordinator {
     workers: Vec<ExtensionSearchWorker>,
-    view_updates: async_channel::Receiver<ExtensionViewUpdate>,
-    view_update_sender: async_channel::Sender<ExtensionViewUpdate>,
     next_invocation_id: AtomicU64,
     next_view_request_id: AtomicU64,
     notifier: ExtensionNotifier,
@@ -27,11 +23,8 @@ pub struct ExtensionSearchCoordinator {
 
 impl ExtensionSearchCoordinator {
     pub fn new() -> Self {
-        let (view_update_sender, view_updates) = async_channel::bounded(VIEW_UPDATE_CAPACITY);
         Self {
             workers: Vec::new(),
-            view_updates,
-            view_update_sender,
             next_invocation_id: AtomicU64::new(1),
             next_view_request_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
@@ -68,7 +61,6 @@ impl ExtensionSearchCoordinator {
             search,
             contributions,
             ExtensionSearchWorkerContext {
-                view_updates: self.view_update_sender.clone(),
                 notifier: Arc::clone(&self.notifier),
                 host_services: self.host_services.clone(),
             },
@@ -176,7 +168,7 @@ impl ExtensionSearchCoordinator {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-    ) -> Result<u64, SupervisorError> {
+    ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
         let worker = self
             .workers
             .iter()
@@ -187,14 +179,16 @@ impl ExtensionSearchCoordinator {
                 ))
             })?;
         let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
+        let (completion, receiver) = mpsc::channel();
         worker.view_event(ExtensionViewRequest {
+            completion,
             request_id,
             generation,
             view_id: view_id.into(),
             revision,
             kind: ExtensionViewRequestKind::Event(event),
         })?;
-        Ok(request_id)
+        Ok(receiver)
     }
 
     pub(crate) fn close_view(
@@ -203,7 +197,7 @@ impl ExtensionSearchCoordinator {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
-    ) -> Result<u64, SupervisorError> {
+    ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
         let worker = self
             .workers
             .iter()
@@ -214,22 +208,16 @@ impl ExtensionSearchCoordinator {
                 ))
             })?;
         let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
+        let (completion, receiver) = mpsc::channel();
         worker.view_event(ExtensionViewRequest {
+            completion,
             request_id,
             generation,
             view_id: view_id.into(),
             revision,
             kind: ExtensionViewRequestKind::Close,
         })?;
-        Ok(request_id)
-    }
-
-    pub(crate) fn take_view_updates(&self) -> Vec<ExtensionViewUpdate> {
-        let mut updates = Vec::new();
-        while let Ok(update) = self.view_updates.try_recv() {
-            updates.push(update);
-        }
-        updates
+        Ok(receiver)
     }
 
     pub(crate) fn take_settings(&self) -> Vec<ExtensionSettingsResult> {
@@ -275,7 +263,6 @@ impl ExtensionSearchCoordinator {
     }
 
     pub fn shutdown(&mut self) {
-        self.view_updates.close();
         for worker in &self.workers {
             worker.request_stop();
         }

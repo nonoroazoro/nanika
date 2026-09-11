@@ -7,7 +7,8 @@ use crate::View;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum NavigationEffect {
     None,
-    Close,
+    /// Hide the launcher while retaining the navigation stack and extension views.
+    Dismiss,
     Pop,
     Push {
         view_id: String,

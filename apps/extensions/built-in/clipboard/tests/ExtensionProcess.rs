@@ -142,7 +142,7 @@ fn clipboard_process_opens_a_scoped_view_and_copies_through_the_host() {
     )
     .expect("host response should write");
     let Some(Message::ViewUpdated {
-        effect: NavigationEffect::Close,
+        effect: NavigationEffect::Dismiss,
         view: None,
         ..
     }) = read_frame(&mut output).expect("view action result")

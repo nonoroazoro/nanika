@@ -7,6 +7,7 @@ use crate::{ViewAction, ViewMetadata};
 pub struct DetailView {
     pub title: Option<String>,
     pub body: String,
+    pub image_data_url: Option<String>,
     pub metadata: Vec<ViewMetadata>,
     pub actions: Vec<ViewAction>,
 }

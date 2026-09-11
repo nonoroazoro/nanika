@@ -14,7 +14,4 @@ pub(crate) fn configure_extension_command(command: &mut std::process::Command) {
 
         command.process_group(0);
     }
-
-    #[cfg(not(any(windows, target_os = "macos")))]
-    let _ = command;
 }

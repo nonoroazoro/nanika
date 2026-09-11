@@ -903,7 +903,7 @@ fn current_target() -> &'static str {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
 fn make_executable(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -912,7 +912,7 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
     fs::set_permissions(path, permissions)
 }
 
-#[cfg(not(unix))]
+#[cfg(target_os = "windows")]
 fn make_executable(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }

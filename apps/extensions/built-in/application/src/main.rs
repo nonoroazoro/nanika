@@ -195,7 +195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &Message::Result {
                                     request_id: pending.request_id,
                                     generation: pending.generation,
-                                    effect: nanika_protocol::NavigationEffect::Close,
+                                    effect: nanika_protocol::NavigationEffect::Dismiss,
                                 },
                             )?;
                         } else {

@@ -94,6 +94,15 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
             ClipboardContent::Files { paths } => paths.join("\n"),
             ClipboardContent::PngFile { .. } => "Image clipboard content".to_owned(),
         },
+        image_data_url: match &entry.content {
+            ClipboardContent::PngFile { path } => std::fs::read(path).ok().map(|bytes| {
+                format!(
+                    "data:image/png;base64,{}",
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
+                )
+            }),
+            _ => None,
+        },
         metadata: vec![
             ViewMetadata {
                 title: "Content type".to_owned(),

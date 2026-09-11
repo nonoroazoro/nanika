@@ -51,6 +51,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
             detail: Some(DetailView {
                 title: Some("Example".to_owned()),
                 body: "Content".to_owned(),
+                image_data_url: None,
                 metadata: Vec::new(),
                 actions: Vec::new(),
             }),
@@ -129,6 +130,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
             detail: Some(DetailView {
                 title: None,
                 body: "Example".to_owned(),
+                image_data_url: None,
                 metadata: Vec::new(),
                 actions: vec![ViewAction {
                     id: "example.open".to_owned(),

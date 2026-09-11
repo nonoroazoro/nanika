@@ -177,7 +177,7 @@ fn invoke_host(
                     &Message::Result {
                         request_id,
                         generation,
-                        effect: nanika_protocol::NavigationEffect::Close,
+                        effect: nanika_protocol::NavigationEffect::Dismiss,
                     },
                 );
             }

@@ -10,6 +10,8 @@ mod commands;
 mod desktop_runtime;
 #[path = "DesktopState.rs"]
 mod desktop_state;
+#[path = "ExtensionViewSnapshot.rs"]
+mod extension_view_snapshot;
 #[path = "IconProtocol.rs"]
 mod icon_protocol;
 #[path = "IconRequest.rs"]
@@ -28,6 +30,16 @@ mod search_phase;
 mod search_result;
 #[path = "SearchSession.rs"]
 mod search_session;
+use extension_view_snapshot::*;
+#[path = "NavigationSnapshot.rs"]
+mod navigation_snapshot;
+use navigation_snapshot::*;
+#[path = "NavigationState.rs"]
+mod navigation_state;
+use navigation_state::*;
+#[path = "ViewEventRequest.rs"]
+mod view_event_request;
+use view_event_request::*;
 mod tray;
 mod window;
 
@@ -50,7 +62,7 @@ mod search_delivery_tests;
 
 #[cfg(target_os = "macos")]
 const DEFAULT_HOTKEY: &str = "Ctrl+Space";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
 const DEFAULT_HOTKEY: &str = "Alt+Space";
 
 pub fn run() -> Result<(), String> {
@@ -88,6 +100,7 @@ pub fn run() -> Result<(), String> {
             invoke_candidate,
             open_session,
             publish_query,
+            view_event,
         ])
         .on_window_event(handle_window_event)
         .setup(move |app| {

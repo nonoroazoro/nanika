@@ -59,11 +59,12 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
                 (None, None) => true,
                 _ => false,
             };
-        if unchanged {
+        if unchanged && session.delivered_navigation_revision == session.navigation.revision {
             continue;
         }
         session.revision += 1;
         let update = RootSearchSnapshot {
+            navigation: session.navigation.snapshot(),
             session_id: session.id,
             request_id: session.request_id,
             revision: session.revision,
@@ -87,6 +88,7 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
                 session.error = error;
                 session.warnings = warnings;
                 session.delivered = latest;
+                session.delivered_navigation_revision = session.navigation.revision;
                 tracing::debug!(
                     session_id = session.id,
                     request_id = session.request_id,

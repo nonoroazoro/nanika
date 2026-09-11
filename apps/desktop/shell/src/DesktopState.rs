@@ -11,6 +11,7 @@ use crate::{
 pub(crate) struct DesktopState {
     next_session_id: AtomicU64,
     shared: Arc<Mutex<DesktopRuntime>>,
+    view_operation_lock: Mutex<()>,
     wakes: SyncSender<SearchDelivery>,
     dispatcher: Option<JoinHandle<()>>,
     instance: Mutex<Option<nanika_platform::SingleInstance>>,
@@ -33,6 +34,7 @@ impl DesktopState {
         Ok(Self {
             next_session_id: AtomicU64::new(1),
             shared,
+            view_operation_lock: Mutex::new(()),
             wakes,
             dispatcher: Some(dispatcher),
             instance: Mutex::new(Some(instance)),
@@ -56,9 +58,11 @@ impl DesktopState {
         }
         // Registration and the initial empty query are atomic relative to delivery.
         // The response contains metadata only; all search data uses the Channel.
-        state.session = Some(session);
+        let previous = state.session.replace(session);
+        let runtime = state.runtime.clone();
         drop(state);
         self.wake();
+        retire_views(runtime, previous);
         tracing::debug!(session_id = id, "frontend session opened");
         Ok(ApplicationSnapshot {
             session_id: id,
@@ -130,51 +134,232 @@ impl DesktopState {
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if state
+        let previous = if state
             .session
             .as_ref()
             .is_some_and(|session| session.id == session_id)
         {
-            state.session = None;
-        }
+            state.session.take()
+        } else {
+            None
+        };
+        let runtime = state.runtime.clone();
         drop(state);
+        retire_views(runtime, previous);
         self.wake();
     }
 
-    pub(crate) fn invoke(
+    pub(crate) fn run_invocation(&self, request: &InvokeCandidateRequest) -> Result<(), String> {
+        let (runtime, query, generation) = {
+            let mut state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+            let session = state
+                .session
+                .as_mut()
+                .ok_or("The window session is not open.")?;
+            session.authorize(request.session_id)?;
+            if session.request_id != request.request_id || !session.navigation.stack.is_empty() {
+                return Err("Search changed. Select a current result.".to_owned());
+            }
+            session.navigation.begin()?;
+            (runtime, session.query.clone(), session.generation)
+        };
+        self.wake();
+        let result = (|| {
+            let completion = runtime.invoke(
+                generation,
+                &request.extension_id,
+                &request.entry_id,
+                &request.action_id,
+                &query,
+            )?;
+            let outcome = completion
+                .recv()
+                .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
+            let nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } = outcome else {
+                return Err("The action was cancelled before it completed.".to_owned());
+            };
+            self.apply_navigation(
+                request.session_id,
+                &runtime,
+                &request.extension_id,
+                generation,
+                effect,
+                false,
+            )?;
+            self.record_execution(request, &query)
+        })();
+        self.finish_navigation(request.session_id, result.clone());
+        result
+    }
+
+    pub(crate) fn run_view_event(&self, request: crate::ViewEventRequest) -> Result<(), String> {
+        // Tauri may dispatch pointer and keyboard events concurrently. Serialize all
+        // view operations here so route state is never rejected as already busy.
+        let _operation_guard = self
+            .view_operation_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let (runtime, route) = {
+            let mut state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+            let session = state
+                .session
+                .as_mut()
+                .ok_or("The window session is not open.")?;
+            session.authorize(request.session_id)?;
+            let route = session
+                .navigation
+                .authorize_route(request.route_id)?
+                .clone();
+            if request._revision > route.revision {
+                return Err("The extension view revision is ahead of the current state.".to_owned());
+            }
+            if let crate::ViewOperation::Event { event } = &request.operation {
+                crate::authorize_view_event(&route.view, event)?;
+            }
+            session.navigation.begin()?;
+            (runtime, route)
+        };
+        self.wake();
+        let closing = matches!(request.operation, crate::ViewOperation::Back);
+        let result = (|| {
+            let completion = if let crate::ViewOperation::Event { event } = request.operation {
+                runtime.view_event(
+                    &route.extension_id,
+                    route.generation,
+                    &route.view_id,
+                    route.revision,
+                    event,
+                )?
+            } else {
+                runtime.close_view(
+                    &route.extension_id,
+                    route.generation,
+                    &route.view_id,
+                    route.revision,
+                )?
+            };
+            let completion = completion
+                .recv()
+                .map_err(|_| "Extension closed without a view result.".to_owned())??;
+            if let Some(view) = completion.view {
+                let mut state = self
+                    .shared
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                let session = state
+                    .session
+                    .as_mut()
+                    .ok_or("The window session is not open.")?;
+                session.authorize(request.session_id)?;
+                session
+                    .navigation
+                    .authorize_view(route.route_id, route.revision)?;
+                let current = session
+                    .navigation
+                    .stack
+                    .last_mut()
+                    .ok_or("No extension view is open.")?;
+                current.view = view;
+                current.revision = completion.revision;
+            }
+            self.apply_navigation(
+                request.session_id,
+                &runtime,
+                &route.extension_id,
+                route.generation,
+                completion.effect,
+                closing,
+            )
+        })();
+        self.finish_navigation(request.session_id, result.clone());
+        result
+    }
+
+    fn apply_navigation(
         &self,
-        request: &InvokeCandidateRequest,
-    ) -> Result<
-        (
-            std::sync::mpsc::Receiver<Result<nanika_host::ExtensionInvocationOutcome, String>>,
-            String,
-        ),
-        String,
-    > {
-        let state = self
+        session_id: u64,
+        runtime: &nanika_host::RuntimeService,
+        extension_id: &str,
+        generation: u64,
+        effect: nanika_protocol::NavigationEffect,
+        already_closed: bool,
+    ) -> Result<(), String> {
+        let routes = {
+            let state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let session = state
+                .session
+                .as_ref()
+                .filter(|session| session.id == session_id);
+            if let Some(session) = session {
+                match &effect {
+                    nanika_protocol::NavigationEffect::Pop if !already_closed => session
+                        .navigation
+                        .stack
+                        .last()
+                        .cloned()
+                        .into_iter()
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            } else {
+                drop(state);
+                // A completed action can outlive its WebView. Release a newly opened
+                // extension view instead of delivering it to an unrelated session.
+                if let nanika_protocol::NavigationEffect::Push {
+                    view_id, revision, ..
+                } = effect
+                {
+                    close_runtime_view(runtime, extension_id, generation, &view_id, revision)?;
+                }
+                return Err("The originating window session has closed.".to_owned());
+            }
+        };
+        for route in routes {
+            close_runtime_view(
+                runtime,
+                &route.extension_id,
+                route.generation,
+                &route.view_id,
+                route.revision,
+            )?;
+        }
+        let mut state = self
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let session = state
             .session
-            .as_ref()
+            .as_mut()
             .ok_or("The window session is not open.")?;
-        session.authorize(request.session_id)?;
-        if session.request_id != request.request_id {
-            return Err("Search changed. Select a current result.".to_owned());
+        session.authorize(session_id)?;
+        session.navigation.apply(extension_id, generation, effect)
+    }
+
+    fn finish_navigation(&self, session_id: u64, result: Result<(), String>) {
+        let mut state = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(session) = state
+            .session
+            .as_mut()
+            .filter(|session| session.id == session_id)
+        {
+            session.navigation.finish(result);
         }
-        let query = session.query.clone();
-        let generation = session.generation;
-        let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
         drop(state);
-        let completion = runtime.invoke(
-            generation,
-            &request.extension_id,
-            &request.entry_id,
-            &request.action_id,
-            &query,
-        )?;
-        Ok((completion, query))
+        self.wake();
     }
 
     pub(crate) fn record_execution(
@@ -257,4 +442,40 @@ impl Drop for DesktopState {
             .unwrap_or_else(|error| error.into_inner())
             .take();
     }
+}
+
+fn close_runtime_view(
+    runtime: &nanika_host::RuntimeService,
+    extension_id: &str,
+    generation: u64,
+    view_id: &str,
+    revision: u64,
+) -> Result<(), String> {
+    runtime
+        .close_view(extension_id, generation, view_id, revision)?
+        .recv()
+        .map_err(|_| "Extension closed without acknowledging view closure.".to_owned())??;
+    Ok(())
+}
+
+fn retire_views(runtime: Option<Arc<nanika_host::RuntimeService>>, session: Option<SearchSession>) {
+    let (Some(runtime), Some(session)) = (runtime, session) else {
+        return;
+    };
+    if session.navigation.stack.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        for route in session.navigation.stack.into_iter().rev() {
+            if let Err(error) = close_runtime_view(
+                &runtime,
+                &route.extension_id,
+                route.generation,
+                &route.view_id,
+                route.revision,
+            ) {
+                tracing::error!(%error, view_id = route.view_id, "could not close retired extension view");
+            }
+        }
+    });
 }

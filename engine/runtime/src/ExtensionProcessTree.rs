@@ -29,7 +29,7 @@ impl ExtensionProcessTree {
         #[cfg(windows)]
         return Self::attach_windows(child.as_raw_handle(), child.id());
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
             let _ = child;
             Ok(Self {})
@@ -40,7 +40,7 @@ impl ExtensionProcessTree {
         #[cfg(windows)]
         return Self::attach_windows(child.as_raw_handle(), child.id());
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
             let _ = child;
             Ok(Self {})
@@ -62,9 +62,6 @@ impl ExtensionProcessTree {
                 rustix::process::Signal::KILL,
             ))?;
         }
-
-        #[cfg(not(any(windows, target_os = "macos")))]
-        let _ = _process_id;
 
         Ok(())
     }

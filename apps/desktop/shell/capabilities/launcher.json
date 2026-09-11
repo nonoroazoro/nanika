@@ -9,6 +9,7 @@
     "allow-dismiss-launcher",
     "allow-invoke-candidate",
     "allow-open-session",
-    "allow-publish-query"
+    "allow-publish-query",
+    "allow-view-event"
   ]
 }

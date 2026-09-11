@@ -26,5 +26,6 @@ export const tauriBridge: NanikaBridge = {
     closeSession: async sessionId => invoke("close_session", { sessionId }),
     publishQuery: async request => invoke("publish_query", { request }),
     invokeCandidate: async request => invoke("invoke_candidate", { request }),
+    viewEvent: async request => invoke("view_event", { request }),
     dismissLauncher: async () => invoke("dismiss_launcher")
 };

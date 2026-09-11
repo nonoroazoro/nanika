@@ -7,6 +7,7 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+base64 = "0.22.1"
 clipboard-rs.workspace = true
 nanika-protocol = { path = "../../../../engine/extension-protocol" }
 rusqlite.workspace = true
