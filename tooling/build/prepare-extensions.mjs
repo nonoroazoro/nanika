@@ -1,16 +1,16 @@
-import { cp, mkdir, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const profile = process.argv[2];
 if (profile !== "debug" && profile !== "release") {
-    throw new Error("usage: stage-extensions.mjs <debug|release>");
+    throw new Error("usage: prepare-extensions.mjs <debug|release>");
 }
 
-const root = resolve(new URL("../..", import.meta.url).pathname);
-const targetDirectory = resolve(root, "target");
-const profileDirectory = resolve(targetDirectory, profile);
-const stagingDirectory = resolve(targetDirectory, "tauri-binaries");
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const profileDirectory = resolve(root, "target", profile);
+const preparedDirectory = resolve(root, "target", "tauri-binaries");
 const targetTriple = process.env.TARGET ?? hostTriple();
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const names = [
@@ -21,11 +21,11 @@ const names = [
     "nanika-extension-clipboard"
 ];
 
-await rm(stagingDirectory, { recursive: true, force: true });
-await mkdir(stagingDirectory, { recursive: true });
+await rm(preparedDirectory, { recursive: true, force: true });
+await mkdir(preparedDirectory, { recursive: true });
 for (const name of names) {
     const source = resolve(profileDirectory, `${name}${executableSuffix}`);
-    const destination = resolve(stagingDirectory, `${name}-${targetTriple}${executableSuffix}`);
+    const destination = resolve(preparedDirectory, `${name}-${targetTriple}${executableSuffix}`);
     await cp(source, destination);
 }
 
