@@ -22,7 +22,7 @@ impl SearchResult {
             subtitle: candidate.subtitle().map(str::to_owned),
             icon_url: candidate.icon_key().map(|key| {
                 format!(
-                    "nanika-icon://localhost/{}/{key}/128.png",
+                    "http://nanika-icon.localhost/{}/{key}/128.png",
                     candidate.extension_id()
                 )
             }),

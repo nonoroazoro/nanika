@@ -4,36 +4,62 @@ use std::ffi::c_void;
 use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 
-use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, SIZE};
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
     CoUninitialize, IPersistFile, STGM_READ,
 };
-use windows::Win32::UI::Shell::{IShellLinkW, SLGP_RAWPATH, ShellLink};
+use windows::Win32::UI::Shell::{
+    IShellItemImageFactory, IShellLinkW, SHCreateItemFromParsingName, SIIGBF_ICONONLY,
+    SIIGBF_RESIZETOFIT, SLGP_RAWPATH, ShellLink,
+};
 use windows::core::{Interface, PCWSTR};
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
-    DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SelectObject,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_CommonPrograms, FOLDERID_Programs, SHGetKnownFolderPath,
+    ExtractIconExW, FOLDERID_CommonPrograms, FOLDERID_Programs, SHFILEINFOW, SHGFI_ICON,
+    SHGFI_LARGEICON, SHGetFileInfoW, SHGetKnownFolderPath,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DI_NORMAL, DestroyIcon, DrawIconEx, PrivateExtractIconsW,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
 use super::shell_link_metadata::ShellLinkMetadata;
 use crate::normalization::{normalize_name, path_key, stable_hash};
 use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
 
 pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
-    [FOLDERID_Programs, FOLDERID_CommonPrograms]
+    let roots: Vec<PathBuf> = [FOLDERID_Programs, FOLDERID_CommonPrograms]
         .iter()
         .map(known_folder)
-        .collect()
+        .collect::<Result<_, _>>()?;
+    let mut roots = roots;
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        if let Some(root) = packaged_root(PathBuf::from(local_app_data).join("Packages")) {
+            roots.push(root);
+        }
+    }
+    if let Ok(program_files) = std::env::var("ProgramFiles") {
+        if let Some(root) = packaged_root(PathBuf::from(program_files).join("WindowsApps")) {
+            roots.push(root);
+        }
+    }
+    Ok(roots)
+}
+
+fn packaged_root(root: PathBuf) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(&root).ok()?;
+    if entries
+        .filter_map(Result::ok)
+        .any(|entry| entry.path().join("AppxManifest.xml").is_file())
+    {
+        Some(root)
+    } else {
+        None
+    }
 }
 
 pub(super) fn is_application_path(path: &Path) -> bool {
@@ -44,8 +70,8 @@ pub(super) fn is_application_path(path: &Path) -> bool {
         })
 }
 
-pub(super) fn is_application_bundle(_path: &Path) -> bool {
-    false
+pub(super) fn is_application_bundle(path: &Path) -> bool {
+    path.is_dir() && path.join("AppxManifest.xml").is_file()
 }
 
 pub(super) fn read_entry(
@@ -62,35 +88,179 @@ pub(super) fn read_entry(
         read_shell_link(state, path, seen_at, priority)
     } else if extension.eq_ignore_ascii_case("exe") {
         read_executable(state, path, seen_at, priority)
+    } else if is_application_bundle(path) {
+        read_packaged_application(path, seen_at, priority)
     } else {
         Ok(None)
     }
 }
 
+fn read_packaged_application(
+    package_root: &Path,
+    seen_at: u64,
+    priority: usize,
+) -> Result<Option<ApplicationEntry>, ApplicationError> {
+    let manifest_path = package_root.join("AppxManifest.xml");
+    let manifest = std::fs::read_to_string(&manifest_path)?;
+    let identity = xml_attribute(&manifest, "Identity", "Name").unwrap_or_else(|| {
+        package_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("package")
+            .to_owned()
+    });
+    let application = xml_element(&manifest, "Application").ok_or_else(|| {
+        ApplicationError::Configuration(format!(
+            "packaged app manifest has no Application: {}",
+            manifest_path.display()
+        ))
+    })?;
+    let app_id =
+        xml_attribute(application, "Application", "Id").unwrap_or_else(|| "App".to_owned());
+    let display_name = xml_attribute(application, "Application", "DisplayName")
+        .filter(|value| !value.starts_with("ms-resource:"))
+        .unwrap_or_else(|| identity.clone());
+    let visual = xml_element(application, "uap:VisualElements")
+        .or_else(|| xml_element(application, "VisualElements"));
+    let icon = visual
+        .and_then(|value| xml_attribute(value, "uap:VisualElements", "Square44x44Logo"))
+        .or_else(|| visual.and_then(|value| xml_attribute(value, "VisualElements", "Logo")))
+        .map(|value| package_root.join(value));
+    let package_id = format!("{identity}!{app_id}");
+    let arguments_json =
+        ApplicationArguments::from_windows_raw(Some(format!("shell:AppsFolder\\{package_id}")))
+            .to_json()?;
+    let entry_id = stable_hash(&["windows-packaged", &package_id, &path_key(package_root)]);
+    let icon_key = icon.as_ref().map_or_else(String::new, |path| {
+        crate::icon_cache::key_from_stamp(path, 0, 0, 0)
+    });
+    Ok(Some(ApplicationEntry {
+        entry_id: format!("app.{entry_id}"),
+        source_key: path_key(package_root),
+        display_name: display_name.clone(),
+        normalized_name: normalize_name(&display_name),
+        normalized_tokens: normalize_name(&display_name),
+        launch_kind: "windows-packaged".to_owned(),
+        target_path: "explorer.exe".to_owned(),
+        working_directory: None,
+        arguments_json,
+        bundle_id: Some(package_id),
+        icon_key,
+        file_identity: path_key(package_root),
+        last_seen_at: seen_at,
+        stale: false,
+        icon_source: icon,
+        icon_index: 0,
+        priority,
+    }))
+}
+
+fn xml_element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+    let start = xml.find(&format!("<{name}"))?;
+    let rest = &xml[start..];
+    let end = rest.find('>')?;
+    Some(&rest[..=end])
+}
+
+fn xml_attribute(xml: &str, element: &str, attribute: &str) -> Option<String> {
+    let element = xml_element(xml, element)?;
+    let marker = format!("{attribute}=\"");
+    let start = element.find(&marker)? + marker.len();
+    let end = element[start..].find('\"')? + start;
+    Some(element[start..end].replace('/', "\\"))
+}
+
 pub(super) fn extract_icon(
     source: &Path,
-    icon_index: i32,
+    _icon_index: i32,
     size: u32,
     target: &Path,
 ) -> Result<(), ApplicationError> {
+    if source.metadata().is_ok_and(|metadata| metadata.len() == 0) {
+        return Err(ApplicationError::Io(std::io::Error::other(
+            "Windows application source is empty",
+        )));
+    }
     let source = wide_null(source.as_os_str());
-    let mut icon = std::ptr::null_mut();
+    let apartment = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let should_uninitialize = apartment.is_ok();
+    let shell_result = unsafe {
+        SHCreateItemFromParsingName::<_, _, IShellItemImageFactory>(PCWSTR(source.as_ptr()), None)
+    };
+    if let Ok(factory) = shell_result {
+        let bitmap = unsafe {
+            factory.GetImage(
+                SIZE {
+                    cx: size as i32,
+                    cy: size as i32,
+                },
+                SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT,
+            )
+        };
+        if let Ok(bitmap) = bitmap {
+            let result = hbitmap_pixels(bitmap.0, size).and_then(|pixels| {
+                let pixels =
+                    crate::normalize_icon_rgba(&pixels, size, size, size).ok_or_else(|| {
+                        std::io::Error::other("Windows provided an empty application icon")
+                    })?;
+                crate::icon_cache::write_png(target, size, size, &pixels)
+            });
+            unsafe {
+                DeleteObject(bitmap.0);
+            }
+            if should_uninitialize {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+            if result.is_ok() {
+                return result;
+            }
+        }
+    }
+    if should_uninitialize {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+    let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
     let extracted = unsafe {
-        PrivateExtractIconsW(
+        SHGetFileInfoW(
             source.as_ptr(),
-            icon_index,
-            size as i32,
-            size as i32,
-            &mut icon,
-            std::ptr::null_mut(),
-            1,
             0,
+            &mut info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | SHGFI_LARGEICON,
         )
     };
+    let icon = info.hIcon;
     if extracted == 0 || icon.is_null() {
-        return Err(ApplicationError::Io(std::io::Error::other(
-            "Windows did not provide an application icon",
-        )));
+        let mut fallback = std::ptr::null_mut();
+        let count = unsafe {
+            ExtractIconExW(
+                source.as_ptr(),
+                _icon_index,
+                &mut fallback,
+                std::ptr::null_mut(),
+                1,
+            )
+        };
+        if count == 0 || fallback.is_null() {
+            return Err(ApplicationError::Io(std::io::Error::other(
+                "Windows Shell did not provide an application icon",
+            )));
+        }
+        let result = icon_pixels(fallback, size).and_then(|pixels| {
+            let pixels =
+                crate::normalize_icon_rgba(&pixels, size, size, size).ok_or_else(|| {
+                    std::io::Error::other("Windows provided an empty application icon")
+                })?;
+            crate::icon_cache::write_png(target, size, size, &pixels)
+        });
+        unsafe {
+            DestroyIcon(fallback);
+        }
+        return result;
     }
     let result = icon_pixels(icon, size).and_then(|pixels| {
         let pixels = crate::normalize_icon_rgba(&pixels, size, size, size)
@@ -143,16 +313,12 @@ fn read_shell_link(
         .map(expand_environment)
         .filter(|source| source.is_file())
         .unwrap_or_else(|| target.clone());
-    let icon_key = if icon_source == target {
-        crate::icon_cache::key_from_stamp(
-            &icon_source,
-            link.icon_index,
-            executable_length,
-            executable_modified,
-        )
-    } else {
-        String::new()
-    };
+    let icon_key = crate::icon_cache::key_from_stamp(
+        &icon_source,
+        link.icon_index,
+        executable_length,
+        executable_modified,
+    );
     Ok(Some(ApplicationEntry {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
@@ -379,6 +545,48 @@ fn icon_pixels(
     }
     let white = draw_icon_bgra(icon, size, u8::MAX)?;
     Ok(crate::windows_alpha_recovery::recover_rgba(pixels, &white))
+}
+
+fn hbitmap_pixels(
+    bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
+    size: u32,
+) -> Result<Vec<u8>, ApplicationError> {
+    let mut info = unsafe { std::mem::zeroed::<BITMAPINFO>() };
+    info.bmiHeader = BITMAPINFOHEADER {
+        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+        biWidth: size as i32,
+        biHeight: -(size as i32),
+        biPlanes: 1,
+        biBitCount: 32,
+        biCompression: BI_RGB,
+        ..unsafe { std::mem::zeroed() }
+    };
+    let mut pixels = vec![0_u8; (size * size * 4) as usize];
+    let screen = unsafe { GetDC(std::ptr::null_mut()) };
+    if screen.is_null() {
+        return Err(ApplicationError::Io(std::io::Error::last_os_error()));
+    }
+    let copied = unsafe {
+        GetDIBits(
+            screen,
+            bitmap,
+            0,
+            size,
+            pixels.as_mut_ptr().cast(),
+            &mut info,
+            DIB_RGB_COLORS,
+        )
+    };
+    unsafe {
+        ReleaseDC(std::ptr::null_mut(), screen);
+    }
+    if copied == 0 {
+        return Err(ApplicationError::Io(std::io::Error::last_os_error()));
+    }
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+    }
+    Ok(pixels)
 }
 
 fn draw_icon_bgra(
