@@ -13,7 +13,7 @@ pub(crate) struct IconProtocol {
 }
 
 impl IconProtocol {
-    pub(crate) fn spawn(cache_root: PathBuf) -> Result<Self, String> {
+    pub(crate) fn spawn(cache_root: PathBuf, payload_root: PathBuf) -> Result<Self, String> {
         let (requests, receiver) = async_channel::bounded::<IconRequest>(REQUEST_CAPACITY);
         std::thread::Builder::new()
             .name("nanika-icon-protocol".to_owned())
@@ -21,6 +21,7 @@ impl IconProtocol {
                 while let Ok(request) = receiver.recv_blocking() {
                     request.responder.respond(resolve_request(
                         &cache_root,
+                        &payload_root,
                         &request.webview_label,
                         &request.request,
                     ));
@@ -41,21 +42,27 @@ impl IconProtocol {
             request,
             responder,
         };
-        let requests = self.requests.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(error) = requests.send(request).await {
-                error.into_inner().responder.respond(response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "text/plain",
-                    Vec::new(),
-                ));
-            }
-        });
+        // The protocol callback is synchronous. Spawning one async task per
+        // request would make the bounded channel ineffective because tasks
+        // waiting for capacity could grow without a limit. Refuse overload
+        // explicitly so pending requests remain bounded by the queue.
+        match self.requests.try_send(request) {
+            Ok(()) => {}
+            Err(async_channel::TrySendError::Full(request)) => request.responder.respond(response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "text/plain",
+                Vec::new(),
+            )),
+            Err(async_channel::TrySendError::Closed(request)) => request.responder.respond(
+                response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", Vec::new()),
+            ),
+        }
     }
 }
 
 fn resolve_request(
     cache_root: &std::path::Path,
+    payload_root: &std::path::Path,
     webview_label: &str,
     request: &Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
@@ -68,6 +75,20 @@ fn resolve_request(
         .trim_start_matches('/')
         .split('/')
         .collect::<Vec<_>>();
+    if segments.len() == 2
+        && segments[0] == "com.nanika.clipboard"
+        && segments[1].ends_with(".png")
+        && segments[1].len() == 68
+        && segments[1][..64]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        let payload = payload_root.join("com.nanika.clipboard").join(segments[1]);
+        return match std::fs::read(payload) {
+            Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
+            Err(_) => response(StatusCode::NOT_FOUND, "text/plain", Vec::new()),
+        };
+    }
     let [extension_id, icon_key, file_name] = segments.as_slice() else {
         return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     };

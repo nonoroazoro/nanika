@@ -99,9 +99,11 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
     validate_text("detail body", &detail.body, 262_144, true)?;
     if let Some(image) = &detail.image_data_url {
         const MAX_IMAGE_DATA_URL_CHARS: usize = 24 * 1024 * 1024;
+        let valid_resource =
+            image.starts_with("http://nanika-icon.localhost/com.nanika.clipboard/");
         if image.chars().count() > MAX_IMAGE_DATA_URL_CHARS
-            || !image.starts_with("data:image/")
-            || !image.contains(";base64,")
+            || (!image.starts_with("data:image/") && !valid_resource)
+            || (image.starts_with("data:image/") && !image.contains(";base64,"))
         {
             return Err("detail image data is invalid or too large".to_owned());
         }

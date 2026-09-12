@@ -54,3 +54,27 @@ fn clipboard_history_is_not_deleted_without_an_explicit_user_action() {
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
+
+#[test]
+fn clear_removes_all_clipboard_history() {
+    let root = std::env::temp_dir().join(format!("nanika-clipboard-clear-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    database
+        .upsert(&ClipboardEntry {
+            entry_id: "clipboard.one".to_owned(),
+            content_hash: "one".to_owned(),
+            title: "one".to_owned(),
+            content: ClipboardContent::Text {
+                value: "one".to_owned(),
+            },
+            byte_size: 3,
+            captured_at: 1,
+            pinned: false,
+        })
+        .expect("capture");
+    database.clear().expect("clear history");
+    assert!(database.load().expect("history").is_empty());
+    drop(database);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}

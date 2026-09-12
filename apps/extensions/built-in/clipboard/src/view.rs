@@ -3,7 +3,7 @@ use nanika_protocol::{
     ViewActionStyle, ViewFilter, ViewFilterOption, ViewMetadata,
 };
 
-use crate::{COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
+use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
 
 pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]) -> View {
     let matching = entries
@@ -28,31 +28,14 @@ pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]
         .as_deref()
         .and_then(|selected| visible.iter().find(|entry| entry.entry_id == selected))
         .copied();
-    let pinned = visible
-        .iter()
-        .filter(|entry| entry.pinned)
-        .map(|entry| list_item(entry))
-        .collect::<Vec<_>>();
-    let recent = visible
-        .iter()
-        .filter(|entry| !entry.pinned)
-        .map(|entry| list_item(entry))
-        .collect::<Vec<_>>();
-    let mut sections = Vec::with_capacity(2);
-    if !pinned.is_empty() {
-        sections.push(ListSection {
-            id: "pinned".to_owned(),
-            title: Some("Pinned".to_owned()),
-            items: pinned,
-        });
-    }
-    if !recent.is_empty() {
-        sections.push(ListSection {
-            id: "recent".to_owned(),
-            title: Some("Recent".to_owned()),
-            items: recent,
-        });
-    }
+    let sections = (!visible.is_empty())
+        .then(|| ListSection {
+            id: "all".to_owned(),
+            title: None,
+            items: visible.iter().map(|entry| list_item(entry)).collect(),
+        })
+        .into_iter()
+        .collect();
     View::List {
         list: Box::new(ListView {
             title: "Clipboard History".to_owned(),
@@ -82,25 +65,25 @@ fn list_item(entry: &ClipboardEntry) -> ListItem {
         id: entry.entry_id.clone(),
         title: entry.title.clone(),
         subtitle: Some(content_type(entry).to_owned()),
-        actions: vec![copy_action()],
+        actions: vec![clear_action(), copy_action()],
     }
 }
 
 fn detail_view(entry: &ClipboardEntry) -> DetailView {
     DetailView {
-        title: Some(entry.title.clone()),
+        title: None,
         body: match &entry.content {
             ClipboardContent::Text { value } => value.clone(),
             ClipboardContent::Files { paths } => paths.join("\n"),
             ClipboardContent::PngFile { .. } => "Image clipboard content".to_owned(),
         },
         image_data_url: match &entry.content {
-            ClipboardContent::PngFile { path } => std::fs::read(path).ok().map(|bytes| {
-                format!(
-                    "data:image/png;base64,{}",
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
-                )
-            }),
+            ClipboardContent::PngFile { .. } if is_content_hash(&entry.content_hash) => {
+                Some(format!(
+                    "http://nanika-icon.localhost/com.nanika.clipboard/{}.png",
+                    entry.content_hash
+                ))
+            }
             _ => None,
         },
         metadata: vec![
@@ -117,11 +100,23 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
     }
 }
 
+fn is_content_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn copy_action() -> ViewAction {
     ViewAction {
         id: COPY_ACTION_ID.to_owned(),
         title: "Copy to Clipboard".to_owned(),
         style: ViewActionStyle::Primary,
+    }
+}
+
+fn clear_action() -> ViewAction {
+    ViewAction {
+        id: CLEAR_ACTION_ID.to_owned(),
+        title: "Clear".to_owned(),
+        style: ViewActionStyle::Destructive,
     }
 }
 
@@ -135,9 +130,18 @@ fn filter_option(value: &str, title: &str) -> ViewFilterOption {
 fn matches_query(entry: &ClipboardEntry, query: &str) -> bool {
     let query = query.trim().to_lowercase();
     query.is_empty()
-        || std::iter::once(entry.title.as_str())
-            .chain(searchable_values(entry).iter().map(String::as_str))
-            .any(|value| value.to_lowercase().contains(&query))
+        || contains_query(&entry.title, &query)
+        || match &entry.content {
+            ClipboardContent::Text { value } => contains_query(value, &query),
+            ClipboardContent::Files { paths } => {
+                paths.iter().any(|path| contains_query(path, &query))
+            }
+            ClipboardContent::PngFile { .. } => false,
+        }
+}
+
+fn contains_query(value: &str, query: &str) -> bool {
+    value.to_lowercase().contains(query)
 }
 
 fn matches_content_type(entry: &ClipboardEntry, selected: &str) -> bool {
@@ -148,14 +152,6 @@ fn matches_content_type(entry: &ClipboardEntry, selected: &str) -> bool {
                 | (ClipboardContent::Files { .. }, "files")
                 | (ClipboardContent::PngFile { .. }, "images")
         )
-}
-
-fn searchable_values(entry: &ClipboardEntry) -> Vec<String> {
-    match &entry.content {
-        ClipboardContent::Text { value } => vec![value.clone()],
-        ClipboardContent::Files { paths } => paths.clone(),
-        ClipboardContent::PngFile { .. } => Vec::new(),
-    }
 }
 
 fn content_type(entry: &ClipboardEntry) -> &'static str {

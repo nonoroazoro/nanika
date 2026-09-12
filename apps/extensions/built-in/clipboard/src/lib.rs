@@ -35,6 +35,7 @@ pub use view::*;
 
 pub const EXTENSION_ID: &str = "com.nanika.clipboard";
 pub const COPY_ACTION_ID: &str = "clipboard.copy";
+pub const CLEAR_ACTION_ID: &str = "clipboard.clear";
 pub const OPEN_COMMAND_ID: &str = "clipboard.history";
 
 #[cfg(test)]

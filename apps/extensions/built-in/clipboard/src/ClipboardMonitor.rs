@@ -14,6 +14,7 @@ pub struct ClipboardMonitor {
 impl ClipboardMonitor {
     pub fn spawn(worker: &ClipboardWorker) -> Result<Self, String> {
         let commands = worker.command_sender();
+        let suppress_next_change = worker.capture_suppression();
         let (ready, receiver) = std::sync::mpsc::sync_channel(1);
         let thread = std::thread::Builder::new()
             .name("nanika-clipboard-events".to_owned())
@@ -21,7 +22,10 @@ impl ClipboardMonitor {
                 let result = ClipboardWatcherContext::new_with_interval(Duration::from_millis(250))
                     .map(|mut watcher| {
                         let shutdown = watcher
-                            .add_handler(ClipboardWatcherHandler { commands })
+                            .add_handler(ClipboardWatcherHandler {
+                                commands,
+                                suppress_next_change,
+                            })
                             .get_shutdown_channel();
                         let _ = ready.send(Ok(shutdown));
                         watcher.start_watch();

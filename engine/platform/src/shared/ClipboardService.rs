@@ -2,8 +2,11 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 use std::{fs::File, io::Read};
 
+#[cfg(target_os = "macos")]
+use clipboard_rs::RustImageData;
+#[cfg(target_os = "macos")]
 use clipboard_rs::common::RustImage;
-use clipboard_rs::{Clipboard, ClipboardContext, RustImageData};
+use clipboard_rs::{Clipboard, ClipboardContext, Result as ClipboardResult};
 use nanika_protocol::{ClipboardContent, HostServiceResponse};
 
 use crate::ClipboardServiceCommand;
@@ -112,12 +115,25 @@ fn write(
                 .as_deref()
                 .ok_or_else(|| "clipboard image payload root is unavailable".to_owned())?;
             let bytes = read_validated_png(&path, payload_root)?;
-            let image = RustImageData::from_bytes(&bytes).map_err(|error| error.to_string())?;
-            context.set_image(image)
+            write_png(context, bytes)
         }
     }
     .map(|()| HostServiceResponse::ClipboardWritten)
     .map_err(|error| error.to_string())
+}
+
+fn write_png(context: &ClipboardContext, bytes: Vec<u8>) -> ClipboardResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        // Preserve the captured PNG bytes. Decoding, re-encoding PNG, and then
+        // converting to a bitmap made large-image copy operations unnecessarily slow.
+        context.set_buffer("PNG", bytes)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let image = RustImageData::from_bytes(&bytes)?;
+        context.set_image(image)
+    }
 }
 
 pub(crate) fn read_validated_png(

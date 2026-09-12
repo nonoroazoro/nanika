@@ -135,12 +135,9 @@ impl ClipboardDatabase {
             .collect()
     }
 
-    pub fn mark_used(&self, entry_id: &str, used_at: u64) -> Result<(), String> {
+    pub fn clear(&self) -> Result<(), String> {
         self.connection
-            .execute(
-                "UPDATE clipboard_entries SET last_used_at = ?1 WHERE entry_id = ?2",
-                params![integer(used_at), entry_id],
-            )
+            .execute("DELETE FROM clipboard_entries", [])
             .map(|_| ())
             .map_err(|error| error.to_string())
     }

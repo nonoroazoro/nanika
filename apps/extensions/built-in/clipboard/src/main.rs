@@ -4,8 +4,8 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::{Arc, RwLock};
 
 use nanika_extension_clipboard::{
-    COPY_ACTION_ID, ClipboardEntry, ClipboardMonitor, ClipboardViewState, ClipboardWorker,
-    OPEN_COMMAND_ID, RuntimePaths, clipboard_view,
+    CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardMonitor, ClipboardViewState,
+    ClipboardWorker, OPEN_COMMAND_ID, RuntimePaths, clipboard_view,
 };
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
@@ -219,6 +219,21 @@ fn handle_view_event(
         );
     }
     match event {
+        ViewEvent::ActionInvoked { action_id, .. } if action_id == CLEAR_ACTION_ID => {
+            if let Err(message) = worker.clear() {
+                return write_error(
+                    output,
+                    Some(request_id),
+                    "clipboard_history_clear_failed",
+                    &message,
+                );
+            }
+            entries
+                .write()
+                .unwrap_or_else(|error| error.into_inner())
+                .clear();
+            state.selected_item_id = None;
+        }
         ViewEvent::SearchChanged { text } => {
             state.query = text;
             state.visible_limit = 100;
@@ -251,17 +266,15 @@ fn handle_view_event(
                     "clipboard entry or action does not exist",
                 );
             };
-            if write_clipboard(input, output, &request_id, generation, content)? {
-                if let Some(item_id) = item_id
-                    && let Err(message) = worker.mark_used(item_id)
-                {
-                    return write_error(
-                        output,
-                        Some(request_id),
-                        "clipboard_history_update_failed",
-                        &message,
-                    );
+            worker.suppress_next_capture();
+            let copied = match write_clipboard(input, output, &request_id, generation, content) {
+                Ok(copied) => copied,
+                Err(error) => {
+                    worker.cancel_capture_suppression();
+                    return Err(error);
                 }
+            };
+            if copied {
                 write_frame(
                     output,
                     &Message::ViewUpdated {
@@ -273,6 +286,8 @@ fn handle_view_event(
                         view: None,
                     },
                 )?;
+            } else {
+                worker.cancel_capture_suppression();
             }
             return Ok(());
         }

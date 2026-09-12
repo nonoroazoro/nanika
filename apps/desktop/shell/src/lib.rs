@@ -63,7 +63,7 @@ mod search_delivery_tests;
 #[cfg(target_os = "macos")]
 const DEFAULT_HOTKEY: &str = "Ctrl+Space";
 #[cfg(target_os = "windows")]
-const DEFAULT_HOTKEY: &str = "Alt+Space";
+const DEFAULT_HOTKEY: &str = "Ctrl+Alt+Space";
 
 pub fn run() -> Result<(), String> {
     let paths = nanika_storage::NanikaPaths::discover()
@@ -82,7 +82,10 @@ pub fn run() -> Result<(), String> {
     let mut instance = instance;
     let events = instance.take_events().map_err(|error| error.to_string())?;
     let diagnostics = nanika_host::Diagnostics::initialize(&paths.app_data_root().join("logs"))?;
-    let icon_protocol = icon_protocol::IconProtocol::spawn(paths.cache_root().to_path_buf())?;
+    let icon_protocol = icon_protocol::IconProtocol::spawn(
+        paths.cache_root().to_path_buf(),
+        paths.payload_dir().to_path_buf(),
+    )?;
 
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol(
