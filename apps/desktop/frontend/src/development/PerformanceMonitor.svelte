@@ -89,11 +89,11 @@ function toggle(): void
 
 function handleKeydown(event: KeyboardEvent): void
 {
-    if (event.isComposing || event.repeat)
+    if (event.isComposing || event.repeat || !visible)
     {
         return;
     }
-    if (event.code === "KeyP" && event.shiftKey && (event.metaKey || event.ctrlKey) && !event.altKey)
+    if (event.code === "F5" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey)
     {
         event.preventDefault();
         toggle();
@@ -204,33 +204,24 @@ function milliseconds(value: number | null): string
                 </div>
             </dl>
             <p>rAF timing · last {frames?.samples ?? 0}/120 intervals<br />60 Hz: 16.7 ms · 120 Hz: 8.3 ms</p>
-            <p>Development only. Includes monitoring overhead.<br />Not a measurement of display presentation.</p>
+            <p>Development only. Press F5 to toggle.<br />Not a measurement of display presentation.</p>
         </section>
     {/if}
-    <button
-        type="button"
-        aria-expanded={enabled}
-        aria-controls={enabled ? "performance-details" : undefined}
-        title="Toggle performance monitor (⌘/Ctrl+Shift+P)"
-        onmousedown={(event => event.preventDefault())}
-        onclick={toggle}
-    >
-        {enabled ? "Close monitor" : "Performance"}
-    </button>
 </aside>
 
 <style>
 .monitor {
   position: fixed;
-  right: 0.75rem;
+  left: 0.75rem;
   bottom: 0.75rem;
   z-index: 10;
   display: grid;
-  justify-items: end;
+  justify-items: start;
   gap: 0.5rem;
   color: var(--text-primary);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 section {
@@ -268,19 +259,5 @@ dd {
 p {
   margin: 0.5rem 0 0;
   line-height: 1.5;
-}
-
-button {
-  padding: 0.375rem 0.75rem;
-  border: 1px solid var(--border-window);
-  border-radius: var(--radius-row);
-  background: var(--surface-raised);
-  color: inherit;
-  cursor: pointer;
-}
-
-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 </style>
