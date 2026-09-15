@@ -15,6 +15,7 @@ let iconFailed = $state(false);
 </script>
 
 <li
+    class="collection-row"
     id={`result-${result.extensionId}-${result.entryId}`}
     role="option"
     aria-selected={active}
@@ -72,13 +73,6 @@ let iconFailed = $state(false);
 li {
   display: grid;
   grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: var(--row-height);
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-row);
-  color: var(--text-primary);
-  cursor: default;
 }
 
 li.active {

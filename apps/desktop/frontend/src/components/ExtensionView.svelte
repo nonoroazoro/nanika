@@ -186,6 +186,7 @@ function handleKeydown(event: KeyboardEvent): void
                             <ul role="group" aria-label={section.title ?? "Items"}>
                                 {#each section.items as item (item.id)}
                                     <li
+                                        class="collection-row"
                                         id={`view-item-${snapshot.routeId}-${item.id}`}
                                         role="option"
                                         aria-selected={item.id === list.selected_item_id}
@@ -276,9 +277,10 @@ input::placeholder { color: var(--text-tertiary); opacity: 1; }
 .split .list-pane { flex: 0 1 38%; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
+.list-pane [role='group'] { display: grid; gap: var(--space-1); }
 .list-pane { padding: var(--space-2); }
 h2 { font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
-[role='option'] { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-row); cursor: default; }
+[role='option'] { display: flex; }
 [role='option']:hover:not([aria-disabled='true']) { background: var(--surface-hovered); }
 [role='option'][aria-selected='true'], [role='option'][aria-selected='true']:hover { background: var(--surface-selected); }
 .item-icon { display: grid; flex: 0 0 var(--icon-size); width: var(--icon-size); height: var(--icon-size); place-items: center; }
