@@ -7,14 +7,11 @@ publish.workspace = true
 
 [dependencies]
 nanika-config = { path = "../../engine/configuration" }
-nanika-core = { path = "../../engine/domain" }
+nanika-foundation = { path = "../../engine/foundation" }
 nanika-extension-package = { path = "../../engine/extension-management" }
 nanika-platform = { path = "../../engine/platform" }
 nanika-storage = { path = "../../engine/storage" }
 zip.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [lints]
 workspace = true

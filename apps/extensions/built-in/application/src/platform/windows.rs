@@ -37,15 +37,15 @@ pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
         .map(known_folder)
         .collect::<Result<_, _>>()?;
     let mut roots = roots;
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        if let Some(root) = packaged_root(PathBuf::from(local_app_data).join("Packages")) {
-            roots.push(root);
-        }
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA")
+        && let Some(root) = packaged_root(PathBuf::from(local_app_data).join("Packages"))
+    {
+        roots.push(root);
     }
-    if let Ok(program_files) = std::env::var("ProgramFiles") {
-        if let Some(root) = packaged_root(PathBuf::from(program_files).join("WindowsApps")) {
-            roots.push(root);
-        }
+    if let Ok(program_files) = std::env::var("ProgramFiles")
+        && let Some(root) = packaged_root(PathBuf::from(program_files).join("WindowsApps"))
+    {
+        roots.push(root);
     }
     Ok(roots)
 }

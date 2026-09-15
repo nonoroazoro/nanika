@@ -76,7 +76,7 @@ const DEFAULT_HOTKEY: &str = "Ctrl+Alt+Space";
 pub fn run() -> Result<(), String> {
     let paths = nanika_storage::NanikaPaths::discover()
         .ok_or_else(|| "Nanika could not resolve its data directories".to_owned())?;
-    let identity = nanika_core::PROJECT_IDENTITY.bundle_id;
+    let identity = nanika_foundation::PROJECT_IDENTITY.bundle_id;
     let instance = match nanika_platform::acquire_instance(identity, paths.app_data_root())
         .map_err(|error| error.to_string())?
     {

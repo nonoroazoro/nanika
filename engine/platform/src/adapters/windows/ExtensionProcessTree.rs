@@ -1,72 +1,42 @@
 use std::io;
 
-#[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 
-#[cfg(windows)]
 use windows_sys::Win32::Foundation::{ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE};
-#[cfg(windows)]
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
-#[cfg(windows)]
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
     SetInformationJobObject, TerminateJobObject,
 };
-#[cfg(windows)]
 use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
-/// Platform process-tree ownership for one extension child.
-pub(crate) struct ExtensionProcessTree {
-    #[cfg(windows)]
+/// Owns the Job Object containing one extension child and its descendants.
+pub struct ExtensionProcessTree {
     job: OwnedHandle,
 }
 
 impl ExtensionProcessTree {
-    pub(crate) fn attach_std(child: &std::process::Child) -> io::Result<Self> {
-        #[cfg(windows)]
-        return Self::attach_windows(child.as_raw_handle(), child.id());
-
-        #[cfg(target_os = "macos")]
-        {
-            let _ = child;
-            Ok(Self {})
-        }
+    /// Attach a child spawned with [`configure_extension_command`] before it can run.
+    pub fn attach_std(child: &std::process::Child) -> io::Result<Self> {
+        Self::attach_windows(child.as_raw_handle(), child.id())
     }
 
-    pub(crate) fn attach_async(child: &async_process::Child) -> io::Result<Self> {
-        #[cfg(windows)]
-        return Self::attach_windows(child.as_raw_handle(), child.id());
-
-        #[cfg(target_os = "macos")]
-        {
-            let _ = child;
-            Ok(Self {})
-        }
+    /// Attach an asynchronous child before its initial thread is resumed.
+    pub fn attach_async(child: &async_process::Child) -> io::Result<Self> {
+        Self::attach_windows(child.as_raw_handle(), child.id())
     }
 
-    pub(crate) fn terminate(&self, _process_id: u32) -> io::Result<()> {
-        #[cfg(windows)]
-        {
-            if unsafe { TerminateJobObject(self.job.as_raw_handle().cast(), 1) } == 0 {
-                return Err(io::Error::last_os_error());
-            }
+    /// Terminate all processes contained in the owned Job Object.
+    pub fn terminate(&self, _process_id: u32) -> io::Result<()> {
+        if unsafe { TerminateJobObject(self.job.as_raw_handle().cast(), 1) } == 0 {
+            return Err(io::Error::last_os_error());
         }
-
-        #[cfg(target_os = "macos")]
-        if let Some(process_id) = rustix::process::Pid::from_raw(_process_id.cast_signed()) {
-            handle_process_group_termination(rustix::process::kill_process_group(
-                process_id,
-                rustix::process::Signal::KILL,
-            ))?;
-        }
-
         Ok(())
     }
 
-    #[cfg(windows)]
     fn attach_windows(process: RawHandle, process_id: u32) -> io::Result<Self> {
         let raw_job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if raw_job.is_null() {
@@ -95,15 +65,6 @@ impl ExtensionProcessTree {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn handle_process_group_termination(result: rustix::io::Result<()>) -> io::Result<()> {
-    match result {
-        Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
-        Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error())),
-    }
-}
-
-#[cfg(windows)]
 fn resume_initial_thread(process_id: u32) -> io::Result<()> {
     let raw_snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if raw_snapshot == INVALID_HANDLE_VALUE {
@@ -149,19 +110,10 @@ fn resume_initial_thread(process_id: u32) -> io::Result<()> {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
-mod tests {
-    use super::handle_process_group_termination;
+/// Suspend the initial thread so Job assignment precedes any descendant creation.
+pub fn configure_extension_command(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
-    #[test]
-    fn process_group_termination_ignores_only_a_missing_process() {
-        assert!(handle_process_group_termination(Ok(())).is_ok());
-        assert!(handle_process_group_termination(Err(rustix::io::Errno::SRCH)).is_ok());
-        let error = handle_process_group_termination(Err(rustix::io::Errno::PERM))
-            .expect_err("permission errors must be propagated");
-        assert_eq!(
-            error.raw_os_error(),
-            Some(rustix::io::Errno::PERM.raw_os_error())
-        );
-    }
+    command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
 }

@@ -123,7 +123,7 @@ apps/
       protocol/
       acp/
 engine/
-  domain/
+  foundation/
   runtime/
   platform/
   extension-protocol/
@@ -143,7 +143,7 @@ tooling/
 
 The frontend remains one local plain Svelte 5 pnpm project built by Vite. Do not introduce a repository pnpm workspace for a single package. The desktop-level `package.json` is command and dependency metadata, not a second frontend package. Frontend configuration points explicitly at `frontend`; generated assets stay in `apps/desktop/frontend/dist` and remain untracked.
 
-Directory names under `engine` describe responsibilities while Cargo package names remain stable: `nanika-core` lives in `engine/domain`, `nanika-host` lives in `engine/runtime`, `nanika-protocol` lives in `engine/extension-protocol`, `nanika-config` lives in `engine/configuration`, and `nanika-extension-package` lives in `engine/extension-management`. The `platform`, `storage`, and `search` names already describe their responsibilities accurately.
+Directory names and Cargo package names describe responsibilities: `nanika-foundation` lives in `engine/foundation`, `nanika-host` lives in `engine/runtime`, `nanika-protocol` lives in `engine/extension-protocol`, `nanika-config` lives in `engine/configuration`, and `nanika-extension-package` lives in `engine/extension-management`. `foundation` contains project identity, extension identifiers, and diagnostic primitives, with no domain capabilities. The `platform`, `storage`, and `search` names describe their corresponding responsibilities.
 
 Do not create top-level `crates`, `extensions`, `src-tauri`, `web`, `rust`, `scripts`, `packaging`, or `dist` directories. Cargo's root `target` remains the single generated build tree; release archives and evidence belong under named subdirectories of `target`, not a new repository-root output directory. The runtime contains reusable orchestration and service logic or is divided into smaller UI-independent engine members when ownership becomes clearer.
 

@@ -4,6 +4,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use nanika_platform::atomic_replace;
+
 use jsonc_parser::{ParseOptions, errors::ParseError, parse_to_serde_value};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -170,38 +172,6 @@ fn validate_bootstrap(config: &BootstrapConfig) -> Result<(), ConfigError> {
     {
         return Err(ConfigError::Invalid(
             "config root must be a normalized absolute path".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn atomic_replace(temporary: &Path, target: &Path) -> io::Result<()> {
-    fs::rename(temporary, target)
-}
-
-#[cfg(windows)]
-#[allow(unsafe_code)]
-fn atomic_replace(temporary: &Path, target: &Path) -> io::Result<()> {
-    use std::iter::once;
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Foundation::GetLastError;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    };
-
-    let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(once(0)).collect();
-    let target: Vec<u16> = target.as_os_str().encode_wide().chain(once(0)).collect();
-    if unsafe {
-        MoveFileExW(
-            temporary.as_ptr(),
-            target.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    } == 0
-    {
-        return Err(io::Error::from_raw_os_error(
-            unsafe { GetLastError() } as i32
         ));
     }
     Ok(())

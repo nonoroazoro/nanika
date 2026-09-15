@@ -76,7 +76,7 @@ pub(crate) fn resolve_request(
         .split('/')
         .collect::<Vec<_>>();
     if segments.len() == 2
-        && nanika_core::is_valid_extension_id(segments[0])
+        && nanika_foundation::is_valid_extension_id(segments[0])
         && segments[1].ends_with(".png")
         && nanika_protocol::is_valid_resource_path(segments[1])
     {
@@ -111,7 +111,7 @@ pub(crate) fn resolve_request(
     let [extension_id, icon_key, file_name] = segments.as_slice() else {
         return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     };
-    if !nanika_core::is_valid_extension_id(extension_id)
+    if !nanika_foundation::is_valid_extension_id(extension_id)
         || nanika_protocol::IconReference::new(*icon_key).is_err()
         || !matches!(*file_name, "32.png" | "64.png" | "128.png")
     {

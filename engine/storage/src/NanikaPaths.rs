@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
-use nanika_core::PROJECT_IDENTITY;
+use nanika_foundation::PROJECT_IDENTITY;
 
 /// Resolved machine-local and user-configurable Nanika locations.
 #[derive(Debug, Clone)]

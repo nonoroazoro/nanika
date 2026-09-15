@@ -2491,11 +2491,10 @@ name = "nanika-cli"
 version = "0.1.0"
 dependencies = [
  "nanika-config",
- "nanika-core",
  "nanika-extension-package",
+ "nanika-foundation",
  "nanika-platform",
  "nanika-storage",
- "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -2504,23 +2503,19 @@ name = "nanika-config"
 version = "0.1.0"
 dependencies = [
  "jsonc-parser",
- "nanika-core",
+ "nanika-foundation",
+ "nanika-platform",
  "serde",
  "serde_json",
  "uuid",
- "windows-sys 0.61.2",
 ]
-
-[[package]]
-name = "nanika-core"
-version = "0.1.0"
 
 [[package]]
 name = "nanika-desktop"
 version = "0.1.0"
 dependencies = [
  "async-channel",
- "nanika-core",
+ "nanika-foundation",
  "nanika-host",
  "nanika-platform",
  "nanika-protocol",
@@ -2623,7 +2618,8 @@ version = "0.1.0"
 dependencies = [
  "jsonc-parser",
  "nanika-config",
- "nanika-core",
+ "nanika-foundation",
+ "nanika-platform",
  "nanika-storage",
  "rusqlite",
  "semver",
@@ -2645,6 +2641,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanika-foundation"
+version = "0.1.0"
+
+[[package]]
 name = "nanika-host"
 version = "0.1.0"
 dependencies = [
@@ -2656,25 +2656,24 @@ dependencies = [
  "futures",
  "futures-lite",
  "nanika-config",
- "nanika-core",
  "nanika-extension-package",
+ "nanika-foundation",
  "nanika-platform",
  "nanika-protocol",
  "nanika-search",
  "nanika-storage",
- "rustix",
  "serde",
  "serde_json",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "nanika-platform"
 version = "0.1.0"
 dependencies = [
+ "async-process",
  "clipboard-rs",
  "libc",
  "nanika-protocol",
@@ -2683,6 +2682,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-service-management",
  "png 0.18.1",
+ "rustix",
  "sys-locale",
  "tracing",
  "windows-registry",
@@ -2711,7 +2711,7 @@ name = "nanika-storage"
 version = "0.1.0"
 dependencies = [
  "directories",
- "nanika-core",
+ "nanika-foundation",
  "nanika-search",
  "rusqlite",
  "tracing",

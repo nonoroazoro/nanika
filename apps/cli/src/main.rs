@@ -11,7 +11,7 @@ use nanika_config::ConfigStore;
 use nanika_extension_package::{
     install_package, remove_extension, set_extension_enabled, update_package,
 };
-use nanika_platform::InstanceRole;
+use nanika_platform::{InstanceRole, open_regular_file};
 
 fn main() -> ExitCode {
     match run() {
@@ -35,7 +35,7 @@ fn run() -> Result<String, String> {
         return Ok(format!("exported diagnostics to {}", destination.display()));
     }
     let instance = nanika_platform::acquire_instance(
-        nanika_core::PROJECT_IDENTITY.bundle_id,
+        nanika_foundation::PROJECT_IDENTITY.bundle_id,
         paths.app_data_root(),
     )
     .map_err(|error| error.to_string())?;
@@ -119,7 +119,7 @@ fn export_diagnostics(app_data_root: &Path, destination: &Path) -> Result<(), St
                 writeln!(
                     archive,
                     "Platform: {}-{}",
-                    std::env::consts::OS,
+                    nanika_platform::target_platform(),
                     std::env::consts::ARCH
                 )
             })
@@ -194,62 +194,6 @@ fn is_nanika_log_name(name: &OsStr) -> bool {
             .iter()
             .enumerate()
             .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
-}
-
-#[cfg(unix)]
-fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
-    let before = fs::symlink_metadata(path)?;
-    if !before.file_type().is_file() || before.file_type().is_symlink() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "diagnostic log is not a regular file",
-        ));
-    }
-    let file = fs::File::open(path)?;
-    let after = file.metadata()?;
-    if !same_file_identity(&before, &after) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "diagnostic log changed while it was opened",
-        ));
-    }
-    Ok(file)
-}
-
-#[cfg(unix)]
-fn same_file_identity(before: &fs::Metadata, after: &fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt as _;
-
-    before.dev() == after.dev() && before.ino() == after.ino()
-}
-
-#[cfg(windows)]
-fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
-    use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
-    use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-    };
-
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "diagnostic log is not a regular file",
-        ));
-    }
-    Ok(file)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn open_regular_file(_path: &Path) -> std::io::Result<fs::File> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "diagnostic log validation is unsupported",
-    ))
 }
 
 #[cfg(test)]

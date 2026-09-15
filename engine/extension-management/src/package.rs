@@ -66,7 +66,7 @@ fn apply_package(
 
     let manifest = load_manifest(stage.path().join("manifest.jsonc"))?;
     validate_manifest(&manifest)?;
-    let target = current_target();
+    let target = nanika_platform::target_triple();
     let entrypoint = target_entrypoint(&manifest, target)?;
     let staged_program = stage.path().join(&entrypoint);
     if !staged_program.is_file() {
@@ -75,7 +75,7 @@ fn apply_package(
             entrypoint.display()
         )));
     }
-    make_executable(&staged_program)?;
+    nanika_platform::make_executable(&staged_program)?;
     fs::write(stage.path().join(".package.sha256"), format!("{digest}\n"))?;
 
     let database = HostDatabase::open(paths.host_database())?;
@@ -396,7 +396,7 @@ fn resolve_active_extension(
             "installed manifest identity does not match host state".to_owned(),
         ));
     }
-    let entrypoint = target_entrypoint(&manifest, current_target())?;
+    let entrypoint = target_entrypoint(&manifest, nanika_platform::target_triple())?;
     let program = canonical_install.join(entrypoint);
     validate_managed_path(&canonical_install, &program)?;
     if !program.is_file() {
@@ -620,7 +620,7 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
             "invalid extension id".to_owned(),
         ));
     }
-    if nanika_core::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
+    if nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
         return Err(ExtensionPackageError::Manifest(
             "external packages cannot use a built-in extension id".to_owned(),
         ));
@@ -906,29 +906,6 @@ fn restore_registry(
             Err(error) => Err(error.to_string()),
         }
     }
-}
-
-fn current_target() -> &'static str {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        _ => "unsupported",
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn make_executable(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = fs::metadata(path)?.permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions)
-}
-
-#[cfg(target_os = "windows")]
-fn make_executable(_path: &Path) -> std::io::Result<()> {
-    Ok(())
 }
 
 fn unix_timestamp() -> u64 {

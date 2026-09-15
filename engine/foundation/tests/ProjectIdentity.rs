@@ -1,4 +1,4 @@
-use nanika_core::{PRODUCT_NAME, PROJECT_IDENTITY};
+use nanika_foundation::{PRODUCT_NAME, PROJECT_IDENTITY};
 
 #[test]
 fn exposes_current_project_identity() {

@@ -14,7 +14,7 @@ tauri-build = { workspace = true, features = ["codegen", "isolation"] }
 
 [dependencies]
 async-channel.workspace = true
-nanika-core = { path = "../../../engine/domain" }
+nanika-foundation = { path = "../../../engine/foundation" }
 nanika-platform = { path = "../../../engine/platform" }
 nanika-protocol = { path = "../../../engine/extension-protocol" }
 nanika-host = { path = "../../../engine/runtime" }

@@ -9,7 +9,7 @@ autotests = false
 [dependencies]
 directories.workspace = true
 rusqlite.workspace = true
-nanika-core = { path = "../domain" }
+nanika-foundation = { path = "../foundation" }
 nanika-search = { path = "../search" }
 tracing.workspace = true
 

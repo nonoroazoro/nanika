@@ -13,7 +13,7 @@ async-io.workspace = true
 async-process.workspace = true
 futures.workspace = true
 futures-lite.workspace = true
-nanika-core = { path = "../domain" }
+nanika-foundation = { path = "../foundation" }
 nanika-config = { path = "../configuration" }
 nanika-extension-package = { path = "../extension-management" }
 nanika-platform = { path = "../platform" }
@@ -28,12 +28,6 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-rustix.workspace = true
 
 [lints]
 workspace = true

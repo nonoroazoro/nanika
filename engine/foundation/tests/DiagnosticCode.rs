@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use nanika_core::{DiagnosticCategory, DiagnosticCode};
+use nanika_foundation::{DiagnosticCategory, DiagnosticCode};
 
 #[test]
 fn diagnostic_codes_are_unique_and_stably_categorized() {

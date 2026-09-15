@@ -1,3 +1,5 @@
+use nanika_platform::{ExtensionProcessTree, configure_extension_command};
+
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::future::Future;
@@ -23,8 +25,8 @@ use futures_lite::future;
 
 use crate::{
     AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionInterruption,
-    ExtensionLimits, ExtensionProcessTree, SupervisorError, configure_extension_command,
-    drain_stderr, incoming_lines, outgoing_lines, terminate_child,
+    ExtensionLimits, SupervisorError, drain_stderr, incoming_lines, outgoing_lines,
+    terminate_child,
 };
 
 const ACP_POLL_INTERVAL: Duration = Duration::from_millis(25);

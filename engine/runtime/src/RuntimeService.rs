@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
+use nanika_platform::companion_executable;
 use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
@@ -408,10 +409,6 @@ fn spawn_runtime(
         Default::default(),
         configuration,
     )
-}
-
-fn companion_executable(current_executable: &Path, binary_name: &str) -> PathBuf {
-    current_executable.with_file_name(format!("{binary_name}{}", std::env::consts::EXE_SUFFIX))
 }
 
 fn extension_arguments(protocol: ExtensionProtocol, paths: &NanikaPaths) -> Vec<OsString> {

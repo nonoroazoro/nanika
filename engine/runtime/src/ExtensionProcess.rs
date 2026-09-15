@@ -1,3 +1,5 @@
+use nanika_platform::{ExtensionProcessTree, configure_extension_command};
+
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io::{self, BufReader, BufWriter, Read};
@@ -15,7 +17,7 @@ use nanika_protocol::{
 
 use crate::{
     ExtensionCommand, ExtensionInterruption, ExtensionLimits, ExtensionNotifier,
-    ExtensionProcessTree, HostServiceHandler, SupervisorError, configure_extension_command,
+    HostServiceHandler, SupervisorError,
 };
 
 type ReceivePoll = Option<Option<Message>>;

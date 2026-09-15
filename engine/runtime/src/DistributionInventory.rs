@@ -22,7 +22,7 @@ impl DistributionInventory {
     fn validate(&self) -> Result<(), String> {
         let mut identifiers = HashSet::with_capacity(self.extensions.len());
         for extension in &self.extensions {
-            if !nanika_core::BUILTIN_EXTENSION_IDS.contains(&extension.id.as_str()) {
+            if !nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&extension.id.as_str()) {
                 return Err(format!(
                     "distribution contains an unreserved built-in extension id: {}",
                     extension.id

@@ -34,6 +34,24 @@ Platform adapters own native APIs, handles, event sources, process containment, 
 
 `engine/platform` owns the adapter contracts and implementations. Its top-level module only selects the implementation for the build target and wires it to the shared contract. Tauri shell code owns only unavoidable application and window wiring. No extension, protocol, runtime, frontend, or domain module selects a platform implementation.
 
+## Process and filesystem contracts
+
+`engine/platform` owns the native mechanisms below. Runtime orchestration, configuration serialization and backups, and package validation and transactions remain in their existing engine modules. Callers use standard Rust paths, commands, child processes, and `io::Result`; native handles and platform selection never cross the adapter boundary.
+
+| Contract | Windows implementation | macOS implementation |
+| --- | --- | --- |
+| Configure and attach an extension process tree | Create the child with `CREATE_NO_WINDOW` and `CREATE_SUSPENDED`, assign it to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then resume its initial thread. Both standard and asynchronous children follow this sequence. | Set a new process group before spawning. Both standard and asynchronous children retain that group for explicit termination. |
+| Terminate an extension process tree | Terminate the Job Object and propagate native failures. Closing the owned Job handle retains the existing kill-on-close behavior. | Send `SIGKILL` to the process group. Only an already absent group is accepted as terminated; other native failures propagate. Dropping the adapter does not introduce an additional termination policy. |
+| Replace a prepared file | Use `MoveFileExW` with replacement and write-through flags. | Use same-directory `rename`. |
+| Prepare a validated package executable | No permission change is required. | Set the executable's permissions to `0o755`. |
+| Identify the package target | Select `x86_64-pc-windows-msvc` for x86_64. | Select `aarch64-apple-darwin` or `x86_64-apple-darwin` for the artifact architecture. |
+| Locate an inventory-owned companion executable | Resolve the sibling executable with its `.exe` suffix. | Resolve the sibling executable without a suffix. |
+| Open a regular diagnostic file | Open the final component with `FILE_FLAG_OPEN_REPARSE_POINT`, then reject directories and reparse points from the opened handle's metadata. | Reject symlinks and non-files before opening; compare device and inode before and after opening to detect replacement. |
+
+File replacement consumes a completed temporary file only on success. Configuration code remains responsible for writing and synchronizing temporary contents, preserving backups, and cleaning up its own failed transaction. The adapter does not add retries, recovery, timeouts, or a copy-and-delete fallback, and this contract does not add a cross-platform power-loss durability guarantee. Package code validates the entrypoint and decides when to apply executable permissions; the adapter does not choose or trust package paths.
+
+Unsupported operating systems fail at the platform crate boundary. Unsupported artifact architectures retain an explicit unsupported package target, which package validation rejects. Process spawning, attachment, and cleanup must be tested together for both protocol and ACP extensions, including descendants created at startup. File tests cover replacement, creation, and preservation of the original destination on failure. Windows and macOS runtime validation remain distinct from cross-target compilation.
+
 ## Adding a future platform
 
 Adding Linux or another target requires an explicit baseline decision, a complete adapter set for every required capability, target-specific packaging, CI coverage, physical validation, and release approval. The new adapter must preserve the existing shared contracts. No compatibility layer or migration path is required before the first release.

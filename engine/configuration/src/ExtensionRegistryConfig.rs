@@ -123,7 +123,7 @@ impl ExtensionRegistryConfig {
         if self
             .extensions
             .keys()
-            .any(|id| !nanika_core::is_valid_extension_id(id))
+            .any(|id| !nanika_foundation::is_valid_extension_id(id))
         {
             return Err("extension registry contains an invalid extension id".to_owned());
         }

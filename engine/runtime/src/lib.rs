@@ -1,8 +1,5 @@
 //! UI-independent host runtime and extension supervision boundaries.
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-compile_error!("nanika-runtime supports macOS and Windows only");
-
 #[path = "AcpConnectionContext.rs"]
 mod acp_connection_context;
 #[path = "AcpExtensionCommand.rs"]
@@ -44,10 +41,6 @@ mod extension_limits;
 mod extension_notifier;
 #[path = "ExtensionProcess.rs"]
 mod extension_process;
-mod extension_process_command;
-#[allow(unsafe_code)]
-#[path = "ExtensionProcessTree.rs"]
-mod extension_process_tree;
 #[path = "ExtensionRefresh.rs"]
 mod extension_refresh;
 #[path = "ExtensionRuntime.rs"]
@@ -112,8 +105,6 @@ pub(crate) use extension_invocation_output_state::*;
 pub use extension_limits::*;
 pub(crate) use extension_notifier::*;
 pub use extension_process::*;
-pub(crate) use extension_process_command::*;
-pub(crate) use extension_process_tree::*;
 pub(crate) use extension_refresh::*;
 pub use extension_runtime::*;
 pub use extension_runtime_invocation::*;
@@ -136,7 +127,7 @@ pub use runtime_update_batch::*;
 pub use runtime_view_completion::*;
 pub use supervisor_error::*;
 
-pub use nanika_core::{DiagnosticCategory, DiagnosticCode};
+pub use nanika_foundation::{DiagnosticCategory, DiagnosticCode};
 
 /// Publish one protocol snapshot into the shared search owner.
 pub fn publish_extension_snapshot(

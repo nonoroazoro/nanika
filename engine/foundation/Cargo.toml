@@ -1,5 +1,5 @@
 [package]
-name = "nanika-core"
+name = "nanika-foundation"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
