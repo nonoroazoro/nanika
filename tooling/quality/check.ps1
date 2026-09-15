@@ -8,6 +8,12 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$QualityTarget = Join-Path ([IO.Path]::GetTempPath()) ("nanika-check-" + [Guid]::NewGuid().ToString("N"))
+$PreviousCargoTarget = $env:CARGO_TARGET_DIR
+$PreviousCargoIncremental = $env:CARGO_INCREMENTAL
+New-Item -ItemType Directory -Path $QualityTarget | Out-Null
+$env:CARGO_TARGET_DIR = $QualityTarget
+$env:CARGO_INCREMENTAL = "0"
 Push-Location $RepositoryRoot
 try {
     foreach ($RemovedRoot in @("crates", "extensions", "scripts", "packaging", "src-tauri", "web", "rust", "dist")) {
@@ -23,6 +29,10 @@ try {
     if ($FrontendTauri) { throw "Frontend source may import Tauri only through the typed bridge." }
     Push-Location "apps/desktop"
     try {
+        & pnpm extensions:build
+        if ($LASTEXITCODE -ne 0) { throw "Extension build failed." }
+        & pnpm extensions:prepare
+        if ($LASTEXITCODE -ne 0) { throw "Extension preparation failed." }
         & pnpm format:check
         if ($LASTEXITCODE -ne 0) { throw "Frontend formatting check failed." }
         & pnpm lint
@@ -50,4 +60,7 @@ try {
 }
 finally {
     Pop-Location
+    $env:CARGO_TARGET_DIR = $PreviousCargoTarget
+    $env:CARGO_INCREMENTAL = $PreviousCargoIncremental
+    Remove-Item -LiteralPath $QualityTarget -Recurse -Force
 }

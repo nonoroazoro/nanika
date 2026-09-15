@@ -1,5 +1,6 @@
 target/
 /dist/
+.DS_Store
 apps/desktop/node_modules/
 apps/desktop/frontend/node_modules/
 apps/desktop/frontend/dist/
