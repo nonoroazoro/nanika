@@ -19,20 +19,18 @@ The interface follows six principles:
 5. Restrained expression. Color, elevation, borders, and motion communicate structure and state rather than decoration.
 6. Contemporary foundations. Use current stable WebView, CSS, and Tauri presentation capabilities without making experimental effects or legacy compatibility code part of the design identity.
 
+WebView user-agent `focus`, `focus-visible`, and `active` decoration is reset globally. Editable controls receive no extra focus or active decoration; the native caret and text selection are sufficient. The only current explicit exception is a restrained one-pixel inset `focus-visible` indicator for keyboard-only `button` and `select` controls that otherwise expose no focus state. A component may not add another focus, active, glow, scale, transform, or outline effect without an approved interaction requirement. Native caret, text selection, selected rows, and other existing product state remain the default indicators.
+
 ## Surface model
 
-Nanika has two primary surfaces:
+Nanika currently implements one primary surface and reserves one additional surface:
 
 - Launcher: an undecorated, transparent, always-on-top Tauri window positioned on the active monitor. The frontend root owns the complete visible surface.
-- Settings: a separate decorated Tauri window that follows normal desktop window behavior.
+- Settings: not implemented yet. It will be a separate decorated Tauri window that follows normal desktop window behavior.
 
-The launcher contains three structural regions:
+Root Search contains a search header and a scrollable results region. An extension route adds its own title header, optional search and filters, bounded content region, and the currently reserved action footer.
 
-1. Search header.
-2. Scrollable content region.
-3. Contextual action bar, rendered only when it contains useful actions or status.
-
-The launcher height follows content up to a bounded maximum. Empty space is not used as decoration. The resting scrollport ends after a complete row, and the action bar never creates a blank footer. Resizing caused by result-count changes must not move the search header.
+The current launcher is a fixed 760 by 520 logical pixels. Its search header and outer geometry do not move when result counts or routes change; surplus content scrolls inside the bounded content region. The current extension renderer reserves the footer row even when it has no action.
 
 ## Design tokens
 
@@ -42,10 +40,10 @@ Token groups:
 
 - Surface: launcher, raised, selected, hovered, pressed, input, detail, overlay, and scrim.
 - Text: primary, secondary, muted, selected, disabled, destructive, warning, and success.
-- Border: structural, subtle, focus, and destructive.
+- Border: structural, subtle, the approved keyboard-focus indicator, and destructive.
 - Typography: search, row title, row subtitle, section label, metadata, action, key hint, body, and code.
 - Geometry: window radius, control radius, row radius, input height, row height, icon box, content inset, section gap, and action-bar height.
-- Elevation: launcher shadow, raised row, menu, and focus ring.
+- Elevation: launcher shadow, raised row, and menu.
 - Motion: fast, standard, exit, easing-standard, easing-emphasized, and reduced-motion overrides.
 
 Components may combine tokens but must not introduce private color systems or unrelated spacing scales.
@@ -74,6 +72,7 @@ Rules:
 - Center transparent and non-square artwork optically through the normalized source canvas.
 - Reserve icon space before loading to prevent text movement.
 - Use a deterministic fallback with the same box geometry.
+- Native application candidates use Rust-normalized raster icons. Static command candidates use a host-owned, fixed-size app-style colored tile. Declarative extension list items identify product-owned semantic icons through the protocol; text, file, and image use distinct unboxed Lucide-derived colored outlines at the same optical scale. The frontend never infers an icon from a title or subtitle.
 - Do not apply per-application rounding, shadows, or masks unless the operating-system source already contains them.
 
 ## Search input
@@ -85,13 +84,14 @@ Behavior:
 - Opening an empty launcher places the caret at the start.
 - Reopening with a non-empty query selects the complete value.
 - Text input, selection, caret movement, clipboard shortcuts, undo, redo, dead keys, and IME remain native WebView behavior.
+- When the launcher regains focus on either macOS or Windows, the shared frontend sends one platform-neutral `resumed` lifecycle event to the active extension view. The owning extension decides whether its data must be synchronized; shared UI and shell code never special-case clipboard behavior.
 - Up and Down control the result list without moving the text caret.
 - Ctrl+Up and Ctrl+Down navigate input history.
 - Enter invokes the active result.
 - Escape closes the current route or launcher according to navigation depth.
 - Composition events do not trigger incomplete query execution. Search updates follow committed input state.
 
-The input has no decorative inner panel. Focus is communicated by the native caret and a restrained focus treatment on the search region.
+The input has no decorative inner panel, focus border, glow, or scale effect. Focus is communicated by the native caret and text selection.
 
 ## Result list
 
@@ -112,7 +112,7 @@ Selection contract:
 - Up and Down move exactly one option and clamp at list boundaries.
 - Moving inside the visible scrollport does not change scroll position.
 - When the active option crosses the top or bottom scrollport edge, reveal only the minimum required amount.
-- Pointer hover does not steal keyboard selection.
+- Root Search has one active option shared by keyboard and pointer navigation. Pointer movement transfers that active option.
 - Pointer click activates the clicked result directly.
 - Keyboard and pointer state use the same action identity.
 
@@ -125,22 +125,27 @@ Every launcher, Settings, diagnostic, and extension view surface is rendered by 
 - List: search or filter controls, sections, options, pagination, and actions.
 - Split: list selection on the left and detail for the active item on the right.
 - Detail: title, bounded body, metadata, and actions.
-- Settings: typed controls generated from the shared settings schema.
+- Settings: planned typed controls generated from host-owned state and each extension's static `contributes.configuration` schema. The runtime registry exists, but the Settings window and frontend controls do not.
+
+In a Split view, the list is subordinate navigation and occupies 38% of the content width; the detail pane receives 62%. Text detail uses a readonly auto-sized text area only to preserve native selection, but removes its border, radius, fill, and resize chrome so it reads as text rather than an input or image. File detail is a semantic file list with file glyphs and separators. Image detail uses a bounded raised preview surface with `object-fit: contain`. The three content types must remain distinguishable without relying on labels alone.
+
+Extension list hover is a lower-priority preview state and does not change the selected item. A selected row or pressed filter keeps its selected surface while hovered.
 
 Extensions cannot provide markup, styles, scripts, Svelte components, WebView preload code, URLs for executable content, DOM access, Tauri access, or arbitrary drawing. They cannot select raw colors, spacing, typography, elevation, animation, or platform-specific widgets. All pixels, visible states, interactions, accessibility behavior, and motion belong to the shared frontend design system.
 
 Extension content remains data. Text is escaped, icon references are resolved through validated host-owned protocols, declarative nodes are bounded and schema-validated, and typed actions are returned to the owning extension through the Rust runtime. No extension package is loaded as a frontend bundle.
 
-Nested navigation uses a stable route stack. Back is visually quiet, placed consistently, and returns immediately. Route updates preserve local input and selection when their stable identities remain valid.
+Nested navigation uses a stable route stack. Back is visually quiet and placed consistently. It submits a typed Back request and retains the current route until the authoritative navigation snapshot arrives; failure remains visible on that route. Route updates preserve local input and selection when their stable identities remain valid.
 
 ## Action bar
 
-The action bar is contextual and compact. It is absent when it has no useful content.
+The action bar is contextual and compact. The current extension renderer reserves its footer row even when no action is present; removing that empty reservation remains UI work.
 
 - The primary action appears first in reading order and closest to its key hint.
 - Secondary actions remain visually subordinate.
 - Destructive actions use destructive color only when available and actionable.
 - Key hints describe shortcuts and never resemble unlabeled buttons.
+- Root-search command identity icons use a host-owned app-style colored tile with fixed geometry. Content-type icons inside extension views remain unboxed glyphs so command identity and payload type cannot be confused.
 - Pressed styling ends when pointer or key activation ends. Actions do not retain an active visual state after invocation.
 
 ## States
@@ -165,11 +170,11 @@ While a new request is pending, keep the previous completed view visible, includ
 
 Support light and dark operating-system themes through the same semantic token set. Theme changes must not reload the frontend or reset navigation state.
 
-Contrast must meet WCAG AA for text and essential controls. Selected and hovered rows remain legible in both themes. Blue is reserved for focus, links, or explicit accent use rather than filling every selected surface.
+Contrast must meet WCAG AA for text and essential controls. Selected and hovered rows remain legible in both themes. Selected and hovered surfaces stay neutral. Accent color is reserved for explicit primary actions or other approved semantic use; the current keyboard-focus indicator is a restrained neutral inset line.
 
 ## Localization
 
-User-facing shell text follows the operating-system locale when Nanika ships a matching bundled catalog and falls back to English otherwise. Catalog selection must not alter component geometry, focus, query state, or navigation state. Use browser `Intl` for locale-sensitive values and test longer translations instead of reserving layout for one language.
+The shell currently exposes the normalized operating-system locale in session metadata but renders hard-coded English because message catalogs are not implemented. When catalogs are added, user-facing shell text follows the operating-system locale when Nanika ships a match and falls back to English otherwise. Catalog selection must not alter component geometry, focus, query state, or navigation state. Use browser `Intl` for locale-sensitive values and test longer translations instead of reserving layout for one language.
 
 Application titles use the localized names supplied by the application extension, while original names remain searchable aliases. Never concatenate translated fragments or use text as an action, component, or persistence identity.
 
@@ -192,14 +197,14 @@ Motion is state-driven and interruptible.
 
 Do not run polling timers, repeating timers, or animation frames while the launcher is hidden or visually stable. Outstanding operations are driven by completion, explicit cancellation, or transport closure rather than frontend watchdog timers.
 
-Use CSS transitions for hover, pressed, focus, opacity, and transform changes. Use Svelte's built-in transition, animation, and motion facilities only when component lifecycle or coordinated state requires them. The initial design system has no third-party animation library.
+Use CSS transitions only for approved hover, pressed, opacity, and transform changes. The current keyboard-focus indicator is static and does not animate. Use Svelte's built-in transition, animation, and motion facilities only when component lifecycle or coordinated state requires them. The initial design system has no third-party animation library.
 
 ## Accessibility
 
 - Use semantic controls before ARIA.
-- Every interactive element has an accessible name and visible focus behavior.
-- Root Search exposes input value, expanded state, result count, and active option.
-- Dynamic diagnostics and result-count changes use restrained live-region announcements.
+- Every interactive element has an accessible name. Keyboard-only controls that cannot expose focus through caret, selection, or another existing product state receive an explicitly designed visible focus treatment; user-agent decoration is never the fallback.
+- Root Search exposes input value, expanded state, its listbox, and the active option. An explicit accessible result-count announcement is not implemented yet.
+- Current diagnostics use `alert` or `status` semantics. Result-count changes do not yet have a dedicated live-region announcement.
 - Keyboard order follows visual order.
 - Pointer targets remain usable at supported operating-system scaling levels.
 - Color is never the only indicator of selection, failure, or destructive intent.

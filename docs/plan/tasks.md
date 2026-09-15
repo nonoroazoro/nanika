@@ -8,13 +8,13 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 
 - Extensions are the only first-class domain capability unit.
 - The bare host owns infrastructure, orchestration, shared control-plane surfaces, and presentation contracts. It contributes no domain candidate or action.
-- Built-in and external extensions use the same process, protocol, permission, view, action, failure, and diagnostics paths.
+- Built-in and external extensions use the same process, protocol, permission, view, action, failure, and diagnostics paths. Built-ins currently use a narrower host-owned distribution record; moving them to the ordinary external manifest wrapper remains required before release.
 - Built-in status is host-owned distribution metadata. It grants no runtime privilege.
 - Rust owns search, storage, configuration, diagnostics, extension supervision, host services, and platform integration.
 - Tauri owns the desktop shell. Svelte 5, TypeScript, Vite, and plain CSS own presentation and local interaction.
 - Extensions provide bounded data and typed actions. They never provide frontend code, HTML, CSS, scripts, components, remote UI, DOM access, or Tauri access.
 - There is no compatibility layer, parallel UI, or migration path for the unpublished renderer and pre-release schemas.
-- There are no hidden product watchdogs, retries, restarts, result caps, retention jobs, destructive recovery paths, or silent fallbacks. Hard trust-boundary validation rejects explicitly. Accepted work is not dropped.
+- There are no hidden product watchdogs, retries, restarts, result caps, retention jobs, destructive recovery paths, or silent fallbacks. Clipboard history is the only current retention policy: its distribution contribution declares configurable count and age limits. Hard trust-boundary validation rejects explicitly. Accepted work is not dropped.
 
 ## Completed foundation
 
@@ -36,52 +36,61 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [x] Add a validated `nanika-icon` custom protocol backed by a bounded off-event-loop reader and immutable extension-scoped cache identities.
 - [x] Add the initial semantic combobox/listbox implementation with native text editing, clamped keyboard selection, pointer activation, and query selection on WebView mount.
 - [x] Replace the repository quality entry points with `tooling/quality` checks for Rust, frontend formatting, linting, type analysis, production builds, and initial architecture boundaries.
+- [x] Make `just dev` build the latest debug extension binaries before Tauri starts, keep one reusable development target, and make `just check` use and delete a unique temporary Cargo target.
+- [x] Add static `contributes.configuration` data, host-owned complete-snapshot validation, comment-preserving atomic JSONC persistence, configuration-bearing Nanika initialization, request-correlated live application results, and ACP `session/new` metadata.
+- [x] Add Clipboard retention configuration with defaults of 50 entries and 7 days, applied transactionally at startup, after capture, and after a live configuration update.
+- [x] Make Application configuration acknowledgement wait for the configuration-driven discovery scan and restore its prior in-memory configuration on queue or scan failure.
 
 ## Extension-first completion
 
 - [ ] Add ordinary manifests for every bundled extension and derive the development inventory from validated manifest data.
-- [ ] Stage and declare built-in executables through Tauri `bundle.externalBin` with target-triple filenames. Verify the same inventory in signed release artifacts.
-- [ ] Reject external packages that attempt to assert built-in identity or replace a reserved built-in extension.
+- [x] Stage and declare built-in executables through Tauri `bundle.externalBin` with target-triple filenames.
+- [ ] Derive and verify the packaged built-in inventory in signed release artifacts.
+- [x] Reject external packages that attempt to assert built-in identity or replace a reserved built-in extension.
 - [ ] Complete zero-extension startup, partial failure, explicit process-exit, disablement, request-correlation, and independent-host contract tests.
 - [ ] Audit shell, frontend, engine, and storage boundaries for capability-specific branches. Move capability behavior into extensions or replace presentation-only branching with protocol metadata.
-- [ ] Deliver invocation completion, streaming output, extension view updates, settings updates, diagnostics, and runtime state through session-bound Tauri channels.
-- [ ] Render extension List, Split, Detail, filter, pagination, nested navigation, Back, and typed actions through shared Svelte components.
-- [ ] Route every extension view action through Rust authorization and the versioned protocol to its owning extension.
-- [ ] Render Settings from the bounded shared settings contract and restore the Settings tray action only when that surface works.
+- [ ] Deliver invocation completion, streaming output, extension view updates, configuration application results, diagnostics, and runtime state through session-bound Tauri channels.
+- [x] Render extension List, Split, Detail, filter, pagination, nested navigation, Back, and typed actions through shared Svelte components.
+- [x] Route every extension view action through Rust authorization and the versioned protocol to its owning extension.
+- [ ] Expose the implemented runtime configuration registry through a Settings window generated from bounded `contributes.configuration` data, then add the Settings tray action.
 - [ ] Add architecture checks that reject domain implementations outside `apps/extensions`, extension-specific frontend components, extension-owned Web assets, Tauri dependencies in `engine`, and removed top-level layouts.
 
 ## Desktop shell
 
 - [x] Make runtime initialization failures visible through a bounded frontend diagnostic instead of logging only.
-- [ ] Consume invocation navigation effects without polling and keep the launcher open only for actions that open shared views.
+- [x] Consume invocation navigation effects without polling and preserve or dismiss the launcher according to the typed effect.
 - [ ] Complete startup enablement, settings-window lifecycle, shutdown coordination, and explicit stale-instance handling through Tauri and platform adapters.
 - [ ] Add frontend readiness, window visibility, focus, and interactive activation milestones while retaining passive native hotkey delivery timing.
 - [ ] Verify permitted and rejected Isolation command envelopes in the actual Tauri application.
 - [ ] Validate the packaged Isolation policy with small/large/small Channel delivery on WKWebView and WebView2 and measure IPC overhead.
 - [ ] Validate transparent-window startup, borders, shadows, focus, and active-monitor placement on physical Windows and macOS systems.
 - [ ] Evaluate stable native window effects only as measured progressive enhancement with a complete semantic CSS fallback.
-- [ ] Keep native tray actions limited to Open Nanika, Settings, and Quit. Application refresh remains an Application Extension action.
+- [x] Keep the implemented tray limited to Open Nanika and Quit. Add Settings only with the Settings surface; Application refresh remains an Application Extension action.
 
 ## Frontend architecture and design system
 
 - [ ] Implement the design principles and interaction rules in `ui.md` without redefining behavior inside feature components.
 - [ ] Expand semantic tokens for typography, color, spacing, size, radius, elevation, motion, and interaction states using plain CSS.
 - [ ] Implement shared Svelte primitives for SearchInput, ResultList, ResultRow, SectionHeader, ActionBar, KeyHint, DetailPanel, EmptyState, LoadingState, and DiagnosticState.
-- [ ] Keep Tauri imports inside the typed bridge. Components consume application services and typed snapshots only.
-- [ ] Use Svelte 5 runes and current event syntax. Use `$derived` for derived state and `$effect` only for external synchronization.
+- [x] Keep Tauri imports inside the typed bridge. Components consume application services and typed snapshots only.
+- [x] Use Svelte 5 runes and current event syntax. Use `$derived` for derived state and `$effect` only for external synchronization.
 - [x] Add `<svelte:boundary>` around the application root and handle search startup, delivery, and command failures explicitly.
-- [ ] Add boundaries and explicit asynchronous error handling to extension route content when those surfaces are implemented.
-- [ ] Prohibit `{@html}` for application and extension data.
+- [ ] Add a separately scoped error boundary and explicit asynchronous error handling around the already implemented extension route content.
+- [x] Prohibit `{@html}` for application and extension data.
 - [ ] Add bundled typed message catalogs selected from the operating-system locale with deterministic English fallback.
-- [ ] Render localized application titles while preserving original names as search aliases.
+- [x] Render localized application titles while preserving original names as search aliases.
 - [x] Connect keyboard selection to native `scrollIntoView` with nearest alignment; keep browser scrolling as the source of truth without custom geometry or a parallel scroll model.
 - [ ] Keep every matching result accessible. Measure the complete 1,000- and 2,000-application catalogs before choosing list virtualization.
 - [ ] Define coherent loading, empty, degraded, actionable error, and unavailable states before declaring a surface complete.
+- [ ] Remove the reserved extension action footer when the current view has no actions, and add an explicit accessible Root Search result-count announcement.
+- [x] Normalize launcher application icons in Rust, render host-owned command icons as fixed app-style tiles, and render declarative text, file, and image icons as crisp unboxed semantic glyphs.
+- [x] Give Clipboard History a compact shared search header, selected-over-hover precedence, resume synchronization, and visually distinct text, file, and image detail presentations.
 
 ## Testing
 
 - [x] Keep frontend build and static-analysis packages development-only.
 - [ ] Test Rust request validation and serialized contract shapes; verify frontend integration in the actual Tauri application.
+- [x] Test configuration schema validation, standard integer `multipleOf` semantics, atomic persistence, runtime result correlation, ACP metadata, Clipboard retention, and Application candidates immediately after configuration acknowledgement.
 - [ ] Use computer-use in the actual Tauri application to verify Root Search typing, IME boundaries, Enter, Up and Down clamping, boundary-only scrolling, pointer activation, stable snapshots, reopen selection, icon completion, and pressed-state release.
 - [ ] Use computer-use to verify shared components through semantic roles, accessible names, keyboard and pointer input, focus, rendered state, themes, reduced motion, and failures.
 - [ ] Use computer-use to verify extension presentation and actions through the actual extension-to-UI path.
@@ -100,14 +109,14 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [ ] Record JavaScript and CSS bytes, chunk count, source-map absence, parse time, and evaluation time for production frontend builds.
 - [ ] Measure channel, Isolation Pattern, icon protocol, extension protocol, and shared view commit latency.
 - [ ] Expand the architecture guards to reject extension-specific frontend code, extension-owned Web assets, undeclared shell commands, overbroad Tauri permissions, and release artifacts that diverge from the validated distribution inventory.
-- [ ] Rewrite `tooling/release` around Tauri bundles and target-triple sidecars. Remove all assumptions about the deleted desktop binary.
+- [ ] Create `tooling/release` around the implemented Tauri bundle and target-triple sidecar boundaries.
 - [ ] Package only the Tauri desktop application, CLI, and validated built-in extension executables.
 - [ ] Sign Windows artifacts and sign, notarize, and staple macOS artifacts with release credentials.
 - [ ] Complete clean-profile first run, summon, settings, actions, diagnostics, rollback, and removal acceptance on every release platform.
 
 ## Deferred until required
 
-- [ ] Define post-release settings and database migration policy only when a released format first requires compatibility.
+- [ ] Define post-release configuration and database migration policy only when a released format first requires compatibility.
 - [ ] Define machine overrides and secret handling before a capability requires them.
 - [ ] Add pre-migration maintenance snapshots only before the first post-release destructive schema change.
 - [ ] Add captured child output and launched-action process-tree cancellation only when a capability requires them.

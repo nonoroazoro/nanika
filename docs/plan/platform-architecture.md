@@ -2,7 +2,7 @@
 
 ## Supported targets
 
-Nanika currently supports and releases only:
+Nanika's current supported and future release targets are only:
 
 - macOS 13 or later
 - Windows 10 or later
@@ -26,7 +26,9 @@ Storage follows the same boundary. Shared storage contracts define records, tran
 
 The extension protocol is platform-neutral and versioned independently from packaging targets. It carries typed bounded data and actions, never native paths, handles, platform identifiers, or frontend code. Runtime supervision, operation ordering, backpressure, cancellation, and lifecycle are shared behaviors. A platform adapter may change the mechanism used to provide them, but not the protocol or product semantics.
 
-The frontend is one shared Svelte application for both release targets. Tauri exposes the same typed commands and channel contracts on macOS and Windows. Target-specific window, tray, shortcut, process, clipboard, and startup behavior stays in the shell wiring or platform adapter and is excluded from shared presentation state.
+Extension configuration follows the same boundary. The extension's validated `contributes.configuration` contribution declares the static schema, the host owns JSONC persistence and validates complete effective snapshots, and the extension consumes only the typed snapshot delivered by its protocol adapter. Nanika extensions acknowledge a live update by request ID only after their configuration-dependent work is complete; accepting work into a queue is not an acknowledgement. ACP receives the effective snapshot in `session/new` metadata and has no live-update acknowledgement. Configuration keys, values, acknowledgements, and errors remain platform-neutral.
+
+The frontend is one shared Svelte application for both release targets. Tauri exposes the same typed commands and channel contracts on macOS and Windows. Target-specific window, tray, shortcut, process, clipboard, and startup behavior stays in the shell wiring or platform adapter and is excluded from shared presentation state. The current shell creates only the launcher WebView window; the Settings window and its shell wiring remain unimplemented.
 
 Platform adapters own native APIs, handles, event sources, process containment, window placement, startup registration, single-instance activation, clipboard monitoring, and other target-specific mechanisms. Adapters expose the same contract, failure boundary, cancellation behavior, lifecycle, and diagnostics shape on macOS and Windows.
 

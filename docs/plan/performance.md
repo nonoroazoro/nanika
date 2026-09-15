@@ -32,7 +32,7 @@ Performance results are evidence, not pass or fail gates on ordinary machines. C
 
 ## Deterministic Rust benchmarks
 
-Run the project benchmark command. Criterion covers ranking, query delivery, runtime foundation startup, application indexing, extension process activation, calculator evaluation, and clipboard persistence. UI rendering is not benchmarked through Criterion. Use a named baseline only for comparisons on the same reference machine.
+`just check` builds and executes every Criterion target in test mode as a correctness smoke check. Full measurements use `cargo bench --workspace --locked`; the repository currently provides the optional named-baseline wrapper only as `tooling/quality/benchmark.ps1` on Windows. Criterion covers ranking, query delivery, runtime foundation startup, application indexing, extension process activation, calculator evaluation, and clipboard persistence. UI rendering is not benchmarked through Criterion. Use a named baseline only for comparisons on the same reference machine.
 
 ## Frontend benchmarks
 
@@ -47,13 +47,14 @@ Measure production frontend builds with bundled local assets. Record:
 - small and large Channel payloads on both sides of Tauri's internal direct-delivery threshold, including acknowledgement round-trip latency;
 - the single in-flight message limit and latest-state coalescing under rapid input or a stalled consumer, including delivery of the final cleared query;
 - extension protocol validation through shared Svelte component commit for declarative views, and user action return through the typed bridge to the owning extension;
+- configuration save-to-acknowledgement latency, separating atomic persistence, queue admission, extension work, and the correlated terminal result;
 - continuous keyboard navigation and scrolling through complete 1,000- and 2,000-application catalogs;
 - icon request, decode, cache hit, and visible presentation timing;
 - native window-effect compositor cost, startup flash, and fallback behavior when an effect is enabled;
 - heap size, DOM node count, event-listener count, long tasks, and animation frame variance;
 - hidden-idle timers, animation frames, CPU, memory, process count, and thread count.
 
-Performance instrumentation must not ship in production artifacts. The controller and report writer are Rust repository tooling. Browser-realm timestamps use the native Web Performance API inside the actual WebView. Retain schema-versioned JSON reports under `target/performance` with the commit, worktree state, Rust and frontend lockfile hashes, application hash, machine profile, WebView version, parameters, thresholds, and raw samples.
+Performance instrumentation must not ship in production artifacts. The implemented development monitor uses the native Web Performance API inside the actual WebView. The desktop controller and schema-versioned `target/performance` report writer are not implemented yet; when added, reports must record the commit, worktree state, Rust and frontend lockfile hashes, application hash, machine profile, WebView version, parameters, thresholds, and raw samples.
 
 Use computer-use to exercise UI interactions and rendering in the actual Tauri application using WebView2 on Windows and WKWebView on macOS. Synthetic application catalogs must pass through extension processes, Rust search, and Tauri IPC before reaching the shared frontend. Record total process-start-to-interactive time and separate runtime initialization, result delivery, DOM update, and frame timing. Isolated component timings are not end-to-end application results.
 
@@ -67,13 +68,13 @@ Search timing follows the current request from the frontend input handler throug
 
 The monitor is loaded only through Vite's development branch. Production builds reject emitted chunks containing development-monitor modules, including builds accidentally run with a development `NODE_ENV`. The overlay, its CSS, keyboard shortcut, and search observation hooks must be absent from production assets. Use platform profilers for release acceptance and compositor measurements.
 
-## Activation trace
+## Activation trace status
 
-The activation trace covers native hotkey delivery, Rust event handling, active-monitor placement, Tauri window visibility, frontend visibility acknowledgement, input focus, and interactive readiness. Native timing uses Carbon `EventTime` on macOS and `MSG.time` on Windows when available. Missing native timing marks a sample incomplete instead of substituting callback time.
+The implemented trace records native hotkey delivery delay through Carbon `EventTime` on macOS and `MSG.time` on Windows when available. Missing native timing omits that observation instead of substituting callback time. Correlation through Rust event handling, active-monitor placement, Tauri visibility, frontend visibility acknowledgement, input focus, and interactive readiness is not implemented yet.
 
-The frontend emits a readiness acknowledgement only after the current view model is committed, layout has completed, and the search input owns focus. Visibility alone is not interactive readiness. Slow activations above 50 ms are warning-level diagnostics. Verbose diagnostics may retain timing values but never query text or clipboard content.
+The future frontend readiness acknowledgement must occur only after the current view model is committed, layout has completed, and the search input owns focus. Visibility alone is not interactive readiness. When the complete trace exists, slow activations above 50 ms are warning-level diagnostics. Verbose diagnostics may retain timing values but never query text or clipboard content.
 
-## Desktop black-box benchmark
+## Planned desktop black-box benchmark
 
 Build the Tauri desktop application in release mode. A Rust controller must launch and observe that real application rather than a component page or browser-test harness. It verifies hidden startup, hidden-idle resource use, repeated summon and dismissal, focus ownership, first interactive paint, and warm activation P50, P95, P99, maximum, and raw samples.
 
@@ -94,6 +95,8 @@ Validate on physical Windows and macOS machines:
 - stable Root Search publication while extensions return initial snapshots;
 - cold-start empty-query results without typing, input before startup completes, repeated search/clear cycles, stale-result rejection, and an explicit transport error after Channel closure;
 - zero-extension startup, built-in and external rendering-path equivalence, and visible behavior while one extension is slow, failed, or disabled;
+- saved extension configuration, correlated Nanika live-application success and failure, Application rescan completion before acknowledgement, and ACP next-session application;
+- Clipboard resume synchronization after the launcher was hidden, count and age retention, and text, file, and image detail differentiation;
 - native text editing, query selection on reopen, listbox navigation, scroll boundary behavior, and pointer activation;
 - icon protocol validation, cache hits, decode cost, sharp high-DPI presentation, and scrolling responsiveness;
 - 60 Hz and 120 Hz motion, interruption, and reduced motion;

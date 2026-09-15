@@ -1,12 +1,14 @@
 # Release Process
 
+Status: release acceptance design. Nanika is still in development and has no complete signed release pipeline. Routine development uses `just dev`; packaged development automation may use `pnpm --dir apps/desktop build:debug`. A Tauri release-mode bundle produced by `pnpm --dir apps/desktop build` is only an unsigned packaging primitive, not a releasable artifact.
+
 ## Supported platform matrix
 
 Nanika releases target only macOS 13+ and Windows 10+. Each release target uses the same shared product contracts and its own platform adapter implementation where native APIs improve behavior. Linux and other platforms are unsupported and are excluded from release artifacts. Adding another platform requires an explicit baseline decision, adapter implementations, packaging target, and validation matrix.
 
 Nanika uses immutable versioned artifacts. The MVP has no installer, background updater, or release channel service.
 
-## Artifacts
+## Planned artifacts
 
 | Platform | Artifact |
 | --- | --- |
@@ -18,9 +20,9 @@ Every archive has a sibling `.sha256` file. The Windows archive contains the Tau
 
 Only assets and binaries required by the current Tauri application may appear in release artifacts. Extension packages and bundled extension resources must not declare frontend entrypoints or remote UI. The WebView must never load HTML, CSS, JavaScript, Svelte components, preload code, or content scripts from an extension location.
 
-## Build and trust
+## Current build boundary and planned trust work
 
-Packaging commands under `tooling/release` must build the production frontend in `apps/desktop/frontend` first, embed only its local generated assets in the Tauri shell, build the Rust workspace and built-in extensions, and then invoke platform packaging. Release archives and intermediate inventories belong under `target`; no generated `dist` directory is allowed at the repository root.
+The implemented desktop package scripts build every built-in extension, replace the fixed `target/tauri-binaries` sidecar set, build the local frontend, and invoke Tauri. No `tooling/release` pipeline currently exists. Future release automation must compose these existing boundaries, add signed-inventory verification and platform signing, and place archives and intermediate evidence under `target`; no generated `dist` directory is allowed at the repository root.
 
 Official Windows builds sign and verify every executable with SHA-256 before archiving. Packaging verifies the system Evergreen WebView2 prerequisite on a clean Windows profile. If the runtime is absent or cannot create the WebView, the Rust shell must present a native recovery diagnostic because the frontend cannot start.
 
@@ -28,7 +30,7 @@ Official macOS builds use the Tauri application bundle target rather than hand-a
 
 Tauri versions, stable feature flags, Isolation Pattern assets, command pruning, capabilities, Content Security Policy, custom protocols, official plugins, bundled resources, application identifier, icons, minimum operating-system versions, and the disabled updater configuration are release-controlled and must be reviewed from the packaged artifact.
 
-The signed release inventory is the only authority that marks an extension as built-in. Every bundled extension must have an ordinary extension manifest paired with its native executable. Packaging must reject missing, duplicate, mismatched, externally supplied, or self-asserted built-in identity.
+The current version-controlled `apps/extensions/distribution.json` inventory is the only authority that marks an extension as built-in during development. It reuses the shared runtime and contribution types but is not yet assembled from ordinary extension manifests. Before release, every bundled extension must have an ordinary manifest paired with its native executable, and packaging must reject missing, duplicate, mismatched, externally supplied, or self-asserted built-in identity.
 
 ## Checklist
 
@@ -49,8 +51,8 @@ The signed release inventory is the only authority that marks an extension as bu
     Verify cold-start results without typing and repeated search/clear cycles using the same session Channel. Exercise a small message, a result list above Tauri's direct-delivery threshold, and a subsequent small message under the packaged Isolation policy. Confirm frontend receipt as well as visible results, session replacement on page reload, and an explicit visible failure after transport closure. Isolated logic tests are not evidence for this packaged transport check.
 15. Confirm operating-system locale selection, bundled shell translations, deterministic English fallback, locale-sensitive formatting, localized application names, and original-name aliases. Confirm normalized cached icons remain sharp and responsive on standard and high-DPI displays, incomplete icon entries are never served, and fallback-to-complete transitions cannot be trapped by immutable WebView caching.
 16. Confirm calculator results appear for explicit symbolic and word operators and do not appear for plain search terms.
-17. Confirm built-in and external extensions use the same manifest schema, protocol, permissions, process, host-service, declarative-view, action, failure, and diagnostics paths. Confirm built-in identity originates only from the signed release inventory. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the shared frontend-rendered declarative protocol path.
-18. Confirm Settings preserves typed validation and atomic JSONC persistence.
+17. Confirm every bundled extension has been moved from the current narrow distribution record to the ordinary external-extension manifest schema. Then confirm built-in and external extensions use the same protocol, permissions, process, host-service, declarative-view, action, failure, and diagnostics paths. Confirm built-in identity originates only from the signed release inventory. Confirm extension List, Split, Detail, filter, pagination, nested navigation, Back, scrolling, and every action style through the shared frontend-rendered declarative protocol path.
+18. Confirm Settings preserves complete-snapshot validation, standard zero-anchored integer `multipleOf` semantics, comment-preserving atomic JSONC persistence, and a distinct request-correlated live-application result. For Application configuration, `configurationApplied` must arrive only after the new discovery scan has published its searchable candidates; a queue send alone is insufficient. Confirm Clipboard configuration applies its count and age retention transaction before acknowledging.
 19. Confirm accessibility roles, active option state, focus order, keyboard operation, contrast, reduced motion, and operating-system text scaling.
 20. Confirm hidden idle has no frontend polling or animation frame loop and meets CPU, memory, process, and thread targets.
 21. Publish the versioned archives, checksums, and release notes together.
