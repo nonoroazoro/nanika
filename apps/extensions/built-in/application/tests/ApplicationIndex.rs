@@ -32,7 +32,6 @@ fn configured_windows_root_is_discovered_and_persisted() {
         ApplicationDatabase::open(root.join("application.db")).expect("database should open");
     let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
     let config = ApplicationConfig {
-        format_version: 1,
         roots: vec![applications],
         exclusions: platform::standard_roots().expect("standard roots"),
     };
@@ -59,7 +58,6 @@ fn cancellation_does_not_stale_the_previous_snapshot() {
         ApplicationDatabase::open(root.join("application.db")).expect("database should open");
     let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
     let config = ApplicationConfig {
-        format_version: 1,
         roots: vec![applications.clone()],
         exclusions: platform::standard_roots().expect("standard roots"),
     };
@@ -84,7 +82,6 @@ fn standard_windows_roots_produce_valid_application_metadata() {
         ApplicationDatabase::open(root.join("application.db")).expect("database should open");
     let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
     let config = ApplicationConfig {
-        format_version: 1,
         roots: Vec::new(),
         exclusions: Vec::new(),
     };
@@ -125,7 +122,6 @@ fn argument_free_shortcuts_deduplicate_with_their_direct_executable() {
         ApplicationDatabase::open(root.join("application.db")).expect("database should open");
     let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
     let config = ApplicationConfig {
-        format_version: 1,
         roots: vec![applications],
         exclusions: platform::standard_roots().expect("standard roots"),
     };
@@ -195,7 +191,6 @@ fn failed_index_transactions_leave_a_failed_scan_state() {
         )
         .expect("failure trigger should install");
     let config = ApplicationConfig {
-        format_version: 1,
         roots: vec![applications],
         exclusions: platform::standard_roots().expect("standard roots"),
     };
