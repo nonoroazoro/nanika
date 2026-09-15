@@ -159,10 +159,10 @@ function handleKeydown(event: KeyboardEvent): void
                         <button
                             type="button"
                             aria-pressed={option.value === list.filter.selected_value}
-                            disabled={busy}
+                            aria-disabled={busy}
                             onclick={() =>
                             {
-                                if (list?.filter && option.value !== list.filter.selected_value)
+                                if (!busy && list?.filter && option.value !== list.filter.selected_value)
                                 {
                                     onEvent({ kind: "filterChanged", filter_id: list.filter.id, value: option.value });
                                 }
@@ -239,12 +239,14 @@ function handleKeydown(event: KeyboardEvent): void
                     </button>{/if}
             </div>
         {/if}
-        {#if detail && (!list || list.layout === "split")}<div class="detail-pane">
-                <ViewDetail
-                    {detail}
-                    resourceOrigin={resourceOrigin}
-                    extensionId={snapshot.extensionId}
-                />
+        {#if !list || list.layout === "split"}<div class="detail-pane">
+                {#if detail}
+                    <ViewDetail
+                        {detail}
+                        resourceOrigin={resourceOrigin}
+                        extensionId={snapshot.extensionId}
+                    />
+                {/if}
             </div>{/if}
     </div>
     <footer>
@@ -267,6 +269,8 @@ function handleKeydown(event: KeyboardEvent): void
 header { display: flex; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 h1 { margin: 0; font-size: var(--font-row); line-height: 1.2; }
 button { color: inherit; font-size: var(--font-meta); }
+/* Pending view requests keep toolbar contrast stable; native disabled and aria-busy still expose the interaction state. */
+button:disabled { opacity: 1; }
 .back { display: grid; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
 .back svg { width: 1.1rem; height: 1.1rem; }
 .search { display: grid; flex: 0 0 var(--search-height); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
@@ -291,11 +295,13 @@ small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: v
 .more { display: block; margin: var(--space-3) auto; }
 .filter { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
 .filter button { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem 0.65rem; }
-.filter button:disabled { opacity: 1; }
-.filter button:hover:not(:disabled) { border-color: transparent; background: var(--surface-hovered); }
+/* aria-disabled preserves filter focus while its guarded event waits for the extension. */
+.filter button[aria-disabled='true'] { cursor: default; }
+.filter button:hover { border-color: transparent; background: var(--surface-hovered); }
 .filter button[aria-pressed='true'] { background: var(--surface-selected); }
-.filter button[aria-pressed='true']:hover:not(:disabled) { background: var(--surface-selected); }
-footer { display: flex; justify-content: flex-end; gap: var(--space-2); min-height: 3rem; padding: var(--space-2) var(--space-5); border-top: 1px solid var(--border-subtle); }
+.filter button[aria-pressed='true']:hover { background: var(--surface-selected); }
+/* Empty results reserve the same space as a button row, including its padding and border. */
+footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: var(--space-2); min-height: calc(2rem + 2 * var(--space-2) + 1px); padding: var(--space-2) var(--space-5); border-top: 1px solid var(--border-subtle); }
 .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-foreground); font-weight: 600; }
 .primary:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 88%, black); }
 .destructive { margin-right: auto; border-color: var(--border-danger); background: transparent; color: var(--text-danger); font-weight: 500; }
