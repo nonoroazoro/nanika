@@ -5,7 +5,6 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, RwLock};
 
-use nanika_config::ConfigStore;
 use nanika_extension_application::{
     ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
     select_candidates,
@@ -21,55 +20,82 @@ use pending_invocation::PendingInvocation;
 
 const EVENT_CAPACITY: usize = 8;
 
+struct PendingConfiguration {
+    generation: u64,
+    previous: ApplicationConfig,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::resolve(std::env::args().skip(1))?;
-    let config_store = ConfigStore::open(&paths.data_root, &paths.config_root)?;
-    let mut config = ApplicationConfig::load(&config_store)?;
+    let mut output = BufWriter::new(stdout().lock());
+    let (initialize_request_id, initial_configuration) = {
+        let mut input = BufReader::new(stdin().lock());
+        match read_frame(&mut input)? {
+            Some(Message::Initialize {
+                request_id,
+                protocol,
+                configuration,
+            }) if protocol == PROTOCOL_NAME => (request_id, configuration),
+            Some(Message::Initialize { request_id, .. }) => {
+                write_error(
+                    &mut output,
+                    Some(request_id),
+                    "unsupported_protocol",
+                    "the requested extension protocol is unsupported",
+                )?;
+                return Ok(());
+            }
+            Some(message) => {
+                write_error(
+                    &mut output,
+                    request_id(&message),
+                    "not_initialized",
+                    "initialize must be the first request",
+                )?;
+                return Ok(());
+            }
+            None => return Ok(()),
+        }
+    };
+    let initial_config = match ApplicationConfig::from_configuration(&initial_configuration) {
+        Ok(config) => config,
+        Err(error) => {
+            write_error(
+                &mut output,
+                Some(initialize_request_id),
+                "invalid_configuration",
+                &error.to_string(),
+            )?;
+            return Ok(());
+        }
+    };
+    let config = Arc::new(RwLock::new(initial_config));
     let database_path = paths.database_path();
     let icon_root = paths.icon_root();
     let entries = Arc::new(RwLock::new(Vec::<ApplicationEntry>::new()));
     let (event_sender, events) = mpsc::sync_channel(EVENT_CAPACITY);
-    let _reader = spawn_protocol_reader(event_sender.clone())?;
     let worker = DiscoveryWorker::spawn(
         database_path,
         icon_root,
-        config_store.clone(),
+        Arc::clone(&config),
         Arc::clone(&entries),
-        event_sender,
+        event_sender.clone(),
     )?;
-    let mut output = BufWriter::new(stdout().lock());
-    let mut initialized = false;
+    write_frame(
+        &mut output,
+        &Message::Initialized {
+            request_id: initialize_request_id,
+            protocol: PROTOCOL_NAME.to_owned(),
+        },
+    )?;
+    let _reader = spawn_protocol_reader(event_sender)?;
     let mut refresh_requests = HashMap::<String, u64>::new();
+    let mut configuration_requests = HashMap::<String, PendingConfiguration>::new();
     let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
     let mut latest_generation = 1_u64;
     while let Ok(event) = events.recv() {
         match event {
             RuntimeEvent::Protocol(message) => match message {
-                Message::Initialize {
-                    request_id,
-                    protocol,
-                } if protocol == PROTOCOL_NAME => {
-                    initialized = true;
-                    write_frame(
-                        &mut output,
-                        &Message::Initialized {
-                            request_id,
-                            protocol: PROTOCOL_NAME.to_owned(),
-                        },
-                    )?;
-                }
-                Message::Initialize { request_id, .. } => write_error(
-                    &mut output,
-                    Some(request_id),
-                    "unsupported_protocol",
-                    "the requested extension protocol is unsupported",
-                )?,
-                message if !initialized => write_error(
-                    &mut output,
-                    request_id(&message),
-                    "not_initialized",
-                    "initialize must complete before other requests",
-                )?,
                 Message::Query {
                     request_id,
                     generation,
@@ -139,44 +165,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                Message::GetSettings { request_id } => {
-                    let contribution = config.settings();
-                    contribution.validate().map_err(std::io::Error::other)?;
-                    write_frame(
-                        &mut output,
-                        &Message::Settings {
-                            request_id,
-                            contribution,
-                        },
-                    )?;
-                }
-                Message::UpdateSettings {
+                Message::ConfigurationChanged {
                     request_id,
-                    updates,
-                } => match config.update(&config_store, updates) {
+                    configuration,
+                } => match ApplicationConfig::from_configuration(&configuration) {
                     Ok(updated) => {
-                        config = updated;
+                        let previous = {
+                            let mut current =
+                                config.write().unwrap_or_else(|error| error.into_inner());
+                            std::mem::replace(&mut *current, updated)
+                        };
                         latest_generation = latest_generation.saturating_add(1);
-                        match worker.refresh(None, latest_generation) {
-                            Ok(()) => write_frame(
-                                &mut output,
-                                &Message::SettingsUpdated {
+                        match worker.refresh(Some(request_id.clone()), latest_generation) {
+                            Ok(()) => {
+                                configuration_requests.insert(
                                     request_id,
-                                    contribution: config.settings(),
-                                },
-                            )?,
-                            Err(message) => write_error(
-                                &mut output,
-                                Some(request_id),
-                                "settings_refresh_failed",
-                                &message,
-                            )?,
+                                    PendingConfiguration {
+                                        generation: latest_generation,
+                                        previous,
+                                    },
+                                );
+                            }
+                            Err(message) => {
+                                *config.write().unwrap_or_else(|error| error.into_inner()) =
+                                    previous;
+                                write_error(
+                                    &mut output,
+                                    Some(request_id),
+                                    "configuration_apply_failed",
+                                    &message,
+                                )?;
+                            }
                         }
                     }
                     Err(error) => write_error(
                         &mut output,
                         Some(request_id),
-                        "invalid_settings",
+                        "invalid_configuration",
                         &error.to_string(),
                     )?,
                 },
@@ -229,9 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?,
             },
             RuntimeEvent::CandidatesChanged => {
-                if initialized {
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
-                }
+                write_frame(&mut output, &Message::CandidatesChanged)?;
             }
             RuntimeEvent::ProtocolClosed => break,
             RuntimeEvent::ProtocolError(message) => {
@@ -244,11 +267,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id: Some(request_id),
                 response_generation,
                 result: Ok(report),
+            } if configuration_requests.contains_key(&request_id) => {
+                let pending = configuration_requests
+                    .remove(&request_id)
+                    .expect("guarded configuration request must exist");
+                write_frame(&mut output, &Message::CandidatesChanged)?;
+                if pending.generation != response_generation {
+                    *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "configuration_apply_failed",
+                        "application scan returned the wrong configuration generation",
+                    )?;
+                } else if report.cancelled {
+                    *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "configuration_apply_failed",
+                        "application scan was cancelled before configuration was applied",
+                    )?;
+                } else {
+                    if !report.complete || report.warnings > 0 {
+                        eprintln!(
+                            "application configuration scan was incomplete with {} path errors",
+                            report.warnings
+                        );
+                    }
+                    write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+                }
+            }
+            RuntimeEvent::ScanFinished {
+                request_id: Some(request_id),
+                response_generation,
+                result: Ok(report),
             } if !report.cancelled => {
                 refresh_requests.remove(&request_id);
-                if initialized {
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
-                }
+                write_frame(&mut output, &Message::CandidatesChanged)?;
                 if report.complete && report.warnings == 0 {
                     write_frame(
                         &mut output,
@@ -274,12 +330,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response_generation: _,
                 result: Err(message),
             } => {
-                if initialized {
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
-                }
+                write_frame(&mut output, &Message::CandidatesChanged)?;
                 if let Some(request_id) = request_id {
-                    refresh_requests.remove(&request_id);
-                    write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
+                    if let Some(pending) = configuration_requests.remove(&request_id) {
+                        *config.write().unwrap_or_else(|error| error.into_inner()) =
+                            pending.previous;
+                        write_error(
+                            &mut output,
+                            Some(request_id),
+                            "configuration_apply_failed",
+                            &message,
+                        )?;
+                    } else {
+                        refresh_requests.remove(&request_id);
+                        write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
+                    }
                 }
                 return Err(std::io::Error::other(format!(
                     "application discovery failed: {message}"
@@ -294,9 +359,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(request_id) = request_id {
                     refresh_requests.remove(&request_id);
                 }
-                if initialized {
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
-                }
+                write_frame(&mut output, &Message::CandidatesChanged)?;
                 if !report.cancelled && (!report.complete || report.warnings > 0) {
                     eprintln!(
                         "application scan was incomplete with {} path errors",
@@ -388,10 +451,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
-        | Message::GetSettings { request_id }
-        | Message::Settings { request_id, .. }
-        | Message::UpdateSettings { request_id, .. }
-        | Message::SettingsUpdated { request_id, .. }
+        | Message::ConfigurationChanged { request_id, .. }
+        | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }

@@ -23,6 +23,7 @@ fn calculator_process_contributes_and_copies_through_the_host() {
         &Message::Initialize {
             request_id: "initialize".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration: Default::default(),
         },
     )
     .expect("initialize should write");
@@ -120,6 +121,7 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
             &Message::Initialize {
                 request_id: "init".to_owned(),
                 protocol: PROTOCOL_NAME.to_owned(),
+                configuration: Default::default(),
             },
         )
         .unwrap();

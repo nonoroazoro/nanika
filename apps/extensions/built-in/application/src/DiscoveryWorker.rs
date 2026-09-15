@@ -4,8 +4,6 @@ use std::sync::mpsc::{self, Sender, SyncSender};
 use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 
-use nanika_config::ConfigStore;
-
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationIndex, DiscoveryCommand,
     DiscoveryServices, IconCache, RuntimeEvent,
@@ -22,7 +20,7 @@ impl DiscoveryWorker {
     pub fn spawn(
         database_path: PathBuf,
         icon_root: PathBuf,
-        config_store: ConfigStore,
+        config: Arc<RwLock<ApplicationConfig>>,
         entries: Arc<RwLock<Vec<ApplicationEntry>>>,
         events: SyncSender<RuntimeEvent>,
     ) -> std::io::Result<Self> {
@@ -60,7 +58,7 @@ impl DiscoveryWorker {
                     }
                 }
                 let services = DiscoveryServices {
-                    config_store: &config_store,
+                    config: &config,
                     entries: &entries,
                     events: &events,
                     cancelled_through: &worker_cancellation,
@@ -137,13 +135,11 @@ fn run_scan(
     request_id: Option<String>,
     generation: u64,
 ) -> Option<ApplicationIndex> {
-    let config = match ApplicationConfig::load(services.config_store) {
-        Ok(config) => config,
-        Err(error) => {
-            send_failure(services.events, request_id, generation, &error);
-            return Some(index);
-        }
-    };
+    let config = services
+        .config
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
     let result = index.scan(&config, generation, services.cancelled_through);
     match result {
         Ok((report, discovered)) => {

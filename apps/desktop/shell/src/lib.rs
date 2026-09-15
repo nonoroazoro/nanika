@@ -20,6 +20,8 @@ mod icon_request;
 mod invoke_candidate_request;
 #[path = "PublishQueryRequest.rs"]
 mod publish_query_request;
+#[path = "ResourceProtocol.rs"]
+mod resource_protocol;
 #[path = "RootSearchSnapshot.rs"]
 mod root_search_snapshot;
 #[path = "SearchDelivery.rs"]
@@ -56,6 +58,12 @@ use search_result::*;
 use search_session::*;
 use window::*;
 
+#[cfg(test)]
+#[path = "../tests/unit/IconProtocol.rs"]
+mod icon_protocol_tests;
+#[cfg(test)]
+#[path = "../tests/unit/NavigationState.rs"]
+mod navigation_state_tests;
 #[cfg(test)]
 #[path = "../tests/unit/SearchDelivery.rs"]
 mod search_delivery_tests;

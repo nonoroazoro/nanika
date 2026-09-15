@@ -9,5 +9,5 @@ pub struct ActiveExtension {
     pub program: PathBuf,
     pub protocol: ExtensionProtocol,
     pub permissions: Vec<String>,
-    pub contributions: ExtensionContributions,
+    pub contributes: ExtensionContributions,
 }

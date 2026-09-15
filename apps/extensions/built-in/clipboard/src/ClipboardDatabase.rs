@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use nanika_protocol::ClipboardContent;
 use rusqlite::{Connection, params};
 
-use crate::{ClipboardEntry, EncodedClipboardContent};
+use crate::{ClipboardConfig, ClipboardEntry, EncodedClipboardContent};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS clipboard_entries (
@@ -48,35 +49,39 @@ impl ClipboardDatabase {
     }
 
     pub fn upsert(&self, entry: &ClipboardEntry) -> Result<(), String> {
-        let encoded = encode_content(&entry.content)?;
-        self.connection
-            .execute(
-                "INSERT INTO clipboard_entries (
-                    entry_id, content_kind, content_hash, title, text_payload, files_json,
-                    image_path, byte_size, captured_at, last_used_at, pinned
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
-                 ON CONFLICT(content_kind, content_hash) DO UPDATE SET
-                    title = excluded.title,
-                    text_payload = excluded.text_payload,
-                    files_json = excluded.files_json,
-                    image_path = excluded.image_path,
-                    byte_size = excluded.byte_size,
-                    captured_at = excluded.captured_at",
-                params![
-                    entry.entry_id,
-                    encoded.kind,
-                    entry.content_hash,
-                    entry.title,
-                    encoded.text,
-                    encoded.files,
-                    encoded.image,
-                    integer(entry.byte_size),
-                    integer(entry.captured_at),
-                    entry.pinned,
-                ],
-            )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        write_entry(&self.connection, entry)
+    }
+
+    pub fn upsert_with_retention(
+        &self,
+        entry: &ClipboardEntry,
+        now: u64,
+        config: &ClipboardConfig,
+    ) -> Result<HashSet<PathBuf>, String> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        write_entry(&transaction, entry)?;
+        prune(&transaction, now, config)?;
+        let retained = image_paths(&transaction)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(retained)
+    }
+
+    pub fn apply_retention(
+        &self,
+        now: u64,
+        config: &ClipboardConfig,
+    ) -> Result<HashSet<PathBuf>, String> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        prune(&transaction, now, config)?;
+        let retained = image_paths(&transaction)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(retained)
     }
 
     pub fn load(&self) -> Result<Vec<ClipboardEntry>, String> {
@@ -141,6 +146,74 @@ impl ClipboardDatabase {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
+}
+
+fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), String> {
+    let encoded = encode_content(&entry.content)?;
+    connection
+        .execute(
+            "INSERT INTO clipboard_entries (
+                    entry_id, content_kind, content_hash, title, text_payload, files_json,
+                    image_path, byte_size, captured_at, last_used_at, pinned
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
+                 ON CONFLICT(content_kind, content_hash) DO UPDATE SET
+                    title = excluded.title,
+                    text_payload = excluded.text_payload,
+                    files_json = excluded.files_json,
+                    image_path = excluded.image_path,
+                    byte_size = excluded.byte_size,
+                    captured_at = excluded.captured_at",
+            params![
+                entry.entry_id,
+                encoded.kind,
+                entry.content_hash,
+                entry.title,
+                encoded.text,
+                encoded.files,
+                encoded.image,
+                integer(entry.byte_size),
+                integer(entry.captured_at),
+                entry.pinned,
+            ],
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn prune(connection: &Connection, now: u64, config: &ClipboardConfig) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM clipboard_entries WHERE captured_at < ?1",
+            [integer(config.cutoff_millis(now))],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM clipboard_entries
+             WHERE entry_id IN (
+                 SELECT entry_id
+                 FROM clipboard_entries
+                 ORDER BY pinned DESC, captured_at DESC, entry_id
+                 LIMIT -1 OFFSET ?1
+             )",
+            [i64::from(config.max_entries)],
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn image_paths(connection: &Connection) -> Result<HashSet<PathBuf>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT image_path FROM clipboard_entries
+             WHERE content_kind = 'image' AND image_path IS NOT NULL",
+        )
+        .map_err(|error| error.to_string())?;
+    statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .map(|path| path.map(PathBuf::from).map_err(|error| error.to_string()))
+        .collect()
 }
 
 fn encode_content(content: &ClipboardContent) -> Result<EncodedClipboardContent, String> {

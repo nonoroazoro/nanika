@@ -3,17 +3,13 @@ use std::path::Path;
 
 use clipboard_rs::common::RustImage;
 use clipboard_rs::{Clipboard, ClipboardContext, ContentFormat};
-use nanika_protocol::ClipboardContent;
+use nanika_protocol::{ClipboardContent, MAX_PNG_ENCODED_BYTES, png_dimensions_within_limits};
 use sha2::{Digest, Sha256};
 
 use crate::ClipboardEntry;
 
 const MAX_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_FILES: usize = 256;
-const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
-const MAX_IMAGE_DIMENSION: u32 = 8_192;
-const MAX_IMAGE_PIXELS: u64 = 16_777_216;
-
 pub(crate) fn capture(
     context: &ClipboardContext,
     payload_root: &Path,
@@ -66,17 +62,14 @@ pub(crate) fn capture(
     if context.has(ContentFormat::Image) {
         let image = context.get_image().map_err(|error| error.to_string())?;
         let (width, height) = image.get_size();
-        if width > MAX_IMAGE_DIMENSION
-            || height > MAX_IMAGE_DIMENSION
-            || u64::from(width).saturating_mul(u64::from(height)) > MAX_IMAGE_PIXELS
-        {
+        if !png_dimensions_within_limits(width, height) {
             return Err(format!(
                 "clipboard image exceeds the supported dimensions: {width} x {height}"
             ));
         }
         let encoded = image.to_png().map_err(|error| error.to_string())?;
         let bytes = encoded.get_bytes();
-        if bytes.len() > MAX_IMAGE_BYTES {
+        if bytes.len() > MAX_PNG_ENCODED_BYTES {
             return Err(format!(
                 "clipboard image exceeds the supported encoded size: {} bytes",
                 bytes.len()

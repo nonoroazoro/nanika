@@ -1,7 +1,7 @@
 use nanika_protocol::{
-    DetailView, HostServiceRequest, LaunchArguments, LaunchDescriptor, ListItem, ListLayout,
-    ListSection, ListView, Message, NavigationEffect, SettingControl, SettingField, SettingValue,
-    SettingsContribution, View, ViewAction, ViewActionStyle,
+    DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest, ImageSource,
+    LaunchArguments, LaunchDescriptor, ListItem, ListLayout, ListSection, ListView, Message,
+    NavigationEffect, View, ViewAction, ViewActionStyle, ViewItemIcon,
 };
 
 #[test]
@@ -26,6 +26,19 @@ fn invocation_identifies_the_selected_entry_and_action() {
 }
 
 #[test]
+fn resumed_view_events_have_a_platform_neutral_wire_shape() {
+    let message = Message::ViewEvent {
+        request_id: "resume".to_owned(),
+        generation: 7,
+        view_id: "clipboard.history".to_owned(),
+        revision: 3,
+        event: nanika_protocol::ViewEvent::Resumed,
+    };
+    let encoded = serde_json::to_value(message).expect("view resume should encode");
+    assert_eq!(encoded["event"]["kind"], "resumed");
+}
+
+#[test]
 fn pushed_views_are_bounded_host_rendered_documents() {
     let view = View::List {
         list: Box::new(ListView {
@@ -40,6 +53,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     id: "entry-1".to_owned(),
                     title: "Example".to_owned(),
                     subtitle: Some("Text".to_owned()),
+                    icon: Some(ViewItemIcon::Text),
                     actions: vec![ViewAction {
                         id: "paste".to_owned(),
                         title: "Paste".to_owned(),
@@ -50,8 +64,9 @@ fn pushed_views_are_bounded_host_rendered_documents() {
             selected_item_id: Some("entry-1".to_owned()),
             detail: Some(DetailView {
                 title: Some("Example".to_owned()),
-                body: "Content".to_owned(),
-                image_data_url: None,
+                content: DetailContent::Text {
+                    value: "Content".to_owned(),
+                },
                 metadata: Vec::new(),
                 actions: Vec::new(),
             }),
@@ -73,6 +88,77 @@ fn pushed_views_are_bounded_host_rendered_documents() {
     .expect("view result should encode");
     assert_eq!(encoded["effect"]["kind"], "push");
     assert_eq!(encoded["effect"]["view"]["kind"], "list");
+    assert_eq!(
+        encoded["effect"]["view"]["list"]["sections"][0]["items"][0]["icon"],
+        "text"
+    );
+}
+
+#[test]
+fn detail_files_must_not_be_empty() {
+    let view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Files { names: Vec::new() },
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        },
+    };
+
+    assert_eq!(
+        view.validate().expect_err("empty file detail must fail"),
+        "detail file count is invalid"
+    );
+}
+
+#[test]
+fn detail_resource_images_use_relative_png_paths() {
+    let resource_path = format!("{}.png", "0123456789abcdef".repeat(4));
+    let view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Image {
+                source: ImageSource::Resource {
+                    path: resource_path,
+                },
+                alternative_text: "Image".to_owned(),
+            },
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        },
+    };
+    view.validate()
+        .expect("relative resource image should validate");
+
+    let invalid = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Image {
+                source: ImageSource::Resource {
+                    path: "../outside.png".to_owned(),
+                },
+                alternative_text: "Image".to_owned(),
+            },
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        },
+    };
+    assert!(invalid.validate().is_err());
+
+    let mutable_name = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Image {
+                source: ImageSource::Resource {
+                    path: "preview.png".to_owned(),
+                },
+                alternative_text: "Image".to_owned(),
+            },
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        },
+    };
+    assert!(mutable_name.validate().is_err());
 }
 
 #[test]
@@ -82,6 +168,7 @@ fn view_validation_rejects_an_unbounded_list() {
             id: format!("entry-{index}"),
             title: "Entry".to_owned(),
             subtitle: None,
+            icon: None,
             actions: Vec::new(),
         })
         .collect();
@@ -123,14 +210,16 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                     id: "entry-1".to_owned(),
                     title: "Example".to_owned(),
                     subtitle: None,
+                    icon: None,
                     actions: Vec::new(),
                 }],
             }],
             selected_item_id: Some("entry-1".to_owned()),
             detail: Some(DetailView {
                 title: None,
-                body: "Example".to_owned(),
-                image_data_url: None,
+                content: DetailContent::Text {
+                    value: "Example".to_owned(),
+                },
                 metadata: Vec::new(),
                 actions: vec![ViewAction {
                     id: "example.open".to_owned(),
@@ -185,26 +274,15 @@ fn host_requests_are_bound_to_the_parent_invocation() {
 }
 
 #[test]
-fn settings_contributions_are_typed_and_bounded() {
-    let contribution = SettingsContribution {
-        title: "Test".to_owned(),
-        fields: vec![SettingField {
-            key: "enabled".to_owned(),
-            title: "Enabled".to_owned(),
-            description: None,
-            control: SettingControl::Toggle,
-            value: SettingValue::Boolean { value: true },
-        }],
+fn configuration_updates_carry_a_complete_snapshot() {
+    let message = Message::ConfigurationChanged {
+        request_id: "configuration".to_owned(),
+        configuration: ExtensionConfiguration::new(std::collections::BTreeMap::from([(
+            "example.enabled".to_owned(),
+            serde_json::json!(true),
+        )])),
     };
-    contribution.validate().expect("settings should validate");
-    let message = Message::Settings {
-        request_id: "settings".to_owned(),
-        contribution,
-    };
-    let encoded = serde_json::to_value(message).expect("settings should encode");
-    assert_eq!(encoded["type"], "settings");
-    assert_eq!(
-        encoded["contribution"]["fields"][0]["value"]["kind"],
-        "boolean"
-    );
+    let encoded = serde_json::to_value(message).expect("configuration should encode");
+    assert_eq!(encoded["type"], "configurationChanged");
+    assert_eq!(encoded["configuration"]["example.enabled"], true);
 }

@@ -24,6 +24,37 @@ use zip::write::SimpleFileOptions;
 const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[test]
+fn acp_session_receives_nanika_configuration_metadata() {
+    let root = temporary_root("configuration");
+    std::fs::create_dir_all(&root).expect("test root");
+    let marker = root.join("configured");
+    let mut runtime = ExtensionRuntime::spawn_with_configuration(
+        "com.example.acp-dummy",
+        ExtensionProtocol::Acp {
+            protocol_version: 1,
+        },
+        dummy_executable(),
+        [format!("--configuration-marker={}", marker.display()).into()],
+        ExtensionLimits::default(),
+        serde_json::from_value(serde_json::json!({ "fixture.count": 42 }))
+            .expect("valid extension configuration"),
+    )
+    .expect("spawn ACP runtime");
+
+    runtime
+        .initialize("initialize-configuration")
+        .expect("initialize ACP runtime");
+    assert_eq!(
+        std::fs::read(&marker).expect("configuration marker"),
+        b"configured"
+    );
+    runtime
+        .shutdown("shutdown-configuration")
+        .expect("shutdown ACP runtime");
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
 fn coordinator_shutdown_interrupts_acp_initialization() {
     let root = temporary_root("blocked-initialization");
     std::fs::create_dir_all(&root).unwrap();

@@ -1,90 +1,74 @@
-use std::path::PathBuf;
+use std::collections::BTreeMap;
 
-use nanika_config::ConfigStore;
-use nanika_extension_script::{ScriptConfig, ScriptEntry};
-use nanika_protocol::SettingUpdate;
+use nanika_extension_script::ScriptConfig;
+use nanika_protocol::ExtensionConfiguration;
 
 #[test]
-fn script_settings_require_stable_ids_and_absolute_paths() {
-    let root = std::env::temp_dir().join("nanika-script-validation");
-    let config = ScriptConfig {
-        format_version: 1,
-        scripts: vec![ScriptEntry {
-            id: "build-project".to_owned(),
-            title: "Build project".to_owned(),
-            aliases: vec!["build".to_owned()],
-            interpreter: root.join("interpreter"),
-            script: root.join("build-script"),
-            arguments: Vec::new(),
-            working_directory: Some(root),
-        }],
-    };
-    assert!(config.validate().is_ok());
+fn parses_host_configuration() {
+    let configuration = ExtensionConfiguration::new(BTreeMap::from([(
+        "script.entries".to_owned(),
+        serde_json::json!([{
+            "id": "build",
+            "title": "Build project",
+            "aliases": ["compile"],
+            "interpreter": executable_path(),
+            "script": script_path(),
+            "arguments": ["--release"],
+            "workingDirectory": working_directory()
+        }]),
+    )]));
 
-    let mut invalid = config;
-    invalid.scripts[0].script = PathBuf::from("relative.ps1");
-    assert!(invalid.validate().is_err());
+    let config = ScriptConfig::from_configuration(&configuration)
+        .expect("host configuration should be valid");
+
+    assert_eq!(config.scripts.len(), 1);
+    assert_eq!(config.scripts[0].id, "build");
 }
 
 #[test]
-fn script_settings_reject_more_than_the_protocol_candidate_limit() {
-    let config = ScriptConfig {
-        format_version: 1,
-        scripts: (0..5_001)
-            .map(|index| ScriptEntry {
-                id: format!("script-{index}"),
-                title: format!("Script {index}"),
-                aliases: Vec::new(),
-                interpreter: std::env::temp_dir().join("interpreter"),
-                script: std::env::temp_dir().join("script"),
-                arguments: Vec::new(),
-                working_directory: None,
-            })
-            .collect(),
-    };
-    assert!(config.validate().is_err());
+fn rejects_relative_executables() {
+    let configuration = ExtensionConfiguration::new(BTreeMap::from([(
+        "script.entries".to_owned(),
+        serde_json::json!([{
+            "id": "build",
+            "title": "Build project",
+            "aliases": [],
+            "interpreter": "relative",
+            "script": script_path(),
+            "arguments": [],
+            "workingDirectory": ""
+        }]),
+    )]));
+
+    assert!(ScriptConfig::from_configuration(&configuration).is_err());
 }
 
-#[test]
-fn record_table_updates_round_trip_through_extension_validation() {
-    let root = std::env::temp_dir().join(format!(
-        "nanika-script-settings-update-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&root);
-    let store = ConfigStore::open(root.join("data"), root.join("config"))
-        .expect("config store should open");
-    let config = ScriptConfig {
-        format_version: 1,
-        scripts: vec![ScriptEntry {
-            id: "build-project".to_owned(),
-            title: "Build project".to_owned(),
-            aliases: vec!["build".to_owned()],
-            interpreter: root.join("pwsh.exe"),
-            script: root.join("build.ps1"),
-            arguments: vec!["--release".to_owned()],
-            working_directory: Some(root.clone()),
-        }],
-    };
-    let contribution = config.settings();
-    contribution
-        .validate()
-        .expect("record contribution should validate");
+#[cfg(target_os = "macos")]
+fn executable_path() -> &'static str {
+    "/bin/sh"
+}
 
-    let updated = config
-        .update(
-            &store,
-            vec![SettingUpdate {
-                key: "scripts".to_owned(),
-                value: contribution.fields[0].value.clone(),
-            }],
-        )
-        .expect("record update should persist");
+#[cfg(windows)]
+fn executable_path() -> &'static str {
+    r"C:\Windows\System32\cmd.exe"
+}
 
-    assert_eq!(updated, config);
-    assert_eq!(
-        ScriptConfig::load(&store).expect("persisted scripts should load"),
-        config
-    );
-    let _ = std::fs::remove_dir_all(root);
+#[cfg(target_os = "macos")]
+fn script_path() -> &'static str {
+    "/tmp/build.sh"
+}
+
+#[cfg(windows)]
+fn script_path() -> &'static str {
+    r"C:\Temp\build.cmd"
+}
+
+#[cfg(target_os = "macos")]
+fn working_directory() -> &'static str {
+    "/tmp"
+}
+
+#[cfg(windows)]
+fn working_directory() -> &'static str {
+    r"C:\Temp"
 }

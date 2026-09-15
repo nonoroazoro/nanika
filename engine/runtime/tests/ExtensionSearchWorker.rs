@@ -2,7 +2,9 @@ use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use nanika_extension_package::{CommandContribution, CommandMode, ExtensionContributions};
+use nanika_extension_package::{
+    CommandContribution, CommandIcon, ExtensionContributions, RootSearchContribution,
+};
 
 use crate::{
     ExtensionSearchState, ExtensionViewRequest, ExtensionViewRequestKind, ExtensionWork,
@@ -44,19 +46,24 @@ fn view_event_wakes_an_idle_worker() {
 fn static_command_search_values_include_declared_metadata() {
     let candidates = contribution_candidates(&ExtensionContributions {
         commands: vec![CommandContribution {
-            id: "example.open".to_owned(),
+            command: "example.open".to_owned(),
             title: "Open Example".to_owned(),
             description: "Open the example view.".to_owned(),
-            mode: CommandMode::View,
-            subtitle: Some("Example".to_owned()),
+            category: Some("Example".to_owned()),
             keywords: vec!["sample".to_owned()],
+            icon: Some(CommandIcon::Clipboard),
         }],
-        root_search: true,
+        configuration: None,
+        root_search: Some(RootSearchContribution {}),
     });
 
     assert_eq!(candidates.len(), 1);
     assert_eq!(
         candidates[0].aliases,
         ["sample", "Open the example view.", "Example"]
+    );
+    assert_eq!(
+        candidates[0].command_icon,
+        Some(nanika_protocol::CommandIcon::Clipboard)
     );
 }

@@ -7,9 +7,6 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
-directories.workspace = true
-nanika-config = { path = "../../../../engine/configuration" }
-nanika-core = { path = "../../../../engine/domain" }
 nanika-protocol = { path = "../../../../engine/extension-protocol" }
 rusqlite.workspace = true
 png.workspace = true

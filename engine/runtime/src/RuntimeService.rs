@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,9 +9,10 @@ use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMa
 use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    DistributionInventory, ExtensionInvocationOutcome, ExtensionRuntime,
-    ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter, RuntimeOutputUpdate,
-    RuntimeSettingsUpdate, RuntimeUpdateBatch, RuntimeViewCompletion,
+    ConfigurationUpdateDisposition, DistributionInventory, ExtensionConfigurationRegistry,
+    ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler,
+    HostServiceRouter, RuntimeConfigurationUpdate, RuntimeOutputUpdate, RuntimeUpdateBatch,
+    RuntimeViewCompletion,
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
@@ -18,6 +20,7 @@ pub struct RuntimeService {
     search_owner: Option<SearchOwner>,
     search: SearchHandle,
     extensions: ExtensionSearchCoordinator,
+    configurations: ExtensionConfigurationRegistry,
     storage: Option<SearchStorageWorker>,
     startup_diagnostics: Vec<String>,
 }
@@ -29,7 +32,7 @@ impl RuntimeService {
         let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
             .map_err(|error| format!("configuration is unavailable: {error}"))?;
         let registry = ExtensionRegistryConfig::load(&config_store)
-            .map_err(|error| format!("extension settings are unavailable: {error}"))?;
+            .map_err(|error| format!("extension registry is unavailable: {error}"))?;
         let (storage_worker, storage_state) = SearchStorageWorker::spawn(paths.host_database())
             .map_err(|error| format!("host storage is unavailable: {error}"))?;
         let storage = Some(storage_worker);
@@ -63,6 +66,7 @@ impl RuntimeService {
         let router = Arc::new(router);
         let mut extensions = ExtensionSearchCoordinator::new();
         extensions.set_host_services(Arc::clone(&router) as Arc<dyn HostServiceHandler>);
+        let configurations = ExtensionConfigurationRegistry::new(config_store);
 
         let current_executable = std::env::current_exe().map_err(|error| error.to_string())?;
         for extension in inventory.extensions {
@@ -78,7 +82,25 @@ impl RuntimeService {
                 continue;
             }
             router.register_permissions(&extension.id, extension.permissions);
-            let runtime = match spawn_runtime(&extension.id, extension.runtime, &program, paths) {
+            let configuration = match configurations
+                .register(&extension.id, extension.contributes.configuration.as_ref())
+            {
+                Ok(configuration) => configuration,
+                Err(error) => {
+                    diagnostics.push(format!(
+                        "extension {} configuration is unavailable: {error}",
+                        extension.id
+                    ));
+                    continue;
+                }
+            };
+            let runtime = match spawn_runtime(
+                &extension.id,
+                extension.runtime,
+                &program,
+                paths,
+                configuration.clone(),
+            ) {
                 Ok(runtime) => runtime,
                 Err(error) => {
                     diagnostics.push(format!(
@@ -98,11 +120,12 @@ impl RuntimeService {
                         )
                     })?;
             }
-            if let Err(error) = extensions.register(
+            if let Err(error) = extensions.register_with_configuration(
                 &extension.id,
                 runtime,
                 search.clone(),
-                extension.contributions,
+                extension.contributes,
+                configuration,
             ) {
                 diagnostics.push(format!(
                     "extension {} could not register: {error}",
@@ -116,11 +139,25 @@ impl RuntimeService {
         diagnostics.extend(errors.into_iter().map(|error| error.message));
         for extension in external {
             router.register_permissions(&extension.extension_id, extension.permissions);
+            let configuration = match configurations.register(
+                &extension.extension_id,
+                extension.contributes.configuration.as_ref(),
+            ) {
+                Ok(configuration) => configuration,
+                Err(error) => {
+                    diagnostics.push(format!(
+                        "extension {} configuration is unavailable: {error}",
+                        extension.extension_id
+                    ));
+                    continue;
+                }
+            };
             let runtime = match spawn_runtime(
                 &extension.extension_id,
                 extension.protocol,
                 &extension.program,
                 paths,
+                configuration.clone(),
             ) {
                 Ok(runtime) => runtime,
                 Err(error) => {
@@ -131,11 +168,12 @@ impl RuntimeService {
                     continue;
                 }
             };
-            if let Err(error) = extensions.register(
+            if let Err(error) = extensions.register_with_configuration(
                 &extension.extension_id,
                 runtime,
                 search.clone(),
-                extension.contributions,
+                extension.contributes,
+                configuration,
             ) {
                 diagnostics.push(format!(
                     "extension {} could not register: {error}",
@@ -147,6 +185,7 @@ impl RuntimeService {
             search_owner: Some(owner),
             search,
             extensions,
+            configurations,
             storage,
             startup_diagnostics: diagnostics,
         })
@@ -248,6 +287,10 @@ impl RuntimeService {
         &self.startup_diagnostics
     }
 
+    pub fn extension_configurations(&self) -> Vec<crate::RuntimeExtensionConfiguration> {
+        self.configurations.snapshots()
+    }
+
     pub fn search_warnings(&self) -> Vec<String> {
         let mut warnings = self.startup_diagnostics.clone();
         warnings.extend(self.extensions.warnings());
@@ -291,15 +334,22 @@ impl RuntimeService {
             .map_err(|error| error.to_string())
     }
 
-    pub fn update_settings(
+    pub fn update_configuration(
         &self,
         extension_id: &str,
         request_id: impl Into<String>,
-        updates: Vec<nanika_protocol::SettingUpdate>,
-    ) -> Result<(), String> {
-        self.extensions
-            .update_settings(extension_id, request_id, updates)
-            .map_err(|error| error.to_string())
+        values: BTreeMap<String, serde_json::Value>,
+    ) -> Result<ConfigurationUpdateDisposition, String> {
+        let configuration = self.configurations.update(extension_id, values)?;
+        if self
+            .extensions
+            .apply_configuration(extension_id, request_id, configuration)
+            .map_err(|error| error.to_string())?
+        {
+            Ok(ConfigurationUpdateDisposition::LiveApplyQueued)
+        } else {
+            Ok(ConfigurationUpdateDisposition::SavedForNextLaunch)
+        }
     }
 
     pub fn take_updates(&self) -> RuntimeUpdateBatch {
@@ -314,17 +364,20 @@ impl RuntimeService {
                 text: update.text,
             })
             .collect();
-        let settings = self
+        let configurations = self
             .extensions
-            .take_settings()
+            .take_configurations()
             .into_iter()
-            .map(|update| RuntimeSettingsUpdate {
+            .map(|update| RuntimeConfigurationUpdate {
                 extension_id: update.extension_id,
                 request_id: update.request_id,
                 result: update.result,
             })
             .collect();
-        RuntimeUpdateBatch { outputs, settings }
+        RuntimeUpdateBatch {
+            outputs,
+            configurations,
+        }
     }
 }
 
@@ -345,13 +398,15 @@ fn spawn_runtime(
     protocol: ExtensionProtocol,
     program: &Path,
     paths: &NanikaPaths,
+    configuration: nanika_protocol::ExtensionConfiguration,
 ) -> Result<ExtensionRuntime, std::io::Error> {
-    ExtensionRuntime::spawn_with(
+    ExtensionRuntime::spawn_with_configuration(
         extension_id,
         protocol,
         program,
         extension_arguments(protocol, paths),
         Default::default(),
+        configuration,
     )
 }
 
@@ -366,7 +421,6 @@ fn extension_arguments(protocol: ExtensionProtocol, paths: &NanikaPaths) -> Vec<
         } => vec![
             path_argument("data-root", paths.app_data_root()),
             path_argument("cache-root", paths.cache_root()),
-            path_argument("config-root", paths.config_root()),
         ],
         _ => Vec::new(),
     }

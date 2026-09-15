@@ -48,6 +48,16 @@ impl AcpExtensionProcess {
         arguments: impl IntoIterator<Item = OsString>,
         limits: ExtensionLimits,
     ) -> io::Result<Self> {
+        Self::spawn_with_configuration(extension_id, program, arguments, limits, Default::default())
+    }
+
+    pub fn spawn_with_configuration(
+        extension_id: impl Into<String>,
+        program: impl AsRef<Path>,
+        arguments: impl IntoIterator<Item = OsString>,
+        limits: ExtensionLimits,
+        configuration: nanika_protocol::ExtensionConfiguration,
+    ) -> io::Result<Self> {
         let command = ExtensionCommand {
             program: program.as_ref().to_path_buf(),
             arguments: arguments.into_iter().collect(),
@@ -57,7 +67,13 @@ impl AcpExtensionProcess {
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| io::Error::other("ACP extension has no working directory"))?;
-        Self::start(extension_id.into(), command, working_directory, limits)
+        Self::start(
+            extension_id.into(),
+            command,
+            working_directory,
+            limits,
+            configuration,
+        )
     }
 
     fn start(
@@ -65,6 +81,7 @@ impl AcpExtensionProcess {
         command: ExtensionCommand,
         working_directory: PathBuf,
         _limits: ExtensionLimits,
+        configuration: nanika_protocol::ExtensionConfiguration,
     ) -> io::Result<Self> {
         let arguments = command
             .arguments
@@ -97,6 +114,7 @@ impl AcpExtensionProcess {
                     command: thread_command,
                     arguments,
                     working_directory: thread_working_directory,
+                    configuration,
                     commands: command_receiver,
                     shutdown: shutdown_receiver,
                     ready: ready_sender,
@@ -335,9 +353,20 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
                 let _ = context.ready.send(Err(message.clone()));
                 return Err(agent_client_protocol::util::internal_error(message));
             }
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "nanika.configuration".to_owned(),
+                serde_json::to_value(&context.configuration).map_err(|error| {
+                    agent_client_protocol::util::internal_error(error.to_string())
+                })?,
+            );
+            let session_request = agent_client_protocol::schema::v1::NewSessionRequest::new(
+                context.working_directory,
+            )
+            .meta(meta);
             let mut session = cancel_on_shutdown(
                 connection
-                    .build_session(context.working_directory)
+                    .build_session_from(session_request)
                     .block_task()
                     .start_session(),
                 context.shutdown.clone(),

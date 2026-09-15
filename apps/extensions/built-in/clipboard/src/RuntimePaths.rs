@@ -17,9 +17,7 @@ impl RuntimePaths {
                     return Err("clipboard extension data root must be absolute".to_owned());
                 }
                 data_root = Some(path);
-            } else if argument.starts_with("--cache-root=")
-                || argument.starts_with("--config-root=")
-            {
+            } else if argument.starts_with("--cache-root=") {
             } else {
                 return Err(format!(
                     "unsupported clipboard extension argument: {argument}"

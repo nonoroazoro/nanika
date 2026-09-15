@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use nanika_extension_package::ExtensionProtocol;
-use nanika_protocol::{Candidate, SettingUpdate, SettingsContribution};
+use nanika_protocol::{Candidate, ExtensionConfiguration};
 
 use crate::{
     AcpExtensionProcess, ExtensionInterruption, ExtensionLimits, ExtensionProcess,
@@ -39,6 +39,24 @@ impl ExtensionRuntime {
         arguments: impl IntoIterator<Item = OsString>,
         limits: ExtensionLimits,
     ) -> io::Result<Self> {
+        Self::spawn_with_configuration(
+            extension_id,
+            protocol,
+            program,
+            arguments,
+            limits,
+            Default::default(),
+        )
+    }
+
+    pub fn spawn_with_configuration(
+        extension_id: impl Into<String>,
+        protocol: ExtensionProtocol,
+        program: impl AsRef<Path>,
+        arguments: impl IntoIterator<Item = OsString>,
+        limits: ExtensionLimits,
+        configuration: ExtensionConfiguration,
+    ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         match protocol {
             ExtensionProtocol::Nanika {
@@ -46,8 +64,14 @@ impl ExtensionRuntime {
             } => ExtensionProcess::spawn_with(program, arguments, limits).map(Self::Nanika),
             ExtensionProtocol::Acp {
                 protocol_version: 1,
-            } => AcpExtensionProcess::spawn_with(extension_id, program, arguments, limits)
-                .map(Self::Acp),
+            } => AcpExtensionProcess::spawn_with_configuration(
+                extension_id,
+                program,
+                arguments,
+                limits,
+                configuration,
+            )
+            .map(Self::Acp),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unsupported extension protocol",
@@ -72,38 +96,35 @@ impl ExtensionRuntime {
     }
 
     pub fn initialize(&mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
+        self.initialize_with_configuration(request_id, ExtensionConfiguration::default())
+    }
+
+    pub fn initialize_with_configuration(
+        &mut self,
+        request_id: impl Into<String>,
+        configuration: ExtensionConfiguration,
+    ) -> Result<(), SupervisorError> {
         match self {
-            Self::Nanika(process) => process.initialize(request_id),
+            Self::Nanika(process) => {
+                process.initialize_with_configuration(request_id, configuration)
+            }
             Self::Acp(process) => process.initialize(),
         }
     }
 
-    pub fn settings(
-        &mut self,
-        request_id: impl Into<String>,
-    ) -> Result<SettingsContribution, SupervisorError> {
-        match self {
-            Self::Nanika(process) => process.settings(request_id),
-            Self::Acp(process) => Ok(SettingsContribution {
-                title: process.extension_id().to_owned(),
-                fields: Vec::new(),
-            }),
-        }
+    pub fn supports_live_configuration(&self) -> bool {
+        matches!(self, Self::Nanika(_))
     }
 
-    pub fn update_settings(
+    pub fn apply_configuration(
         &mut self,
         request_id: impl Into<String>,
-        updates: Vec<SettingUpdate>,
-    ) -> Result<SettingsContribution, SupervisorError> {
+        configuration: ExtensionConfiguration,
+    ) -> Result<(), SupervisorError> {
         match self {
-            Self::Nanika(process) => process.update_settings(request_id, updates),
-            Self::Acp(process) if updates.is_empty() => Ok(SettingsContribution {
-                title: process.extension_id().to_owned(),
-                fields: Vec::new(),
-            }),
+            Self::Nanika(process) => process.apply_configuration(request_id, configuration),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP extension does not contribute settings".to_owned(),
+                "ACP does not support live configuration updates".to_owned(),
             )),
         }
     }
@@ -145,6 +166,7 @@ impl ExtensionRuntime {
                         action_id: "prompt".to_owned(),
                         aliases: vec![query],
                         icon: None,
+                        command_icon: None,
                     }]
                 } else {
                     Vec::new()

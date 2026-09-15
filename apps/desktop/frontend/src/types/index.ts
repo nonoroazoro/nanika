@@ -1,4 +1,7 @@
 export * from "./ApplicationSnapshot";
+export * from "./CommandIcon";
+export * from "./DetailContent";
+export * from "./DetailImage";
 export * from "./DetailView";
 export * from "./ExtensionViewDocument";
 export * from "./ExtensionViewSnapshot";
@@ -15,5 +18,6 @@ export * from "./ViewEventRequest";
 export * from "./ViewFilter";
 export * from "./ViewFilterOption";
 export * from "./ViewItem";
+export * from "./ViewItemIcon";
 export * from "./ViewMetadata";
 export * from "./ViewSection";

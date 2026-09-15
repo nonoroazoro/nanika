@@ -29,6 +29,7 @@ impl ScriptEntry {
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: self.aliases.clone(),
             icon: None,
+            command_icon: None,
         }
     }
 

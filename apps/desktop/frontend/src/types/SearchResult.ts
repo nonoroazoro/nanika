@@ -1,3 +1,5 @@
+import type { CommandIcon } from "./CommandIcon";
+
 export interface SearchResult
 {
     extensionId: string;
@@ -6,5 +8,6 @@ export interface SearchResult
     title: string;
     subtitle: string | null;
     iconUrl: string | null;
+    commandIcon: CommandIcon | null;
     kind: string;
 }

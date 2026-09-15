@@ -10,8 +10,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use nanika_protocol::{
-    FrameError, Message, PROTOCOL_NAME, SettingUpdate, SettingsContribution, read_frame,
-    write_frame,
+    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_frame, write_frame,
 };
 
 use crate::{
@@ -19,10 +18,7 @@ use crate::{
     ExtensionProcessTree, HostServiceHandler, SupervisorError, configure_extension_command,
 };
 
-enum ReceivePoll {
-    Message(Option<Message>),
-    Pending,
-}
+type ReceivePoll = Option<Option<Message>>;
 
 /// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
@@ -200,26 +196,31 @@ impl ExtensionProcess {
             .ok_or(SupervisorError::ChannelClosed)?
             .recv_timeout(interval)
         {
-            Ok(frame) => frame
-                .map(ReceivePoll::Message)
-                .map_err(SupervisorError::Protocol),
-            Err(RecvTimeoutError::Timeout) => Ok(ReceivePoll::Pending),
+            Ok(frame) => frame.map(Some).map_err(SupervisorError::Protocol),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
             Err(RecvTimeoutError::Disconnected) => Err(SupervisorError::ChannelClosed),
         }
     }
 
     fn receive(&mut self) -> Result<Option<Message>, SupervisorError> {
         // This interval observes explicit shutdown; it never expires an operation.
-        // All protocol waits, including initialization and settings, use this path.
+        // All protocol waits, including initialization and configuration updates, use this path.
         loop {
-            match self.poll_receive(Duration::from_millis(25))? {
-                ReceivePoll::Message(message) => return Ok(message),
-                ReceivePoll::Pending => {}
+            if let Some(message) = self.poll_receive(Duration::from_millis(25))? {
+                return Ok(message);
             }
         }
     }
 
     pub fn initialize(&mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
+        self.initialize_with_configuration(request_id, ExtensionConfiguration::default())
+    }
+
+    pub fn initialize_with_configuration(
+        &mut self,
+        request_id: impl Into<String>,
+        configuration: ExtensionConfiguration,
+    ) -> Result<(), SupervisorError> {
         if self.initialized {
             return Ok(());
         }
@@ -227,6 +228,7 @@ impl ExtensionProcess {
         if let Err(error) = self.send(&Message::Initialize {
             request_id: request_id.clone(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration,
         }) {
             let _ = self.terminate();
             return Err(error);
@@ -240,6 +242,17 @@ impl ExtensionProcess {
                 self.initialized = true;
                 Ok(())
             }
+            Ok(Some(Message::Error {
+                request_id: response_id,
+                code,
+                message,
+            })) => Err(extension_reported_error(
+                "initialize",
+                &request_id,
+                response_id.as_deref(),
+                &code,
+                &message,
+            )),
             Ok(Some(message)) => Err(SupervisorError::UnexpectedMessage(format!("{message:?}"))),
             Ok(None) => Err(SupervisorError::ChannelClosed),
         };
@@ -289,30 +302,18 @@ impl ExtensionProcess {
             .map(|_| ())
     }
 
-    pub fn settings(
+    pub fn apply_configuration(
         &mut self,
         request_id: impl Into<String>,
-    ) -> Result<SettingsContribution, SupervisorError> {
+        configuration: ExtensionConfiguration,
+    ) -> Result<(), SupervisorError> {
         self.ensure_initialized()?;
         let request_id = request_id.into();
-        self.send(&Message::GetSettings {
+        self.send(&Message::ConfigurationChanged {
             request_id: request_id.clone(),
+            configuration,
         })?;
-        self.receive_settings(request_id, false)
-    }
-
-    pub fn update_settings(
-        &mut self,
-        request_id: impl Into<String>,
-        updates: Vec<SettingUpdate>,
-    ) -> Result<SettingsContribution, SupervisorError> {
-        self.ensure_initialized()?;
-        let request_id = request_id.into();
-        self.send(&Message::UpdateSettings {
-            request_id: request_id.clone(),
-            updates,
-        })?;
-        self.receive_settings(request_id, true)
+        self.receive_configuration_applied(request_id)
     }
 
     pub(crate) fn refresh_cancellable(
@@ -336,8 +337,8 @@ impl ExtensionProcess {
                 return Ok(false);
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
-                ReceivePoll::Message(message) => message,
-                ReceivePoll::Pending => continue,
+                Some(message) => message,
+                None => continue,
             };
             match message {
                 Some(Message::Refreshed {
@@ -419,8 +420,8 @@ impl ExtensionProcess {
                 }
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
-                ReceivePoll::Message(message) => message,
-                ReceivePoll::Pending => continue,
+                Some(message) => message,
+                None => continue,
             };
             match message {
                 Some(Message::Result {
@@ -494,8 +495,8 @@ impl ExtensionProcess {
                 cancellation_sent = true;
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
-                ReceivePoll::Message(message) => message,
-                ReceivePoll::Pending => continue,
+                Some(message) => message,
+                None => continue,
             };
             match message {
                 Some(Message::Snapshot {
@@ -572,8 +573,8 @@ impl ExtensionProcess {
                 return Err(SupervisorError::Cancelled("view event"));
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
-                ReceivePoll::Message(message) => message,
-                ReceivePoll::Pending => continue,
+                Some(message) => message,
+                None => continue,
             };
             match message {
                 Some(Message::ViewUpdated {
@@ -782,38 +783,19 @@ impl ExtensionProcess {
         }
     }
 
-    fn receive_settings(
-        &mut self,
-        request_id: String,
-        updated: bool,
-    ) -> Result<SettingsContribution, SupervisorError> {
+    fn receive_configuration_applied(&mut self, request_id: String) -> Result<(), SupervisorError> {
         loop {
             match self.receive()? {
-                Some(Message::Settings {
+                Some(Message::ConfigurationApplied {
                     request_id: response_id,
-                    contribution,
-                }) if !updated && response_id == request_id => {
-                    contribution
-                        .validate()
-                        .map_err(SupervisorError::UnexpectedMessage)?;
-                    return Ok(contribution);
-                }
-                Some(Message::SettingsUpdated {
-                    request_id: response_id,
-                    contribution,
-                }) if updated && response_id == request_id => {
-                    contribution
-                        .validate()
-                        .map_err(SupervisorError::UnexpectedMessage)?;
-                    return Ok(contribution);
-                }
+                }) if response_id == request_id => return Ok(()),
                 Some(Message::Error {
                     request_id: response_id,
                     code,
                     message,
                 }) => {
                     return Err(extension_reported_error(
-                        "settings",
+                        "configuration",
                         &request_id,
                         response_id.as_deref(),
                         &code,

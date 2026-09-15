@@ -1,15 +1,13 @@
-use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::thread::JoinHandle;
-use std::{fs::File, io::Read};
-
 #[cfg(target_os = "macos")]
 use clipboard_rs::RustImageData;
 #[cfg(target_os = "macos")]
 use clipboard_rs::common::RustImage;
 use clipboard_rs::{Clipboard, ClipboardContext, Result as ClipboardResult};
 use nanika_protocol::{ClipboardContent, HostServiceResponse};
+use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::thread::JoinHandle;
 
-use crate::ClipboardServiceCommand;
+use crate::{ClipboardServiceCommand, read_png_resource};
 
 /// Bounded native clipboard writer owned by one platform thread.
 pub struct ClipboardService {
@@ -114,7 +112,8 @@ fn write(
             let payload_root = payload_root
                 .as_deref()
                 .ok_or_else(|| "clipboard image payload root is unavailable".to_owned())?;
-            let bytes = read_validated_png(&path, payload_root)?;
+            let bytes = read_png_resource(std::path::Path::new(&path), payload_root)
+                .map_err(|error| error.to_string())?;
             write_png(context, bytes)
         }
     }
@@ -134,45 +133,4 @@ fn write_png(context: &ClipboardContext, bytes: Vec<u8>) -> ClipboardResult<()> 
         let image = RustImageData::from_bytes(&bytes)?;
         context.set_image(image)
     }
-}
-
-pub(crate) fn read_validated_png(
-    path: &str,
-    payload_root: &std::path::Path,
-) -> Result<Vec<u8>, String> {
-    const MAX_ENCODED_BYTES: usize = 16 * 1024 * 1024;
-    const MAX_DIMENSION: u32 = 8_192;
-    const MAX_PIXELS: u64 = 16_777_216;
-
-    std::fs::create_dir_all(payload_root).map_err(|error| error.to_string())?;
-    let payload_root = payload_root
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
-    let path = std::path::Path::new(path)
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
-    if !path.starts_with(&payload_root) || !path.is_file() {
-        return Err("clipboard image is outside the extension payload root".to_owned());
-    }
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if metadata.len() > MAX_ENCODED_BYTES as u64 {
-        return Err("clipboard image exceeds the encoded size limit".to_owned());
-    }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.by_ref()
-        .take((MAX_ENCODED_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_ENCODED_BYTES {
-        return Err("clipboard image exceeds the encoded size limit".to_owned());
-    }
-    let decoder = png::Decoder::new(std::io::Cursor::new(&bytes));
-    let reader = decoder.read_info().map_err(|error| error.to_string())?;
-    let info = reader.info();
-    let pixels = u64::from(info.width).saturating_mul(u64::from(info.height));
-    if info.width > MAX_DIMENSION || info.height > MAX_DIMENSION || pixels > MAX_PIXELS {
-        return Err("clipboard image exceeds the dimension limit".to_owned());
-    }
-    Ok(bytes)
 }

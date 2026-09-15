@@ -42,7 +42,19 @@ impl Fixture {
                 "id": id,
                 "binaryName": name,
                 "runtime": { "protocol": "nanika", "protocolVersion": 1 },
-                "contributions": { "rootSearch": true }
+                "contributes": {
+                    "rootSearch": {},
+                    "configuration": {
+                        "title": "Fixture",
+                        "properties": {
+                            "fixture.enabled": {
+                                "type": "boolean",
+                                "title": "Enabled",
+                                "default": true
+                            }
+                        }
+                    }
+                }
             })
         });
         let inventory = serde_json::json!({ "extensions": extensions }).to_string();
@@ -226,28 +238,69 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
 }
 
 #[test]
-fn shutdown_interrupts_initialization_and_initial_settings() {
-    for prefix in ["initialize", "settings"] {
-        let fixture = Fixture::new();
-        let operation = format!("{prefix}-{DELAYED}");
-        fixture.block(&operation);
-        let runtime = fixture.start();
-        wait_until(|| fixture.entered(&operation));
-        fixture.stop(runtime);
-    }
+fn shutdown_interrupts_initialization() {
+    let fixture = Fixture::new();
+    let operation = format!("initialize-{DELAYED}");
+    fixture.block(&operation);
+    let runtime = fixture.start();
+    wait_until(|| fixture.entered(&operation));
+    fixture.stop(runtime);
 }
 
 #[test]
-fn shutdown_interrupts_a_pending_settings_update() {
+fn shutdown_interrupts_a_pending_configuration_update() {
     let fixture = Fixture::new();
     let runtime = fixture.start();
     let generation = runtime.begin_query("ready").unwrap();
     wait_until(|| has_result(&runtime, generation, DELAYED));
-    fixture.block("update-settings");
+    fixture.block("update-configuration");
     runtime
-        .update_settings(DELAYED, "update-settings", Vec::new())
+        .update_configuration(
+            DELAYED,
+            "update-configuration",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        )
         .unwrap();
-    wait_until(|| fixture.entered("update-settings"));
+    wait_until(|| fixture.entered("update-configuration"));
+    fixture.stop(runtime);
+}
+
+#[test]
+fn live_configuration_updates_report_the_correlated_acknowledgement() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let disposition = runtime
+        .update_configuration(
+            HEALTHY,
+            "update-configuration-success",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        )
+        .unwrap();
+    assert_eq!(
+        disposition,
+        nanika_host::ConfigurationUpdateDisposition::LiveApplyQueued
+    );
+
+    let mut acknowledgement = None;
+    wait_until(|| {
+        acknowledgement = runtime
+            .take_updates()
+            .configurations
+            .into_iter()
+            .find(|update| update.request_id == "update-configuration-success");
+        acknowledgement.is_some()
+    });
+    let acknowledgement = acknowledgement.expect("configuration acknowledgement");
+    assert_eq!(acknowledgement.extension_id, HEALTHY);
+    assert_eq!(acknowledgement.result, Ok(()));
     fixture.stop(runtime);
 }
 

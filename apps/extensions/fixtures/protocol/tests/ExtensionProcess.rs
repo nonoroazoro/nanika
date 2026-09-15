@@ -38,20 +38,17 @@ fn fixture_completes_handshake_and_shutdown() {
 }
 
 #[test]
-fn fixture_contributes_settings_through_the_supervised_protocol() {
+fn fixture_acknowledges_configuration_through_the_supervised_protocol() {
     let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
     extension
-        .initialize("initialize-settings")
+        .initialize("initialize-configuration")
         .expect("fixture should initialize");
 
-    let settings = extension
-        .settings("get-settings")
-        .expect("fixture settings should load");
-
-    assert_eq!(settings.title, "Fixture");
-    assert!(settings.fields.is_empty());
     extension
-        .shutdown("shutdown-settings")
+        .apply_configuration("apply-configuration", Default::default())
+        .expect("fixture configuration should apply");
+    extension
+        .shutdown("shutdown-configuration")
         .expect("fixture should shut down");
 }
 
@@ -68,8 +65,8 @@ fn uncorrelated_extension_error_fails_the_waiting_operation() {
         .expect("fixture should initialize");
 
     let error = extension
-        .settings("get-settings-after-background-error")
-        .expect_err("uncorrelated errors must not leave settings pending");
+        .apply_configuration("apply-after-background-error", Default::default())
+        .expect_err("uncorrelated errors must not leave configuration pending");
 
     assert!(error.to_string().contains("without a request id"));
 }
@@ -400,7 +397,7 @@ fn stderr_is_drained_into_a_bounded_tail() {
 
 fn fixture_contributions() -> ExtensionContributions {
     ExtensionContributions {
-        root_search: true,
+        root_search: Some(nanika_extension_package::RootSearchContribution {}),
         ..ExtensionContributions::default()
     }
 }

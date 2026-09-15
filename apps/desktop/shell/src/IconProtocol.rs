@@ -60,7 +60,7 @@ impl IconProtocol {
     }
 }
 
-fn resolve_request(
+pub(crate) fn resolve_request(
     cache_root: &std::path::Path,
     payload_root: &std::path::Path,
     webview_label: &str,
@@ -76,17 +76,36 @@ fn resolve_request(
         .split('/')
         .collect::<Vec<_>>();
     if segments.len() == 2
-        && segments[0] == "com.nanika.clipboard"
+        && nanika_core::is_valid_extension_id(segments[0])
         && segments[1].ends_with(".png")
-        && segments[1].len() == 68
-        && segments[1][..64]
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+        && nanika_protocol::is_valid_resource_path(segments[1])
     {
-        let payload = payload_root.join("com.nanika.clipboard").join(segments[1]);
-        return match std::fs::read(payload) {
+        let extension_root = payload_root.join(segments[0]);
+        let payload = extension_root.join(segments[1]);
+        return match nanika_platform::read_png_resource(&payload, &extension_root) {
             Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
-            Err(_) => response(StatusCode::NOT_FOUND, "text/plain", Vec::new()),
+            Err(nanika_platform::PngResourceError::NotFound) => {
+                response(StatusCode::NOT_FOUND, "text/plain", Vec::new())
+            }
+            Err(error) => {
+                tracing::warn!(
+                    extension_id = segments[0],
+                    resource = segments[1],
+                    %error,
+                    "image resource request failed"
+                );
+                let status = match error {
+                    nanika_platform::PngResourceError::OutsideRoot => StatusCode::FORBIDDEN,
+                    nanika_platform::PngResourceError::EncodedSize => StatusCode::PAYLOAD_TOO_LARGE,
+                    nanika_platform::PngResourceError::Dimensions { .. }
+                    | nanika_platform::PngResourceError::Decode(_) => {
+                        StatusCode::UNPROCESSABLE_ENTITY
+                    }
+                    nanika_platform::PngResourceError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    nanika_platform::PngResourceError::NotFound => unreachable!(),
+                };
+                response(status, "text/plain", Vec::new())
+            }
         };
     }
     let [extension_id, icon_key, file_name] = segments.as_slice() else {

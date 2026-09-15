@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Candidate, HostServiceRequest, HostServiceResponse, NavigationEffect, SettingUpdate,
-    SettingsContribution, View, ViewEvent,
+    Candidate, ExtensionConfiguration, HostServiceRequest, HostServiceResponse, NavigationEffect,
+    View, ViewEvent,
 };
 
 /// One request or response on the extension protocol.
@@ -12,6 +12,7 @@ pub enum Message {
     Initialize {
         request_id: String,
         protocol: String,
+        configuration: ExtensionConfiguration,
     },
     Initialized {
         request_id: String,
@@ -76,20 +77,12 @@ pub enum Message {
         request_id: String,
         generation: u64,
     },
-    GetSettings {
+    ConfigurationChanged {
         request_id: String,
+        configuration: ExtensionConfiguration,
     },
-    Settings {
+    ConfigurationApplied {
         request_id: String,
-        contribution: SettingsContribution,
-    },
-    UpdateSettings {
-        request_id: String,
-        updates: Vec<SettingUpdate>,
-    },
-    SettingsUpdated {
-        request_id: String,
-        contribution: SettingsContribution,
     },
     HostRequest {
         request_id: String,

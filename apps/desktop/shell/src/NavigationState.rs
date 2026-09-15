@@ -102,6 +102,7 @@ impl NavigationState {
 
 pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(), String> {
     let valid = match (view, event) {
+        (_, ViewEvent::Resumed) => true,
         (View::List { .. }, ViewEvent::SearchChanged { text }) => text.chars().count() <= 4096,
         (View::List { list }, ViewEvent::SelectionChanged { item_id }) => {
             item_id.as_ref().is_none_or(|id| {

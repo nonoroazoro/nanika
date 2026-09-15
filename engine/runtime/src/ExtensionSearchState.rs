@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::{
-    ExtensionInvocation, ExtensionRefresh, ExtensionSearchQuery, ExtensionSettingsUpdate,
+    ExtensionConfigurationUpdate, ExtensionInvocation, ExtensionRefresh, ExtensionSearchQuery,
     ExtensionViewRequest,
 };
 
@@ -17,6 +17,6 @@ pub(crate) struct ExtensionSearchState {
     pub(crate) view_events: VecDeque<ExtensionViewRequest>,
     pub(crate) active_invocation_id: Option<u64>,
     pub(crate) cancelled_invocations: HashSet<u64>,
-    pub(crate) settings: VecDeque<ExtensionSettingsUpdate>,
+    pub(crate) configurations: VecDeque<ExtensionConfigurationUpdate>,
     pub(crate) shutdown: Arc<AtomicBool>,
 }

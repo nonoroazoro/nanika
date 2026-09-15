@@ -2526,6 +2526,7 @@ dependencies = [
  "nanika-protocol",
  "nanika-search",
  "nanika-storage",
+ "png 0.18.1",
  "serde",
  "tauri",
  "tauri-build",
@@ -2555,10 +2556,7 @@ name = "nanika-extension-application"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "directories",
  "icns",
- "nanika-config",
- "nanika-core",
  "nanika-protocol",
  "objc2",
  "objc2-app-kit",
@@ -2641,7 +2639,6 @@ dependencies = [
 name = "nanika-extension-script"
 version = "0.1.0"
 dependencies = [
- "nanika-config",
  "nanika-protocol",
  "serde",
  "serde_json",

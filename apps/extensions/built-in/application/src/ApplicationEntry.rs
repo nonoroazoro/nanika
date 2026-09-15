@@ -40,6 +40,7 @@ impl ApplicationEntry {
                 .map(str::to_owned)
                 .collect(),
             icon: IconReference::new(&self.icon_key).ok(),
+            command_icon: None,
         }
     }
 

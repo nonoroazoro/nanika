@@ -4,18 +4,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_extension_application::ApplicationConfig;
-use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+};
 
 #[test]
 fn process_refreshes_a_configured_root_and_contributes_candidates() {
     let root = test_root("refresh");
     let data_root = root.join("data");
     let cache_root = root.join("cache");
-    let config_root = root.join("config");
     let applications = root.join("applications");
     std::fs::create_dir_all(&applications).expect("application root should exist");
     create_application_fixture(&applications);
-    write_settings(&config_root, &applications);
 
     let mut child = Command::new(PathBuf::from(env!(
         "CARGO_BIN_EXE_nanika-extension-application"
@@ -23,7 +23,6 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     .args([
         argument("data-root", &data_root),
         argument("cache-root", &cache_root),
-        argument("config-root", &config_root),
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -37,6 +36,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         &Message::Initialize {
             request_id: "initialize-application".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration: application_configuration(&applications),
         },
     )
     .expect("initialize should write");
@@ -44,20 +44,6 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
     ));
-    write_frame(
-        &mut input,
-        &Message::GetSettings {
-            request_id: "application-settings".to_owned(),
-        },
-    )
-    .expect("settings request should write");
-    let Some(Message::Settings { contribution, .. }) =
-        read_response(&mut output, "settings response")
-    else {
-        panic!("application extension should contribute settings");
-    };
-    assert_eq!(contribution.title, "Applications");
-    assert_eq!(contribution.fields.len(), 2);
     query_until_candidate(
         &mut input,
         &mut output,
@@ -200,11 +186,9 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     let root = test_root("startup-cache-failure");
     let data_root = root.join("data");
     let cache_root = root.join("cache");
-    let config_root = root.join("config");
     let applications = root.join("applications");
     std::fs::create_dir_all(&applications).expect("application root should exist");
     create_application_fixture(&applications);
-    write_settings(&config_root, &applications);
     std::fs::create_dir_all(cache_root.join("icons")).expect("icon parent should exist");
     std::fs::write(cache_root.join("icons/com.nanika.application"), [])
         .expect("invalid icon root should exist");
@@ -215,7 +199,6 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     .args([
         argument("data-root", &data_root),
         argument("cache-root", &cache_root),
-        argument("config-root", &config_root),
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -229,23 +212,13 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
         &Message::Initialize {
             request_id: "initialize-application-failure".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration: application_configuration(&applications),
         },
     )
     .expect("initialize should write");
     assert!(matches!(
         read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
-    ));
-    write_frame(
-        &mut input,
-        &Message::GetSettings {
-            request_id: "application-settings-failure".to_owned(),
-        },
-    )
-    .expect("settings request should write");
-    assert!(matches!(
-        read_response(&mut output, "settings response"),
-        Some(Message::Settings { .. })
     ));
     let entries = query_until_candidate(
         &mut input,
@@ -290,6 +263,90 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
             break;
         }
     }
+    drop(input);
+    assert!(child.wait().expect("child should exit").success());
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
+fn configuration_acknowledgement_waits_for_updated_candidates() {
+    let root = test_root("configuration-acknowledgement");
+    let data_root = root.join("data");
+    let cache_root = root.join("cache");
+    let initial_applications = root.join("initial-applications");
+    let updated_applications = root.join("updated-applications");
+    std::fs::create_dir_all(&initial_applications).expect("initial application root should exist");
+    std::fs::create_dir_all(&updated_applications).expect("updated application root should exist");
+    create_application_fixture(&updated_applications);
+
+    let mut child = Command::new(PathBuf::from(env!(
+        "CARGO_BIN_EXE_nanika-extension-application"
+    )))
+    .args([
+        argument("data-root", &data_root),
+        argument("cache-root", &cache_root),
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("application extension should spawn");
+    let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
+    let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
+    write_frame(
+        &mut input,
+        &Message::Initialize {
+            request_id: "initialize-configuration".to_owned(),
+            protocol: PROTOCOL_NAME.to_owned(),
+            configuration: application_configuration(&initial_applications),
+        },
+    )
+    .expect("initialize should write");
+    assert!(matches!(
+        read_response(&mut output, "initialize response"),
+        Some(Message::Initialized { .. })
+    ));
+
+    write_frame(
+        &mut input,
+        &Message::ConfigurationChanged {
+            request_id: "change-configuration".to_owned(),
+            configuration: application_configuration(&updated_applications),
+        },
+    )
+    .expect("configuration change should write");
+    assert!(matches!(
+        read_response(&mut output, "configuration response"),
+        Some(Message::ConfigurationApplied { request_id })
+            if request_id == "change-configuration"
+    ));
+
+    write_frame(
+        &mut input,
+        &Message::Query {
+            request_id: "query-updated-configuration".to_owned(),
+            generation: 2,
+            query: "nanika sample".to_owned(),
+        },
+    )
+    .expect("query should write");
+    assert!(
+        read_complete_snapshot(&mut output)
+            .iter()
+            .any(|entry| entry.title == "Nanika Sample")
+    );
+
+    write_frame(
+        &mut input,
+        &Message::Shutdown {
+            request_id: "shutdown-configuration".to_owned(),
+        },
+    )
+    .expect("shutdown should write");
+    assert!(matches!(
+        read_response(&mut output, "shutdown response"),
+        Some(Message::ShutdownAck { .. })
+    ));
     drop(input);
     assert!(child.wait().expect("child should exit").success());
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -351,19 +408,17 @@ fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Messa
     }
 }
 
-fn write_settings(config_root: &Path, application_root: &Path) {
-    let directory = config_root.join("extensions/com.nanika.application");
-    std::fs::create_dir_all(&directory).expect("settings directory should exist");
-    let config = ApplicationConfig {
-        format_version: 1,
-        roots: vec![application_root.to_path_buf()],
-        exclusions: ApplicationConfig::standard_roots().expect("standard roots"),
-    };
-    std::fs::write(
-        directory.join("settings.jsonc"),
-        serde_json::to_string_pretty(&config).expect("settings should serialize"),
-    )
-    .expect("settings should write");
+fn application_configuration(application_root: &Path) -> ExtensionConfiguration {
+    ExtensionConfiguration::new(std::collections::BTreeMap::from([
+        (
+            "application.exclusions".to_owned(),
+            serde_json::json!(ApplicationConfig::standard_roots().expect("standard roots")),
+        ),
+        (
+            "application.roots".to_owned(),
+            serde_json::json!([application_root]),
+        ),
+    ]))
 }
 
 fn argument(name: &str, value: &Path) -> OsString {

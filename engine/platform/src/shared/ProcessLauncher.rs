@@ -6,8 +6,6 @@ use std::thread::JoinHandle;
 use nanika_protocol::{HostServiceResponse, LaunchDescriptor};
 
 use crate::LauncherCommand;
-#[cfg(windows)]
-use crate::process_launch::process_launch;
 
 /// Single owner for processes requested through the host service boundary.
 pub struct ProcessLauncher {
@@ -108,26 +106,5 @@ fn run_owner(receiver: Receiver<LauncherCommand>, notifier: i32, shutdown: Arc<A
 
 #[cfg(windows)]
 fn run_owner(receiver: Receiver<LauncherCommand>, _notifier: (), shutdown: Arc<AtomicBool>) {
-    while !shutdown.load(Ordering::Acquire) {
-        let Ok(command) = receiver.recv() else {
-            break;
-        };
-        match command {
-            LauncherCommand::Launch {
-                descriptor,
-                response,
-            } => {
-                let result = process_launch(&descriptor)
-                    .map(|child| {
-                        drop(child);
-                        HostServiceResponse::Launched
-                    })
-                    .map_err(|error| error.to_string());
-                if response.send(result).is_err() {
-                    tracing::warn!("process launch requester closed before receiving the result");
-                }
-            }
-            LauncherCommand::Shutdown => break,
-        }
-    }
+    crate::adapter::process_launcher::run(receiver, (), shutdown);
 }

@@ -5,8 +5,8 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 
 use nanika_extension_command::{RUN_ACTION_ID, command_candidate};
 use nanika_protocol::{
-    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME,
-    SettingsContribution, read_frame, write_frame,
+    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME, read_frame,
+    write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Initialize {
                 request_id,
                 protocol,
+                ..
             } if protocol == PROTOCOL_NAME => {
                 initialized = true;
                 write_frame(
@@ -103,23 +104,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             )?,
             Message::Cancel { .. } => {}
-            Message::GetSettings { request_id } => write_frame(
-                &mut output,
-                &Message::Settings {
-                    request_id,
-                    contribution: empty_settings("Commands"),
-                },
-            )?,
-            Message::UpdateSettings {
-                request_id,
-                updates,
-            } if updates.is_empty() => write_frame(
-                &mut output,
-                &Message::SettingsUpdated {
-                    request_id,
-                    contribution: empty_settings("Commands"),
-                },
-            )?,
             Message::Shutdown { request_id } => {
                 write_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 break;
@@ -216,22 +200,13 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
-        | Message::GetSettings { request_id }
-        | Message::Settings { request_id, .. }
-        | Message::UpdateSettings { request_id, .. }
-        | Message::SettingsUpdated { request_id, .. }
+        | Message::ConfigurationChanged { request_id, .. }
+        | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CandidatesChanged => None,
-    }
-}
-
-fn empty_settings(title: &str) -> SettingsContribution {
-    SettingsContribution {
-        title: title.to_owned(),
-        fields: Vec::new(),
     }
 }

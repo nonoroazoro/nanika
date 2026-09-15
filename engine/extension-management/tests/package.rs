@@ -2,7 +2,7 @@ use std::io::Write;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
-    CommandMode, ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
+    ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
     set_extension_enabled, update_package,
 };
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
@@ -188,12 +188,11 @@ fn manifest_preserves_valid_command_contributions() {
             "protocolVersion": 1
         })),
         Some(serde_json::json!({
-            "rootSearch": true,
+            "rootSearch": {},
             "commands": [{
-                "id": "example.open",
+                "command": "example.open",
                 "title": "Open Example",
                 "description": "Open the example view.",
-                "mode": "view",
                 "keywords": ["sample"]
             }]
         })),
@@ -201,10 +200,101 @@ fn manifest_preserves_valid_command_contributions() {
 
     let installed = install_package(&package, &paths, &store).expect("install package");
 
-    assert!(installed.contributions.root_search);
-    assert_eq!(installed.contributions.commands.len(), 1);
-    assert_eq!(installed.contributions.commands[0].id, "example.open");
-    assert_eq!(installed.contributions.commands[0].mode, CommandMode::View);
+    assert!(installed.contributes.root_search.is_some());
+    assert_eq!(installed.contributes.commands.len(), 1);
+    assert_eq!(installed.contributes.commands[0].command, "example.open");
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_preserves_valid_configuration_contributions() {
+    let root = temporary_root("configuration-contributions");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("configuration.nanika");
+    create_package_definition_with_runtime_and_contributions(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
+        Some(serde_json::json!({
+            "configuration": {
+                "title": "Example",
+                "properties": {
+                    "example.enabled": {
+                        "type": "boolean",
+                        "title": "Enabled",
+                        "default": true
+                    }
+                }
+            }
+        })),
+    );
+
+    let installed = install_package(&package, &paths, &store).expect("install package");
+    let contribution = installed
+        .contributes
+        .configuration
+        .expect("configuration contribution");
+    assert_eq!(contribution.defaults()["example.enabled"], true);
+    cleanup(&root);
+}
+
+#[test]
+fn manifest_rejects_configuration_defaults_outside_the_declared_schema() {
+    let root = temporary_root("invalid-configuration-default");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("configuration.nanika");
+    create_package_definition_with_runtime_and_contributions(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
+        Some(serde_json::json!({
+            "configuration": {
+                "title": "Example",
+                "properties": {
+                    "example.count": {
+                        "type": "integer",
+                        "title": "Count",
+                        "default": 0,
+                        "minimum": 1,
+                        "maximum": 10,
+                        "multipleOf": 1
+                    }
+                }
+            }
+        })),
+    );
+
+    let error = install_package(&package, &paths, &store)
+        .expect_err("invalid configuration default must fail installation");
+    assert!(error.to_string().contains("invalid default"));
     cleanup(&root);
 }
 
@@ -233,10 +323,9 @@ fn manifest_rejects_acp_command_contributions() {
         })),
         Some(serde_json::json!({
             "commands": [{
-                "id": "example.open",
+                "command": "example.open",
                 "title": "Open Example",
-                "description": "Open the example view.",
-                "mode": "view"
+                "description": "Open the example view."
             }]
         })),
     );
@@ -736,7 +825,7 @@ fn create_package_definition_with_runtime_and_contributions(
         manifest["runtime"] = runtime;
     }
     if let Some(contributions) = contributions {
-        manifest["contributions"] = contributions;
+        manifest["contributes"] = contributions;
     }
     if unknown_field {
         manifest["dependecies"] = serde_json::json!(["com.example.required"]);

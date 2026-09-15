@@ -6,10 +6,10 @@ use nanika_extension_package::ExtensionContributions;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
-    ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionSettingsResult,
-    ExtensionViewRequest, ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion,
-    SupervisorError,
+    ExtensionConfigurationResult, ExtensionInvocation, ExtensionInvocationOutcome,
+    ExtensionInvocationOutput, ExtensionNotifier, ExtensionRuntime, ExtensionSearchWorker,
+    ExtensionSearchWorkerContext, ExtensionViewRequest, ExtensionViewRequestKind,
+    HostServiceHandler, RuntimeViewCompletion, SupervisorError,
 };
 
 /// Collection of fixed extension workers queried by one host generation.
@@ -43,6 +43,23 @@ impl ExtensionSearchCoordinator {
         search: SearchHandle,
         contributions: ExtensionContributions,
     ) -> std::io::Result<()> {
+        self.register_with_configuration(
+            extension_id,
+            runtime,
+            search,
+            contributions,
+            nanika_protocol::ExtensionConfiguration::default(),
+        )
+    }
+
+    pub fn register_with_configuration(
+        &mut self,
+        extension_id: impl Into<String>,
+        runtime: impl Into<ExtensionRuntime>,
+        search: SearchHandle,
+        contributions: ExtensionContributions,
+        configuration: nanika_protocol::ExtensionConfiguration,
+    ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
         let runtime = runtime.into();
         if self
@@ -60,6 +77,7 @@ impl ExtensionSearchCoordinator {
             runtime,
             search,
             contributions,
+            configuration,
             ExtensionSearchWorkerContext {
                 notifier: Arc::clone(&self.notifier),
                 host_services: self.host_services.clone(),
@@ -220,10 +238,10 @@ impl ExtensionSearchCoordinator {
         Ok(receiver)
     }
 
-    pub(crate) fn take_settings(&self) -> Vec<ExtensionSettingsResult> {
+    pub(crate) fn take_configurations(&self) -> Vec<ExtensionConfigurationResult> {
         self.workers
             .iter()
-            .filter_map(ExtensionSearchWorker::take_settings)
+            .flat_map(ExtensionSearchWorker::take_configurations)
             .collect()
     }
 
@@ -234,21 +252,27 @@ impl ExtensionSearchCoordinator {
             .collect()
     }
 
-    pub(crate) fn update_settings(
+    pub(crate) fn apply_configuration(
         &self,
         extension_id: &str,
         request_id: impl Into<String>,
-        updates: Vec<nanika_protocol::SettingUpdate>,
-    ) -> Result<(), SupervisorError> {
-        self.workers
+        configuration: nanika_protocol::ExtensionConfiguration,
+    ) -> Result<bool, SupervisorError> {
+        let Some(worker) = self
+            .workers
             .iter()
             .find(|worker| worker.extension_id() == extension_id)
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?
-            .update_settings(request_id.into(), updates)
+        else {
+            return Ok(false);
+        };
+        if !worker.supports_live_configuration() {
+            return Ok(false);
+        }
+        match worker.apply_configuration(request_id.into(), configuration) {
+            Ok(()) => Ok(true),
+            Err(SupervisorError::ChannelClosed) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn set_notifier(&self, notifier: Arc<dyn Fn() + Send + Sync>) {

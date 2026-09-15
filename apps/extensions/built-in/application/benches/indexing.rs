@@ -19,7 +19,6 @@ fn indexing(criterion: &mut Criterion) {
     let database = ApplicationDatabase::open(&database_path).expect("database should open");
     let mut index = ApplicationIndex::new(database, IconCache::new(&icon_root));
     let config = ApplicationConfig {
-        format_version: 1,
         roots: vec![applications],
         exclusions: ApplicationConfig::standard_roots().expect("standard roots"),
     };

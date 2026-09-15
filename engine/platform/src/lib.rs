@@ -30,6 +30,9 @@ pub use platform_error::*;
 #[path = "contracts/PlatformEvent.rs"]
 mod platform_event;
 pub use platform_event::*;
+#[path = "contracts/PngResourceError.rs"]
+mod png_resource_error;
+pub use png_resource_error::*;
 #[path = "contracts/StartupStatus.rs"]
 mod startup_status;
 pub use startup_status::*;
@@ -51,6 +54,9 @@ pub(crate) use launcher_command::*;
 #[path = "shared/ProcessLauncher.rs"]
 mod process_launcher;
 pub use process_launcher::*;
+#[path = "shared/PngResource.rs"]
+mod png_resource;
+pub use png_resource::*;
 #[path = "shared/hotkey_timing.rs"]
 mod hotkey_timing;
 pub use hotkey_timing::*;
@@ -61,8 +67,8 @@ pub use system_locale::*;
 mod process_launch;
 
 #[cfg(test)]
-#[path = "../tests/ClipboardService.rs"]
-mod clipboard_service_tests;
-#[cfg(test)]
 #[path = "../tests/HotkeyTiming.rs"]
 mod hotkey_timing_tests;
+#[cfg(test)]
+#[path = "../tests/PngResource.rs"]
+mod png_resource_tests;

@@ -7,6 +7,7 @@ fn round_trips_a_message() {
     let message = Message::Initialize {
         request_id: "request-1".to_owned(),
         protocol: PROTOCOL_NAME.to_owned(),
+        configuration: Default::default(),
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &message).expect("frame should be written");

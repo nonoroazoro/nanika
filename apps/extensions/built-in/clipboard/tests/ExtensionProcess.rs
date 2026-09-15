@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 
 use nanika_extension_clipboard::{ClipboardDatabase, ClipboardEntry, RuntimePaths};
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
-    PROTOCOL_NAME, View, ViewEvent, read_frame, write_frame,
+    ClipboardContent, ExtensionConfiguration, HostServiceRequest, HostServiceResponse, Message,
+    NavigationEffect, PROTOCOL_NAME, View, ViewEvent, read_frame, write_frame,
 };
 
 #[test]
@@ -25,7 +25,7 @@ fn clipboard_process_opens_a_scoped_view_and_copies_through_the_host() {
                 value: "Nanika clipboard payload".to_owned(),
             },
             byte_size: 24,
-            captured_at: unix_timestamp(),
+            captured_at: unix_timestamp_millis(),
             pinned: false,
         })
         .expect("history should persist");
@@ -36,7 +36,6 @@ fn clipboard_process_opens_a_scoped_view_and_copies_through_the_host() {
     .args([
         argument("data-root", &root),
         argument("cache-root", &root.join("cache")),
-        argument("config-root", &root.join("config")),
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -49,6 +48,7 @@ fn clipboard_process_opens_a_scoped_view_and_copies_through_the_host() {
         &Message::Initialize {
             request_id: "initialize".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration: clipboard_configuration(),
         },
     )
     .expect("initialize should write");
@@ -183,8 +183,17 @@ fn argument(name: &str, path: &Path) -> String {
     format!("--{name}={}", path.display())
 }
 
-fn unix_timestamp() -> u64 {
+fn clipboard_configuration() -> ExtensionConfiguration {
+    ExtensionConfiguration::new(std::collections::BTreeMap::from([
+        ("clipboard.maxAgeDays".to_owned(), serde_json::json!(7)),
+        ("clipboard.maxEntries".to_owned(), serde_json::json!(50)),
+    ]))
+}
+
+fn unix_timestamp_millis() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
 }

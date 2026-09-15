@@ -145,11 +145,9 @@ fn run_event_loop(
         if result <= 0 || message.message == STOP_MESSAGE {
             break;
         }
-        if message.message == ACTIVATE_MESSAGE {
-            if events.send(PlatformEvent::Open).is_err() {
-                eprintln!("single-instance event receiver closed during activation");
-                break;
-            }
+        if message.message == ACTIVATE_MESSAGE && events.send(PlatformEvent::Open).is_err() {
+            eprintln!("single-instance event receiver closed during activation");
+            break;
         }
     }
     unsafe {

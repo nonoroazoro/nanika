@@ -1,6 +1,9 @@
+use std::path::Path;
+
 use nanika_protocol::{
-    ClipboardContent, DetailView, ListItem, ListLayout, ListSection, ListView, View, ViewAction,
-    ViewActionStyle, ViewFilter, ViewFilterOption, ViewMetadata,
+    ClipboardContent, DetailContent, DetailView, ImageSource, ListItem, ListLayout, ListSection,
+    ListView, View, ViewAction, ViewActionStyle, ViewFilter, ViewFilterOption, ViewItemIcon,
+    ViewMetadata,
 };
 
 use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
@@ -65,6 +68,11 @@ fn list_item(entry: &ClipboardEntry) -> ListItem {
         id: entry.entry_id.clone(),
         title: entry.title.clone(),
         subtitle: Some(content_type(entry).to_owned()),
+        icon: Some(match &entry.content {
+            ClipboardContent::Text { .. } => ViewItemIcon::Text,
+            ClipboardContent::Files { .. } => ViewItemIcon::Files,
+            ClipboardContent::PngFile { .. } => ViewItemIcon::Image,
+        }),
         actions: vec![clear_action(), copy_action()],
     }
 }
@@ -72,19 +80,35 @@ fn list_item(entry: &ClipboardEntry) -> ListItem {
 fn detail_view(entry: &ClipboardEntry) -> DetailView {
     DetailView {
         title: None,
-        body: match &entry.content {
-            ClipboardContent::Text { value } => value.clone(),
-            ClipboardContent::Files { paths } => paths.join("\n"),
-            ClipboardContent::PngFile { .. } => "Image clipboard content".to_owned(),
-        },
-        image_data_url: match &entry.content {
-            ClipboardContent::PngFile { .. } if is_content_hash(&entry.content_hash) => {
-                Some(format!(
-                    "http://nanika-icon.localhost/com.nanika.clipboard/{}.png",
-                    entry.content_hash
-                ))
+        content: match &entry.content {
+            ClipboardContent::Text { value } => DetailContent::Text {
+                value: value.clone(),
+            },
+            ClipboardContent::Files { paths } => DetailContent::Files {
+                names: paths
+                    .iter()
+                    .map(|path| {
+                        Path::new(path)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or(path)
+                            .to_owned()
+                    })
+                    .collect(),
+            },
+            ClipboardContent::PngFile { .. }
+                if nanika_protocol::is_valid_content_hash(&entry.content_hash) =>
+            {
+                DetailContent::Image {
+                    source: ImageSource::Resource {
+                        path: format!("{}.png", entry.content_hash),
+                    },
+                    alternative_text: entry.title.clone(),
+                }
             }
-            _ => None,
+            ClipboardContent::PngFile { .. } => DetailContent::Text {
+                value: "Image preview unavailable".to_owned(),
+            },
         },
         metadata: vec![
             ViewMetadata {
@@ -98,10 +122,6 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
         ],
         actions: Vec::new(),
     }
-}
-
-fn is_content_hash(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn copy_action() -> ViewAction {

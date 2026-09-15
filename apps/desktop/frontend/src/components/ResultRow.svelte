@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { SearchResult } from "../types";
+import CommandIconTile from "./CommandIconTile.svelte";
 
 interface Props
 {
@@ -32,12 +33,16 @@ let iconFailed = $state(false);
     tabindex="-1"
 >
     <span class="icon" aria-hidden="true">
-        <span class="fallback">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <rect x="5" y="4" width="14" height="16" rx="3" />
-                <path d="M9 9h6M9 12h6M9 15h3" />
-            </svg>
-        </span>
+        {#if result.commandIcon}
+            <CommandIconTile kind={result.commandIcon} />
+        {:else}
+            <span class="fallback">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="5" y="4" width="14" height="16" rx="3" />
+                    <path d="M9 9h6M9 12h6M9 15h3" />
+                </svg>
+            </span>
+        {/if}
         {#if result.iconUrl}
             <img
                 src={result.iconUrl}
@@ -88,7 +93,9 @@ img,
 }
 
 .icon {
+  display: grid;
   position: relative;
+  place-items: center;
 }
 
 img {

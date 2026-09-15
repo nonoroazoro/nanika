@@ -1,13 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{ViewAction, ViewMetadata};
+use crate::{DetailContent, ViewAction, ViewMetadata};
 
-/// Text content and structured metadata rendered as a detail surface.
+/// Semantic content and structured metadata rendered as a detail surface.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DetailView {
     pub title: Option<String>,
-    pub body: String,
-    pub image_data_url: Option<String>,
+    pub content: DetailContent,
     pub metadata: Vec<ViewMetadata>,
     pub actions: Vec<ViewAction>,
 }

@@ -65,6 +65,9 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ],
+    "resources": {
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "externalBin": [
       "../../../target/tauri-binaries/nanika-extension-application",
       "../../../target/tauri-binaries/nanika-extension-command",

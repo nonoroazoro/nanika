@@ -25,6 +25,7 @@ let viewInputError = $state<string | null>(null);
 let desiredViewQuery = $state<string | null>(null);
 let submittedNavigationRevision = 0;
 let viewOperation = 0;
+let viewResumeRequested = false;
 let rootSearch = $state.raw<RootSearchSnapshot>({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
@@ -236,6 +237,7 @@ function updateNavigation(next: NavigationSnapshot): void
     {
         desiredViewQuery = next.current?.view.kind === "list" ? next.current.view.list.search_text : null;
         viewInputError = null;
+        viewResumeRequested = false;
     }
     if (viewPending && !next.busy && next.revision > submittedNavigationRevision)
     {
@@ -248,6 +250,7 @@ function updateNavigation(next: NavigationSnapshot): void
     if (!next.error)
     {
         flushViewQuery();
+        flushViewResume();
     }
 }
 
@@ -271,6 +274,22 @@ function flushViewQuery(): void
         return;
     }
     void sendViewEvent({ kind: "searchChanged", text: desiredViewQuery });
+}
+
+function resumeView(): void
+{
+    viewResumeRequested = true;
+    flushViewResume();
+}
+
+function flushViewResume(): void
+{
+    if (viewPending || navigation.busy || !application || !navigation.current || !viewResumeRequested)
+    {
+        return;
+    }
+    viewResumeRequested = false;
+    void sendViewEvent({ kind: "resumed" });
 }
 
 async function sendViewEvent(event: ViewEvent | null): Promise<void>
@@ -306,6 +325,7 @@ async function sendViewEvent(event: ViewEvent | null): Promise<void>
                 viewPending = false;
             }
             operationFailure = error instanceof Error ? error.message : String(error);
+            flushViewResume();
         }
     }
 }
@@ -332,10 +352,12 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
             {#key navigation.current.routeId}
                 <ExtensionView
                     snapshot={navigation.current}
+                    resourceOrigin={application?.resourceOrigin ?? ""}
                     busy={viewPending || viewInputError !== null}
                     error={viewInputError ?? operationFailure ?? navigation.error}
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
+                    onResume={resumeView}
                     onBack={() =>
                     {
                         void sendViewEvent(null);

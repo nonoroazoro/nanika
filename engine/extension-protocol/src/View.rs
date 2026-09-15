@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::{DetailView, ListView, ViewAction};
+use crate::{DetailContent, DetailView, ImageSource, ListView, ViewAction};
 
 /// One host-rendered extension view document.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,16 +96,44 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
     if let Some(title) = &detail.title {
         validate_text("detail title", title, 512, true)?;
     }
-    validate_text("detail body", &detail.body, 262_144, true)?;
-    if let Some(image) = &detail.image_data_url {
-        const MAX_IMAGE_DATA_URL_CHARS: usize = 24 * 1024 * 1024;
-        let valid_resource =
-            image.starts_with("http://nanika-icon.localhost/com.nanika.clipboard/");
-        if image.chars().count() > MAX_IMAGE_DATA_URL_CHARS
-            || (!image.starts_with("data:image/") && !valid_resource)
-            || (image.starts_with("data:image/") && !image.contains(";base64,"))
-        {
-            return Err("detail image data is invalid or too large".to_owned());
+    match &detail.content {
+        DetailContent::Text { value } => {
+            validate_text("detail text", value, 262_144, true)?;
+        }
+        DetailContent::Files { names } => {
+            if names.is_empty() || names.len() > 256 {
+                return Err("detail file count is invalid".to_owned());
+            }
+            for name in names {
+                validate_text("detail file name", name, 512, false)?;
+            }
+        }
+        DetailContent::Image {
+            source,
+            alternative_text,
+        } => {
+            validate_text(
+                "detail image alternative text",
+                alternative_text,
+                512,
+                false,
+            )?;
+            match source {
+                ImageSource::DataUrl { value } => {
+                    const MAX_IMAGE_DATA_URL_CHARS: usize = 24 * 1024 * 1024;
+                    if value.chars().count() > MAX_IMAGE_DATA_URL_CHARS
+                        || !value.starts_with("data:image/")
+                        || !value.contains(";base64,")
+                    {
+                        return Err("detail image data is invalid or too large".to_owned());
+                    }
+                }
+                ImageSource::Resource { path } => {
+                    if !crate::is_valid_resource_path(path) {
+                        return Err("detail image resource path is invalid".to_owned());
+                    }
+                }
+            }
         }
     }
     if detail.metadata.len() > 64 {

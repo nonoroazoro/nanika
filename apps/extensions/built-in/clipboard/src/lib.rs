@@ -3,6 +3,8 @@
 mod capture;
 #[path = "ClipboardCommand.rs"]
 mod clipboard_command;
+#[path = "ClipboardConfig.rs"]
+mod clipboard_config;
 #[path = "ClipboardDatabase.rs"]
 mod clipboard_database;
 #[path = "ClipboardEntry.rs"]
@@ -23,6 +25,7 @@ mod view;
 
 pub(crate) use capture::*;
 pub(crate) use clipboard_command::*;
+pub use clipboard_config::*;
 pub use clipboard_database::*;
 pub use clipboard_entry::*;
 pub use clipboard_monitor::*;
@@ -41,6 +44,9 @@ pub const OPEN_COMMAND_ID: &str = "clipboard.history";
 #[cfg(test)]
 #[path = "../tests/capture.rs"]
 mod capture_tests;
+#[cfg(test)]
+#[path = "../tests/ClipboardConfig.rs"]
+mod clipboard_config_tests;
 #[cfg(test)]
 #[path = "../tests/ClipboardDatabase.rs"]
 mod clipboard_database_tests;

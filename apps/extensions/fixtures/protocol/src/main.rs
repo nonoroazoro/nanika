@@ -255,34 +255,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )?;
             }
-            Message::GetSettings { request_id } => {
+            Message::ConfigurationChanged { request_id, .. } => {
                 wait_for_release(&arguments, &request_id)?;
-                write_frame(
-                    &mut output,
-                    &Message::Settings {
-                        request_id,
-                        contribution: nanika_protocol::SettingsContribution {
-                            title: "Fixture".to_owned(),
-                            fields: Vec::new(),
-                        },
-                    },
-                )?;
-            }
-            Message::UpdateSettings {
-                request_id,
-                updates,
-            } if updates.is_empty() => {
-                wait_for_release(&arguments, &request_id)?;
-                write_frame(
-                    &mut output,
-                    &Message::SettingsUpdated {
-                        request_id,
-                        contribution: nanika_protocol::SettingsContribution {
-                            title: "Fixture".to_owned(),
-                            fields: Vec::new(),
-                        },
-                    },
-                )?;
+                write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
             Message::Snapshot { .. }
             | Message::CandidatesChanged
@@ -296,9 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::HostResponse { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
-            | Message::Settings { .. }
-            | Message::SettingsUpdated { .. }
-            | Message::UpdateSettings { .. }
+            | Message::ConfigurationApplied { .. }
             | Message::Error { .. } => write_frame(
                 &mut output,
                 &Message::Error {
@@ -322,6 +295,7 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         action_id: "fixture.run".to_owned(),
         aliases: vec!["fixture alias".to_owned()],
         icon: None,
+        command_icon: None,
     }
 }
 

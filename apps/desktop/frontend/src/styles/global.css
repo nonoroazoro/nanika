@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
@@ -10,6 +10,9 @@
   --search-height: 4.25rem;
   --row-height: 3.25rem;
   --icon-size: 2rem;
+  --command-icon-size: 1.625rem;
+  --command-icon-glyph-size: 1rem;
+  --command-icon-radius: 0.4375rem;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -26,12 +29,14 @@
   --text-tertiary: light-dark(#969aa3, #747780);
   --surface-window: light-dark(rgba(248, 248, 250, 0.96), rgba(25, 26, 30, 0.96));
   --surface-raised: light-dark(#e8e9ed, #34363d);
+  --surface-hovered: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
   --surface-selected: light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.1));
   --surface-danger-hover: light-dark(rgba(190, 76, 66, 0.08), rgba(255, 120, 110, 0.12));
   --border-window: light-dark(rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.14));
   --border-subtle: light-dark(rgba(0, 0, 0, 0.09), rgba(255, 255, 255, 0.08));
   --border-danger: light-dark(rgba(170, 76, 68, 0.42), rgba(255, 160, 150, 0.48));
   --border-danger-hover: light-dark(rgba(160, 66, 58, 0.62), rgba(255, 175, 165, 0.7));
+  --focus-indicator: light-dark(rgba(0, 0, 0, 0.32), rgba(255, 255, 255, 0.34));
   --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.24);
 }
 
@@ -66,6 +71,21 @@ input,
 textarea,
 select {
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* WebView defaults must not make the desktop UI look or behave like a web page. */
+:where(button, input, textarea, select):focus,
+:where(button, input, textarea, select):focus-visible,
+:where(button, input, textarea, select):active {
+  outline: none;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Keyboard-only controls use a restrained inset indicator that never changes layout. */
+:where(button, select):focus-visible {
+  box-shadow: inset 0 0 0 1px var(--focus-indicator);
 }
 
 button {
@@ -81,26 +101,16 @@ button {
   line-height: 1.2;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-  -webkit-tap-highlight-color: transparent;
 }
 
 button:hover:not(:disabled) {
   border-color: var(--border-window);
-  background: var(--surface-selected);
+  background: var(--surface-hovered);
 }
 
 button:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-/* Native actions use selection state, not browser focus/pressed decoration. */
-button:focus,
-button:focus-visible,
-button:active {
-  outline: none;
-  box-shadow: none;
-  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

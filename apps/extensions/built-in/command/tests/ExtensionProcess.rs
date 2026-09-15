@@ -50,6 +50,7 @@ fn initialize(input: &mut impl std::io::Write, output: &mut impl std::io::Read) 
         &Message::Initialize {
             request_id: "initialize".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
+            configuration: Default::default(),
         },
     )
     .expect("initialize should write");

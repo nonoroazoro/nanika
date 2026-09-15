@@ -10,6 +10,8 @@ mod acp_extension_command;
 #[path = "AcpExtensionProcess.rs"]
 mod acp_extension_process;
 mod acp_transport;
+#[path = "ConfigurationUpdateDisposition.rs"]
+mod configuration_update_disposition;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
@@ -20,6 +22,12 @@ mod distribution_extension;
 mod distribution_inventory;
 #[path = "ExtensionCommand.rs"]
 mod extension_command;
+#[path = "ExtensionConfigurationRegistry.rs"]
+mod extension_configuration_registry;
+#[path = "ExtensionConfigurationResult.rs"]
+mod extension_configuration_result;
+#[path = "ExtensionConfigurationUpdate.rs"]
+mod extension_configuration_update;
 #[path = "ExtensionInterruption.rs"]
 mod extension_interruption;
 #[path = "ExtensionInvocation.rs"]
@@ -56,10 +64,6 @@ mod extension_search_state;
 mod extension_search_worker;
 #[path = "ExtensionSearchWorkerContext.rs"]
 mod extension_search_worker_context;
-#[path = "ExtensionSettingsResult.rs"]
-mod extension_settings_result;
-#[path = "ExtensionSettingsUpdate.rs"]
-mod extension_settings_update;
 #[path = "ExtensionViewRequest.rs"]
 mod extension_view_request;
 #[path = "ExtensionViewRequestKind.rs"]
@@ -72,12 +76,14 @@ mod host_diagnostic;
 mod host_service_handler;
 #[path = "HostServiceRouter.rs"]
 mod host_service_router;
+#[path = "RuntimeConfigurationUpdate.rs"]
+mod runtime_configuration_update;
+#[path = "RuntimeExtensionConfiguration.rs"]
+mod runtime_extension_configuration;
 #[path = "RuntimeOutputUpdate.rs"]
 mod runtime_output_update;
 #[path = "RuntimeService.rs"]
 mod runtime_service;
-#[path = "RuntimeSettingsUpdate.rs"]
-mod runtime_settings_update;
 #[path = "RuntimeUpdateBatch.rs"]
 mod runtime_update_batch;
 #[path = "RuntimeViewCompletion.rs"]
@@ -89,11 +95,15 @@ pub(crate) use acp_connection_context::*;
 pub(crate) use acp_extension_command::*;
 pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
+pub use configuration_update_disposition::*;
 pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
 pub use distribution_extension::*;
 pub use distribution_inventory::*;
 pub(crate) use extension_command::*;
+pub(crate) use extension_configuration_registry::*;
+pub(crate) use extension_configuration_result::*;
+pub(crate) use extension_configuration_update::*;
 pub(crate) use extension_interruption::*;
 pub(crate) use extension_invocation::*;
 pub use extension_invocation_outcome::*;
@@ -112,17 +122,16 @@ pub(crate) use extension_search_query::*;
 pub(crate) use extension_search_state::*;
 pub(crate) use extension_search_worker::*;
 pub(crate) use extension_search_worker_context::*;
-pub(crate) use extension_settings_result::*;
-pub(crate) use extension_settings_update::*;
 pub(crate) use extension_view_request::*;
 pub(crate) use extension_view_request_kind::*;
 pub(crate) use extension_work::*;
 pub use host_diagnostic::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
+pub use runtime_configuration_update::*;
+pub use runtime_extension_configuration::*;
 pub use runtime_output_update::*;
 pub use runtime_service::*;
-pub use runtime_settings_update::*;
 pub use runtime_update_batch::*;
 pub use runtime_view_completion::*;
 pub use supervisor_error::*;
@@ -149,6 +158,11 @@ pub fn publish_extension_snapshot(
                 .icon
                 .filter(nanika_protocol::IconReference::is_valid)
                 .map(|icon| icon.key().to_owned());
+            let command_icon = if icon_key.is_none() {
+                entry.command_icon.map(|icon| icon.as_str().to_owned())
+            } else {
+                None
+            };
             nanika_search::Candidate::new(
                 extension_id,
                 entry.entry_id,
@@ -158,6 +172,7 @@ pub fn publish_extension_snapshot(
             )
             .with_subtitle(entry.subtitle)
             .with_icon_key(icon_key)
+            .with_command_icon(command_icon)
         })
         .collect();
     search.publish_extension_snapshot(extension_id, generation, candidates)
@@ -169,6 +184,9 @@ mod acp_transport_tests;
 #[cfg(test)]
 #[path = "../tests/Diagnostics.rs"]
 mod diagnostics_tests;
+#[cfg(test)]
+#[path = "../tests/ExtensionConfigurationRegistry.rs"]
+mod extension_configuration_registry_tests;
 #[cfg(test)]
 #[path = "../tests/ExtensionInvocationOutputState.rs"]
 mod extension_invocation_output_state_tests;

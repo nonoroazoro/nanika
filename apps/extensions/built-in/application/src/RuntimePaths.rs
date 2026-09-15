@@ -1,47 +1,40 @@
 use std::path::PathBuf;
 
-use directories::ProjectDirs;
-use nanika_core::PROJECT_IDENTITY;
-
 use crate::{ApplicationError, EXTENSION_ID};
 
 /// Resolved application extension paths, overridable for supervised launches and tests.
 pub struct RuntimePaths {
     pub data_root: PathBuf,
     pub cache_root: PathBuf,
-    pub config_root: PathBuf,
 }
 
 impl RuntimePaths {
     pub fn resolve(arguments: impl IntoIterator<Item = String>) -> Result<Self, ApplicationError> {
-        let dirs = ProjectDirs::from(
-            PROJECT_IDENTITY.qualifier,
-            PROJECT_IDENTITY.organization,
-            PROJECT_IDENTITY.application,
-        )
-        .ok_or_else(|| {
-            ApplicationError::Configuration("platform data directories are unavailable".to_owned())
-        })?;
-        let data_root = dirs.data_local_dir().to_path_buf();
-        let mut paths = Self {
-            cache_root: data_root.join("cache"),
-            config_root: data_root.join("user"),
-            data_root,
-        };
+        let mut data_root = None;
+        let mut cache_root = None;
         for argument in arguments {
             if let Some(value) = argument.strip_prefix("--data-root=") {
-                paths.data_root = absolute_path(value, "data root")?;
+                data_root = Some(absolute_path(value, "data root")?);
             } else if let Some(value) = argument.strip_prefix("--cache-root=") {
-                paths.cache_root = absolute_path(value, "cache root")?;
-            } else if let Some(value) = argument.strip_prefix("--config-root=") {
-                paths.config_root = absolute_path(value, "config root")?;
+                cache_root = Some(absolute_path(value, "cache root")?);
             } else {
                 return Err(ApplicationError::Configuration(format!(
                     "unsupported application extension argument: {argument}"
                 )));
             }
         }
-        Ok(paths)
+        Ok(Self {
+            data_root: data_root.ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "application extension data root is missing".to_owned(),
+                )
+            })?,
+            cache_root: cache_root.ok_or_else(|| {
+                ApplicationError::Configuration(
+                    "application extension cache root is missing".to_owned(),
+                )
+            })?,
+        })
     }
 
     pub fn database_path(&self) -> PathBuf {

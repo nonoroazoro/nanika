@@ -63,6 +63,11 @@ async fn run() -> Result<()> {
             .map(str::to_owned)
     });
     let state = Arc::new(DummyAgentState::default());
+    let configuration_marker = std::env::args().find_map(|argument| {
+        argument
+            .strip_prefix("--configuration-marker=")
+            .map(str::to_owned)
+    });
     let new_session_state = Arc::clone(&state);
     let prompt_state = Arc::clone(&state);
     let cancel_state = Arc::clone(&state);
@@ -85,7 +90,26 @@ async fn run() -> Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |_request: NewSessionRequest, responder, _connection| {
+            async move |request: NewSessionRequest, responder, _connection| {
+                if let Some(marker) = &configuration_marker {
+                    let configured = request
+                        .meta
+                        .as_ref()
+                        .and_then(|meta| meta.get("nanika.configuration"))
+                        .and_then(|value| value.get("fixture.count"))
+                        .and_then(|value| value.as_i64())
+                        == Some(42);
+                    if !configured {
+                        return responder.respond_with_error(
+                            agent_client_protocol::util::internal_error(
+                                "Nanika configuration metadata is missing",
+                            ),
+                        );
+                    }
+                    std::fs::write(marker, b"configured").map_err(|error| {
+                        agent_client_protocol::util::internal_error(error.to_string())
+                    })?;
+                }
                 responder.respond(NewSessionResponse::new(new_session_state.create_session()))
             },
             agent_client_protocol::on_receive_request!(),

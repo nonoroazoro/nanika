@@ -47,6 +47,7 @@ impl CalculatorEngine {
                 action_id: COPY_ACTION_ID.to_owned(),
                 aliases: vec![query.to_owned()],
                 icon: None,
+                command_icon: None,
             },
             result.to_owned(),
         ))

@@ -1,17 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-use crate::CommandMode;
+use crate::CommandIcon;
 
 /// One statically discoverable command contributed by an extension.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandContribution {
-    pub id: String,
+    pub command: String,
     pub title: String,
     pub description: String,
-    pub mode: CommandMode,
     #[serde(default)]
-    pub subtitle: Option<String>,
+    pub category: Option<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub icon: Option<CommandIcon>,
 }

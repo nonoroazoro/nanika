@@ -24,7 +24,7 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub activation_events: Vec<String>,
     #[serde(default)]
-    pub contributions: ExtensionContributions,
+    pub contributes: ExtensionContributions,
 }
 
 impl ExtensionManifest {

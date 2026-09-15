@@ -25,6 +25,9 @@ tauri = { workspace = true, features = ["common-controls-v6", "compression", "is
 tauri-plugin-global-shortcut.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+png.workspace = true
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

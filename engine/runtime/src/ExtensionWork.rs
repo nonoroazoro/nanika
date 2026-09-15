@@ -1,5 +1,5 @@
 use crate::{
-    ExtensionInvocation, ExtensionRefresh, ExtensionSearchQuery, ExtensionSettingsUpdate,
+    ExtensionConfigurationUpdate, ExtensionInvocation, ExtensionRefresh, ExtensionSearchQuery,
     ExtensionViewRequest,
 };
 
@@ -8,5 +8,5 @@ pub(crate) enum ExtensionWork {
     Invoke(ExtensionInvocation),
     ViewEvent(ExtensionViewRequest),
     Refresh(ExtensionRefresh),
-    UpdateSettings(ExtensionSettingsUpdate),
+    ApplyConfiguration(ExtensionConfigurationUpdate),
 }

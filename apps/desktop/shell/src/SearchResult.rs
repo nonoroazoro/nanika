@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::resource_protocol;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SearchResult {
@@ -9,6 +11,7 @@ pub(crate) struct SearchResult {
     pub(crate) title: String,
     pub(crate) subtitle: Option<String>,
     pub(crate) icon_url: Option<String>,
+    pub(crate) command_icon: Option<String>,
     pub(crate) kind: String,
 }
 
@@ -21,11 +24,9 @@ impl SearchResult {
             title: candidate.title().to_owned(),
             subtitle: candidate.subtitle().map(str::to_owned),
             icon_url: candidate.icon_key().map(|key| {
-                format!(
-                    "http://nanika-icon.localhost/{}/{key}/128.png",
-                    candidate.extension_id()
-                )
+                resource_protocol::url(&format!("{}/{key}/128.png", candidate.extension_id()))
             }),
+            command_icon: candidate.command_icon().map(str::to_owned),
             kind: "Extension".to_owned(),
         }
     }

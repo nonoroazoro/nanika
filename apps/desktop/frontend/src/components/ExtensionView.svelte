@@ -1,28 +1,17 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import type { ExtensionViewSnapshot, ViewEvent } from "../types";
+import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
 
-function itemIcon(subtitle: string | null | undefined): string
-{
-    const value = subtitle?.toLowerCase() ?? "";
-    if (value.includes("image"))
-    {
-        return "image";
-    }
-    if (value.includes("file"))
-    {
-        return "files";
-    }
-    return "text";
-}
-
-const { snapshot, busy, error, onQuery, onEvent, onBack }: {
+const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBack }: {
     snapshot: ExtensionViewSnapshot;
+    resourceOrigin: string;
     busy: boolean;
     error: string | null;
     onQuery: (text: string) => void;
     onEvent: (event: ViewEvent) => void;
+    onResume: () => void;
     onBack: () => void;
 } = $props();
 const list = $derived(snapshot.view.kind === "list" ? snapshot.view.list : null);
@@ -39,7 +28,14 @@ onMount(() =>
 {
     query = list?.search_text ?? "";
     focusSearch();
+    onResume();
 });
+
+function handleFocus(): void
+{
+    focusSearch();
+    onResume();
+}
 
 function focusSearch(): void
 {
@@ -117,7 +113,7 @@ function handleKeydown(event: KeyboardEvent): void
 }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onfocus={handleFocus} />
 
 <section
     class="extension-view"
@@ -162,7 +158,6 @@ function handleKeydown(event: KeyboardEvent): void
                     {#each list.filter.options as option (option.value)}
                         <button
                             type="button"
-                            class:active={option.value === list.filter.selected_value}
                             aria-pressed={option.value === list.filter.selected_value}
                             disabled={busy}
                             onclick={() =>
@@ -190,7 +185,6 @@ function handleKeydown(event: KeyboardEvent): void
                             {#if section.title}<h2>{section.title}</h2>{/if}
                             <ul role="group" aria-label={section.title ?? "Items"}>
                                 {#each section.items as item (item.id)}
-                                    {@const icon = itemIcon(item.subtitle)}
                                     <li
                                         id={`view-item-${snapshot.routeId}-${item.id}`}
                                         role="option"
@@ -215,40 +209,9 @@ function handleKeydown(event: KeyboardEvent): void
                                             }
                                         })}
                                     >
-                                        <span class="item-icon" aria-hidden="true">
-                                            {#if icon === "image"}
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    stroke-width="1.6"
-                                                >
-                                                    <rect x="3.5" y="4" width="17" height="16" rx="2" />
-                                                    <circle cx="8.5" cy="9" r="1.5" />
-                                                    <path d="m5.5 17 4.5-4 3 2.5 2-2 3.5 3.5" />
-                                                </svg>
-                                            {:else if icon === "files"}
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    stroke-width="1.6"
-                                                >
-                                                    <path d="M7 3.5h7l3 3V20.5H7z" />
-                                                    <path d="M14 3.5v3h3M9.5 11h5M9.5 14h5M9.5 17h3" />
-                                                </svg>
-                                            {:else}
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    stroke-width="1.6"
-                                                >
-                                                    <rect x="4" y="4" width="16" height="16" rx="2" />
-                                                    <path d="M8 9h8M8 12h8M8 15h5" />
-                                                </svg>
-                                            {/if}
-                                        </span>
+                                        {#if item.icon}<span class="item-icon" aria-hidden="true">
+                                                <SemanticContentIcon kind={item.icon} />
+                                            </span>{/if}
                                         <span class="item-copy"><span>{item.title}</span>{#if item.subtitle}<small>{
                                                     item.subtitle
                                                 }</small>{/if}</span>
@@ -275,7 +238,13 @@ function handleKeydown(event: KeyboardEvent): void
                     </button>{/if}
             </div>
         {/if}
-        {#if detail && (!list || list.layout === "split")}<div class="detail-pane"><ViewDetail {detail} /></div>{/if}
+        {#if detail && (!list || list.layout === "split")}<div class="detail-pane">
+                <ViewDetail
+                    {detail}
+                    resourceOrigin={resourceOrigin}
+                    extensionId={snapshot.extensionId}
+                />
+            </div>{/if}
     </div>
     <footer>
         {#each actions as action (action.id)}
@@ -299,30 +268,31 @@ h1 { margin: 0; font-size: var(--font-row); line-height: 1.2; }
 button { color: inherit; font-size: var(--font-meta); }
 .back { display: grid; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
 .back svg { width: 1.1rem; height: 1.1rem; }
-.search { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); min-height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+.search { display: grid; flex: 0 0 var(--search-height); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 input { min-width: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; padding: 0; font: inherit; font-size: var(--font-search); caret-color: var(--accent); }
 input::placeholder { color: var(--text-tertiary); opacity: 1; }
 .content { display: flex; flex: 1; min-height: 0; }
 .list-pane, .detail-pane { min-width: 0; flex: 1; overflow: auto; }
-.split .detail-pane { border-left: 1px solid var(--border-subtle); }
+.split .list-pane { flex: 0 1 38%; }
+.split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
 .list-pane { padding: var(--space-2); }
 h2 { font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
 [role='option'] { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-row); cursor: default; }
-[role='option'][aria-selected='true'] { background: var(--surface-selected); }
-.item-icon { display: grid; flex: 0 0 2rem; width: 2rem; height: 2rem; place-items: center; border-radius: var(--radius-row); background: var(--surface-raised); color: var(--text-secondary); font-size: 1.1rem; }
-.item-icon svg { width: 1.2rem; height: 1.2rem; }
+[role='option']:hover:not([aria-disabled='true']) { background: var(--surface-hovered); }
+[role='option'][aria-selected='true'], [role='option'][aria-selected='true']:hover { background: var(--surface-selected); }
+.item-icon { display: grid; flex: 0 0 var(--icon-size); width: var(--icon-size); height: var(--icon-size); place-items: center; }
 .item-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; line-height: 1.25; }
-.item-copy > span, small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-copy > span, small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: var(--space-1); }
 .empty { color: var(--text-secondary); text-align: center; padding: var(--space-5); }
 .more { display: block; margin: var(--space-3) auto; }
 .filter { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
-.filter button { border-color: transparent; border-radius: 999px; padding: 0.35rem 0.65rem; }
+.filter button { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem 0.65rem; }
 .filter button:disabled { opacity: 1; }
-.filter button:hover:not(:disabled) { border-color: var(--border-window); background: var(--surface-selected); }
-.filter button.active { border-color: var(--accent); background: var(--surface-selected); }
-.filter button.active:hover:not(:disabled) { background: var(--surface-selected); }
+.filter button:hover:not(:disabled) { border-color: transparent; background: var(--surface-hovered); }
+.filter button[aria-pressed='true'] { background: var(--surface-selected); }
+.filter button[aria-pressed='true']:hover:not(:disabled) { background: var(--surface-selected); }
 footer { display: flex; justify-content: flex-end; gap: var(--space-2); min-height: 3rem; padding: var(--space-2) var(--space-5); border-top: 1px solid var(--border-subtle); }
 .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-foreground); font-weight: 600; }
 .primary:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 88%, black); }

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use serde::Deserialize;
 
 use crate::DistributionExtension;
+use nanika_extension_package::validate_extension_contributions;
 
 /// Version-controlled inventory for the built-in extension distribution.
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +44,8 @@ impl DistributionInventory {
                 ));
             }
             extension.runtime.validate()?;
+            validate_extension_contributions(extension.runtime, &extension.contributes)
+                .map_err(|error| error.to_string())?;
         }
         Ok(())
     }

@@ -77,6 +77,13 @@ impl ConfigStore {
         self.config_root.join("extensions.jsonc")
     }
 
+    pub fn extension_configuration_file(&self, extension_id: &str) -> PathBuf {
+        self.config_root
+            .join("extensions")
+            .join(extension_id)
+            .join("settings.jsonc")
+    }
+
     /// Parse a JSONC file into a typed Rust boundary.
     pub fn load<T: DeserializeOwned>(&self, path: impl AsRef<Path>) -> Result<T, ConfigError> {
         let path = path.as_ref();

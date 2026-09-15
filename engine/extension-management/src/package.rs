@@ -11,9 +11,9 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    ActiveExtension, CommandContribution, ExtensionManifest, ExtensionPackageError,
-    ExtensionProtocol, ExtensionResolutionError, ExtensionTarget, PackageOperation,
-    PackageTransaction, StagedPackage, StagingDirectory,
+    ActiveExtension, CommandContribution, ExtensionContributions, ExtensionManifest,
+    ExtensionPackageError, ExtensionProtocol, ExtensionResolutionError, ExtensionTarget,
+    PackageOperation, PackageTransaction, StagedPackage, StagingDirectory,
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -184,7 +184,7 @@ fn apply_package(
         program: version_root.join(entrypoint),
         protocol,
         permissions: manifest.permissions,
-        contributions: manifest.contributions,
+        contributes: manifest.contributes,
     })
 }
 
@@ -239,7 +239,7 @@ pub fn set_extension_enabled(
     Ok(())
 }
 
-/// Remove external executable versions while preserving extension settings and data.
+/// Remove external executable versions while preserving extension configuration and data.
 pub fn remove_extension(
     extension_id: &str,
     paths: &NanikaPaths,
@@ -412,7 +412,7 @@ fn resolve_active_extension(
         program,
         protocol,
         permissions: manifest.permissions,
-        contributions: manifest.contributions,
+        contributes: manifest.contributes,
     })
 }
 
@@ -699,18 +699,32 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
             "extension activation events are reserved for a future manifest version".to_owned(),
         ));
     }
-    if !manifest.contributions.commands.is_empty()
-        && !matches!(manifest.runtime, ExtensionProtocol::Nanika { .. })
-    {
+    validate_extension_contributions(manifest.runtime, &manifest.contributes)?;
+    Ok(())
+}
+
+/// Validate the shared contribution contract used by built-in and external extensions.
+pub fn validate_extension_contributions(
+    protocol: ExtensionProtocol,
+    contributions: &ExtensionContributions,
+) -> Result<(), ExtensionPackageError> {
+    if !contributions.commands.is_empty() && !matches!(protocol, ExtensionProtocol::Nanika { .. }) {
         return Err(ExtensionPackageError::Manifest(
             "command contributions require the Nanika protocol".to_owned(),
         ));
     }
-    validate_contributions(&manifest.contributions.commands)?;
+    validate_command_contributions(&contributions.commands)?;
+    if let Some(configuration) = &contributions.configuration {
+        configuration
+            .validate()
+            .map_err(ExtensionPackageError::Manifest)?;
+    }
     Ok(())
 }
 
-fn validate_contributions(commands: &[CommandContribution]) -> Result<(), ExtensionPackageError> {
+fn validate_command_contributions(
+    commands: &[CommandContribution],
+) -> Result<(), ExtensionPackageError> {
     if commands.len() > MAX_COMMANDS {
         return Err(ExtensionPackageError::Manifest(
             "extension contributes too many commands".to_owned(),
@@ -718,20 +732,20 @@ fn validate_contributions(commands: &[CommandContribution]) -> Result<(), Extens
     }
     let mut ids = HashSet::new();
     for command in commands {
-        if !is_valid_contribution_id(&command.id) {
+        if !is_valid_contribution_id(&command.command) {
             return Err(ExtensionPackageError::Manifest(
                 "extension command id is invalid".to_owned(),
             ));
         }
-        if !ids.insert(command.id.as_str()) {
+        if !ids.insert(command.command.as_str()) {
             return Err(ExtensionPackageError::Manifest(
                 "extension command ids must be unique".to_owned(),
             ));
         }
         validate_contribution_text("title", &command.title, 128)?;
         validate_contribution_text("description", &command.description, 512)?;
-        if let Some(subtitle) = &command.subtitle {
-            validate_contribution_text("subtitle", subtitle, 128)?;
+        if let Some(category) = &command.category {
+            validate_contribution_text("category", category, 128)?;
         }
         if command.keywords.len() > MAX_COMMAND_KEYWORDS {
             return Err(ExtensionPackageError::Manifest(

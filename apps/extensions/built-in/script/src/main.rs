@@ -3,48 +3,63 @@
 use std::collections::BTreeMap;
 use std::io::{BufReader, BufWriter, stdin, stdout};
 
-use nanika_config::ConfigStore;
-use nanika_extension_script::{RUN_ACTION_ID, RuntimePaths, ScriptConfig};
+use nanika_extension_script::{RUN_ACTION_ID, ScriptConfig};
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME, read_frame,
     write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let paths = RuntimePaths::parse(std::env::args().skip(1))?;
-    let store = ConfigStore::open(&paths.data_root, &paths.config_root)?;
-    let mut config = ScriptConfig::load(&store)?;
-    let mut scripts = index_scripts(&config);
     let mut input = BufReader::new(stdin().lock());
     let mut output = BufWriter::new(stdout().lock());
-    let mut initialized = false;
-    while let Some(message) = read_frame(&mut input)? {
-        match message {
-            Message::Initialize {
-                request_id,
-                protocol,
-            } if protocol == PROTOCOL_NAME => {
-                initialized = true;
-                write_frame(
-                    &mut output,
-                    &Message::Initialized {
-                        request_id,
-                        protocol: PROTOCOL_NAME.to_owned(),
-                    },
-                )?;
-            }
-            Message::Initialize { request_id, .. } => write_error(
+    let (initialize_request_id, configuration) = match read_frame(&mut input)? {
+        Some(Message::Initialize {
+            request_id,
+            protocol,
+            configuration,
+        }) if protocol == PROTOCOL_NAME => (request_id, configuration),
+        Some(Message::Initialize { request_id, .. }) => {
+            write_error(
                 &mut output,
                 Some(request_id),
                 "unsupported_protocol",
                 "the requested extension protocol is unsupported",
-            )?,
-            message if !initialized => write_error(
+            )?;
+            return Ok(());
+        }
+        Some(message) => {
+            write_error(
                 &mut output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must complete before other requests",
-            )?,
+                "initialize must be the first request",
+            )?;
+            return Ok(());
+        }
+        None => return Ok(()),
+    };
+    let mut config = match ScriptConfig::from_configuration(&configuration) {
+        Ok(config) => config,
+        Err(message) => {
+            write_error(
+                &mut output,
+                Some(initialize_request_id),
+                "invalid_configuration",
+                &message,
+            )?;
+            return Ok(());
+        }
+    };
+    let mut scripts = index_scripts(&config);
+    write_frame(
+        &mut output,
+        &Message::Initialized {
+            request_id: initialize_request_id,
+            protocol: PROTOCOL_NAME.to_owned(),
+        },
+    )?;
+    while let Some(message) = read_frame(&mut input)? {
+        match message {
             Message::Query {
                 request_id,
                 generation,
@@ -81,59 +96,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => match ScriptConfig::load(&store) {
-                Ok(updated) => {
-                    config = updated;
-                    scripts = index_scripts(&config);
-                    write_frame(
-                        &mut output,
-                        &Message::Refreshed {
-                            request_id,
-                            generation,
-                        },
-                    )?;
-                }
-                Err(message) => {
-                    write_error(&mut output, Some(request_id), "refresh_failed", &message)?
-                }
-            },
-            Message::GetSettings { request_id } => {
-                let contribution = config.settings();
-                if let Err(message) = contribution.validate() {
-                    write_error(
-                        &mut output,
-                        Some(request_id),
-                        "invalid_settings_schema",
-                        &message,
-                    )?;
-                } else {
-                    write_frame(
-                        &mut output,
-                        &Message::Settings {
-                            request_id,
-                            contribution,
-                        },
-                    )?;
-                }
-            }
-            Message::UpdateSettings {
+            } => write_frame(
+                &mut output,
+                &Message::Refreshed {
+                    request_id,
+                    generation,
+                },
+            )?,
+            Message::ConfigurationChanged {
                 request_id,
-                updates,
-            } => match config.update(&store, updates) {
+                configuration,
+            } => match ScriptConfig::from_configuration(&configuration) {
                 Ok(updated) => {
                     config = updated;
                     scripts = index_scripts(&config);
-                    write_frame(
-                        &mut output,
-                        &Message::SettingsUpdated {
-                            request_id,
-                            contribution: config.settings(),
-                        },
-                    )?;
+                    write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
                 }
-                Err(message) => {
-                    write_error(&mut output, Some(request_id), "invalid_settings", &message)?
-                }
+                Err(message) => write_error(
+                    &mut output,
+                    Some(request_id),
+                    "invalid_configuration",
+                    &message,
+                )?,
             },
             Message::Cancel { .. } => {}
             Message::Shutdown { request_id } => {
@@ -241,10 +225,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
-        | Message::GetSettings { request_id }
-        | Message::Settings { request_id, .. }
-        | Message::UpdateSettings { request_id, .. }
-        | Message::SettingsUpdated { request_id, .. }
+        | Message::ConfigurationChanged { request_id, .. }
+        | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }

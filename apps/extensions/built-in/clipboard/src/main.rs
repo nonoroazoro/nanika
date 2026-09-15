@@ -4,57 +4,77 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::{Arc, RwLock};
 
 use nanika_extension_clipboard::{
-    CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardMonitor, ClipboardViewState,
-    ClipboardWorker, OPEN_COMMAND_ID, RuntimePaths, clipboard_view,
+    CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardConfig, ClipboardEntry, ClipboardMonitor,
+    ClipboardViewState, ClipboardWorker, OPEN_COMMAND_ID, RuntimePaths, clipboard_view,
 };
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
-    PROTOCOL_NAME, SettingsContribution, ViewEvent, read_frame, write_frame,
+    PROTOCOL_NAME, ViewEvent, read_frame, write_frame,
 };
 
 const VIEW_ID: &str = "clipboard.history";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::parse(std::env::args().skip(1))?;
-    let entries = Arc::new(RwLock::new(Vec::<ClipboardEntry>::new()));
-    let worker = ClipboardWorker::spawn(
-        paths.database_path(),
-        paths.payload_root(),
-        Arc::clone(&entries),
-    )?;
-    let monitor = ClipboardMonitor::spawn(&worker)?;
-    worker.capture_background()?;
     let mut input = BufReader::new(stdin().lock());
     let mut output = BufWriter::new(stdout().lock());
-    let mut initialized = false;
-    let mut view_state = None;
-    while let Some(message) = read_frame(&mut input)? {
-        match message {
-            Message::Initialize {
-                request_id,
-                protocol,
-            } if protocol == PROTOCOL_NAME => {
-                initialized = true;
-                write_frame(
-                    &mut output,
-                    &Message::Initialized {
-                        request_id,
-                        protocol: PROTOCOL_NAME.to_owned(),
-                    },
-                )?;
-            }
-            Message::Initialize { request_id, .. } => write_error(
+    let (initialize_request_id, configuration) = match read_frame(&mut input)? {
+        Some(Message::Initialize {
+            request_id,
+            protocol,
+            configuration,
+        }) if protocol == PROTOCOL_NAME => (request_id, configuration),
+        Some(Message::Initialize { request_id, .. }) => {
+            write_error(
                 &mut output,
                 Some(request_id),
                 "unsupported_protocol",
                 "the requested extension protocol is unsupported",
-            )?,
-            message if !initialized => write_error(
+            )?;
+            return Ok(());
+        }
+        Some(message) => {
+            write_error(
                 &mut output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must complete before other requests",
-            )?,
+                "initialize must be the first request",
+            )?;
+            return Ok(());
+        }
+        None => return Ok(()),
+    };
+    let config = match ClipboardConfig::from_configuration(&configuration) {
+        Ok(config) => config,
+        Err(message) => {
+            write_error(
+                &mut output,
+                Some(initialize_request_id),
+                "invalid_configuration",
+                &message,
+            )?;
+            return Ok(());
+        }
+    };
+    let entries = Arc::new(RwLock::new(Vec::<ClipboardEntry>::new()));
+    let worker = ClipboardWorker::spawn(
+        paths.database_path(),
+        paths.payload_root(),
+        config,
+        Arc::clone(&entries),
+    )?;
+    let monitor = ClipboardMonitor::spawn(&worker)?;
+    worker.capture_background()?;
+    write_frame(
+        &mut output,
+        &Message::Initialized {
+            request_id: initialize_request_id,
+            protocol: PROTOCOL_NAME.to_owned(),
+        },
+    )?;
+    let mut view_state = None;
+    while let Some(message) = read_frame(&mut input)? {
+        match message {
             Message::Query {
                 request_id,
                 generation,
@@ -156,23 +176,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             Message::Cancel { .. } => {}
-            Message::GetSettings { request_id } => write_frame(
-                &mut output,
-                &Message::Settings {
-                    request_id,
-                    contribution: empty_settings("Clipboard history"),
-                },
-            )?,
-            Message::UpdateSettings {
+            Message::ConfigurationChanged {
                 request_id,
-                updates,
-            } if updates.is_empty() => write_frame(
-                &mut output,
-                &Message::SettingsUpdated {
-                    request_id,
-                    contribution: empty_settings("Clipboard history"),
-                },
-            )?,
+                configuration,
+            } => match ClipboardConfig::from_configuration(&configuration)
+                .and_then(|config| worker.apply_retention(config))
+            {
+                Ok(()) => write_frame(&mut output, &Message::ConfigurationApplied { request_id })?,
+                Err(message) => write_error(
+                    &mut output,
+                    Some(request_id),
+                    "configuration_apply_failed",
+                    &message,
+                )?,
+            },
             Message::Shutdown { request_id } => {
                 write_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 break;
@@ -219,6 +236,16 @@ fn handle_view_event(
         );
     }
     match event {
+        ViewEvent::Resumed => {
+            if let Err(message) = capture_now(worker) {
+                return write_error(
+                    output,
+                    Some(request_id),
+                    "clipboard_history_refresh_failed",
+                    &message,
+                );
+            }
+        }
         ViewEvent::ActionInvoked { action_id, .. } if action_id == CLEAR_ACTION_ID => {
             if let Err(message) = worker.clear() {
                 return write_error(
@@ -400,22 +427,13 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
-        | Message::GetSettings { request_id }
-        | Message::Settings { request_id, .. }
-        | Message::UpdateSettings { request_id, .. }
-        | Message::SettingsUpdated { request_id, .. }
+        | Message::ConfigurationChanged { request_id, .. }
+        | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CandidatesChanged => None,
-    }
-}
-
-fn empty_settings(title: &str) -> SettingsContribution {
-    SettingsContribution {
-        title: title.to_owned(),
-        fields: Vec::new(),
     }
 }

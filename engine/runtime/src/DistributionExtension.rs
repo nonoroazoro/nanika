@@ -12,5 +12,5 @@ pub struct DistributionExtension {
     #[serde(default)]
     pub permissions: Vec<String>,
     #[serde(default)]
-    pub contributions: ExtensionContributions,
+    pub contributes: ExtensionContributions,
 }
