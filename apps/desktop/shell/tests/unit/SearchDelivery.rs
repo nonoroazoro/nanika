@@ -47,3 +47,34 @@ fn stale_sessions_cannot_publish_or_acknowledge() {
     assert!(session.authorize(1).is_err());
     assert!(session.authorize(2).is_ok());
 }
+
+#[test]
+fn refresh_requires_the_current_root_session_and_excludes_pending_operations() {
+    let mut session = SearchSession::new(2, tauri::ipc::Channel::new(|_| Ok(())));
+    session.query = "keep this query".to_owned();
+    assert!(session.begin_refresh(1).is_err());
+    assert!(!session.navigation.busy);
+    session.begin_refresh(2).expect("root session can refresh");
+    assert!(session.begin_refresh(2).is_err());
+    assert_eq!(session.query, "keep this query");
+    session.navigation.finish(Ok(()));
+    session.navigation.stack.push(crate::ExtensionViewSnapshot {
+        route_id: 1,
+        extension_id: "test.extension".to_owned(),
+        generation: 1,
+        view_id: "test.view".to_owned(),
+        revision: 1,
+        view: nanika_protocol::View::Detail {
+            detail: nanika_protocol::DetailView {
+                title: None,
+                content: nanika_protocol::DetailContent::Text {
+                    value: "content".to_owned(),
+                },
+                metadata: Vec::new(),
+                actions: Vec::new(),
+            },
+        },
+    });
+    assert!(session.begin_refresh(2).is_err());
+    assert!(!session.navigation.busy);
+}

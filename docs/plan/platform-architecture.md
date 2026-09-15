@@ -36,6 +36,10 @@ Platform adapters own native APIs, handles, event sources, process containment, 
 
 ## Process and filesystem contracts
 
+Application discovery treats a missing scan root as an empty source on both supported platforms. Windows resolves known-folder paths without requiring those directories to exist; macOS retains its native application-root resolution. A complete scan removes entries whose source was deleted. Permission and other I/O failures remain partial scans and preserve unseen entries, so lack of access cannot be mistaken for deletion. Discovery never recreates a deleted directory.
+
+Root Search refresh uses the same WebView `keydown` event on Windows and macOS. Only an unmodified F5 in a visible, focused launcher showing Root Search is accepted; no OS global shortcut is registered. The shell validates the launcher window and session and rejects refresh while an extension view or another operation is active. Rust refreshes extensions declaring `rootSearch` through their existing protocol workers, waits for explicit completion off the UI thread, and republishes the latest query through the session Channel. Accepted refreshes are bounded and never overwritten; failure remains explicit. Hiding the launcher does not cancel an already accepted refresh.
+
 `engine/platform` owns the native mechanisms below. Runtime orchestration, configuration serialization and backups, and package validation and transactions remain in their existing engine modules. Callers use standard Rust paths, commands, child processes, and `io::Result`; native handles and platform selection never cross the adapter boundary.
 
 | Contract | Windows implementation | macOS implementation |

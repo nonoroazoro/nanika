@@ -186,9 +186,14 @@ fn coordinator_dispatches_refresh_off_the_caller_thread() {
         )
         .expect("worker should register");
 
-    coordinator
+    let completion = coordinator
         .refresh("fixture.extension", 9)
         .expect("refresh should enqueue");
+
+    completion
+        .recv_timeout(Duration::from_secs(2))
+        .expect("refresh should acknowledge completion")
+        .expect("refresh should succeed");
 
     let deadline = Instant::now() + Duration::from_secs(1);
     while !marker.exists() {
@@ -236,6 +241,99 @@ fn extension_snapshot_reaches_the_shared_search_owner() {
         .shutdown("shutdown-search-owner")
         .expect("fixture should shut down");
     owner.shutdown();
+}
+
+#[test]
+fn queued_refreshes_wait_for_their_own_completion() {
+    let root = cancellation_marker("refresh-completion");
+    std::fs::create_dir_all(&root).unwrap();
+    let blocker = root.join("refresh-fixture.extension-1.block");
+    std::fs::write(&blocker, b"wait").unwrap();
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        [format!("--data-root={}", root.display()).into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let mut coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            owner.handle(),
+            fixture_contributions(),
+        )
+        .unwrap();
+    let first = coordinator.refresh("fixture.extension", 9).unwrap();
+    let second = coordinator.refresh("fixture.extension", 9).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let entered = root.join("refresh-fixture.extension-1.entered");
+    while !entered.exists() && Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    // Always release the fixture before assertions so regressions cannot strand it.
+    let was_entered = entered.exists();
+    let first_pending = matches!(first.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty));
+    let second_pending = matches!(second.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty));
+    std::fs::remove_file(blocker).unwrap();
+    let first_result = first.recv_timeout(Duration::from_secs(3));
+    let second_result = second.recv_timeout(Duration::from_secs(3));
+    drop(coordinator);
+    owner.shutdown();
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(was_entered && first_pending && second_pending);
+    first_result.unwrap().unwrap();
+    second_result.unwrap().unwrap();
+}
+
+#[test]
+fn root_refresh_isolates_failures_and_skips_static_contributors() {
+    let root = cancellation_marker("refresh-isolation");
+    std::fs::create_dir_all(&root).unwrap();
+    let refreshed = root.join("healthy");
+    let skipped = root.join("static");
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let mut coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .refresh_root_search(1)
+        .expect("zero-extension host refresh succeeds");
+    for (id, argument, contributions) in [
+        (
+            "test.failed",
+            "--fail-refresh".to_owned(),
+            fixture_contributions(),
+        ),
+        (
+            "test.healthy",
+            format!("--mark-refresh={}", refreshed.display()),
+            fixture_contributions(),
+        ),
+        (
+            "test.static",
+            format!("--mark-refresh={}", skipped.display()),
+            nanika_extension_package::ExtensionContributions::default(),
+        ),
+    ] {
+        let extension = ExtensionProcess::spawn_with(
+            fixture_path(),
+            [argument.into()],
+            ExtensionLimits::default(),
+        )
+        .unwrap();
+        coordinator
+            .register(id, extension, owner.handle(), contributions)
+            .unwrap();
+    }
+    let result = coordinator.refresh_root_search(1);
+    drop(coordinator);
+    owner.shutdown();
+    let healthy_completed = refreshed.exists();
+    let static_skipped = !skipped.exists();
+    std::fs::remove_dir_all(root).unwrap();
+    let error = result.expect_err("refresh failure must propagate");
+    assert!(error.contains("test.failed") && error.contains("fixture refresh failed"));
+    assert!(healthy_completed && static_skipped);
 }
 
 #[test]

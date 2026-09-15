@@ -10,6 +10,7 @@ let application = $state<ApplicationSnapshot | null>(null);
 let failure = $state<string | null>(null);
 let queryFailure = $state<string | null>(null);
 let invoking = $state(false);
+let refreshing = $state(false);
 let operationFailure = $state<string | null>(null);
 // A completed empty view survives pending queries just like a completed list.
 let hasCompletedSearch = $state(false);
@@ -143,9 +144,34 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
 }
 
+async function refreshSearch(): Promise<void>
+{
+    if (refreshing || invoking || navigation.busy || navigation.current || !application)
+    {
+        return;
+    }
+    refreshing = true;
+    operationFailure = null;
+    try
+    {
+        await tauriBridge.refreshSearch(application.sessionId);
+    }
+    catch (error)
+    {
+        operationFailure = error instanceof Error ? error.message : String(error);
+    }
+    finally
+    {
+        refreshing = false;
+    }
+}
+
 async function invokeCandidate(result: SearchResult): Promise<void>
 {
-    if (invoking || !application || rootSearch.requestId !== latestRequestId || rootSearch.phase !== "ready")
+    if (
+        invoking || refreshing || !application || rootSearch.requestId !== latestRequestId
+        || rootSearch.phase !== "ready"
+    )
     {
         return;
     }
@@ -340,6 +366,17 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
 }
 </script>
 
+<svelte:window
+    onkeydown={(event =>
+    {
+        // F5 belongs to Root Search; other surfaces must not reload the WebView.
+        if (event.key === "F5" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey)
+        {
+            event.preventDefault();
+        }
+    })}
+/>
+
 {#if failure}
     <main class="fatal" role="alert">
         <strong>Search is unavailable.</strong>
@@ -368,8 +405,10 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
             <RootSearch
                 snapshot={rootSearch}
                 {hasCompletedSearch}
+                {refreshing}
+                onRefresh={refreshSearch}
                 inputError={queryFailure}
-                busy={invoking || navigation.busy || !application
+                busy={invoking || refreshing || navigation.busy || !application
                 || rootSearch.requestId !== latestRequestId
                 || rootSearch.phase !== "ready"}
                 onQuery={publishQuery}

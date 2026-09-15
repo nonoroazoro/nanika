@@ -236,7 +236,7 @@ The current desktop shell includes a minimal tray or menu-bar item:
 - macOS `NSStatusItem`.
 - `Open Nanika` and `Quit`.
 
-Application refresh is an Application Extension command rendered in Root Search or its extension view. It is not a native tray item or shell event.
+Root Search accepts unmodified F5 only while its launcher is visible and focused. It requests protocol refresh from extensions declaring `rootSearch`, waits for their correlated completions off the UI thread, then republishes the current query through the session Channel. Application discovery remains inside the Application Extension. Static command-only extensions are not refreshed. F5 is neither a global shortcut nor a WebView reload, and it has no action inside extension views.
 
 The Settings window is not implemented. The runtime already exposes host-owned snapshots for every enabled extension's static `contributes.configuration` declaration and accepts complete validated value snapshots; a future Settings window will render that existing contract. JSONC is the current advanced editing path.
 
@@ -527,4 +527,4 @@ Each action receives a unique protocol request ID independent of search generati
 
 The native adapter drains a superseded query's correlated terminal frame before sending subsequent work. Its terminal error is recorded for diagnostics but cannot fail the next query. Calculator protocol input runs separately from evaluation and supplies an atomic explicit-cancellation signal to fend-core. There is no evaluation deadline.
 
-Each extension admits at most 16 queued actions, view requests, and configuration applications in total, in addition to active work. Admission waits for capacity without holding the worker state lock. Worker exit and shutdown wake blocked submitters with an explicit closed result. Shell invocation admission and durable execution recording run on blocking workers after releasing shared shell state; the frontend disables repeated activation while the current invocation is pending. Closing view-result delivery precedes joining extension workers so a full result queue cannot prevent shutdown.
+Each extension admits at most 16 queued actions, view requests, refreshes, and configuration applications in total, in addition to active work. Admission waits for capacity without holding the worker state lock. Worker exit and shutdown wake blocked submitters with an explicit closed result. Shell invocation admission and durable execution recording run on blocking workers after releasing shared shell state; the frontend disables repeated activation while the current invocation is pending. Closing view-result delivery precedes joining extension workers so a full result queue cannot prevent shutdown.

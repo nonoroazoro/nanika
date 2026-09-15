@@ -17,6 +17,7 @@ pub struct ExtensionSearchCoordinator {
     workers: Vec<ExtensionSearchWorker>,
     next_invocation_id: AtomicU64,
     next_view_request_id: AtomicU64,
+    next_refresh_id: AtomicU64,
     notifier: ExtensionNotifier,
     host_services: Option<Arc<dyn HostServiceHandler>>,
 }
@@ -27,6 +28,7 @@ impl ExtensionSearchCoordinator {
             workers: Vec::new(),
             next_invocation_id: AtomicU64::new(1),
             next_view_request_id: AtomicU64::new(1),
+            next_refresh_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
             host_services: None,
         }
@@ -100,17 +102,58 @@ impl ExtensionSearchCoordinator {
             .collect()
     }
 
-    pub fn refresh(&self, extension_id: &str, generation: u64) -> Result<(), SupervisorError> {
-        self.workers
+    pub fn refresh(
+        &self,
+        extension_id: &str,
+        generation: u64,
+    ) -> Result<Receiver<Result<(), String>>, SupervisorError> {
+        let worker = self
+            .workers
             .iter()
             .find(|worker| worker.extension_id() == extension_id)
             .ok_or_else(|| {
                 SupervisorError::UnexpectedMessage(format!(
                     "extension search worker does not exist: {extension_id}"
                 ))
-            })?
-            .refresh(generation);
-        Ok(())
+            })?;
+        let (completion, receiver) = mpsc::sync_channel(1);
+        worker.refresh(crate::ExtensionRefresh {
+            request_id: self.next_refresh_id.fetch_add(1, Ordering::Relaxed),
+            generation,
+            completion,
+        })?;
+        Ok(receiver)
+    }
+
+    /// Refresh every dynamic Root Search contributor and retain every completion.
+    /// The caller must run outside the UI thread because admission and completion wait.
+    pub fn refresh_root_search(&self, generation: u64) -> Result<(), String> {
+        let mut pending = Vec::new();
+        let mut errors = Vec::new();
+        for worker in self
+            .workers
+            .iter()
+            .filter(|worker| worker.contributes_root_search())
+        {
+            let id = worker.extension_id();
+            match self.refresh(id, generation) {
+                Ok(completion) => pending.push((id, completion)),
+                Err(error) => errors.push(format!("{id}: {error}")),
+            }
+        }
+        for (id, completion) in pending {
+            let result = completion
+                .recv()
+                .unwrap_or_else(|_| Err("Extension closed without a refresh result.".to_owned()));
+            if let Err(error) = result {
+                errors.push(format!("{id}: {error}"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
     }
 
     pub fn first_error(&self) -> Option<crate::HostDiagnostic> {

@@ -41,6 +41,14 @@ impl SearchSession {
         }
     }
 
+    pub(crate) fn begin_refresh(&mut self, session_id: u64) -> Result<(), String> {
+        self.authorize(session_id)?;
+        if !self.navigation.stack.is_empty() {
+            return Err("Refresh is available only in Root Search.".to_owned());
+        }
+        self.navigation.begin()
+    }
+
     pub(crate) fn authorize(&self, session_id: u64) -> Result<(), String> {
         if self.id != session_id {
             return Err("The window session has expired. Reload the window.".to_owned());

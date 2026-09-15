@@ -24,6 +24,7 @@ pub(crate) struct ExtensionSearchWorker {
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
     configuration_results: Arc<Mutex<VecDeque<ExtensionConfigurationResult>>>,
     live_configuration: bool,
+    root_search: bool,
     query_ready: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -176,7 +177,14 @@ impl ExtensionSearchWorker {
                             result.map(|_| true)
                         }
                         ExtensionWork::Refresh(refresh) => {
-                            run_refresh(&mut runtime, &worker_extension_id, refresh, &worker_state)
+                            let result = run_refresh(&mut runtime, &worker_extension_id, &refresh, &worker_state);
+                            let completion = match &result {
+                                Ok(true) => Ok(()),
+                                Ok(false) => Err("Extension refresh was cancelled.".to_owned()),
+                                Err(error) => Err(error.to_string()),
+                            };
+                            let _ = refresh.completion.send(completion);
+                            result
                         }
                         ExtensionWork::ApplyConfiguration(update) => {
                             let request_id = update.request_id.clone();
@@ -226,6 +234,7 @@ impl ExtensionSearchWorker {
             invocation_output,
             configuration_results,
             live_configuration,
+            root_search: contributions.root_search.is_some(),
             query_ready,
             thread: Some(thread),
         })
@@ -243,12 +252,16 @@ impl ExtensionSearchWorker {
         ready.notify_one();
     }
 
-    pub(crate) fn refresh(&self, generation: u64) {
+    pub(crate) fn refresh(&self, refresh: ExtensionRefresh) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
-        lock.lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .refresh = Some(ExtensionRefresh { generation });
+        let mut state = wait_for_capacity(lock, ready)?;
+        state.refreshes.push_back(refresh);
         ready.notify_one();
+        Ok(())
+    }
+
+    pub(crate) fn contributes_root_search(&self) -> bool {
+        self.root_search
     }
 
     pub(crate) fn invoke(&self, invocation: ExtensionInvocation) -> Result<(), SupervisorError> {
@@ -377,7 +390,7 @@ pub(crate) fn next_work(
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     while state.query.is_none()
-        && state.refresh.is_none()
+        && state.refreshes.is_empty()
         && state.invocations.is_empty()
         && state.view_events.is_empty()
         && state.configurations.is_empty()
@@ -401,8 +414,8 @@ pub(crate) fn next_work(
         .configurations
         .pop_front()
         .map(ExtensionWork::ApplyConfiguration)
+        .or_else(|| state.refreshes.pop_front().map(ExtensionWork::Refresh))
         .or_else(|| state.query.take().map(ExtensionWork::Query))
-        .or_else(|| state.refresh.take().map(ExtensionWork::Refresh))
 }
 
 fn run_view_event(
@@ -458,12 +471,12 @@ fn run_configuration_update(
 fn run_refresh(
     runtime: &mut ExtensionRuntime,
     extension_id: &str,
-    refresh: ExtensionRefresh,
+    refresh: &ExtensionRefresh,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
 ) -> Result<bool, SupervisorError> {
     runtime.ensure_running()?;
     runtime.refresh_cancellable(
-        format!("refresh-{extension_id}-{}", refresh.generation),
+        format!("refresh-{extension_id}-{}", refresh.request_id),
         refresh.generation,
         || {
             let (lock, _) = &**state;
@@ -502,6 +515,7 @@ fn run_query(
             let state = lock.lock().unwrap_or_else(|error| error.into_inner());
             state.shutdown.load(Ordering::Acquire)
                 || state.query.is_some()
+                || !state.refreshes.is_empty()
                 || !state.invocations.is_empty()
                 || !state.view_events.is_empty()
         },
@@ -676,7 +690,10 @@ fn wait_for_capacity<'a>(
         if state.closed || state.shutdown.load(Ordering::Acquire) {
             return Err(SupervisorError::ChannelClosed);
         }
-        if state.invocations.len() + state.view_events.len() + state.configurations.len()
+        if state.invocations.len()
+            + state.view_events.len()
+            + state.configurations.len()
+            + state.refreshes.len()
             < PENDING_WORK_CAPACITY
         {
             return Ok(state);

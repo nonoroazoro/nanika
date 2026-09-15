@@ -74,6 +74,42 @@ fn cancellation_does_not_stale_the_previous_snapshot() {
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
+#[test]
+fn deleted_sources_are_removed_and_other_roots_remain_searchable() {
+    let root = test_root("deleted-sources");
+    let removed = root.join("removed");
+    let retained = root.join("retained");
+    std::fs::create_dir_all(&removed).unwrap();
+    std::fs::create_dir_all(&retained).unwrap();
+    create_executable(&removed.join("Deleted.exe"));
+    create_executable(&retained.join("Keep.exe"));
+    let shortcut = retained.join("Temporary Link.lnk");
+    let shortcut_target = root.join("ShortcutTarget.exe");
+    create_executable(&shortcut_target);
+    create_shell_link(&shortcut, &shortcut_target);
+    let database = ApplicationDatabase::open(root.join("application.db")).unwrap();
+    let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+    let config = ApplicationConfig {
+        roots: vec![removed.clone(), retained.clone()],
+        exclusions: platform::standard_roots().unwrap(),
+    };
+    let (report, initial) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
+    assert!(report.complete);
+    assert_eq!(initial.len(), 3);
+    std::fs::remove_file(shortcut).unwrap();
+    std::fs::remove_file(removed.join("Deleted.exe")).unwrap();
+    std::fs::remove_dir(&removed).unwrap();
+    let (report, remaining) = index.scan(&config, 2, &AtomicU64::new(0)).unwrap();
+    assert!(report.complete);
+    assert_eq!(report.warnings, 0);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].display_name, "Keep");
+    assert_eq!(index.load().unwrap().len(), 1);
+    assert!(!removed.exists());
+    drop(index);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[cfg(windows)]
 #[test]
 fn standard_windows_roots_produce_valid_application_metadata() {

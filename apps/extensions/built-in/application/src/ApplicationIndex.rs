@@ -81,16 +81,28 @@ impl ApplicationIndex {
             if is_excluded(root, &config.exclusions) {
                 continue;
             }
-            if root
-                .symlink_metadata()
-                .is_ok_and(|metadata| metadata.file_type().is_symlink())
-            {
+            let metadata = match root.symlink_metadata() {
+                Ok(metadata) => metadata,
+                // A deleted source contributes no entries. A complete scan can
+                // then retire its old records without recreating the directory.
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    eprintln!(
+                        "application scan could not read root {}: {error}",
+                        root.display()
+                    );
+                    warnings = warnings.saturating_add(1);
+                    complete = false;
+                    continue;
+                }
+            };
+            if metadata.file_type().is_symlink() {
                 eprintln!("application scan skipped symlink root: {}", root.display());
                 warnings = warnings.saturating_add(1);
                 complete = false;
                 continue;
             }
-            if root.is_file() || platform::is_application_bundle(root) {
+            if metadata.is_file() || platform::is_application_bundle(root) {
                 complete &= collect_entry(
                     root,
                     seen_at,
@@ -101,7 +113,7 @@ impl ApplicationIndex {
                 );
                 continue;
             }
-            if !root.is_dir() {
+            if !metadata.is_dir() {
                 eprintln!("application scan root is unavailable: {}", root.display());
                 warnings = warnings.saturating_add(1);
                 complete = false;

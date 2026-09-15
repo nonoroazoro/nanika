@@ -37,6 +37,25 @@ pub(crate) async fn acknowledge_search(
 }
 
 #[tauri::command]
+pub(crate) async fn refresh_search(
+    window: tauri::WebviewWindow,
+    session_id: u64,
+) -> Result<(), String> {
+    authorize_launcher(&window)?;
+    if !window.is_visible().map_err(|error| error.to_string())?
+        || !window.is_focused().map_err(|error| error.to_string())?
+    {
+        return Err("Refresh is available only in the focused launcher.".to_owned());
+    }
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<DesktopState>().refresh_search(session_id)
+    })
+    .await
+    .map_err(|error| format!("could not wait for the refresh result: {error}"))?
+}
+
+#[tauri::command]
 pub(crate) async fn close_session(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,

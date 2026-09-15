@@ -10,13 +10,25 @@ interface Props
     snapshot: RootSearchSnapshot;
     hasCompletedSearch: boolean;
     busy?: boolean;
+    refreshing?: boolean;
+    onRefresh: () => void;
     inputError?: string | null;
     onQuery: (query: string) => void;
     onDismiss: () => void;
     onInvoke: (result: SearchResult) => void;
 }
 
-const { snapshot, hasCompletedSearch, busy = false, inputError = null, onQuery, onDismiss, onInvoke }: Props = $props();
+const {
+    snapshot,
+    hasCompletedSearch,
+    busy = false,
+    refreshing = false,
+    inputError = null,
+    onQuery,
+    onDismiss,
+    onInvoke,
+    onRefresh
+}: Props = $props();
 let query = $state("");
 let requestedActiveIndex = $state(0);
 let input: HTMLInputElement;
@@ -76,6 +88,24 @@ function handleKeydown(event: KeyboardEvent): void
     }
 }
 
+function handleRefreshKey(event: KeyboardEvent): void
+{
+    if (
+        event.key !== "F5" || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey
+        || event.isComposing || document.visibilityState !== "visible" || !document.hasFocus()
+    )
+    {
+        return;
+    }
+    // This handler exists only while Root Search is mounted. Suppress WebView
+    // reload even for key repeat or an operation already in progress.
+    event.preventDefault();
+    if (!event.repeat && !refreshing)
+    {
+        onRefresh();
+    }
+}
+
 function moveSelection(delta: number): void
 {
     requestedActiveIndex = clampIndex(activeIndex + delta, results.length);
@@ -89,9 +119,9 @@ function moveSelection(delta: number): void
 }
 </script>
 
-<svelte:window onfocus={focusQuery} />
+<svelte:window onfocus={focusQuery} onkeydown={handleRefreshKey} />
 
-<main class="launcher" aria-label="Nanika launcher">
+<main class="launcher" aria-label="Nanika launcher" aria-keyshortcuts="F5">
     <div class="search-shell">
         <span class="search-icon" aria-hidden="true"></span>
         <input
@@ -118,6 +148,9 @@ function moveSelection(delta: number): void
     </div>
 
     <section class="results" aria-label="Results" aria-busy={busy && !inputError}>
+        {#if refreshing}
+            <span class="refresh-status" role="status">Refreshing…</span>
+        {/if}
         {#if inputError}
             <div id="query-error" class="warning" role="alert">{inputError}</div>
         {/if}
@@ -215,10 +248,24 @@ input::placeholder {
 }
 
 .results {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: var(--space-2);
+}
+
+.refresh-status {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-2);
+  z-index: 1;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-row);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  pointer-events: none;
 }
 
 ul {

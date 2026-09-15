@@ -67,3 +67,36 @@ fn static_command_search_values_include_declared_metadata() {
         Some(nanika_protocol::CommandIcon::Clipboard)
     );
 }
+
+#[test]
+fn worker_exit_completes_every_queued_refresh_with_an_error() {
+    let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
+    let mut completions = Vec::new();
+    for request_id in 1..=2 {
+        let (completion, receiver) = mpsc::sync_channel(1);
+        state
+            .0
+            .lock()
+            .unwrap()
+            .refreshes
+            .push_back(crate::ExtensionRefresh {
+                request_id,
+                generation: 1,
+                completion,
+            });
+        completions.push(receiver);
+    }
+    drop(crate::ExtensionWorkerLifetime {
+        extension_id: "test.extension".to_owned(),
+        state,
+        configuration_results: Arc::new(Mutex::new(Default::default())),
+        notifier: Arc::new(Mutex::new(None)),
+    });
+    for completion in completions {
+        let error = completion
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("closed before refreshing"));
+    }
+}

@@ -115,6 +115,7 @@ Selection contract:
 - Root Search has one active option shared by keyboard and pointer navigation. Pointer movement transfers that active option.
 - Pointer click activates the clicked result directly.
 - Keyboard and pointer state use the same action identity.
+- Unmodified F5 refreshes dynamic search contributors only while Root Search is visible and focused. Preserve the query and current list while refreshing, show a status, and apply results through the existing Channel. Ignore key repeat and additional F5 presses while an operation is pending. F5 never reloads the WebView or refreshes an extension view; it is not a global shortcut. macOS keyboards may require Fn+F5 to emit F5.
 
 Use the browser scroll container as the source of truth. Keyboard navigation calls `scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })` on the active option. The browser determines whether scrolling is needed and the minimum distance; do not duplicate its geometry checks or maintain a parallel pixel scroll model. Pointer selection does not request scrolling. DOM focus remains in the input, so changing `aria-activedescendant` alone does not reveal an off-screen option, as explained in the [W3C combobox guidance](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/#accessibilityfeatures).
 

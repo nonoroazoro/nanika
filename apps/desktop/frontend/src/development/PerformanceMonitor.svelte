@@ -93,7 +93,7 @@ function handleKeydown(event: KeyboardEvent): void
     {
         return;
     }
-    if (event.code === "F5" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey)
+    if (event.code === "F9" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey)
     {
         event.preventDefault();
         toggle();
@@ -204,7 +204,7 @@ function milliseconds(value: number | null): string
                 </div>
             </dl>
             <p>rAF timing · last {frames?.samples ?? 0}/120 intervals<br />60 Hz: 16.7 ms · 120 Hz: 8.3 ms</p>
-            <p>Development only. Press F5 to toggle.<br />Not a measurement of display presentation.</p>
+            <p>Development only. Press F9 to toggle.<br />Not a measurement of display presentation.</p>
         </section>
     {/if}
 </aside>

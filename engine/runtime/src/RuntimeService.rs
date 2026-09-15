@@ -211,6 +211,11 @@ impl RuntimeService {
         Ok(generation)
     }
 
+    /// Wait for explicit refresh completion from dynamic Root Search extensions.
+    pub fn refresh_root_search(&self, generation: u64) -> Result<(), String> {
+        self.extensions.refresh_root_search(generation)
+    }
+
     pub fn latest_snapshot(&self) -> Option<Arc<SearchSnapshot>> {
         self.search.latest_snapshot()
     }

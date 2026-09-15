@@ -14,6 +14,7 @@ export interface NanikaBridge
     ): Promise<ApplicationSnapshot>;
     closeSession(sessionId: number): Promise<void>;
     publishQuery(request: PublishQueryRequest): Promise<void>;
+    refreshSearch(sessionId: number): Promise<void>;
     invokeCandidate(request: InvokeCandidateRequest): Promise<void>;
     viewEvent(request: ViewEventRequest): Promise<void>;
     dismissLauncher(): Promise<void>;

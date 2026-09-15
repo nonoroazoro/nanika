@@ -6,6 +6,7 @@ fn main() {
         "invoke_candidate",
         "open_session",
         "publish_query",
+        "refresh_search",
         "view_event",
     ];
     tauri_build::try_build(

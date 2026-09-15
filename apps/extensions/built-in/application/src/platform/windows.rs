@@ -22,8 +22,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_sys::Win32::UI::Shell::{
-    ExtractIconExW, FOLDERID_CommonPrograms, FOLDERID_Programs, SHFILEINFOW, SHGFI_ICON,
-    SHGFI_LARGEICON, SHGetFileInfoW, SHGetKnownFolderPath,
+    ExtractIconExW, FOLDERID_CommonPrograms, FOLDERID_Programs, KF_FLAG_DONT_VERIFY, SHFILEINFOW,
+    SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW, SHGetKnownFolderPath,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
@@ -393,8 +393,15 @@ fn read_executable(
 
 fn known_folder(id: &windows_sys::core::GUID) -> Result<PathBuf, ApplicationError> {
     let mut value = std::ptr::null_mut();
+    // Resolving a configured OS path must not require a user-owned directory to
+    // exist. The scanner distinguishes deletion from inaccessible sources.
     let result = unsafe {
-        SHGetKnownFolderPath(id, 0, std::ptr::null_mut::<c_void>() as HANDLE, &mut value)
+        SHGetKnownFolderPath(
+            id,
+            KF_FLAG_DONT_VERIFY as u32,
+            std::ptr::null_mut::<c_void>() as HANDLE,
+            &mut value,
+        )
     };
     if result < 0 || value.is_null() {
         return Err(ApplicationError::Io(std::io::Error::from_raw_os_error(

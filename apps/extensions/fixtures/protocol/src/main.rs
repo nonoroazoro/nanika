@@ -244,6 +244,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
             } => {
+                wait_for_release(&arguments, &request_id)?;
+                if arguments
+                    .iter()
+                    .any(|argument| argument == "--fail-refresh")
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            code: "refresh_failed".to_owned(),
+                            message: "fixture refresh failed".to_owned(),
+                        },
+                    )?;
+                    continue;
+                }
                 if let Some(marker) = &mark_refresh {
                     std::fs::write(marker, b"refreshed")?;
                 }

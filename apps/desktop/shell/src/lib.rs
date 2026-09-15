@@ -111,6 +111,7 @@ pub fn run() -> Result<(), String> {
             invoke_candidate,
             open_session,
             publish_query,
+            refresh_search,
             view_event,
         ])
         .on_window_event(handle_window_event)

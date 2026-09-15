@@ -106,6 +106,53 @@ impl DesktopState {
         Ok(())
     }
 
+    pub(crate) fn refresh_search(&self, session_id: u64) -> Result<(), String> {
+        let (runtime, generation) = {
+            let mut state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+            let session = state
+                .session
+                .as_mut()
+                .ok_or("The window session is not open.")?;
+            session.begin_refresh(session_id)?;
+            (runtime, session.generation)
+        };
+        self.wake();
+        let result = runtime.refresh_root_search(generation);
+        // A user may type or close the window while scanning. Republish only the
+        // originating session's latest query, never the query captured at F5.
+        let publication = (|| {
+            let mut state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let Some(session) = state
+                .session
+                .as_mut()
+                .filter(|session| session.id == session_id)
+            else {
+                return Ok(());
+            };
+            session.generation = runtime.begin_query(session.query.clone())?;
+            session.delivered = None;
+            session.phase = None;
+            Ok::<(), String>(())
+        })();
+        let result = match (result, publication) {
+            (Err(refresh), Err(publish)) => Err(format!("{refresh}\n{publish}")),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            _ => Ok(()),
+        };
+        if let Err(error) = &result {
+            tracing::warn!(%error, "root search refresh failed");
+        }
+        self.finish_navigation(session_id, result.clone());
+        result
+    }
+
     pub(crate) fn acknowledge_search(&self, session_id: u64, revision: u64) -> Result<(), String> {
         let mut state = self
             .shared
