@@ -5,8 +5,6 @@ use std::fs::Metadata;
 #[cfg(windows)]
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-#[cfg(windows)]
-use std::time::UNIX_EPOCH;
 
 use crate::ApplicationError;
 
@@ -16,7 +14,7 @@ pub(crate) struct DiscoveryState {
     #[cfg(target_os = "macos")]
     preferred_languages: Option<Vec<String>>,
     #[cfg(windows)]
-    executables: HashMap<PathBuf, (u64, u128, bool)>,
+    executables: HashMap<PathBuf, (u64, i128, bool)>,
 }
 
 impl DiscoveryState {
@@ -54,7 +52,7 @@ impl DiscoveryState {
     pub(crate) fn windows_executable_stamp(
         &mut self,
         path: &Path,
-    ) -> Result<Option<(u64, u128)>, ApplicationError> {
+    ) -> Result<Option<(u64, i128)>, ApplicationError> {
         let valid_extension = path
             .extension()
             .and_then(|extension| extension.to_str())
@@ -74,8 +72,7 @@ impl DiscoveryState {
                 metadata
                     .modified()
                     .ok()
-                    .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-                    .map_or(0, |value| value.as_nanos()),
+                    .map_or(0, crate::normalization::timestamp_nanos),
             )
         };
         if let Some((_, _, valid)) =

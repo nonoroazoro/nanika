@@ -10,9 +10,11 @@ use windows::Win32::System::Com::{
     CoUninitialize, IPersistFile, STGM_READ,
 };
 use windows::Win32::UI::Shell::{
-    IShellItemImageFactory, IShellLinkW, SHCreateItemFromParsingName, SIIGBF_ICONONLY,
-    SIIGBF_RESIZETOFIT, SLGP_RAWPATH, ShellLink,
+    IShellItemImageFactory, IShellLinkDataList, IShellLinkW, SHCreateItemFromParsingName,
+    SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT, SLDF_HAS_DARWINID, SLDF_RUN_IN_SEPARATE,
+    SLDF_RUN_WITH_SHIMLAYER, SLDF_RUNAS_USER, SLGP_RAWPATH, ShellLink,
 };
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{Interface, PCWSTR};
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Graphics::Gdi::{
@@ -28,7 +30,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
 use super::shell_link_metadata::ShellLinkMetadata;
-use crate::normalization::{normalize_name, path_key, stable_hash};
+use crate::normalization::{normalize_name, path_key, stable_hash, timestamp_nanos};
 use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
 
 pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
@@ -208,12 +210,10 @@ pub(super) fn extract_icon(
             unsafe {
                 DeleteObject(bitmap.0);
             }
-            if should_uninitialize {
-                unsafe {
-                    CoUninitialize();
-                }
-            }
             if result.is_ok() {
+                if should_uninitialize {
+                    unsafe { CoUninitialize() };
+                }
                 return result;
             }
         }
@@ -305,20 +305,52 @@ fn read_shell_link(
         &working_directory_key,
         &arguments_json,
     ]);
+    // Target/arguments alone do not establish equivalence for shortcuts carrying
+    // elevation, window-state, installer, or compatibility activation settings.
+    let identity = if link.custom_activation {
+        stable_hash(&["windows-shell-link", &identity, &path_key(path)])
+    } else {
+        identity
+    };
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
-    let icon_source = link
+    let icon_resource = link
         .icon_source
         .as_deref()
         .map(expand_environment)
         .filter(|source| source.is_file())
         .unwrap_or_else(|| target.clone());
-    let icon_key = crate::icon_cache::key_from_stamp(
-        &icon_source,
-        link.icon_index,
-        executable_length,
-        executable_modified,
-    );
+    let icon_key = (|| -> Result<String, ApplicationError> {
+        let resource_stamp = state.metadata(&icon_resource)?;
+        let resource_key = crate::icon_cache::key_from_stamp(
+            &icon_resource,
+            link.icon_index,
+            resource_stamp.len(),
+            timestamp_nanos(resource_stamp.modified()?),
+        );
+        let shortcut_stamp = state.metadata(path)?;
+        let shortcut_key = crate::icon_cache::key_from_stamp(
+            path,
+            link.icon_index,
+            shortcut_stamp.len(),
+            timestamp_nanos(shortcut_stamp.modified()?),
+        );
+        let target_key_for_icon =
+            crate::icon_cache::key_from_stamp(&target, 0, executable_length, executable_modified);
+        Ok(stable_hash(&[
+            &shortcut_key,
+            &resource_key,
+            &target_key_for_icon,
+        ]))
+    })()
+    .unwrap_or_else(|error| {
+        // Icon metadata cannot invalidate an already validated application.
+        eprintln!(
+            "application icon key failed for {}: {error}",
+            path.display()
+        );
+        crate::IconCache::fallback_key().to_owned()
+    });
     Ok(Some(ApplicationEntry {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
@@ -326,7 +358,7 @@ fn read_shell_link(
         normalized_name: normalized_name.clone(),
         normalized_tokens: normalized_name,
         launch_kind: "windows-shell-link".to_owned(),
-        target_path: target.to_string_lossy().into_owned(),
+        target_path: path.to_string_lossy().into_owned(),
         working_directory: working_directory.map(|path| path.to_string_lossy().into_owned()),
         arguments_json,
         bundle_id: None,
@@ -334,8 +366,10 @@ fn read_shell_link(
         file_identity: target_key,
         last_seen_at: seen_at,
         stale: false,
-        icon_source: Some(icon_source),
-        icon_index: link.icon_index,
+        // The Shell item resolves the shortcut's actual icon resource and index;
+        // asking for the DLL itself can return its generic file-type icon.
+        icon_source: Some(path.to_path_buf()),
+        icon_index: 0,
         priority,
     }))
 }
@@ -492,12 +526,23 @@ fn load_shell_link_initialized(path: &Path) -> Result<Option<ShellLinkMetadata>,
             .GetIconLocation(&mut icon_source, &mut icon_index)
             .map_err(windows_error)?;
     }
+    let data: IShellLinkDataList = shell_link.cast().map_err(windows_error)?;
+    let flags = unsafe { data.GetFlags() }.map_err(windows_error)?;
+    let show_command = unsafe { shell_link.GetShowCmd() }.map_err(windows_error)?;
+    let custom_activation = show_command != SW_SHOWNORMAL
+        || flags
+            & (SLDF_RUNAS_USER.0
+                | SLDF_RUN_IN_SEPARATE.0
+                | SLDF_HAS_DARWINID.0
+                | SLDF_RUN_WITH_SHIMLAYER.0) as u32
+            != 0;
     Ok(Some(ShellLinkMetadata {
         target,
         arguments: wide_string(&arguments),
         working_directory: wide_string(&working_directory),
         icon_source: wide_string(&icon_source),
         icon_index,
+        custom_activation,
     }))
 }
 

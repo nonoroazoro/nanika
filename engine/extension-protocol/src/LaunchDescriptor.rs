@@ -19,4 +19,7 @@ pub enum LaunchDescriptor {
     MacApplication {
         bundle_path: String,
     },
+    WindowsApplication {
+        path: String,
+    },
 }

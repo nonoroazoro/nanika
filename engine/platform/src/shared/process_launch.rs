@@ -1,10 +1,12 @@
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use crate::adapter::process_launch::{apply_windows_raw, mac_application, shell_command};
+use crate::adapter::process_launch::{
+    apply_windows_raw, mac_application, shell_command, windows_application,
+};
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
 
-pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<Child> {
+pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<Option<Child>> {
     let mut command = match descriptor {
         LaunchDescriptor::Program {
             program,
@@ -42,12 +44,18 @@ pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<C
             process
         }
         LaunchDescriptor::MacApplication { bundle_path } => mac_application(bundle_path)?,
+        LaunchDescriptor::WindowsApplication { path } => {
+            windows_application(path)?;
+            // Shell activation may reuse an existing process and return no child.
+            return Ok(None);
+        }
     };
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
+        .map(Some)
 }
 
 fn apply_working_directory(command: &mut Command, directory: Option<&str>) -> std::io::Result<()> {

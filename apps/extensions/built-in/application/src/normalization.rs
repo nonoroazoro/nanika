@@ -1,7 +1,17 @@
 use std::fmt::Write;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
+
+pub(crate) fn timestamp_nanos(value: SystemTime) -> i128 {
+    let (duration, sign) = match value.duration_since(UNIX_EPOCH) {
+        Ok(duration) => (duration, 1),
+        Err(error) => (error.duration(), -1),
+    };
+    // Duration's u64 seconds fit losslessly in i128 even after nanosecond scaling.
+    sign * (i128::from(duration.as_secs()) * 1_000_000_000 + i128::from(duration.subsec_nanos()))
+}
 
 pub(crate) fn normalize_name(value: &str) -> String {
     value

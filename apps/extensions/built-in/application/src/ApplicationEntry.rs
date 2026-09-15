@@ -13,6 +13,7 @@ pub struct ApplicationEntry {
     pub normalized_name: String,
     pub normalized_tokens: String,
     pub launch_kind: String,
+    /// Native activation path, preserving the original spelling of Shell Links.
     pub target_path: String,
     pub working_directory: Option<String>,
     pub arguments_json: String,
@@ -45,6 +46,14 @@ impl ApplicationEntry {
     }
 
     pub fn launch_descriptor(&self) -> Result<LaunchDescriptor, ApplicationError> {
+        if matches!(
+            self.launch_kind.as_str(),
+            "windows-shell-link" | "executable"
+        ) {
+            return Ok(LaunchDescriptor::WindowsApplication {
+                path: self.target_path.clone(),
+            });
+        }
         if self.launch_kind == "macos-bundle" {
             return Ok(LaunchDescriptor::MacApplication {
                 bundle_path: self.target_path.clone(),

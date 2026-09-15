@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
-use crate::normalization::{path_key, stable_hash};
+use crate::normalization::{path_key, stable_hash, timestamp_nanos};
 use crate::platform;
 use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
@@ -152,14 +151,7 @@ fn icon_key(
     source: &Path,
     metadata: &std::fs::Metadata,
 ) -> Result<String, ApplicationError> {
-    let modified = metadata
-        .modified()
-        .and_then(|value| {
-            value
-                .duration_since(UNIX_EPOCH)
-                .map_err(std::io::Error::other)
-        })?
-        .as_nanos();
+    let modified = timestamp_nanos(metadata.modified()?);
     Ok(key_from_stamp(
         source,
         entry.icon_index,
@@ -172,7 +164,7 @@ pub(crate) fn key_from_stamp(
     source: &Path,
     icon_index: i32,
     length: u64,
-    modified: u128,
+    modified: i128,
 ) -> String {
     stable_hash(&[
         ICON_RENDER_VERSION,

@@ -67,7 +67,10 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32, shutdown: Arc
                         response,
                     }) => {
                         let result = process_launch(&descriptor)
-                            .and_then(|child| register_child(queue, child, &mut children))
+                            .and_then(|child| match child {
+                                Some(child) => register_child(queue, child, &mut children),
+                                None => Ok(()),
+                            })
                             .map(|()| HostServiceResponse::Launched)
                             .map_err(|error| error.to_string());
                         if response.send(result).is_err() {

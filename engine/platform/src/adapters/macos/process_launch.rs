@@ -1,6 +1,13 @@
 use std::path::Path;
 use std::process::Command;
 
+pub(crate) fn windows_application(_path: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Windows application launch is unsupported on this platform",
+    ))
+}
+
 pub(crate) fn apply_windows_raw(_command: &mut Command, _value: &str) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
