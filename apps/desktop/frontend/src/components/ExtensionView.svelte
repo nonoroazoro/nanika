@@ -1,6 +1,8 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import type { ExtensionViewSnapshot, ViewEvent } from "../types";
+import CachedFileIcon from "./CachedFileIcon.svelte";
+import StatusBar from "./StatusBar.svelte";
 import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
 
@@ -19,10 +21,100 @@ const detail = $derived(snapshot.view.kind === "detail" ? snapshot.view.detail :
 const items = $derived(list?.sections.flatMap(section => section.items) ?? []);
 const selected = $derived(items.find(item => item.id === list?.selected_item_id) ?? null);
 const actions = $derived(list ? selected?.actions ?? [] : detail?.actions ?? []);
+const primaryAction = $derived(actions.find(action => action.style === "primary") ?? null);
+const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
+const leadingStatusEntries = $derived(secondaryActions.map(action => ({
+    id: action.id,
+    title: action.title,
+    destructive: action.style === "destructive",
+    disabled: busy
+})));
+const trailingStatusEntries = $derived(
+    primaryAction
+        ? [{
+            id: primaryAction.id,
+            title: primaryAction.title,
+            keys: ["↵"],
+            ariaShortcut: "Enter",
+            disabled: busy
+        }]
+        : []
+);
 let query = $state("");
 let input = $state<HTMLInputElement>();
 let options = $state<HTMLUListElement>();
+let listPane = $state<HTMLDivElement>();
+let loadMoreSentinel = $state<HTMLDivElement>();
+let requestedCursor = $state<string | null>(null);
+let acknowledgedCursor = $state<string | null>(null);
+let failedCursor = $state<string | null>(null);
+let paginationScope = $state("");
 let surface: HTMLElement;
+
+$effect(() =>
+{
+    const scope = `${list?.search_text ?? ""}\u0000${list?.filter?.selected_value ?? ""}`;
+    if (scope !== paginationScope)
+    {
+        paginationScope = scope;
+        requestedCursor = null;
+        acknowledgedCursor = null;
+        failedCursor = null;
+    }
+});
+
+$effect(() =>
+{
+    if (error && requestedCursor !== null && list?.next_cursor === requestedCursor)
+    {
+        failedCursor = requestedCursor;
+        requestedCursor = null;
+    }
+});
+
+$effect(() =>
+{
+    const cursor = list?.next_cursor ?? null;
+    if (requestedCursor !== null && cursor !== requestedCursor)
+    {
+        acknowledgedCursor = requestedCursor;
+        requestedCursor = null;
+    }
+});
+
+$effect(() =>
+{
+    const cursor = list?.next_cursor ?? null;
+    const root = listPane;
+    const target = loadMoreSentinel;
+    if (!cursor || !root || !target || busy || requestedCursor === cursor || acknowledgedCursor === cursor)
+    {
+        return;
+    }
+    const observer = new IntersectionObserver(entries =>
+    {
+        const intersecting = entries.some(entry => entry.isIntersecting);
+        if (!intersecting && failedCursor === cursor)
+        {
+            failedCursor = null;
+            return;
+        }
+        if (
+            intersecting && !busy && requestedCursor !== cursor
+            && acknowledgedCursor !== cursor && failedCursor !== cursor
+        )
+        {
+            requestedCursor = cursor;
+            onEvent({ kind: "loadMore", cursor });
+        }
+    }, {
+        root,
+        // Start the next ten-item request before the current page reaches its last row.
+        rootMargin: "0px 0px 160px 0px"
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+});
 
 onMount(() =>
 {
@@ -58,9 +150,22 @@ function activateItem(item: typeof items[number]): void
     }
 }
 
+function invokeAction(actionId: string): void
+{
+    if (!busy)
+    {
+        focusSearch();
+        onEvent({ kind: "actionInvoked", item_id: selected?.id ?? null, action_id: actionId });
+    }
+}
+
 function handleKeydown(event: KeyboardEvent): void
 {
-    if (event.isComposing || event.target instanceof HTMLSelectElement)
+    if (event.defaultPrevented || event.isComposing)
+    {
+        return;
+    }
+    if (event.target instanceof HTMLSelectElement)
     {
         return;
     }
@@ -73,17 +178,22 @@ function handleKeydown(event: KeyboardEvent): void
         }
         return;
     }
-    if (event.target !== input && event.target !== surface)
+    const verticalNavigation = (event.key === "ArrowDown" || event.key === "ArrowUp")
+        && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
+    const fromPreview = list !== null && event.target instanceof HTMLTextAreaElement
+        && event.target.readOnly && surface.contains(event.target);
+    if (event.target !== input && event.target !== surface && !(fromPreview && verticalNavigation))
     {
         return;
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp")
+    if (verticalNavigation)
     {
         event.preventDefault();
         if (busy || !list || !items.length)
         {
             return;
         }
+        focusSearch();
         const index = items.findIndex(item => item.id === list.selected_item_id);
         const next = Math.max(0, Math.min(items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
         const item = items[next];
@@ -121,7 +231,7 @@ function handleKeydown(event: KeyboardEvent): void
     tabindex="-1"
     aria-label={list?.title ?? detail?.title ?? "Extension view"}
 >
-    <header>
+    <header class:has-filter={Boolean(list?.filter)}>
         <button class="back" type="button" onclick={onBack} disabled={busy} aria-label="Back to previous view">
             <svg
                 viewBox="0 0 24 24"
@@ -135,10 +245,7 @@ function handleKeydown(event: KeyboardEvent): void
                 <path d="m14.5 5-7 7 7 7" />
             </svg>
         </button>
-        <div><h1>{list?.title ?? detail?.title ?? "Details"}</h1></div>
-    </header>
-    {#if list}
-        <div class="search">
+        {#if list}
             <input
                 bind:this={input}
                 bind:value={query}
@@ -158,8 +265,10 @@ function handleKeydown(event: KeyboardEvent): void
                     {#each list.filter.options as option (option.value)}
                         <button
                             type="button"
+                            tabindex="-1"
                             aria-pressed={option.value === list.filter.selected_value}
                             aria-disabled={busy}
+                            onmousedown={(event => event.preventDefault())}
                             onclick={() =>
                             {
                                 if (!busy && list?.filter && option.value !== list.filter.selected_value)
@@ -173,12 +282,14 @@ function handleKeydown(event: KeyboardEvent): void
                     {/each}
                 </div>
             {/if}
-        </div>
-    {/if}
+        {:else}
+            <h1>{detail?.title ?? "Details"}</h1>
+        {/if}
+    </header>
     {#if error}<div class="error" role="alert">{error}</div>{/if}
     <div class="content" class:split={list?.layout === "split"} aria-busy={busy}>
         {#if list}
-            <div class="list-pane">
+            <div class="list-pane" bind:this={listPane}>
                 <ul bind:this={options} id="extension-items" role="listbox" aria-label={list.title}>
                     {#each list.sections as section (section.id)}
                         <li role="presentation">
@@ -195,6 +306,7 @@ function handleKeydown(event: KeyboardEvent): void
                                         onmousedown={(event => event.preventDefault())}
                                         onclick={() =>
                                         {
+                                            focusSearch();
                                             if (item.id !== list.selected_item_id)
                                             {
                                                 onEvent({ kind: "selectionChanged", item_id: item.id });
@@ -211,11 +323,23 @@ function handleKeydown(event: KeyboardEvent): void
                                         })}
                                     >
                                         {#if item.icon}<span class="item-icon" aria-hidden="true">
-                                                <SemanticContentIcon kind={item.icon} />
+                                                {#if typeof item.icon === "string"}
+                                                    <SemanticContentIcon kind={item.icon} />
+                                                {:else}
+                                                    <CachedFileIcon
+                                                        reference={item.icon.native}
+                                                        {resourceOrigin}
+                                                        extensionId={snapshot.extensionId}
+                                                    />
+                                                {/if}
                                             </span>{/if}
-                                        <span class="item-copy"><span>{item.title}</span>{#if item.subtitle}<small>{
+                                        {#if item.subtitle}
+                                            <span class="item-copy"><span>{item.title}</span><small>{
                                                     item.subtitle
-                                                }</small>{/if}</span>
+                                                }</small></span>
+                                        {:else}
+                                            <span class="item-title">{item.title}</span>
+                                        {/if}
                                     </li>
                                 {/each}
                             </ul>
@@ -223,20 +347,12 @@ function handleKeydown(event: KeyboardEvent): void
                     {/each}
                 </ul>
                 {#if !items.length}<p class="empty">No items</p>{/if}
-                {#if list.next_cursor}<button
-                        class="more"
-                        type="button"
-                        disabled={busy}
-                        onclick={() =>
-                        {
-                            if (list?.next_cursor)
-                            {
-                                onEvent({ kind: "loadMore", cursor: list.next_cursor });
-                            }
-                        }}
+                {#if list.next_cursor}<div
+                        class="load-more-sentinel"
+                        bind:this={loadMoreSentinel}
+                        aria-hidden="true"
                     >
-                        Load more
-                    </button>{/if}
+                    </div>{/if}
             </div>
         {/if}
         {#if !list || list.layout === "split"}<div class="detail-pane">
@@ -249,62 +365,51 @@ function handleKeydown(event: KeyboardEvent): void
                 {/if}
             </div>{/if}
     </div>
-    <footer>
-        {#each actions as action (action.id)}
-            <button
-                type="button"
-                class:primary={action.style === "primary"}
-                class:destructive={action.style === "destructive"}
-                disabled={busy}
-                onclick={() => onEvent({ kind: "actionInvoked", item_id: selected?.id ?? null, action_id: action.id })}
-            >
-                {action.title}
-            </button>
-        {/each}
-    </footer>
+    <StatusBar
+        leadingEntries={leadingStatusEntries}
+        trailingEntries={trailingStatusEntries}
+        onInvoke={invokeAction}
+    />
 </section>
 
 <style>
 .extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-window); border-radius: var(--radius-window); background: var(--surface-window); box-shadow: var(--shadow-window); color: var(--text-primary); }
-header { display: flex; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border-subtle); }
-h1 { margin: 0; font-size: var(--font-row); line-height: 1.2; }
+/* Match Root Search's header geometry; the wider back hit target must not shift the search input. */
+header { display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: center; gap: var(--space-3); flex: 0 0 var(--search-height); height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
+header.has-filter { grid-template-columns: 1rem minmax(0, 1fr) auto; }
+h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-search); line-height: 1.2; }
 button { color: inherit; font-size: var(--font-meta); }
 /* Pending view requests keep toolbar contrast stable; native disabled and aria-busy still expose the interaction state. */
 button:disabled { opacity: 1; }
-.back { display: grid; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
-.back svg { width: 1.1rem; height: 1.1rem; }
-.search { display: grid; flex: 0 0 var(--search-height); grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); width: 100%; height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
-input { min-width: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; padding: 0; font: inherit; font-size: var(--font-search); caret-color: var(--accent); }
+.back { display: grid; justify-self: center; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
+.back svg { width: 1rem; height: 1rem; }
+input { min-width: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: var(--font-search); caret-color: var(--accent); }
 input::placeholder { color: var(--text-tertiary); opacity: 1; }
 .content { display: flex; flex: 1; min-height: 0; }
 .list-pane, .detail-pane { min-width: 0; flex: 1; overflow: auto; }
 .split .list-pane { flex: 0 1 38%; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
-.list-pane [role='group'] { display: grid; gap: var(--space-1); }
-.list-pane { padding: var(--space-2); }
-h2 { font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
+/* Keep long titles within the pane so keyboard reveal cannot scroll rows sideways. */
+.list-pane [role='group'] { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+.list-pane { padding: var(--space-2); overflow-x: hidden; }
+h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
 [role='option'] { display: flex; }
 [role='option']:hover:not([aria-disabled='true']) { background: var(--surface-hovered); }
 [role='option'][aria-selected='true'], [role='option'][aria-selected='true']:hover { background: var(--surface-selected); }
 .item-icon { display: grid; flex: 0 0 var(--icon-size); width: var(--icon-size); height: var(--icon-size); place-items: center; }
 .item-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; line-height: 1.25; }
-.item-copy > span, small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-copy > span, .item-copy > small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: var(--space-1); }
 .empty { color: var(--text-secondary); text-align: center; padding: var(--space-5); }
-.more { display: block; margin: var(--space-3) auto; }
-.filter { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
-.filter button { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem 0.65rem; }
+.load-more-sentinel { height: 1px; pointer-events: none; }
+.filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); white-space: nowrap; }
+.filter button { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
 /* aria-disabled preserves filter focus while its guarded event waits for the extension. */
 .filter button[aria-disabled='true'] { cursor: default; }
 .filter button:hover { border-color: transparent; background: var(--surface-hovered); }
 .filter button[aria-pressed='true'] { background: var(--surface-selected); }
 .filter button[aria-pressed='true']:hover { background: var(--surface-selected); }
-/* Empty results reserve the same space as a button row, including its padding and border. */
-footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: var(--space-2); min-height: calc(2rem + 2 * var(--space-2) + 1px); padding: var(--space-2) var(--space-5); border-top: 1px solid var(--border-subtle); }
-.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-foreground); font-weight: 600; }
-.primary:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 88%, black); }
-.destructive { margin-right: auto; border-color: var(--border-danger); background: transparent; color: var(--text-danger); font-weight: 500; }
-.destructive:hover:not(:disabled) { border-color: var(--border-danger-hover); background: var(--surface-danger-hover); }
 .error { padding: var(--space-2) var(--space-5); font-size: var(--font-meta); }
 </style>

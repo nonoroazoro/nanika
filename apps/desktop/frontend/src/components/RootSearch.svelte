@@ -1,8 +1,9 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { onMount, tick } from "svelte";
 
 import type { RootSearchSnapshot, SearchResult } from "../types";
 import { clampIndex } from "../logic";
+import StatusBar from "./StatusBar.svelte";
 import ResultRow from "./ResultRow.svelte";
 
 interface Props
@@ -33,6 +34,7 @@ let query = $state("");
 let requestedActiveIndex = $state(0);
 let input: HTMLInputElement;
 let list = $state<HTMLUListElement>();
+let selectOnNextFocus = false;
 
 // Transport metadata changes during submission without changing the visible list.
 const results = $derived(snapshot.results);
@@ -44,17 +46,41 @@ const activeResult = $derived(results[activeIndex] ?? null);
 const activeId = $derived(
     activeResult ? `result-${activeResult.extensionId}-${activeResult.entryId}` : undefined
 );
+const statusEntries = $derived([{
+    id: "refresh",
+    title: "Refresh",
+    interactive: false,
+    keys: ["F5"],
+    ariaShortcut: "F5",
+    pending: { title: "Refreshing", active: refreshing }
+}]);
 
 onMount(() =>
 {
     query = snapshot.query;
-    focusQuery();
+    void tick().then(() => focusQuery(true));
 });
 
-function focusQuery(): void
+function focusQuery(selectAll = false): void
 {
     input.focus({ preventScroll: true });
-    input.select();
+    if (selectAll)
+    {
+        input.select();
+    }
+}
+
+function handleWindowFocus(): void
+{
+    const selectAll = selectOnNextFocus;
+    selectOnNextFocus = false;
+    focusQuery(selectAll);
+}
+
+function invoke(result: SearchResult): void
+{
+    selectOnNextFocus = true;
+    onInvoke(result);
 }
 
 function handleKeydown(event: KeyboardEvent): void
@@ -78,7 +104,16 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Enter" && activeResult && !busy)
     {
         event.preventDefault();
-        onInvoke(activeResult);
+        invoke(activeResult);
+        return;
+    }
+    if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey)
+    {
+        event.preventDefault();
+        if (!event.shiftKey && activeResult?.entryType === "view" && !busy)
+        {
+            invoke(activeResult);
+        }
         return;
     }
     if (event.key === "Escape")
@@ -119,7 +154,7 @@ function moveSelection(delta: number): void
 }
 </script>
 
-<svelte:window onfocus={focusQuery} onkeydown={handleRefreshKey} />
+<svelte:window onfocus={handleWindowFocus} onkeydown={handleRefreshKey} />
 
 <main class="launcher" aria-label="Nanika launcher" aria-keyshortcuts="F5">
     <div class="search-shell">
@@ -128,7 +163,7 @@ function moveSelection(delta: number): void
             bind:this={input}
             bind:value={query}
             role="combobox"
-            aria-label="Search apps and commands"
+            aria-label="Search for apps and commands"
             aria-autocomplete="list"
             aria-invalid={inputError !== null}
             aria-describedby={inputError ? "query-error" : undefined}
@@ -137,9 +172,10 @@ function moveSelection(delta: number): void
             aria-activedescendant={activeId}
             autocomplete="off"
             spellcheck="false"
-            placeholder="Search apps and commands"
+            placeholder="Search for apps and commands"
             oninput={(event =>
             {
+                selectOnNextFocus = false;
                 requestedActiveIndex = 0;
                 onQuery(event.currentTarget.value);
             })}
@@ -148,9 +184,6 @@ function moveSelection(delta: number): void
     </div>
 
     <section class="results" aria-label="Results" aria-busy={busy && !inputError}>
-        {#if refreshing}
-            <span class="refresh-status" role="status">Refreshing…</span>
-        {/if}
         {#if inputError}
             <div id="query-error" class="warning" role="alert">{inputError}</div>
         {/if}
@@ -173,7 +206,7 @@ function moveSelection(delta: number): void
                         {
                             if (!busy)
                             {
-                                onInvoke(result);
+                                invoke(result);
                             }
                         }}
                     />
@@ -186,12 +219,13 @@ function moveSelection(delta: number): void
             </div>
         {/if}
     </section>
+    <StatusBar trailingEntries={statusEntries} />
 </main>
 
 <style>
 .launcher {
   display: grid;
-  grid-template-rows: var(--search-height) minmax(0, 1fr);
+  grid-template-rows: var(--search-height) minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -255,25 +289,13 @@ input::placeholder {
   padding: var(--space-2);
 }
 
-.refresh-status {
-  position: absolute;
-  right: var(--space-3);
-  bottom: var(--space-2);
-  z-index: 1;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-row);
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  font-size: var(--font-meta);
-  pointer-events: none;
-}
-
 ul {
   flex: 1;
   min-height: 0;
   margin: 0;
   padding: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   list-style: none;
   scrollbar-width: thin;
 }

@@ -5,6 +5,7 @@ export * from "./DetailImage";
 export * from "./DetailView";
 export * from "./ExtensionViewDocument";
 export * from "./ExtensionViewSnapshot";
+export * from "./IconReference";
 export * from "./InvokeCandidateRequest";
 export * from "./ListView";
 export * from "./NavigationSnapshot";

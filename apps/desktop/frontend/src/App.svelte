@@ -364,18 +364,19 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
         })
     );
 }
+
+function controlLauncherKeyboard(event: KeyboardEvent): void
+{
+    // Product keys never fall through to implicit WebView behavior. Surface
+    // handlers may still provide an explicit action after this capture phase.
+    if (event.key === "Tab" || event.key === "F5")
+    {
+        event.preventDefault();
+    }
+}
 </script>
 
-<svelte:window
-    onkeydown={(event =>
-    {
-        // F5 belongs to Root Search; other surfaces must not reload the WebView.
-        if (event.key === "F5" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey)
-        {
-            event.preventDefault();
-        }
-    })}
-/>
+<svelte:window onkeydowncapture={controlLauncherKeyboard} />
 
 {#if failure}
     <main class="fatal" role="alert">
