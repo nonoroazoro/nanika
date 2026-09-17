@@ -4,5 +4,6 @@ pub(crate) enum DiscoveryCommand {
         request_id: Option<String>,
         generation: u64,
     },
+    PopulateIcons,
     Shutdown,
 }

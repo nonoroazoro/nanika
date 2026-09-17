@@ -42,6 +42,9 @@ use navigation_state::*;
 #[path = "ViewEventRequest.rs"]
 mod view_event_request;
 use view_event_request::*;
+#[path = "ViewInvalidationDelivery.rs"]
+mod view_invalidation_delivery;
+use view_invalidation_delivery::*;
 mod tray;
 mod window;
 

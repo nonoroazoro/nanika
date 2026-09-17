@@ -20,6 +20,15 @@ pub enum Message {
     },
     /// The searchable catalog changed. The host re-queries its current input.
     CandidatesChanged,
+    /// An open host-rendered view has newer extension-owned data.
+    ViewInvalidated {
+        view_id: String,
+    },
+    /// Best-effort hint for entries that are about to be visible in the host UI.
+    PrepareEntries {
+        generation: u64,
+        entry_ids: Vec<String>,
+    },
     Query {
         request_id: String,
         generation: u64,

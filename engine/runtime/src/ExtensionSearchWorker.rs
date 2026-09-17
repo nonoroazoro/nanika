@@ -45,6 +45,7 @@ impl ExtensionSearchWorker {
             runtime.set_host_services(extension_id.clone(), host_services);
         }
         let notifier = context.notifier;
+        let view_invalidations = context.view_invalidations;
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
         runtime.set_shutdown_signal(Arc::clone(
             &state
@@ -66,6 +67,13 @@ impl ExtensionSearchWorker {
                 }
             }));
         }
+        let invalidation_extension_id = extension_id.clone();
+        let invalidation_queue = Arc::clone(&view_invalidations);
+        let invalidation_notifier = Arc::clone(&notifier);
+        runtime.set_view_invalidation_notifier(Arc::new(move |view_id| {
+            queue_view_invalidation(&invalidation_queue, &invalidation_extension_id, view_id);
+            notify(&invalidation_notifier);
+        }));
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
         let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
@@ -121,8 +129,8 @@ impl ExtensionSearchWorker {
                             match result {
                                 Ok(completed) => Ok(completed),
                                 Err(query_error) => {
-                                // A failed query still completes this worker's barrier slot so
-                                // one unavailable extension cannot leave the launcher pending.
+                                    // A failed query still completes this worker's barrier slot so
+                                    // one unavailable extension cannot leave the launcher pending.
                                     match publish_extension_snapshot(
                                         &search,
                                         &worker_extension_id,
@@ -139,6 +147,12 @@ impl ExtensionSearchWorker {
                                 }
                             }
                         }
+                        ExtensionWork::PrepareEntries {
+                            generation,
+                            entry_ids,
+                        } => runtime
+                            .prepare_entries(generation, entry_ids)
+                            .map(|()| false),
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
                                 &mut runtime,
@@ -171,13 +185,24 @@ impl ExtensionSearchWorker {
                                 request,
                                 &worker_state,
                             );
-                            if completion.send(result.as_ref().cloned().map_err(ToString::to_string)).is_err() {
-                                tracing::error!(extension_id = worker_extension_id, "view receiver closed before completion");
+                            if completion
+                                .send(result.as_ref().cloned().map_err(ToString::to_string))
+                                .is_err()
+                            {
+                                tracing::error!(
+                                    extension_id = worker_extension_id,
+                                    "view receiver closed before completion"
+                                );
                             }
                             result.map(|_| true)
                         }
                         ExtensionWork::Refresh(refresh) => {
-                            let result = run_refresh(&mut runtime, &worker_extension_id, &refresh, &worker_state);
+                            let result = run_refresh(
+                                &mut runtime,
+                                &worker_extension_id,
+                                &refresh,
+                                &worker_state,
+                            );
                             let completion = match &result {
                                 Ok(true) => Ok(()),
                                 Ok(false) => Err("Extension refresh was cancelled.".to_owned()),
@@ -249,6 +274,13 @@ impl ExtensionSearchWorker {
         };
         state.latest_query = Some(query.clone());
         state.query = Some(query);
+        ready.notify_one();
+    }
+
+    pub(crate) fn prepare_entries(&self, generation: u64, entry_ids: Vec<String>) {
+        let (lock, ready) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        state.entry_preparation = Some((generation, entry_ids));
         ready.notify_one();
     }
 
@@ -378,6 +410,25 @@ impl ExtensionSearchWorker {
     }
 }
 
+pub(crate) fn queue_view_invalidation(
+    pending: &Mutex<std::collections::HashMap<String, crate::RuntimeViewInvalidation>>,
+    extension_id: &str,
+    view_id: String,
+) {
+    // A worker owns at most one visible route. Replace its pending signal so
+    // extension-controlled view IDs cannot grow this queue without bound.
+    pending
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .insert(
+            extension_id.to_owned(),
+            crate::RuntimeViewInvalidation {
+                extension_id: extension_id.to_owned(),
+                view_id,
+            },
+        );
+}
+
 impl Drop for ExtensionSearchWorker {
     fn drop(&mut self) {
         self.stop();
@@ -394,6 +445,7 @@ pub(crate) fn next_work(
         && state.invocations.is_empty()
         && state.view_events.is_empty()
         && state.configurations.is_empty()
+        && state.entry_preparation.is_none()
         && !state.shutdown.load(Ordering::Acquire)
         && !state.closed
     {
@@ -416,6 +468,15 @@ pub(crate) fn next_work(
         .map(ExtensionWork::ApplyConfiguration)
         .or_else(|| state.refreshes.pop_front().map(ExtensionWork::Refresh))
         .or_else(|| state.query.take().map(ExtensionWork::Query))
+        .or_else(|| {
+            state
+                .entry_preparation
+                .take()
+                .map(|(generation, entry_ids)| ExtensionWork::PrepareEntries {
+                    generation,
+                    entry_ids,
+                })
+        })
 }
 
 fn run_view_event(

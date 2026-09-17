@@ -14,10 +14,12 @@ async-process.workspace = true
 clipboard-rs.workspace = true
 nanika-protocol = { path = "../extension-protocol" }
 png.workspace = true
+sha2.workspace = true
 sys-locale.workspace = true
 tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_DataExchange", "Win32_UI_Shell"] }
 windows-registry.workspace = true
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
@@ -26,8 +28,9 @@ rustix.workspace = true
 libc = "0.2.189"
 objc2-service-management = { workspace = true, features = ["std", "objc2", "objc2-foundation", "SMAppService"] }
 objc2 = { workspace = true, features = ["std"] }
-objc2-app-kit = { workspace = true, features = ["std", "NSEvent", "NSScreen"] }
+objc2-app-kit = { workspace = true, features = ["std", "NSEvent", "NSScreen", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSWorkspace", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-foundation = { workspace = true, features = ["std", "NSObject", "NSString"] }
+objc2-core-graphics = { workspace = true, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGImage"] }
 
 [[test]]
 name = "ProcessLauncher"

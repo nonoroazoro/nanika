@@ -21,10 +21,12 @@ use crate::{
 };
 
 type ReceivePoll = Option<Option<Message>>;
+type ViewInvalidationNotifier = Arc<Mutex<Option<Arc<dyn Fn(String) + Send + Sync>>>>;
 
 /// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
     candidate_changes: ExtensionNotifier,
+    view_invalidations: ViewInvalidationNotifier,
     initialized: bool,
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
@@ -93,7 +95,9 @@ impl ExtensionProcess {
         };
 
         let (sender, receiver) = mpsc::sync_channel(limits.frame_queue_capacity.max(1));
+        let view_invalidations = Arc::new(Mutex::new(None::<Arc<dyn Fn(String) + Send + Sync>>));
         let changes = Arc::clone(&candidate_changes);
+        let invalidations = Arc::clone(&view_invalidations);
         let reader_thread = match std::thread::Builder::new()
             .name("nanika-extension-protocol".to_owned())
             .spawn(move || {
@@ -107,6 +111,16 @@ impl ExtensionProcess {
                             .clone();
                         if let Some(notify) = notify {
                             notify();
+                        }
+                        continue;
+                    }
+                    if let Ok(Some(Message::ViewInvalidated { view_id })) = &frame {
+                        let notify = invalidations
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .clone();
+                        if let Some(notify) = notify {
+                            notify(view_id.clone());
                         }
                         continue;
                     }
@@ -142,6 +156,7 @@ impl ExtensionProcess {
 
         Ok(Self {
             candidate_changes,
+            view_invalidations,
             initialized: false,
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
@@ -159,6 +174,16 @@ impl ExtensionProcess {
     pub(crate) fn set_candidate_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
         *self
             .candidate_changes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(notify);
+    }
+
+    pub(crate) fn set_view_invalidation_notifier(
+        &mut self,
+        notify: Arc<dyn Fn(String) + Send + Sync>,
+    ) {
+        *self
+            .view_invalidations
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = Some(notify);
     }
@@ -188,6 +213,17 @@ impl ExtensionProcess {
         self.check_shutdown()?;
         let input = self.input.as_mut().ok_or(SupervisorError::ChannelClosed)?;
         write_frame(input, message).map_err(SupervisorError::Protocol)
+    }
+
+    pub(crate) fn prepare_entries(
+        &mut self,
+        generation: u64,
+        entry_ids: Vec<String>,
+    ) -> Result<(), SupervisorError> {
+        self.send(&Message::PrepareEntries {
+            generation,
+            entry_ids,
+        })
     }
 
     fn poll_receive(&mut self, interval: Duration) -> Result<ReceivePoll, SupervisorError> {

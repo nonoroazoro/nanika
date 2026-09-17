@@ -321,14 +321,14 @@ function flushViewResume(): void
 async function sendViewEvent(event: ViewEvent | null): Promise<void>
 {
     const current = navigation.current;
-    const selectionOnly = event?.kind === "selectionChanged";
+    const nonBlocking = event?.kind === "selectionChanged" || event?.kind === "resumed";
     if (!application || !current)
     {
         return;
     }
     const operation = ++viewOperation;
     submittedNavigationRevision = navigation.revision;
-    if (!selectionOnly)
+    if (!nonBlocking)
     {
         viewPending = true;
     }
@@ -346,7 +346,7 @@ async function sendViewEvent(event: ViewEvent | null): Promise<void>
     {
         if (operation === viewOperation)
         {
-            if (!selectionOnly)
+            if (!nonBlocking)
             {
                 viewPending = false;
             }

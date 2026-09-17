@@ -5,15 +5,17 @@ use std::thread::JoinHandle;
 
 use crate::{
     ApplicationSnapshot, DesktopRuntime, InvokeCandidateRequest, PublishQueryRequest,
-    RootSearchSnapshot, SearchDelivery, SearchSession,
+    RootSearchSnapshot, SearchDelivery, SearchSession, ViewInvalidationDelivery,
 };
 
 pub(crate) struct DesktopState {
     next_session_id: AtomicU64,
     shared: Arc<Mutex<DesktopRuntime>>,
-    view_operation_lock: Mutex<()>,
+    view_operation_lock: Arc<Mutex<()>>,
     wakes: SyncSender<SearchDelivery>,
     dispatcher: Option<JoinHandle<()>>,
+    view_invalidation_wakes: SyncSender<ViewInvalidationDelivery>,
+    view_invalidation_dispatcher: Option<JoinHandle<()>>,
     instance: Mutex<Option<nanika_platform::SingleInstance>>,
     _diagnostics: nanika_host::Diagnostics,
     _hotkey_timing: Option<nanika_platform::HotkeyTimingObserver>,
@@ -27,16 +29,34 @@ impl DesktopState {
         let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
         let (wakes, receiver) = mpsc::sync_channel(1);
         let worker_state = Arc::clone(&shared);
+        let view_operation_lock = Arc::new(Mutex::new(()));
         let dispatcher = std::thread::Builder::new()
             .name("nanika-search-delivery".to_owned())
             .spawn(move || crate::search_delivery::run_delivery(&worker_state, receiver))
             .map_err(|error| error.to_string())?;
+        let (view_invalidation_wakes, view_invalidation_receiver) = mpsc::sync_channel(1);
+        let invalidation_state = Arc::clone(&shared);
+        let invalidation_operation_lock = Arc::clone(&view_operation_lock);
+        let invalidation_search_wakes = wakes.clone();
+        let view_invalidation_dispatcher = std::thread::Builder::new()
+            .name("nanika-view-invalidation".to_owned())
+            .spawn(move || {
+                crate::view_invalidation_delivery::run_delivery(
+                    &invalidation_state,
+                    &invalidation_operation_lock,
+                    view_invalidation_receiver,
+                    &invalidation_search_wakes,
+                )
+            })
+            .map_err(|error| error.to_string())?;
         Ok(Self {
             next_session_id: AtomicU64::new(1),
             shared,
-            view_operation_lock: Mutex::new(()),
+            view_operation_lock,
             wakes,
             dispatcher: Some(dispatcher),
+            view_invalidation_wakes,
+            view_invalidation_dispatcher: Some(view_invalidation_dispatcher),
             instance: Mutex::new(Some(instance)),
             _diagnostics: diagnostics,
             _hotkey_timing: nanika_platform::HotkeyTimingObserver::install(),
@@ -434,6 +454,7 @@ impl DesktopState {
         runtime: nanika_host::RuntimeService,
     ) -> Result<(), String> {
         let wakes = self.wakes.clone();
+        let view_invalidation_wakes = self.view_invalidation_wakes.clone();
         runtime.set_notifier(Arc::new(move || {
             // A full wake slot already guarantees the latest state will be read.
             if matches!(
@@ -441,6 +462,12 @@ impl DesktopState {
                 Err(TrySendError::Disconnected(_))
             ) {
                 tracing::error!("search delivery worker is closed");
+            }
+            if matches!(
+                view_invalidation_wakes.try_send(ViewInvalidationDelivery::Wake),
+                Err(TrySendError::Disconnected(_))
+            ) {
+                tracing::error!("view invalidation worker is closed");
             }
         }));
         let mut state = self
@@ -477,6 +504,13 @@ impl DesktopState {
 
 impl Drop for DesktopState {
     fn drop(&mut self) {
+        if self
+            .view_invalidation_wakes
+            .send(ViewInvalidationDelivery::Shutdown)
+            .is_err()
+        {
+            tracing::error!("view invalidation worker closed before shutdown was requested");
+        }
         if self.wakes.send(SearchDelivery::Shutdown).is_err() {
             tracing::error!("search delivery worker closed before shutdown was requested");
         }
@@ -484,6 +518,11 @@ impl Drop for DesktopState {
             && thread.join().is_err()
         {
             tracing::error!("search delivery worker panicked");
+        }
+        if let Some(thread) = self.view_invalidation_dispatcher.take()
+            && thread.join().is_err()
+        {
+            tracing::error!("view invalidation worker panicked");
         }
         self.instance
             .get_mut()

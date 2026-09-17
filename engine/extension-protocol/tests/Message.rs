@@ -39,6 +39,22 @@ fn resumed_view_events_have_a_platform_neutral_wire_shape() {
 }
 
 #[test]
+fn visible_entry_preparation_is_a_requestless_bounded_hint() {
+    let message = Message::PrepareEntries {
+        generation: 9,
+        entry_ids: vec![
+            "application.finder".to_owned(),
+            "application.mail".to_owned(),
+        ],
+    };
+    let encoded = serde_json::to_value(message).expect("entry hint should encode");
+    assert_eq!(encoded["type"], "prepareEntries");
+    assert_eq!(encoded["generation"], 9);
+    assert_eq!(encoded["entry_ids"].as_array().expect("entry IDs").len(), 2);
+    assert!(encoded.get("request_id").is_none());
+}
+
+#[test]
 fn pushed_views_are_bounded_host_rendered_documents() {
     let view = View::List {
         list: Box::new(ListView {

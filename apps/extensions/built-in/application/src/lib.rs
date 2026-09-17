@@ -23,9 +23,6 @@ mod discovery_state;
 mod discovery_worker;
 #[path = "IconCache.rs"]
 mod icon_cache;
-#[path = "IconNormalizer.rs"]
-mod icon_normalizer;
-mod image_resize;
 mod normalization;
 mod platform;
 #[path = "RuntimeEvent.rs"]
@@ -34,8 +31,6 @@ mod runtime_event;
 mod runtime_paths;
 #[path = "ScanReport.rs"]
 mod scan_report;
-#[cfg(any(windows, test))]
-mod windows_alpha_recovery;
 
 pub use application_arguments::*;
 pub use application_config::*;
@@ -49,7 +44,7 @@ pub(crate) use discovery_services::*;
 pub(crate) use discovery_state::*;
 pub use discovery_worker::*;
 pub use icon_cache::*;
-pub(crate) use icon_normalizer::*;
+pub(crate) use nanika_platform::normalize_icon_rgba;
 pub use runtime_event::*;
 pub use runtime_paths::*;
 pub use scan_report::*;
@@ -78,12 +73,3 @@ mod candidate_selection_tests;
 #[cfg(test)]
 #[path = "../tests/IconCache.rs"]
 mod icon_cache_tests;
-#[cfg(test)]
-#[path = "../tests/IconNormalizer.rs"]
-mod icon_normalizer_tests;
-#[cfg(test)]
-#[path = "../tests/image_resize.rs"]
-mod image_resize_tests;
-#[cfg(test)]
-#[path = "../tests/windows_alpha_recovery.rs"]
-mod windows_alpha_recovery_tests;

@@ -274,8 +274,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wait_for_release(&arguments, &request_id)?;
                 write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
+            Message::PrepareEntries { .. } => {}
             Message::Snapshot { .. }
             | Message::CandidatesChanged
+            | Message::ViewInvalidated { .. }
             | Message::Result { .. }
             | Message::ViewEvent { .. }
             | Message::ViewUpdated { .. }

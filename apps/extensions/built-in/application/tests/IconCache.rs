@@ -4,61 +4,69 @@ use crate::{ApplicationArguments, DiscoveryState, IconCache, platform};
 
 #[cfg(target_os = "macos")]
 #[test]
-fn books_icon_skips_empty_icns_slots() {
-    let source = PathBuf::from("/System/Applications/Books.app/Contents/Resources/AppIcon.icns");
-    if !source.is_file() {
+fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
+    let source = PathBuf::from("/System/Applications/Books.app");
+    if !source.is_dir() {
         return;
     }
     let root = test_root("books");
-    let mut entry = crate::ApplicationEntry {
-        entry_id: "com.apple.iBooksX".to_owned(),
-        source_key: source.to_string_lossy().into_owned(),
-        display_name: "Books".to_owned(),
-        normalized_name: "books".to_owned(),
-        normalized_tokens: "books".to_owned(),
-        launch_kind: "bundle".to_owned(),
-        target_path: "/System/Applications/Books.app".to_owned(),
-        working_directory: None,
-        arguments_json: ApplicationArguments::empty()
-            .to_json()
-            .expect("arguments should encode"),
-        bundle_id: Some("com.apple.iBooksX".to_owned()),
-        icon_key: String::new(),
-        file_identity: "books".to_owned(),
-        last_seen_at: 1,
-        stale: false,
-        icon_source: Some(source),
-        icon_index: 0,
-        priority: 0,
-    };
+    let mut entry = platform::read_entry(&mut DiscoveryState::new(), &source, 0)
+        .expect("Books bundle should parse")
+        .expect("Books bundle should contribute an entry");
+    assert_eq!(entry.icon_source.as_deref(), Some(source.as_path()));
     let cache = IconCache::new(&root);
 
     cache
         .prepare(&mut entry)
         .expect("Books icon should extract");
 
-    let file = std::fs::File::open(root.join(&entry.icon_key).join("32.png"))
-        .expect("cached Books icon should exist");
-    let mut reader = png::Decoder::new(std::io::BufReader::new(file))
-        .read_info()
-        .expect("cached Books icon should decode");
-    let mut pixels = vec![
-        0_u8;
-        reader
-            .output_buffer_size()
-            .expect("decoded size should be available")
-    ];
-    let output = reader
-        .next_frame(&mut pixels)
-        .expect("cached Books icon should read");
+    for size in [32, 64, 128] {
+        let file = std::fs::File::open(root.join(&entry.icon_key).join(format!("{size}.png")))
+            .expect("cached Books icon should exist");
+        let mut reader = png::Decoder::new(std::io::BufReader::new(file))
+            .read_info()
+            .expect("cached Books icon should decode");
+        let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+        let output = reader
+            .next_frame(&mut pixels)
+            .expect("cached Books icon should read");
+        assert_eq!((output.width, output.height), (size, size));
+        assert_eq!(output.color_type, png::ColorType::Rgba);
+        // AppKit may return low-alpha template artwork to a headless CLI process.
+        // This test covers cache integrity; opacity is verified in the actual Tauri UI.
+        assert!(
+            pixels[..output.buffer_size()]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel[3] != 0),
+            "cached system icon must contain visible pixels"
+        );
+    }
+    let image = root.join(&entry.icon_key).join("128.png");
+    let modified = image.metadata().unwrap().modified().unwrap();
+    entry.icon_source = Some(root.join("Missing.app"));
+    cache
+        .prepare(&mut entry)
+        .expect("a complete cache must not reacquire the system icon");
+    assert_eq!(image.metadata().unwrap().modified().unwrap(), modified);
+
+    std::fs::remove_file(root.join(&entry.icon_key).join("64.png")).unwrap();
     assert!(
-        pixels[..output.buffer_size()]
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|pixel| pixel[3] >= 16),
-        "cached Books icon must contain visible pixels"
+        cache.prepare(&mut entry).is_err(),
+        "a missing source must retain its failure"
     );
+    let mut presentable = [entry.clone()];
+    cache.use_available_icons(&mut presentable).unwrap();
+    assert_eq!(presentable[0].icon_key, IconCache::fallback_key());
+
+    entry.icon_source = Some(source);
+    cache
+        .prepare(&mut entry)
+        .expect("an explicit attempt should repair every cache size");
+    let mut presentable = [entry.clone()];
+    cache.use_available_icons(&mut presentable).unwrap();
+    assert_eq!(presentable[0].icon_key, entry.icon_key);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -73,7 +81,7 @@ fn windows_executable_icons_are_cached_at_both_densities() {
         return;
     }
     let root = test_root("native");
-    let mut entry = platform::read_entry(&mut DiscoveryState::new(), &executable, 1, 0)
+    let mut entry = platform::read_entry(&mut DiscoveryState::new(), &executable, 0)
         .expect("executable should parse")
         .expect("executable should contribute an entry");
     let cache = IconCache::new(&root);
@@ -87,6 +95,65 @@ fn windows_executable_icons_are_cached_at_both_densities() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = test_root("bundle-key");
+    let bundle = root.join("Sample.app");
+    let contents = bundle.join("Contents");
+    let resources = contents.join("Resources");
+    std::fs::create_dir_all(&resources).unwrap();
+    std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+    let executable = contents.join("MacOS/Sample");
+    std::fs::write(&executable, b"sample executable").unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let info = contents.join("Info.plist");
+    std::fs::write(
+        &info,
+        br#"<?xml version="1.0"?><plist version="1.0"><dict>
+        <key>CFBundleExecutable</key><string>Sample</string>
+        <key>CFBundleName</key><string>Sample</string>
+        <key>CFBundleIconFile</key><string>Artwork</string>
+        </dict></plist>"#,
+    )
+    .unwrap();
+    let entry = platform::read_entry(&mut DiscoveryState::new(), &bundle, 0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.icon_source.as_deref(), Some(bundle.as_path()));
+    let cache = IconCache::new(root.join("cache"));
+    let mut previous = cache.key(&entry).unwrap();
+    assert_ne!(previous, IconCache::fallback_key());
+    assert_eq!(previous, cache.key(&entry).unwrap());
+
+    for (path, content) in [
+        (resources.join("Artwork.icns"), b"original".as_slice()),
+        (
+            resources.join("Artwork.icns"),
+            b"replacement artwork".as_slice(),
+        ),
+        (
+            resources.join("Assets.car"),
+            b"compiled asset catalog".as_slice(),
+        ),
+        (bundle.join("Icon\r"), b"custom icon".as_slice()),
+        (executable, b"replacement executable".as_slice()),
+    ] {
+        std::fs::write(path, content).unwrap();
+        let next = cache.key(&entry).unwrap();
+        assert_ne!(
+            next, previous,
+            "icon inputs must invalidate their cached image"
+        );
+        previous = next;
+    }
+    std::fs::remove_file(resources.join("Artwork.icns")).unwrap();
+    assert_ne!(cache.key(&entry).unwrap(), previous);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn fallback_icons_are_valid_png_files() {
     let root = test_root("fallback");
@@ -94,7 +161,6 @@ fn fallback_icons_are_valid_png_files() {
     let mut entry = platform::read_entry(
         &mut DiscoveryState::new(),
         PathBuf::from("missing").as_path(),
-        1,
         0,
     )
     .unwrap_or(None)
@@ -112,9 +178,6 @@ fn fallback_icons_are_valid_png_files() {
             .expect("arguments should encode"),
         bundle_id: None,
         icon_key: String::new(),
-        file_identity: "missing".to_owned(),
-        last_seen_at: 1,
-        stale: false,
         icon_source: None,
         icon_index: 0,
         priority: 0,
@@ -123,6 +186,24 @@ fn fallback_icons_are_valid_png_files() {
     let bytes = std::fs::read(root.join(IconCache::fallback_key()).join("32.png"))
         .expect("fallback icon should exist");
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    let mut reader = png::Decoder::new(std::io::Cursor::new(&bytes))
+        .read_info()
+        .expect("fallback should decode");
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    let frame = reader.next_frame(&mut pixels).unwrap();
+    assert_eq!((frame.width, frame.height), (32, 32));
+    assert_eq!(pixels[3], 0, "fallback has no background plate");
+    assert_eq!(
+        pixels[(8 * 32 + 16) * 4 + 3],
+        0,
+        "document interior is transparent"
+    );
+    assert_eq!(pixels[16 * 4 + 3], 255, "document reaches the top edge");
+    assert_eq!(
+        pixels[(31 * 32 + 16) * 4 + 3],
+        255,
+        "document reaches the bottom edge"
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -206,9 +287,6 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
             .expect("arguments should encode"),
         bundle_id: None,
         icon_key: String::new(),
-        file_identity: executable.to_string_lossy().into_owned(),
-        last_seen_at: 1,
-        stale: false,
         icon_source: Some(executable),
         icon_index: 0,
         priority: 0,
@@ -246,9 +324,6 @@ fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
             .expect("arguments should encode"),
         bundle_id: None,
         icon_key: icon_key.to_owned(),
-        file_identity: "test".to_owned(),
-        last_seen_at: 1,
-        stale: false,
         icon_source: None,
         icon_index: 0,
         priority: 0,

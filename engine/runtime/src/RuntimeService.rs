@@ -183,6 +183,16 @@ impl RuntimeService {
         self.search.latest_snapshot()
     }
 
+    pub fn prepare_visible_entries(&self, snapshot: &SearchSnapshot, limit: usize) {
+        let count = limit.min(snapshot.results.len());
+        self.extensions
+            .prepare_entries(snapshot.generation, &snapshot.results[..count]);
+    }
+
+    pub fn take_view_invalidations(&self) -> Vec<crate::RuntimeViewInvalidation> {
+        self.extensions.take_view_invalidations()
+    }
+
     pub fn set_notifier(&self, notifier: Arc<dyn Fn() + Send + Sync>) {
         self.search.set_notifier(Arc::clone(&notifier));
         self.extensions.set_notifier(notifier);

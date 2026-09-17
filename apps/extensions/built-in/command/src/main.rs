@@ -104,6 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             )?,
             Message::Cancel { .. } => {}
+            Message::PrepareEntries { .. } => {}
             Message::Shutdown { request_id } => {
                 write_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 break;
@@ -207,6 +208,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged => None,
+        Message::CandidatesChanged
+        | Message::ViewInvalidated { .. }
+        | Message::PrepareEntries { .. } => None,
     }
 }

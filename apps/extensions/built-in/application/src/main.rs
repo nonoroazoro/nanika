@@ -104,6 +104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     latest_generation = latest_generation.max(generation);
                     write_snapshot(&mut output, &entries, &request_id, generation, &query, true)?;
                 }
+                Message::PrepareEntries {
+                    generation,
+                    entry_ids,
+                } => worker.prepare_entries(generation, entry_ids),
                 Message::Refresh {
                     request_id,
                     generation,
@@ -459,6 +463,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Initialized { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged => None,
+        Message::CandidatesChanged
+        | Message::ViewInvalidated { .. }
+        | Message::PrepareEntries { .. } => None,
     }
 }

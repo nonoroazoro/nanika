@@ -236,16 +236,8 @@ fn handle_view_event(
         );
     }
     match event {
-        ViewEvent::Resumed => {
-            if let Err(message) = capture_now(worker) {
-                return write_error(
-                    output,
-                    Some(request_id),
-                    "clipboard_history_refresh_failed",
-                    &message,
-                );
-            }
-        }
+        ViewEvent::Resumed => {}
+        ViewEvent::Invalidated => {}
         ViewEvent::ActionInvoked { action_id, .. } if action_id == CLEAR_ACTION_ID => {
             if let Err(message) = worker.clear() {
                 return write_error(
@@ -434,6 +426,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Shutdown { request_id }
         | Message::ShutdownAck { request_id } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged => None,
+        Message::CandidatesChanged
+        | Message::ViewInvalidated { .. }
+        | Message::PrepareEntries { .. } => None,
     }
 }

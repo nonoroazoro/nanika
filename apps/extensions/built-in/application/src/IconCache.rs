@@ -1,13 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::normalization::{path_key, stable_hash, timestamp_nanos};
+use crate::normalization::{path_key, stable_hash};
 use crate::platform;
 use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
 const ICON_SIZES: [u32; 3] = [32, 64, 128];
 const FALLBACK_KEY: &str = "application-fallback-v1";
-const ICON_RENDER_VERSION: &str = "normalized-v5";
+const ICON_RENDER_VERSION: &str = "alpha-cropped-v1";
 
 /// Machine-local icon cache with deterministic content keys.
 pub struct IconCache {
@@ -24,11 +24,7 @@ impl IconCache {
     }
 
     pub(crate) fn key(&self, entry: &ApplicationEntry) -> Result<String, ApplicationError> {
-        let Some(source) = entry.icon_source.as_deref() else {
-            return Ok(FALLBACK_KEY.to_owned());
-        };
-        let metadata = source.metadata()?;
-        icon_key(entry, source, &metadata)
+        self.key_with_state(entry, &mut DiscoveryState::new())
     }
 
     pub(crate) fn key_with_state(
@@ -39,8 +35,7 @@ impl IconCache {
         let Some(source) = entry.icon_source.as_deref() else {
             return Ok(FALLBACK_KEY.to_owned());
         };
-        let metadata = state.metadata(source)?;
-        icon_key(entry, source, metadata)
+        platform::icon_cache_key(source, entry.icon_index, state)
     }
 
     pub fn prepare(&self, entry: &mut ApplicationEntry) -> Result<(), ApplicationError> {
@@ -78,14 +73,16 @@ impl IconCache {
         {
             fs::write(&fallback_marker, [])?;
         }
-        for size in ICON_SIZES {
-            let target = directory.join(format!("{size}.png"));
-            if !target.is_file()
-                && let Err(error) = platform::extract_icon(source, entry.icon_index, size, &target)
-            {
-                self.copy_fallback_to(&directory)?;
-                return Err(error);
-            }
+        let missing = ICON_SIZES
+            .into_iter()
+            .filter(|size| !directory.join(format!("{size}.png")).is_file())
+            .collect::<Vec<_>>();
+        if !missing.is_empty()
+            && let Err(error) =
+                platform::extract_icons(source, entry.icon_index, &missing, &directory)
+        {
+            self.copy_fallback_to(&directory)?;
+            return Err(error);
         }
         if let Err(error) = fs::remove_file(fallback_marker)
             && error.kind() != std::io::ErrorKind::NotFound
@@ -146,20 +143,6 @@ impl IconCache {
     }
 }
 
-fn icon_key(
-    entry: &ApplicationEntry,
-    source: &Path,
-    metadata: &std::fs::Metadata,
-) -> Result<String, ApplicationError> {
-    let modified = timestamp_nanos(metadata.modified()?);
-    Ok(key_from_stamp(
-        source,
-        entry.icon_index,
-        metadata.len(),
-        modified,
-    ))
-}
-
 pub(crate) fn key_from_stamp(
     source: &Path,
     icon_index: i32,
@@ -177,13 +160,20 @@ pub(crate) fn key_from_stamp(
 
 fn write_fallback_icon(path: &Path, size: u32) -> Result<(), ApplicationError> {
     let mut pixels = vec![0_u8; (size * size * 4) as usize];
+    let stroke = (size / 16).max(1);
+    let left = size / 8;
+    let right = size - left;
     for y in 0..size {
         for x in 0..size {
             let index = ((y * size + x) * 4) as usize;
-            let inset = size / 6;
-            let inside = x >= inset && y >= inset && x < size - inset && y < size - inset;
-            let color = if inside {
-                [78, 91, 126, 255]
+            let outline = (left..right).contains(&x)
+                && (x < left + stroke || x >= right - stroke || y < stroke || y >= size - stroke);
+            let text = (size / 4..size * 3 / 4).contains(&x)
+                && ((size * 3 / 8..size * 3 / 8 + stroke).contains(&y)
+                    || (size / 2..size / 2 + stroke).contains(&y)
+                    || (x < size / 2 && (size * 5 / 8..size * 5 / 8 + stroke).contains(&y)));
+            let color = if outline || text {
+                [120, 130, 150, 255]
             } else {
                 [0, 0, 0, 0]
             };

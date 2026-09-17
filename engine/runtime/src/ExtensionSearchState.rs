@@ -12,6 +12,7 @@ pub(crate) struct ExtensionSearchState {
     pub(crate) closed: bool,
     pub(crate) latest_query: Option<ExtensionSearchQuery>,
     pub(crate) query: Option<ExtensionSearchQuery>,
+    pub(crate) entry_preparation: Option<(u64, Vec<String>)>,
     pub(crate) refreshes: VecDeque<ExtensionRefresh>,
     pub(crate) invocations: VecDeque<ExtensionInvocation>,
     pub(crate) view_events: VecDeque<ExtensionViewRequest>,

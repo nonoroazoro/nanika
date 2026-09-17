@@ -34,17 +34,24 @@ pub(crate) fn is_application_bundle(path: &Path) -> bool {
 pub(crate) fn read_entry(
     state: &mut DiscoveryState,
     path: &Path,
-    seen_at: u64,
     priority: usize,
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
-    implementation::read_entry(state, path, seen_at, priority)
+    implementation::read_entry(state, path, priority)
 }
 
-pub(crate) fn extract_icon(
+pub(crate) fn icon_cache_key(
     source: &Path,
     icon_index: i32,
-    size: u32,
-    target: &Path,
+    state: &mut DiscoveryState,
+) -> Result<String, ApplicationError> {
+    implementation::icon_cache_key(source, icon_index, state)
+}
+
+pub(crate) fn extract_icons(
+    source: &Path,
+    icon_index: i32,
+    sizes: &[u32],
+    directory: &Path,
 ) -> Result<(), ApplicationError> {
-    implementation::extract_icon(source, icon_index, size, target)
+    implementation::extract_icons(source, icon_index, sizes, directory)
 }

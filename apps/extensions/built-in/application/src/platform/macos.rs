@@ -1,15 +1,15 @@
 #![allow(unsafe_code)]
 
 use std::fs;
-use std::io::Cursor;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use icns::{IconFamily, PixelFormat};
-use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSWorkspace};
-use objc2_core_foundation::CFData;
-use objc2_foundation::{NSBundle, NSData, NSDictionary, NSFileManager, NSLocale, NSString};
+use objc2_foundation::{NSBundle, NSFileManager, NSLocale, NSString};
 use plist::Value;
+
+mod icons;
+
+pub(super) use icons::{extract_icons, icon_cache_key};
 
 use crate::normalization::{normalize_name, path_key, stable_hash};
 use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
@@ -43,7 +43,6 @@ pub(super) fn is_application_bundle(path: &Path) -> bool {
 pub(super) fn read_entry(
     state: &mut DiscoveryState,
     path: &Path,
-    seen_at: u64,
     priority: usize,
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     if !is_application_bundle(path) {
@@ -90,15 +89,6 @@ pub(super) fn read_entry(
         ],
     );
     let arguments_json = ApplicationArguments::empty().to_json()?;
-    let icon_source = string_value(dictionary.get("CFBundleIconFile"))
-        .map(|name| {
-            let mut name = PathBuf::from(name);
-            if name.extension().is_none() {
-                name.set_extension("icns");
-            }
-            path.join("Contents/Resources").join(name)
-        })
-        .filter(|path| path.is_file());
     Ok(Some(ApplicationEntry {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
@@ -111,10 +101,7 @@ pub(super) fn read_entry(
         arguments_json,
         bundle_id,
         icon_key: String::new(),
-        file_identity: executable_key,
-        last_seen_at: seen_at,
-        stale: false,
-        icon_source,
+        icon_source: Some(path.to_path_buf()),
         icon_index: 0,
         priority,
     }))
@@ -208,101 +195,6 @@ fn normalized_aliases<'a>(
         normalized.push(alias);
     }
     normalized.join("\n")
-}
-
-pub(super) fn extract_icon(
-    source: &Path,
-    _icon_index: i32,
-    size: u32,
-    target: &Path,
-) -> Result<(), ApplicationError> {
-    let pixels = match icns_icon(source, size) {
-        Ok(pixels) => pixels,
-        Err(icns_error) => {
-            let Some(bundle) = application_bundle(source) else {
-                return Err(icns_error);
-            };
-            match workspace_icon(&bundle, size) {
-                Ok(pixels) => pixels,
-                Err(_) => return Err(icns_error),
-            }
-        }
-    };
-    crate::icon_cache::write_png(target, size, size, &pixels)
-}
-
-fn icns_icon(source: &Path, size: u32) -> Result<Vec<u8>, ApplicationError> {
-    let family = IconFamily::read(fs::File::open(source)?)?;
-    let mut types = family.available_icons();
-    types.sort_by_key(|icon_type| icon_type.pixel_width().abs_diff(size));
-    types
-        .into_iter()
-        .filter_map(|icon_type| family.get_icon_with_type(icon_type).ok())
-        .find_map(|image| {
-            let image = image.convert_to(PixelFormat::RGBA);
-            crate::normalize_icon_rgba(image.data(), image.width(), image.height(), size)
-        })
-        .ok_or_else(|| std::io::Error::other("ICNS contains no visible decodable icon").into())
-}
-
-fn application_bundle(source: &Path) -> Option<PathBuf> {
-    source
-        .ancestors()
-        .find(|ancestor| {
-            ancestor
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
-        })
-        .map(Path::to_path_buf)
-}
-
-fn workspace_icon(bundle: &Path, size: u32) -> Result<Vec<u8>, ApplicationError> {
-    let path = NSString::from_str(&bundle.to_string_lossy());
-    let image = NSWorkspace::sharedWorkspace().iconForFile(&path);
-    let tiff = image
-        .TIFFRepresentation()
-        .ok_or_else(|| std::io::Error::other("NSWorkspace icon has no TIFF representation"))?;
-    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)
-        .ok_or_else(|| std::io::Error::other("NSWorkspace icon TIFF could not decode"))?;
-    let properties = NSDictionary::new();
-    let png = unsafe {
-        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
-    }
-    .ok_or_else(|| std::io::Error::other("NSWorkspace icon could not encode as PNG"))?;
-    let ns_data: &NSData = &png;
-    let data: &CFData = ns_data.as_ref();
-    let bytes = unsafe { data.as_bytes_unchecked() };
-    let (pixels, width, height) = decode_png_rgba(bytes)?;
-    crate::normalize_icon_rgba(&pixels, width, height, size)
-        .ok_or_else(|| std::io::Error::other("NSWorkspace provided an empty application icon"))
-        .map_err(Into::into)
-}
-
-fn decode_png_rgba(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32), ApplicationError> {
-    let mut decoder = png::Decoder::new(Cursor::new(bytes));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(std::io::Error::other)?;
-    let output_size = reader
-        .output_buffer_size()
-        .ok_or_else(|| std::io::Error::other("NSWorkspace PNG output size is unavailable"))?;
-    let mut decoded = vec![0_u8; output_size];
-    let output = reader
-        .next_frame(&mut decoded)
-        .map_err(std::io::Error::other)?;
-    let decoded = &decoded[..output.buffer_size()];
-    let pixels = match output.color_type {
-        png::ColorType::Rgba => decoded.to_vec(),
-        png::ColorType::Rgb => decoded
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], u8::MAX])
-            .collect(),
-        _ => {
-            return Err(std::io::Error::other("NSWorkspace PNG color type is unsupported").into());
-        }
-    };
-    Ok((pixels, output.width, output.height))
 }
 
 fn string_value(value: Option<&Value>) -> Option<&str> {

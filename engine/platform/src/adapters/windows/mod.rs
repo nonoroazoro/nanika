@@ -34,3 +34,5 @@ pub fn target_triple() -> &'static str {
         _ => "unsupported",
     }
 }
+
+pub(crate) mod file_icon;

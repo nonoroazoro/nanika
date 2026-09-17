@@ -1,3 +1,19 @@
+pub(crate) fn unpremultiply_bgra_to_rgba(pixels: &mut [u8]) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+        match pixel[3] {
+            0 => pixel[..3].fill(0),
+            u8::MAX => {}
+            alpha => {
+                let alpha = u16::from(alpha);
+                for channel in &mut pixel[..3] {
+                    *channel = ((u16::from(*channel) * 255) / alpha).min(255) as u8;
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn recover_rgba(mut black: Vec<u8>, white: &[u8]) -> Vec<u8> {
     for (pixel, white_pixel) in black
         .as_chunks_mut::<4>()

@@ -147,10 +147,10 @@ fn argument_free_shortcuts_deduplicate_with_their_direct_executable() {
     create_executable(&executable);
     create_shell_link(&shortcut, &executable);
     let mut discovery_state = DiscoveryState::new();
-    let direct_entry = platform::read_entry(&mut discovery_state, &executable, 1, 1)
+    let direct_entry = platform::read_entry(&mut discovery_state, &executable, 1)
         .expect("direct executable should parse")
         .expect("direct executable should contribute an entry");
-    let shortcut_entry = platform::read_entry(&mut discovery_state, &shortcut, 1, 1)
+    let shortcut_entry = platform::read_entry(&mut discovery_state, &shortcut, 1)
         .expect("shortcut should parse")
         .expect("shortcut should contribute an entry");
     assert_eq!(shortcut_entry.entry_id, direct_entry.entry_id);
@@ -202,7 +202,7 @@ fn shortcut_icons_preserve_the_configured_resource_index() {
             false,
             SW_SHOWNORMAL,
         );
-        let mut entry = platform::read_entry(&mut state, &shortcut, 1, 0)
+        let mut entry = platform::read_entry(&mut state, &shortcut, 0)
             .unwrap()
             .unwrap();
         cache.prepare(&mut entry).unwrap();
@@ -243,7 +243,7 @@ fn shortcut_launch_path_preserves_unicode_after_database_reload() {
     );
     drop(index);
     let database = ApplicationDatabase::open(&database_path).unwrap();
-    let entries = database.load_active_entries().unwrap();
+    let entries = database.load_entries().unwrap();
     assert_eq!(entries.len(), 1);
     let nanika_protocol::LaunchDescriptor::WindowsApplication { path } =
         entries[0].launch_descriptor().unwrap()
@@ -315,7 +315,7 @@ fn shortcuts_with_distinct_activation_settings_are_not_merged() {
     let executable = root.join("Sample.exe");
     create_executable(&executable);
     let mut state = DiscoveryState::new();
-    let direct = platform::read_entry(&mut state, &executable, 1, 0)
+    let direct = platform::read_entry(&mut state, &executable, 0)
         .unwrap()
         .unwrap();
     let mut identities = std::collections::HashSet::from([direct.entry_id]);
@@ -325,7 +325,7 @@ fn shortcuts_with_distinct_activation_settings_are_not_merged() {
     ] {
         let shortcut = root.join(format!("{name}.lnk"));
         create_shell_link_configured(&shortcut, &executable, None, elevated, show_command);
-        let entry = platform::read_entry(&mut state, &shortcut, 1, 0)
+        let entry = platform::read_entry(&mut state, &shortcut, 0)
             .unwrap()
             .unwrap();
         assert!(
@@ -344,7 +344,7 @@ fn invalid_windows_executables_are_rejected() {
     std::fs::write(&executable, []).expect("invalid executable should exist");
 
     assert!(
-        platform::read_entry(&mut DiscoveryState::new(), &executable, 1, 0)
+        platform::read_entry(&mut DiscoveryState::new(), &executable, 0)
             .expect("invalid executable should not produce an I/O error")
             .is_none()
     );
@@ -359,7 +359,7 @@ fn executable_validation_cache_rechecks_changed_files() {
     create_executable(&executable);
     let mut discovery_state = DiscoveryState::new();
     assert!(
-        platform::read_entry(&mut discovery_state, &executable, 1, 0)
+        platform::read_entry(&mut discovery_state, &executable, 0)
             .expect("valid executable should parse")
             .is_some()
     );
@@ -368,7 +368,7 @@ fn executable_validation_cache_rechecks_changed_files() {
     discovery_state.begin_scan();
 
     assert!(
-        platform::read_entry(&mut discovery_state, &executable, 2, 0)
+        platform::read_entry(&mut discovery_state, &executable, 0)
             .expect("changed executable should parse")
             .is_none()
     );

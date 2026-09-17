@@ -30,7 +30,7 @@ impl ApplicationIndex {
     }
 
     pub fn load(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
-        self.database.load_active_entries()
+        self.database.load_entries()
     }
 
     pub(crate) fn load_presentable(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
@@ -73,7 +73,6 @@ impl ApplicationIndex {
         let mut entries = HashMap::<String, ApplicationEntry>::new();
         let mut warnings = 0_usize;
         let mut complete = true;
-        let seen_at = unix_timestamp();
         for (root, priority) in &roots {
             if is_cancelled(cancelled_through, generation) {
                 break;
@@ -105,7 +104,6 @@ impl ApplicationIndex {
             if metadata.is_file() || platform::is_application_bundle(root) {
                 complete &= collect_entry(
                     root,
-                    seen_at,
                     *priority,
                     &mut self.discovery_state,
                     &mut entries,
@@ -143,7 +141,6 @@ impl ApplicationIndex {
                 if platform::is_application_bundle(path) {
                     complete &= collect_entry(
                         path,
-                        seen_at,
                         *priority,
                         &mut self.discovery_state,
                         &mut entries,
@@ -153,7 +150,6 @@ impl ApplicationIndex {
                 } else if entry.file_type().is_file() && platform::is_application_path(path) {
                     complete &= collect_entry(
                         path,
-                        seen_at,
                         *priority,
                         &mut self.discovery_state,
                         &mut entries,
@@ -224,22 +220,57 @@ impl ApplicationIndex {
         Ok((report, self.load_presentable()?))
     }
 
-    pub fn populate_icons(
+    /// Populates at most `limit` pending icons and reports whether more work remains.
+    ///
+    /// Keeping batches bounded lets the runtime publish the first visible icon set before
+    /// continuing with lower-priority cache work.
+    pub fn populate_icon_batch(
         &mut self,
         cancelled_through: &AtomicU64,
         generation: u64,
-    ) -> Result<Vec<String>, ApplicationError> {
+        limit: usize,
+    ) -> Result<(Vec<String>, bool), ApplicationError> {
         let mut failures = Vec::new();
-        for entry in &mut self.pending_icons {
+        let count = limit.min(self.pending_icons.len());
+        let mut processed = 0;
+        for entry in &mut self.pending_icons[..count] {
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
+            processed += 1;
             if let Err(error) = self.icon_cache.prepare(entry) {
                 failures.push(format!("{}: {error}", entry.target_path));
             }
         }
-        self.pending_icons.clear();
-        Ok(failures)
+        self.pending_icons.drain(..processed);
+        Ok((failures, !self.pending_icons.is_empty()))
+    }
+
+    pub(crate) fn prioritize_pending_icons(&mut self, entry_ids: &[String]) {
+        let priorities = entry_ids
+            .iter()
+            .enumerate()
+            .map(|(index, entry_id)| (entry_id.as_str(), index))
+            .collect::<HashMap<_, _>>();
+        self.pending_icons.sort_by_key(|entry| {
+            priorities
+                .get(entry.entry_id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
+    }
+
+    pub(crate) fn has_pending_icons(&self) -> bool {
+        !self.pending_icons.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_pending_icon(&self, entry_ids: &[String]) -> bool {
+        entry_ids.iter().any(|entry_id| {
+            self.pending_icons
+                .iter()
+                .any(|entry| entry.entry_id == *entry_id)
+        })
     }
 }
 
@@ -249,13 +280,12 @@ fn is_cancelled(cancelled_through: &AtomicU64, generation: u64) -> bool {
 
 fn collect_entry(
     path: &Path,
-    seen_at: u64,
     priority: usize,
     discovery_state: &mut DiscoveryState,
     entries: &mut HashMap<String, ApplicationEntry>,
     warnings: &mut usize,
 ) -> bool {
-    match platform::read_entry(discovery_state, path, seen_at, priority) {
+    match platform::read_entry(discovery_state, path, priority) {
         Ok(Some(entry)) => match entries.get(&entry.entry_id) {
             Some(existing)
                 if existing.priority > entry.priority
@@ -304,8 +334,53 @@ fn is_excluded(path: &Path, exclusions: &[PathBuf]) -> bool {
     })
 }
 
-fn unix_timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
+#[cfg(test)]
+mod priority_tests {
+    use super::*;
+
+    fn entry(id: &str) -> ApplicationEntry {
+        ApplicationEntry {
+            entry_id: id.to_owned(),
+            source_key: id.to_owned(),
+            display_name: id.to_owned(),
+            normalized_name: id.to_owned(),
+            normalized_tokens: id.to_owned(),
+            launch_kind: "macos-bundle".to_owned(),
+            target_path: format!("/{id}.app"),
+            working_directory: None,
+            arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
+            bundle_id: None,
+            icon_key: id.to_owned(),
+            icon_source: None,
+            icon_index: 0,
+            priority: 0,
+        }
+    }
+
+    #[test]
+    fn host_visible_entries_move_to_the_front_in_host_order() {
+        let root = std::env::temp_dir().join(format!(
+            "nanika-application-priority-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(root.join("index.db")).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        index.pending_icons = vec![entry("a"), entry("b"), entry("c"), entry("d")];
+        assert!(index.has_pending_icon(&["b".to_owned()]));
+        assert!(!index.has_pending_icon(&["missing".to_owned()]));
+        index.prioritize_pending_icons(&["d".to_owned(), "b".to_owned()]);
+        assert_eq!(
+            index
+                .pending_icons
+                .iter()
+                .map(|entry| entry.entry_id.as_str())
+                .collect::<Vec<_>>(),
+            ["d", "b", "a", "c"]
+        );
+        drop(index);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

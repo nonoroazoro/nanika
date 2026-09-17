@@ -44,7 +44,6 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 zip = { version = "8.4.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 walkdir = "2.5.0"
 plist = "1.10.0"
-icns = "0.4.0"
 png = "0.18.1"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
@@ -55,6 +54,7 @@ objc2-service-management = { version = "0.3.2", default-features = false }
 objc2 = { version = "0.6.4", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
+objc2-core-graphics = { version = "0.3.2", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
 agent-client-protocol = { version = "2.0.0", default-features = false }
 async-channel = "2.5.0"

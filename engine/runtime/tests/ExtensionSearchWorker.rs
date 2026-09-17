@@ -9,8 +9,22 @@ use nanika_extension_package::{
 
 use crate::{
     ExtensionSearchState, ExtensionViewRequest, ExtensionViewRequestKind, ExtensionWork,
-    contribution_candidates, next_work,
+    contribution_candidates, next_work, queue_view_invalidation,
 };
+
+#[test]
+fn view_invalidations_keep_only_the_latest_identity_per_extension() {
+    let pending = Mutex::new(std::collections::HashMap::new());
+
+    queue_view_invalidation(&pending, "extension.one", "view.old".to_owned());
+    queue_view_invalidation(&pending, "extension.one", "view.current".to_owned());
+    queue_view_invalidation(&pending, "extension.two", "view.other".to_owned());
+
+    let pending = pending.lock().unwrap();
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending["extension.one"].view_id, "view.current");
+    assert_eq!(pending["extension.two"].view_id, "view.other");
+}
 
 #[test]
 fn view_event_wakes_an_idle_worker() {
@@ -44,7 +58,29 @@ fn view_event_wakes_an_idle_worker() {
 }
 
 #[test]
-fn static_command_search_values_include_declared_metadata() {
+fn latest_visible_entry_hint_is_coalesced_behind_a_query() {
+    let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
+    {
+        let mut pending = state.0.lock().unwrap();
+        pending.query = Some(crate::ExtensionSearchQuery {
+            generation: 4,
+            query: "mail".to_owned(),
+        });
+        pending.entry_preparation = Some((3, vec!["old".to_owned()]));
+        pending.entry_preparation = Some((4, vec!["visible".to_owned()]));
+    }
+    assert!(matches!(next_work(&state), Some(ExtensionWork::Query(_))));
+    assert!(matches!(
+        next_work(&state),
+        Some(ExtensionWork::PrepareEntries {
+            generation: 4,
+            entry_ids,
+        }) if entry_ids == ["visible"]
+    ));
+}
+
+#[test]
+fn static_contribution_candidates_preserve_type_and_declared_metadata() {
     let candidates = contribution_candidates(&ExtensionContributions {
         commands: vec![CommandContribution {
             command: "example.open".to_owned(),

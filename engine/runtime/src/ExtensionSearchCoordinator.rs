@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -9,7 +10,7 @@ use crate::{
     ExtensionConfigurationResult, ExtensionInvocation, ExtensionInvocationOutcome,
     ExtensionInvocationOutput, ExtensionNotifier, ExtensionRuntime, ExtensionSearchWorker,
     ExtensionSearchWorkerContext, ExtensionViewRequest, ExtensionViewRequestKind,
-    HostServiceHandler, RuntimeViewCompletion, SupervisorError,
+    HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation, SupervisorError,
 };
 
 /// Collection of fixed extension workers queried by one host generation.
@@ -20,6 +21,7 @@ pub struct ExtensionSearchCoordinator {
     next_refresh_id: AtomicU64,
     notifier: ExtensionNotifier,
     host_services: Option<Arc<dyn HostServiceHandler>>,
+    view_invalidations: Arc<Mutex<HashMap<String, RuntimeViewInvalidation>>>,
 }
 
 impl ExtensionSearchCoordinator {
@@ -31,6 +33,7 @@ impl ExtensionSearchCoordinator {
             next_refresh_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
             host_services: None,
+            view_invalidations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -83,14 +86,41 @@ impl ExtensionSearchCoordinator {
             ExtensionSearchWorkerContext {
                 notifier: Arc::clone(&self.notifier),
                 host_services: self.host_services.clone(),
+                view_invalidations: Arc::clone(&self.view_invalidations),
             },
         )?);
         Ok(())
     }
 
+    pub(crate) fn take_view_invalidations(&self) -> Vec<RuntimeViewInvalidation> {
+        std::mem::take(
+            &mut *self
+                .view_invalidations
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+        )
+        .into_values()
+        .collect()
+    }
+
     pub fn query(&self, generation: u64, query: &str) {
         for worker in &self.workers {
             worker.query(generation, query);
+        }
+    }
+
+    pub(crate) fn prepare_entries(
+        &self,
+        generation: u64,
+        visible: &[nanika_search::RankedCandidate],
+    ) {
+        for worker in &self.workers {
+            let entry_ids = visible
+                .iter()
+                .filter(|ranked| ranked.candidate.extension_id() == worker.extension_id())
+                .map(|ranked| ranked.candidate.entry_id().to_owned())
+                .collect();
+            worker.prepare_entries(generation, entry_ids);
         }
     }
 

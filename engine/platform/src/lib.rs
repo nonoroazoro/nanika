@@ -74,3 +74,35 @@ mod hotkey_timing_tests;
 #[cfg(test)]
 #[path = "../tests/PngResource.rs"]
 mod png_resource_tests;
+
+#[path = "shared/IconNormalizer.rs"]
+mod icon_normalizer;
+pub use icon_normalizer::normalize_icon_rgba;
+#[path = "shared/FileIconCache.rs"]
+mod file_icon_cache;
+#[path = "shared/image_resize.rs"]
+mod image_resize;
+#[cfg(any(target_os = "windows", test))]
+#[path = "adapters/windows/alpha_recovery.rs"]
+mod windows_alpha_recovery;
+pub use file_icon_cache::FileIconCache;
+
+#[path = "shared/file_icon.rs"]
+mod file_icon;
+pub use file_icon::file_icon_pixels;
+
+#[cfg(test)]
+#[path = "../tests/IconNormalizer.rs"]
+mod icon_normalizer_tests;
+
+#[cfg(test)]
+#[path = "../tests/image_resize.rs"]
+mod image_resize_tests;
+
+#[cfg(test)]
+#[path = "../tests/windows_alpha_recovery.rs"]
+mod windows_alpha_recovery_tests;
+
+#[cfg(test)]
+#[path = "../tests/FileIconCache.rs"]
+mod file_icon_cache_tests;

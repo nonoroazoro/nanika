@@ -4,6 +4,54 @@ use std::path::PathBuf;
 use crate::{ApplicationArguments, ApplicationDatabase, ApplicationEntry, ScanReport};
 
 #[test]
+fn baseline_schema_is_the_only_initial_version() {
+    let root = test_root("schema");
+    let path = root.join("application.db");
+    drop(ApplicationDatabase::open(&path).expect("database should open"));
+
+    let connection = rusqlite::Connection::open(path).expect("database should reopen");
+    let version: u32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("schema version should load");
+    assert_eq!(version, 1);
+    assert_eq!(
+        table_columns(&connection, "scan_state"),
+        [
+            "id",
+            "generation",
+            "status",
+            "started_at",
+            "completed_at",
+            "last_error",
+        ]
+    );
+    assert_eq!(
+        table_columns(&connection, "app_entries"),
+        [
+            "entry_id",
+            "source_key",
+            "display_name",
+            "normalized_name",
+            "normalized_tokens",
+            "launch_kind",
+            "target_path",
+            "working_directory",
+            "arguments_json",
+            "bundle_id",
+            "icon_key",
+        ]
+    );
+    for table in ["scan_state", "app_entries"] {
+        assert!(
+            table_is_strict(&connection, table),
+            "{table} must be strict"
+        );
+    }
+    drop(connection);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
 fn database_initializes_and_recovers_an_interrupted_scan() {
     let root = test_root("baseline");
     let path = root.join("application.db");
@@ -39,7 +87,7 @@ fn corrupt_application_table_fails_explicitly() {
     let mut database = ApplicationDatabase::open(&path).expect("database should open");
     database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry("app.corrupt", 1)], None)
+        .commit_scan(report(1, true), &[entry("app.corrupt")], None)
         .expect("application row should persist");
     drop(database);
     let connection = rusqlite::Connection::open(&path).expect("database should reopen");
@@ -70,34 +118,34 @@ fn corrupt_application_table_fails_explicitly() {
     drop(file);
 
     let result = ApplicationDatabase::open(&path)
-        .and_then(|database| database.load_active_entries().map(|_| database));
+        .and_then(|database| database.load_entries().map(|_| database));
     assert!(result.is_err());
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
 #[test]
-fn complete_scans_stale_then_remove_missing_entries() {
-    let root = test_root("stale");
+fn complete_scans_replace_the_previous_snapshot() {
+    let root = test_root("snapshot");
     let path = root.join("application.db");
     let mut database = ApplicationDatabase::open(path).expect("database should open");
-    let entry = entry("app.one", 1);
+    let entry = entry("app.one");
     database.begin_scan(1).expect("scan should begin");
     database
         .commit_scan(report(1, true), &[entry], None)
         .expect("first scan should commit");
-    assert_eq!(database.load_active_entries().expect("entries").len(), 1);
+    assert_eq!(database.load_entries().expect("entries").len(), 1);
 
     database.begin_scan(2).expect("scan should begin");
     database
         .commit_scan(report(2, true), &[], None)
         .expect("second scan should commit");
-    assert!(database.load_active_entries().expect("entries").is_empty());
+    assert!(database.load_entries().expect("entries").is_empty());
 
     database.begin_scan(3).expect("scan should begin");
     database
         .commit_scan(report(3, true), &[], None)
         .expect("third scan should commit");
-    assert!(database.load_active_entries().expect("entries").is_empty());
+    assert!(database.load_entries().expect("entries").is_empty());
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
@@ -109,13 +157,13 @@ fn partial_scans_preserve_entries_not_seen_during_failures() {
     let mut database = ApplicationDatabase::open(path).expect("database should open");
     database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry("app.one", 1)], None)
+        .commit_scan(report(1, true), &[entry("app.one")], None)
         .expect("first scan should commit");
     database.begin_scan(2).expect("scan should begin");
     database
         .commit_scan(report(2, false), &[], Some("permission denied"))
         .expect("partial scan should commit");
-    assert_eq!(database.load_active_entries().expect("entries").len(), 1);
+    assert_eq!(database.load_entries().expect("entries").len(), 1);
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
@@ -130,7 +178,7 @@ fn report(generation: u64, complete: bool) -> ScanReport {
     }
 }
 
-fn entry(entry_id: &str, generation: u64) -> ApplicationEntry {
+fn entry(entry_id: &str) -> ApplicationEntry {
     ApplicationEntry {
         entry_id: entry_id.to_owned(),
         source_key: "source".to_owned(),
@@ -145,9 +193,6 @@ fn entry(entry_id: &str, generation: u64) -> ApplicationEntry {
             .expect("arguments should encode"),
         bundle_id: None,
         icon_key: "fallback".to_owned(),
-        file_identity: "example.exe".to_owned(),
-        last_seen_at: generation,
-        stale: false,
         icon_source: None,
         icon_index: 0,
         priority: 0,
@@ -160,4 +205,27 @@ fn test_root(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("test root should exist");
     root
+}
+
+fn table_columns(connection: &rusqlite::Connection, table: &str) -> Vec<String> {
+    connection
+        .prepare(&format!(
+            "SELECT name FROM pragma_table_info('{table}') ORDER BY cid"
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .expect("table columns should load")
+}
+
+fn table_is_strict(connection: &rusqlite::Connection, table: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT strict FROM pragma_table_list WHERE name = ?1",
+            [table],
+            |row| row.get(0),
+        )
+        .expect("table strictness should load")
 }

@@ -85,6 +85,15 @@ impl ExtensionRuntime {
         }
     }
 
+    pub(crate) fn set_view_invalidation_notifier(
+        &mut self,
+        notify: Arc<dyn Fn(String) + Send + Sync>,
+    ) {
+        if let Self::Nanika(process) = self {
+            process.set_view_invalidation_notifier(notify);
+        }
+    }
+
     pub(crate) fn set_host_services(
         &mut self,
         extension_id: String,
@@ -175,6 +184,17 @@ impl ExtensionRuntime {
                 publish(entries)?;
                 Ok(true)
             }
+        }
+    }
+
+    pub(crate) fn prepare_entries(
+        &mut self,
+        generation: u64,
+        entry_ids: Vec<String>,
+    ) -> Result<(), SupervisorError> {
+        match self {
+            Self::Nanika(process) => process.prepare_entries(generation, entry_ids),
+            Self::Acp(_) => Ok(()),
         }
     }
 

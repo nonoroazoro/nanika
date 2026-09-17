@@ -81,6 +81,8 @@ mod runtime_service;
 mod runtime_update_batch;
 #[path = "RuntimeViewCompletion.rs"]
 mod runtime_view_completion;
+#[path = "RuntimeViewInvalidation.rs"]
+mod runtime_view_invalidation;
 #[path = "SupervisorError.rs"]
 mod supervisor_error;
 
@@ -125,6 +127,7 @@ pub use runtime_output_update::*;
 pub use runtime_service::*;
 pub use runtime_update_batch::*;
 pub use runtime_view_completion::*;
+pub use runtime_view_invalidation::*;
 pub use supervisor_error::*;
 
 pub use nanika_foundation::{DiagnosticCategory, DiagnosticCode};

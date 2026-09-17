@@ -4,6 +4,8 @@ use std::time::Instant;
 
 use crate::{DesktopRuntime, RootSearchSnapshot, SearchPhase};
 
+const VISIBLE_ENTRY_PREPARATION_LIMIT: usize = 10;
+
 pub(crate) enum SearchDelivery {
     Wake,
     Shutdown,
@@ -28,13 +30,16 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
         if session.transport_error.is_some() {
             continue;
         }
-        if session.in_flight.is_some() {
-            continue;
-        }
         let latest = runtime
             .as_ref()
             .and_then(|runtime| runtime.latest_snapshot())
             .filter(|snapshot| snapshot.generation == session.generation);
+        if let (Some(runtime), Some(snapshot)) = (runtime.as_ref(), latest.as_deref()) {
+            runtime.prepare_visible_entries(snapshot, VISIBLE_ENTRY_PREPARATION_LIMIT);
+        }
+        if session.in_flight.is_some() {
+            continue;
+        }
         let active_error = runtime.as_ref().and_then(|runtime| runtime.active_error());
         let phase = if startup_error.is_some() || active_error.is_some() {
             SearchPhase::Error

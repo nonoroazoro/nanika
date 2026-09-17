@@ -7,31 +7,29 @@ use crate::{ApplicationEntry, ApplicationError, ScanReport};
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    generation INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    started_at INTEGER,
-    completed_at INTEGER,
+    generation INTEGER NOT NULL CHECK (generation >= 0),
+    status TEXT NOT NULL CHECK (status IN ('idle', 'running', 'complete', 'partial', 'cancelled', 'failed', 'interrupted')),
+    started_at INTEGER CHECK (started_at IS NULL OR started_at >= 0),
+    completed_at INTEGER CHECK (completed_at IS NULL OR completed_at >= 0),
     last_error TEXT
-);
+) STRICT;
 INSERT OR IGNORE INTO scan_state (id, generation, status) VALUES (1, 0, 'idle');
 CREATE TABLE IF NOT EXISTS app_entries (
-    entry_id TEXT PRIMARY KEY,
-    source_key TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    normalized_name TEXT NOT NULL,
+    entry_id TEXT PRIMARY KEY CHECK (entry_id <> ''),
+    source_key TEXT NOT NULL CHECK (source_key <> ''),
+    display_name TEXT NOT NULL CHECK (display_name <> ''),
+    normalized_name TEXT NOT NULL CHECK (normalized_name <> ''),
     normalized_tokens TEXT NOT NULL,
-    launch_kind TEXT NOT NULL,
-    target_path TEXT NOT NULL,
+    launch_kind TEXT NOT NULL CHECK (launch_kind IN ('macos-bundle', 'windows-shell-link', 'windows-packaged', 'executable')),
+    target_path TEXT NOT NULL CHECK (target_path <> ''),
     working_directory TEXT,
-    arguments_json TEXT NOT NULL,
+    arguments_json TEXT NOT NULL CHECK (arguments_json <> ''),
     bundle_id TEXT,
-    icon_key TEXT NOT NULL,
-    file_identity TEXT NOT NULL,
-    last_seen_at INTEGER NOT NULL,
-    stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1))
-);
-CREATE INDEX IF NOT EXISTS app_entries_stale_name ON app_entries(stale, normalized_name);
-CREATE INDEX IF NOT EXISTS app_entries_file_identity ON app_entries(file_identity);
+    icon_key TEXT NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS app_entries_name_order
+ON app_entries(normalized_name, entry_id);
+PRAGMA user_version=1;
 ";
 
 /// Application extension database owned by the discovery thread.
@@ -57,9 +55,9 @@ impl ApplicationDatabase {
         Ok(Self { connection })
     }
 
-    pub fn load_active_entries(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
+    pub fn load_entries(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
         let mut statement = self.connection.prepare(
-            "SELECT entry_id, source_key, display_name, normalized_name, normalized_tokens, launch_kind, target_path, working_directory, arguments_json, bundle_id, icon_key, file_identity, last_seen_at, stale FROM app_entries WHERE stale = 0 ORDER BY normalized_name, entry_id",
+            "SELECT entry_id, source_key, display_name, normalized_name, normalized_tokens, launch_kind, target_path, working_directory, arguments_json, bundle_id, icon_key FROM app_entries ORDER BY normalized_name, entry_id",
         )?;
         let rows = statement.query_map([], |row| {
             Ok(ApplicationEntry {
@@ -74,9 +72,6 @@ impl ApplicationDatabase {
                 arguments_json: row.get(8)?,
                 bundle_id: row.get(9)?,
                 icon_key: row.get(10)?,
-                file_identity: row.get(11)?,
-                last_seen_at: u64::try_from(row.get::<_, i64>(12)?).unwrap_or(0),
-                stale: row.get(13)?,
                 icon_source: None,
                 icon_index: 0,
                 priority: 0,
@@ -109,14 +104,15 @@ impl ApplicationDatabase {
     ) -> Result<(), ApplicationError> {
         let transaction = self.connection.transaction()?;
         if report.complete {
-            transaction.execute("DELETE FROM app_entries WHERE stale = 1", [])?;
-            transaction.execute("UPDATE app_entries SET stale = 1", [])?;
+            // A complete scan is an authoritative snapshot. Replacing rows inside the same
+            // transaction removes absent applications without exposing a partial catalogue.
+            transaction.execute("DELETE FROM app_entries", [])?;
         }
         {
             let mut statement = transaction.prepare(
-                "INSERT INTO app_entries (entry_id, source_key, display_name, normalized_name, normalized_tokens, launch_kind, target_path, working_directory, arguments_json, bundle_id, icon_key, file_identity, last_seen_at, stale)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0)
-                 ON CONFLICT(entry_id) DO UPDATE SET source_key = excluded.source_key, display_name = excluded.display_name, normalized_name = excluded.normalized_name, normalized_tokens = excluded.normalized_tokens, launch_kind = excluded.launch_kind, target_path = excluded.target_path, working_directory = excluded.working_directory, arguments_json = excluded.arguments_json, bundle_id = excluded.bundle_id, icon_key = excluded.icon_key, file_identity = excluded.file_identity, last_seen_at = excluded.last_seen_at, stale = 0",
+                "INSERT INTO app_entries (entry_id, source_key, display_name, normalized_name, normalized_tokens, launch_kind, target_path, working_directory, arguments_json, bundle_id, icon_key)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(entry_id) DO UPDATE SET source_key = excluded.source_key, display_name = excluded.display_name, normalized_name = excluded.normalized_name, normalized_tokens = excluded.normalized_tokens, launch_kind = excluded.launch_kind, target_path = excluded.target_path, working_directory = excluded.working_directory, arguments_json = excluded.arguments_json, bundle_id = excluded.bundle_id, icon_key = excluded.icon_key",
             )?;
             for entry in entries {
                 statement.execute(params![
@@ -131,8 +127,6 @@ impl ApplicationDatabase {
                     entry.arguments_json,
                     entry.bundle_id,
                     entry.icon_key,
-                    entry.file_identity,
-                    integer(entry.last_seen_at),
                 ])?;
             }
         }

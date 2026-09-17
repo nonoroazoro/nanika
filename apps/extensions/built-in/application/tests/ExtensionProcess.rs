@@ -330,11 +330,9 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         },
     )
     .expect("query should write");
-    assert!(
-        read_complete_snapshot(&mut output)
-            .iter()
-            .any(|entry| entry.title == "Nanika Sample")
-    );
+    let updated = read_complete_snapshot(&mut output);
+    assert!(updated.iter().any(|entry| entry.title == "Nanika Sample"));
+    prepare_entries(&mut input, 2, &updated);
 
     write_frame(
         &mut input,
@@ -386,6 +384,7 @@ fn query_until_candidate(
         .expect("query should write");
         let entries = read_complete_snapshot(output);
         if entries.iter().any(|entry| entry.title == title) {
+            prepare_entries(&mut *input, generation, &entries);
             return entries;
         }
         loop {
@@ -397,6 +396,25 @@ fn query_until_candidate(
             }
         }
     }
+}
+
+fn prepare_entries(
+    input: &mut impl std::io::Write,
+    generation: u64,
+    entries: &[nanika_protocol::Candidate],
+) {
+    write_frame(
+        input,
+        &Message::PrepareEntries {
+            generation,
+            entry_ids: entries
+                .iter()
+                .take(10)
+                .map(|entry| entry.entry_id.clone())
+                .collect(),
+        },
+    )
+    .expect("visible entry preparation should write");
 }
 
 fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Message> {

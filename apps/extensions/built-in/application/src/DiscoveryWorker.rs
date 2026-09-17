@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use crate::{
@@ -9,11 +9,21 @@ use crate::{
     DiscoveryServices, IconCache, RuntimeEvent,
 };
 
+const ICON_BATCH_SIZE: usize = 10;
+
 /// Named owner for filesystem discovery and application SQLite writes.
 pub struct DiscoveryWorker {
     commands: Sender<DiscoveryCommand>,
     cancelled_through: Arc<AtomicU64>,
+    priority: Arc<Mutex<EntryPriority>>,
     thread: Option<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct EntryPriority {
+    generation: u64,
+    entry_ids: Vec<String>,
+    wake_queued: bool,
 }
 
 impl DiscoveryWorker {
@@ -27,6 +37,9 @@ impl DiscoveryWorker {
         let (commands, receiver) = mpsc::channel();
         let cancelled_through = Arc::new(AtomicU64::new(0));
         let worker_cancellation = Arc::clone(&cancelled_through);
+        let priority = Arc::new(Mutex::new(EntryPriority::default()));
+        let worker_priority = Arc::clone(&priority);
+        let worker_commands = commands.clone();
         let thread = std::thread::Builder::new()
             .name("nanika-application-discovery".to_owned())
             .spawn(move || {
@@ -63,7 +76,8 @@ impl DiscoveryWorker {
                     events: &events,
                     cancelled_through: &worker_cancellation,
                 };
-                index = match run_scan(index, &services, None, 1) {
+                let mut scan_generation = 1;
+                index = match run_scan(index, &services, None, scan_generation) {
                     Some(index) => index,
                     None => return,
                 };
@@ -73,10 +87,81 @@ impl DiscoveryWorker {
                             request_id,
                             generation,
                         } => {
-                            index = match run_scan(index, &services, request_id, generation) {
+                            scan_generation = generation;
+                            index = match run_scan(
+                                index,
+                                &services,
+                                request_id,
+                                generation,
+                            ) {
                                 Some(index) => index,
                                 None => return,
                             };
+                        }
+                        DiscoveryCommand::PopulateIcons => {
+                            if !index.has_pending_icons() {
+                                worker_priority
+                                    .lock()
+                                    .unwrap_or_else(|error| error.into_inner())
+                                    .wake_queued = false;
+                                continue;
+                            }
+                            let entry_ids = worker_priority
+                                .lock()
+                                .unwrap_or_else(|error| error.into_inner())
+                                .entry_ids
+                                .clone();
+                            index.prioritize_pending_icons(&entry_ids);
+                            let more_pending = match index.populate_icon_batch(
+                                services.cancelled_through,
+                                scan_generation,
+                                ICON_BATCH_SIZE,
+                            ) {
+                                Ok((icon_failures, more_pending)) => {
+                                    for failure in icon_failures {
+                                        eprintln!("application icon extraction failed: {failure}");
+                                    }
+                                    match index.load_presentable() {
+                                        Ok(ready) => {
+                                            replace_entries(services.entries, ready);
+                                            if services
+                                                .events
+                                                .send(RuntimeEvent::CandidatesChanged)
+                                                .is_err()
+                                            {
+                                                return;
+                                            }
+                                            more_pending
+                                        }
+                                        Err(error) => {
+                                            eprintln!(
+                                                "application icon cache update failed: {error}"
+                                            );
+                                            false
+                                        }
+                                    }
+                                }
+                                Err(error) => {
+                                    eprintln!("application icon cache population failed: {error}");
+                                    false
+                                }
+                            };
+                            let mut priority = worker_priority
+                                .lock()
+                                .unwrap_or_else(|error| error.into_inner());
+                            priority.wake_queued = false;
+                            if more_pending
+                                && services.cancelled_through.load(Ordering::Acquire)
+                                    < scan_generation
+                            {
+                                priority.wake_queued = true;
+                                if worker_commands
+                                    .send(DiscoveryCommand::PopulateIcons)
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
                         }
                         DiscoveryCommand::Shutdown => break,
                     }
@@ -85,6 +170,7 @@ impl DiscoveryWorker {
         Ok(Self {
             commands,
             cancelled_through,
+            priority,
             thread: Some(thread),
         })
     }
@@ -101,6 +187,27 @@ impl DiscoveryWorker {
     pub fn cancel(&self, generation: u64) {
         self.cancelled_through
             .fetch_max(generation, Ordering::AcqRel);
+    }
+
+    pub fn prepare_entries(&self, generation: u64, entry_ids: Vec<String>) {
+        if entry_ids.is_empty() {
+            return;
+        }
+        let mut priority = self
+            .priority
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if generation >= priority.generation {
+            priority.generation = generation;
+            priority.entry_ids = entry_ids;
+        }
+        if priority.wake_queued {
+            return;
+        }
+        priority.wake_queued = true;
+        if self.commands.send(DiscoveryCommand::PopulateIcons).is_err() {
+            priority.wake_queued = false;
+        }
     }
 
     pub fn shutdown(mut self) {
@@ -154,27 +261,6 @@ fn run_scan(
                 .is_err()
             {
                 return None;
-            }
-            match index.populate_icons(services.cancelled_through, generation) {
-                Ok(icon_failures) => {
-                    for failure in icon_failures {
-                        eprintln!("application icon extraction failed: {failure}");
-                    }
-                    match index.load_presentable() {
-                        Ok(ready) => {
-                            replace_entries(services.entries, ready);
-                            if services
-                                .events
-                                .send(RuntimeEvent::CandidatesChanged)
-                                .is_err()
-                            {
-                                return None;
-                            }
-                        }
-                        Err(error) => eprintln!("application icon cache update failed: {error}"),
-                    }
-                }
-                Err(error) => eprintln!("application icon cache population failed: {error}"),
             }
         }
         Err(error) => send_failure(services.events, request_id, generation, &error),

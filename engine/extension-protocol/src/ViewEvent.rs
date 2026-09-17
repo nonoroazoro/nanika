@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ViewEvent {
+    /// Host-generated refresh after an extension invalidates an open view.
+    Invalidated,
     Resumed,
     SearchChanged {
         text: String,
