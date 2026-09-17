@@ -22,6 +22,15 @@ pub use overlay_position::active_overlay_position;
 pub use single_instance::SingleInstance;
 pub(crate) use startup::{set_enabled as set_startup_enabled, status as startup_status};
 
+/// Resolve macOS product roots using the application name rather than the bundle identifier.
+pub fn product_paths(product_name: &str) -> Option<crate::ProductPaths> {
+    let base = directories::BaseDirs::new()?;
+    Some(crate::ProductPaths::new(
+        base.data_local_dir().join(product_name),
+        base.cache_dir().join(product_name),
+    ))
+}
+
 /// Current native pasteboard revision used to distinguish host writes from external copies.
 pub fn clipboard_revision() -> u64 {
     use objc2_app_kit::NSPasteboard;

@@ -11,20 +11,26 @@ set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 default:
     @just --list
 
-# Start the complete Tauri development application.
+# Start the complete Tauri development application with the package-manager pin
+# resolved from apps/desktop/package.json.
+[unix]
 dev:
-    fnm exec --using {{node-version-file}} corepack pnpm --dir apps/desktop dev
+    cd apps/desktop && fnm exec --using .node-version corepack pnpm dev
+
+[windows]
+dev:
+    Push-Location apps/desktop; try { fnm exec --using .node-version corepack.cmd pnpm dev } finally { Pop-Location }
 
 # Delete Nanika development state, then start from a clean baseline.
 [unix]
 dev-fresh:
     sh tooling/development/reset-state.sh
-    fnm exec --using {{node-version-file}} corepack pnpm --dir apps/desktop dev
+    cd apps/desktop && fnm exec --using .node-version corepack pnpm dev
 
 [windows]
 dev-fresh:
     & ./tooling/development/reset-state.ps1
-    fnm exec --using {{node-version-file}} corepack pnpm --dir apps/desktop dev
+    Push-Location apps/desktop; try { fnm exec --using .node-version corepack.cmd pnpm dev } finally { Pop-Location }
 
 [unix]
 check:

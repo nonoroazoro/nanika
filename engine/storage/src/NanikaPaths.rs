@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use directories::ProjectDirs;
-use nanika_foundation::PROJECT_IDENTITY;
+use nanika_foundation::PRODUCT_NAME;
 
 /// Resolved machine-local and user-configurable Nanika locations.
 #[derive(Debug, Clone)]
@@ -13,16 +12,11 @@ pub struct NanikaPaths {
 
 impl NanikaPaths {
     pub fn discover() -> Option<Self> {
-        ProjectDirs::from(
-            PROJECT_IDENTITY.qualifier,
-            PROJECT_IDENTITY.organization,
-            PROJECT_IDENTITY.application,
-        )
-        .map(|dirs| {
-            let app_data_root = dirs.data_local_dir().to_path_buf();
+        nanika_platform::product_paths(PRODUCT_NAME).map(|paths| {
+            let app_data_root = paths.app_data_root().to_path_buf();
             Self {
-                cache_root: app_data_root.join("cache"),
-                config_root: app_data_root.join("user"),
+                cache_root: paths.cache_root().to_path_buf(),
+                config_root: app_data_root.join("config"),
                 app_data_root,
             }
         })

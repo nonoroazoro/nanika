@@ -22,6 +22,14 @@ pub use overlay_position::active_overlay_position;
 pub use single_instance::SingleInstance;
 pub(crate) use startup::{set_enabled as set_startup_enabled, status as startup_status};
 
+/// Resolve Windows product roots without exposing the bundle identifier in user paths.
+pub fn product_paths(product_name: &str) -> Option<crate::ProductPaths> {
+    let base = directories::BaseDirs::new()?;
+    let app_data_root = base.data_local_dir().join(product_name);
+    let cache_root = app_data_root.join("cache");
+    Some(crate::ProductPaths::new(app_data_root, cache_root))
+}
+
 /// Current native clipboard sequence used to distinguish host writes from external copies.
 pub fn clipboard_revision() -> u64 {
     u64::from(unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() })

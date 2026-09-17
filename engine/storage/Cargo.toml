@@ -7,9 +7,9 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
-directories.workspace = true
 rusqlite.workspace = true
 nanika-foundation = { path = "../foundation" }
+nanika-platform = { path = "../platform" }
 nanika-search = { path = "../search" }
 tracing.workspace = true
 

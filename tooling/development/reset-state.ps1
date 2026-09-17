@@ -11,16 +11,17 @@ if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
 
 $localData = [System.IO.Path]::GetFullPath($env:LOCALAPPDATA)
 $productData = [System.IO.Path]::GetFullPath(
-    [System.IO.Path]::Combine($localData, 'nanika', 'nanika', 'data')
+    [System.IO.Path]::Combine($localData, 'Nanika')
 )
-$webviewData = [System.IO.Path]::GetFullPath(
-    [System.IO.Path]::Combine($localData, 'com.nanika.nanika')
+# WebView2 owns this browser state outside Nanika's application-managed roots.
+$webviewState = [System.IO.Path]::GetFullPath(
+    [System.IO.Path]::Combine($localData, 'app.nanika')
 )
-$expectedProductData = [System.IO.Path]::Combine($localData, 'nanika', 'nanika', 'data')
-$expectedWebviewData = [System.IO.Path]::Combine($localData, 'com.nanika.nanika')
+$expectedProductData = [System.IO.Path]::Combine($localData, 'Nanika')
+$expectedWebviewState = [System.IO.Path]::Combine($localData, 'app.nanika')
 
-if ($productData -ne $expectedProductData -or $webviewData -ne $expectedWebviewData) {
+if ($productData -ne $expectedProductData -or $webviewState -ne $expectedWebviewState) {
     throw 'Refusing to remove unexpected development paths.'
 }
 
-Remove-Item -LiteralPath $productData, $webviewData -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $productData, $webviewState -Recurse -Force -ErrorAction SilentlyContinue

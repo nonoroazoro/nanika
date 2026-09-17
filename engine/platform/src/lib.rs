@@ -16,7 +16,7 @@ pub use adapter::{
     ExtensionProcessTree, HotkeyTimingObserver, SingleInstance, acquire_instance,
     active_overlay_position, atomic_replace, clipboard_revision, clipboard_revision_is_after,
     companion_executable, configure_extension_command, make_executable, open_regular_file,
-    report_fatal_error, signal_activate, target_platform, target_triple,
+    product_paths, report_fatal_error, signal_activate, target_platform, target_triple,
 };
 pub(crate) use adapter::{set_startup_enabled, startup_status};
 
@@ -38,6 +38,9 @@ pub use png_resource_error::*;
 #[path = "contracts/StartupStatus.rs"]
 mod startup_status;
 pub use startup_status::*;
+#[path = "contracts/ProductPaths.rs"]
+mod product_paths;
+pub use product_paths::*;
 #[path = "shared/ClipboardService.rs"]
 mod clipboard_service;
 pub use clipboard_service::*;

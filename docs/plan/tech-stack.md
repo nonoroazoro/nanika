@@ -23,7 +23,7 @@ Status: current pre-1.0 baseline. Tauri is the only desktop UI solution. The Rus
 | Frontend security          | Tauri Isolation Pattern, capabilities, strict CSP, validated application commands, and validated custom protocols     | A dependency-free isolation application filters frontend IPC before Rust. Capabilities grant only required application, core, and plugin commands through explicit permissions. Command implementations validate requests and scopes. Bundle local assets only and deny arbitrary filesystem, process, shell, navigation, and remote network access. |
 | Global hotkey              | Official `tauri-plugin-global-shortcut` Rust API                                                                      | The current fixed shortcuts are `Ctrl+Space` on macOS and `Ctrl+Alt+Space` on Windows. Registration stays in Rust and the frontend receives no global-shortcut permission. Runtime configurability remains planned.                                                                                                                                  |
 | Fuzzy matching             | `nucleo-matcher`                                                                                                      | One persistent matcher owned by the named search owner thread.                                                                                                                                                                                                                                                                                       |
-| Application paths          | `directories`                                                                                                         | Resolve roots once through `ProjectDirs`.                                                                                                                                                                                                                                                                                                            |
+| Application paths          | `directories`                                                                                                         | Resolve `Nanika` product roots once through the Windows and macOS platform adapters.                                                                                                                                                                                                                                                                 |
 | Directory traversal        | `walkdir`                                                                                                             | Recursive scans without following symlinks by default or introducing a general parallel walker.                                                                                                                                                                                                                                                      |
 | Windows discovery          | `windows` and `windows-sys`                                                                                           | Typed Shell COM plus direct known-folder, executable, and icon APIs.                                                                                                                                                                                                                                                                                 |
 | macOS discovery            | `std::fs`, `plist`, and `objc2` AppKit/Core Graphics bindings                                                         | Localized application bundles, `Info.plist`, and normalized native icons.                                                                                                                                                                                                                                                                            |
@@ -324,20 +324,22 @@ Global popularity cannot outrank a better lexical tier. Usage identity is `(exte
 
 ## Paths, configuration, and generated data
 
-Use `ProjectDirs::from("com", "nanika", "nanika")` as the current identity. It produces the macOS bundle identifier `com.nanika.nanika`. This is a reasonable pre-1.0 default and may change if implementation evidence warrants it.
+Use `app.nanika` as the bundle identifier and `Nanika` as the independent product directory name. Platform adapters resolve the native base directories without exposing reverse-domain identifiers in user paths:
 
-`data_local_dir()` is an API method, not a literal directory name:
+| Root                      | Windows                                  | macOS                                          |
+| ------------------------- | ---------------------------------------- | ---------------------------------------------- |
+| `<app-data-root>`         | `%LOCALAPPDATA%\Nanika`                  | `~/Library/Application Support/Nanika`         |
+| `<effective-config-root>` | `%LOCALAPPDATA%\Nanika\config`           | `~/Library/Application Support/Nanika/config`  |
+| `<cache-root>`            | `%LOCALAPPDATA%\Nanika\cache`            | `~/Library/Caches/Nanika`                      |
 
-| Product root      | Windows                             | macOS                                             |
-| ----------------- | ----------------------------------- | ------------------------------------------------- |
-| `<app-data-root>` | `%LOCALAPPDATA%\nanika\nanika\data` | `~/Library/Application Support/com.nanika.nanika` |
+Tauri's platform WebView keeps separate system-managed browser state. Development reset removes `%LOCALAPPDATA%\app.nanika` on Windows and `~/Library/WebKit/nanika-desktop` plus `~/Library/Caches/nanika-desktop` on macOS. Nanika stores no product configuration, databases, clipboard history, or extension data there. macOS 13 WKWebView does not support a custom data directory, so this state is not treated as `<cache-root>`.
 
-The default layout keeps all owned data under one product root while making user-owned data a distinct subtree:
+The default layout keeps persistent machine data and user configuration under the product root while placing disposable cache data in the platform cache root:
 
 ```text
 <app-data-root>/
   bootstrap.jsonc
-  user/
+  config/
     nanika.jsonc
     extensions.jsonc
     extensions/<extension-id>/settings.jsonc
@@ -351,12 +353,13 @@ The default layout keeps all owned data under one product root while making user
   backups/databases/
   logs/
   payloads/<extension-id>/
-  cache/
-    icons/<extension-id>/<icon-key>/{32,64,128,512}.png
-    metadata/
+
+<cache-root>/
+  icons/<extension-id>/<icon-key>/{32,64,128,512}.png
+  metadata/
 ```
 
-`bootstrap.jsonc` contains only the effective config-root locator and machine ID. The default effective config root is `<app-data-root>/user`; an explicit absolute relocation remains supported. User configuration is the only syncable tree:
+`bootstrap.jsonc` contains only the effective config-root locator and machine ID. The default effective config root is `<app-data-root>/config`; an explicit absolute relocation remains supported. User configuration is the only syncable tree:
 
 ```text
 <effective-config-root>/
@@ -421,7 +424,7 @@ Only the host process launcher and extension supervisor may create child process
 
 ### Single instance
 
-Nanika runs one host instance per user session. Windows uses `Local\com.nanika.nanika` through `CreateMutexW`; a blocking platform event thread owns only the hidden activation window. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns a local Unix datagram socket under `<app-data-root>`. One-byte activation and stop datagrams cannot leave the listener blocked on a partial stream connection. Both adapters feed bounded platform events to the Tauri shell and tolerate the primary's startup handoff race. A foreground second launch requests activation, then exits. A background second launch exits without activation.
+Nanika runs one host instance per user session. Windows uses `Local\app.nanika` through `CreateMutexW`; a blocking platform event thread owns only the hidden activation window. macOS holds `nanika.instance.lock` with `flock`; a blocking platform event thread owns a local Unix datagram socket under `<app-data-root>`. One-byte activation and stop datagrams cannot leave the listener blocked on a partial stream connection. Both adapters feed bounded platform events to the Tauri shell and tolerate the primary's startup handoff race. A foreground second launch requests activation, then exits. A background second launch exits without activation.
 
 ### Global hotkey
 

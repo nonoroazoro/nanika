@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 async-process.workspace = true
 clipboard-rs.workspace = true
+directories.workspace = true
 nanika-protocol = { path = "../extension-protocol" }
 png.workspace = true
 sha2.workspace = true

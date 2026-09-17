@@ -2647,6 +2647,7 @@ version = "0.1.0"
 dependencies = [
  "async-process",
  "clipboard-rs",
+ "directories",
  "libc",
  "nanika-protocol",
  "objc2",
@@ -2685,8 +2686,8 @@ dependencies = [
 name = "nanika-storage"
 version = "0.1.0"
 dependencies = [
- "directories",
  "nanika-foundation",
+ "nanika-platform",
  "nanika-search",
  "rusqlite",
  "tracing",
