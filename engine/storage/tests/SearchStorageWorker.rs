@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use nanika_search::{Candidate, SearchOwner, UsageMap, normalize_history_key};
+use nanika_search::{Candidate, CandidateKind, SearchOwner, UsageMap, normalize_history_key};
 
 use crate::{ExtensionKind, HostDatabase, SearchStorageWorker, StorageQueueError, unix_timestamp};
 
@@ -42,8 +42,22 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
             "test.extension",
             generation,
             vec![
-                Candidate::new("test.extension", "a", "Tool", "open", Vec::new()),
-                Candidate::new("test.extension", "b", "Tool", "open", Vec::new()),
+                Candidate::new(
+                    CandidateKind::Action,
+                    "test.extension",
+                    "a",
+                    "Tool",
+                    "open",
+                    Vec::new(),
+                ),
+                Candidate::new(
+                    CandidateKind::Action,
+                    "test.extension",
+                    "b",
+                    "Tool",
+                    "open",
+                    Vec::new(),
+                ),
             ],
         )
         .expect("snapshot should enqueue");

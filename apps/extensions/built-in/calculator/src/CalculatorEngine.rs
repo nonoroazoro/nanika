@@ -2,7 +2,7 @@ use crate::QueryInterrupt;
 use std::fmt::Write;
 use std::sync::atomic::AtomicBool;
 
-use nanika_protocol::Candidate;
+use nanika_protocol::{Candidate, CandidateKind};
 use sha2::{Digest, Sha256};
 
 use crate::COPY_ACTION_ID;
@@ -41,13 +41,14 @@ impl CalculatorEngine {
         }
         Some((
             Candidate {
+                kind: CandidateKind::Action,
                 entry_id: format!("calculator.{}", stable_hash(&[query, result])),
                 title: format!("= {result}"),
                 subtitle: Some("Calculator".to_owned()),
                 action_id: COPY_ACTION_ID.to_owned(),
                 aliases: vec![query.to_owned()],
                 icon: None,
-                command_icon: None,
+                contribution_icon: None,
             },
             result.to_owned(),
         ))

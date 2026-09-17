@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use nanika_protocol::{Candidate, LaunchArguments, LaunchDescriptor};
+use nanika_protocol::{Candidate, CandidateKind, LaunchArguments, LaunchDescriptor};
 use serde::{Deserialize, Serialize};
 
 use crate::RUN_ACTION_ID;
@@ -23,13 +23,14 @@ pub struct ScriptEntry {
 impl ScriptEntry {
     pub fn candidate(&self) -> Candidate {
         Candidate {
+            kind: CandidateKind::Action,
             entry_id: format!("script.{}", self.id),
             title: self.title.clone(),
             subtitle: Some("Script".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: self.aliases.clone(),
             icon: None,
-            command_icon: None,
+            contribution_icon: None,
         }
     }
 

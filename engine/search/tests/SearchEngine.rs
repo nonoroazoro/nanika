@@ -1,7 +1,16 @@
-use nanika_search::{Candidate, SearchEngine, UsageKey, UsageMap, UsageStat, normalize_query};
+use nanika_search::{
+    Candidate, CandidateKind, SearchEngine, UsageKey, UsageMap, UsageStat, normalize_query,
+};
 
 fn candidate(entry_id: &str, title: &str, action_id: &str) -> Candidate {
-    Candidate::new("test.extension", entry_id, title, action_id, Vec::new())
+    Candidate::new(
+        CandidateKind::Action,
+        "test.extension",
+        entry_id,
+        title,
+        action_id,
+        Vec::new(),
+    )
 }
 
 #[test]
@@ -12,6 +21,7 @@ fn normalization_collapses_punctuation_case_and_whitespace() {
 #[test]
 fn aliases_receive_the_same_lexical_tiers_as_titles() {
     let entry = Candidate::new(
+        CandidateKind::Action,
         "test.extension",
         "alias",
         "Calculator",

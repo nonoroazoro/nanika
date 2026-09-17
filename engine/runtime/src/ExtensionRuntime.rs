@@ -160,13 +160,14 @@ impl ExtensionRuntime {
                 let query = query.into();
                 let entries = if acp_prompt(process.extension_id(), &query).is_some() {
                     vec![Candidate {
+                        kind: nanika_protocol::CandidateKind::Action,
                         entry_id: "prompt".to_owned(),
                         title: format!("Ask {}", process.extension_id()),
                         subtitle: Some("AI Command".to_owned()),
                         action_id: "prompt".to_owned(),
                         aliases: vec![query],
                         icon: None,
-                        command_icon: None,
+                        contribution_icon: None,
                     }]
                 } else {
                     Vec::new()

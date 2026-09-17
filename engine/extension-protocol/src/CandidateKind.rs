@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// A bounded host-rendered icon for a statically contributed command.
+/// Root Search entry semantics declared before activation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub enum CommandIcon {
-    Clipboard,
+pub enum CandidateKind {
+    Action,
+    View,
 }

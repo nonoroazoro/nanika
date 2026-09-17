@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ExtensionContributions, ExtensionProtocol, ExtensionTarget};
 
-/// Typed root manifest for one external extension version.
+/// Typed root manifest for one extension version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionManifest {
@@ -25,10 +25,4 @@ pub struct ExtensionManifest {
     pub activation_events: Vec<String>,
     #[serde(default)]
     pub contributes: ExtensionContributions,
-}
-
-impl ExtensionManifest {
-    pub(crate) fn validated_protocol(&self) -> ExtensionProtocol {
-        self.runtime
-    }
 }

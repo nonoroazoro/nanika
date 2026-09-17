@@ -4,7 +4,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use nanika_config::ConfigStore;
-use nanika_search::{Candidate, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
+use nanika_search::{
+    Candidate, CandidateKind, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat,
+};
 use nanika_storage::SearchStorageWorker;
 
 fn runtime_benchmarks(criterion: &mut Criterion) {
@@ -102,6 +104,7 @@ fn make_candidates(count: usize) -> Vec<Candidate> {
     (0..count)
         .map(|index| {
             Candidate::new(
+                CandidateKind::Action,
                 "benchmark",
                 format!("entry-{index}"),
                 format!("Application {index}"),

@@ -498,7 +498,7 @@ fn run_query(
     if contributions.root_search.is_none() {
         return publish_contributions(search, extension_id, query.generation, contributions);
     }
-    if !contributions.commands.is_empty() {
+    if !contributions.commands.is_empty() || !contributions.views.is_empty() {
         publish_contributions(search, extension_id, query.generation, contributions)?;
     }
     runtime.query_incremental(
@@ -541,33 +541,54 @@ fn publish_contributions(
 pub(crate) fn contribution_candidates(
     contributions: &ExtensionContributions,
 ) -> Vec<nanika_protocol::Candidate> {
-    contributions
-        .commands
-        .iter()
-        .map(|command| {
-            let mut aliases = command.keywords.clone();
-            aliases.push(command.description.clone());
-            if let Some(category) = &command.category {
-                aliases.push(category.clone());
-            }
-            nanika_protocol::Candidate {
-                entry_id: command.command.clone(),
-                title: command.title.clone(),
-                subtitle: command
-                    .category
-                    .clone()
-                    .or_else(|| Some("Command".to_owned())),
-                action_id: "command.execute".to_owned(),
-                aliases,
-                icon: None,
-                command_icon: command.icon.map(|icon| match icon {
-                    nanika_extension_package::CommandIcon::Clipboard => {
-                        nanika_protocol::CommandIcon::Clipboard
-                    }
-                }),
-            }
-        })
-        .collect()
+    let commands = contributions.commands.iter().map(|command| {
+        let mut aliases = command.keywords.clone();
+        aliases.push(command.description.clone());
+        if let Some(category) = &command.category {
+            aliases.push(category.clone());
+        }
+        nanika_protocol::Candidate {
+            kind: nanika_protocol::CandidateKind::Action,
+            entry_id: command.command.clone(),
+            title: command.title.clone(),
+            subtitle: command
+                .category
+                .clone()
+                .or_else(|| Some("Command".to_owned())),
+            action_id: nanika_protocol::COMMAND_EXECUTE_ACTION_ID.to_owned(),
+            aliases,
+            icon: None,
+            contribution_icon: command.icon.map(protocol_contribution_icon),
+        }
+    });
+    let views = contributions.views.iter().map(|view| {
+        let mut aliases = view.keywords.clone();
+        aliases.push(view.description.clone());
+        if let Some(category) = &view.category {
+            aliases.push(category.clone());
+        }
+        nanika_protocol::Candidate {
+            kind: nanika_protocol::CandidateKind::View,
+            entry_id: view.id.clone(),
+            title: view.title.clone(),
+            subtitle: view.category.clone().or_else(|| Some("View".to_owned())),
+            action_id: nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
+            aliases,
+            icon: None,
+            contribution_icon: view.icon.map(protocol_contribution_icon),
+        }
+    });
+    commands.chain(views).collect()
+}
+
+fn protocol_contribution_icon(
+    icon: nanika_extension_package::ContributionIcon,
+) -> nanika_protocol::ContributionIcon {
+    match icon {
+        nanika_extension_package::ContributionIcon::Clipboard => {
+            nanika_protocol::ContributionIcon::Clipboard
+        }
+    }
 }
 
 fn run_invocation(

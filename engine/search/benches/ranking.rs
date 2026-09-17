@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use nanika_search::{Candidate, SearchEngine, UsageKey, UsageMap, UsageStat};
+use nanika_search::{Candidate, CandidateKind, SearchEngine, UsageKey, UsageMap, UsageStat};
 use std::hint::black_box;
 
 fn ranking_benchmark(criterion: &mut Criterion) {
@@ -45,6 +45,7 @@ fn make_candidates(count: usize) -> Vec<Candidate> {
     (0..count)
         .map(|index| {
             Candidate::new(
+                CandidateKind::Action,
                 "benchmark",
                 format!("entry-{index}"),
                 format!("Application {index}"),

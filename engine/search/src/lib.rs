@@ -4,6 +4,8 @@
 
 #[path = "Candidate.rs"]
 mod candidate;
+#[path = "CandidateKind.rs"]
+mod candidate_kind;
 mod constants;
 #[path = "InputHistory.rs"]
 mod input_history;
@@ -37,6 +39,7 @@ mod usage_map;
 mod usage_stat;
 
 pub use candidate::*;
+pub use candidate_kind::*;
 pub use input_history::*;
 pub(crate) use match_context::*;
 pub(crate) use pending_search_query::*;

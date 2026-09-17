@@ -149,12 +149,16 @@ pub fn publish_extension_snapshot(
                 .icon
                 .filter(nanika_protocol::IconReference::is_valid)
                 .map(|icon| icon.key().to_owned());
-            let command_icon = if icon_key.is_none() {
-                entry.command_icon.map(|icon| icon.as_str().to_owned())
+            let contribution_icon = if icon_key.is_none() {
+                entry.contribution_icon.map(|icon| icon.as_str().to_owned())
             } else {
                 None
             };
             nanika_search::Candidate::new(
+                match entry.kind {
+                    nanika_protocol::CandidateKind::Action => nanika_search::CandidateKind::Action,
+                    nanika_protocol::CandidateKind::View => nanika_search::CandidateKind::View,
+                },
                 extension_id,
                 entry.entry_id,
                 entry.title,
@@ -163,7 +167,7 @@ pub fn publish_extension_snapshot(
             )
             .with_subtitle(entry.subtitle)
             .with_icon_key(icon_key)
-            .with_command_icon(command_icon)
+            .with_contribution_icon(contribution_icon)
         })
         .collect();
     search.publish_extension_snapshot(extension_id, generation, candidates)

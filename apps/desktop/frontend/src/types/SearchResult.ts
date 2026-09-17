@@ -1,4 +1,4 @@
-import type { CommandIcon } from "./CommandIcon";
+import type { ContributionIcon } from "./ContributionIcon";
 
 export interface SearchResult
 {
@@ -8,6 +8,7 @@ export interface SearchResult
     title: string;
     subtitle: string | null;
     iconUrl: string | null;
-    commandIcon: CommandIcon | null;
+    contributionIcon: ContributionIcon | null;
     kind: string;
+    entryType: "action" | "view";
 }

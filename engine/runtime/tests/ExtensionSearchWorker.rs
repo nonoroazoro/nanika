@@ -3,7 +3,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use nanika_extension_package::{
-    CommandContribution, CommandIcon, ExtensionContributions, RootSearchContribution,
+    CommandContribution, ContributionIcon, ExtensionContributions, RootSearchContribution,
+    ViewContribution,
 };
 
 use crate::{
@@ -51,20 +52,35 @@ fn static_command_search_values_include_declared_metadata() {
             description: "Open the example view.".to_owned(),
             category: Some("Example".to_owned()),
             keywords: vec!["sample".to_owned()],
-            icon: Some(CommandIcon::Clipboard),
+            icon: Some(ContributionIcon::Clipboard),
+        }],
+        views: vec![ViewContribution {
+            id: "example.view".to_owned(),
+            title: "Example View".to_owned(),
+            description: "Browse examples.".to_owned(),
+            category: None,
+            keywords: Vec::new(),
+            icon: None,
         }],
         configuration: None,
         root_search: Some(RootSearchContribution {}),
     });
 
-    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates.len(), 2);
     assert_eq!(
         candidates[0].aliases,
         ["sample", "Open the example view.", "Example"]
     );
     assert_eq!(
-        candidates[0].command_icon,
-        Some(nanika_protocol::CommandIcon::Clipboard)
+        candidates[0].contribution_icon,
+        Some(nanika_protocol::ContributionIcon::Clipboard)
+    );
+    assert_eq!(candidates[0].kind, nanika_protocol::CandidateKind::Action);
+    assert_eq!(candidates[1].entry_id, "example.view");
+    assert_eq!(candidates[1].kind, nanika_protocol::CandidateKind::View);
+    assert_eq!(
+        candidates[1].action_id,
+        nanika_protocol::VIEW_OPEN_ACTION_ID
     );
 }
 

@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::ContributionIcon;
 
-/// One statically discoverable command contributed by an extension.
+/// One statically discoverable declarative view contributed by an extension.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CommandContribution {
-    pub command: String,
+pub struct ViewContribution {
+    pub id: String,
     pub title: String,
     pub description: String,
     #[serde(default)]

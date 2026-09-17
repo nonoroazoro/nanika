@@ -4,11 +4,13 @@
 
 #[path = "Candidate.rs"]
 mod candidate;
+#[path = "CandidateKind.rs"]
+mod candidate_kind;
 #[path = "ClipboardContent.rs"]
 mod clipboard_content;
-#[path = "CommandIcon.rs"]
-mod command_icon;
 mod constants;
+#[path = "ContributionIcon.rs"]
+mod contribution_icon;
 #[path = "DetailContent.rs"]
 mod detail_content;
 #[path = "DetailView.rs"]
@@ -60,9 +62,10 @@ mod view_item_icon;
 mod view_metadata;
 
 pub use candidate::*;
+pub use candidate_kind::*;
 pub use clipboard_content::*;
-pub use command_icon::*;
 pub use constants::*;
+pub use contribution_icon::*;
 pub use detail_content::*;
 pub use detail_view::*;
 pub use extension_configuration::*;

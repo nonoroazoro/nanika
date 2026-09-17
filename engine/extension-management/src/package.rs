@@ -13,7 +13,7 @@ use zip::{CompressionMethod, ZipArchive};
 use crate::{
     ActiveExtension, CommandContribution, ExtensionContributions, ExtensionManifest,
     ExtensionPackageError, ExtensionProtocol, ExtensionResolutionError, ExtensionTarget,
-    PackageOperation, PackageTransaction, StagedPackage, StagingDirectory,
+    PackageOperation, PackageTransaction, StagedPackage, StagingDirectory, ViewContribution,
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -24,7 +24,8 @@ const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_COMPRESSION_RATIO: u64 = 100;
 const MAX_COMMANDS: usize = 64;
-const MAX_COMMAND_KEYWORDS: usize = 16;
+const MAX_VIEWS: usize = 64;
+const MAX_CONTRIBUTION_KEYWORDS: usize = 16;
 
 /// Validate, stage, and activate one local `.nanika` package.
 pub fn install_package(
@@ -65,7 +66,7 @@ fn apply_package(
     extract_package(staged_package.path(), stage.path())?;
 
     let manifest = load_manifest(stage.path().join("manifest.jsonc"))?;
-    validate_manifest(&manifest)?;
+    reject_external_builtin_identity(&manifest)?;
     let target = nanika_platform::target_triple();
     let entrypoint = target_entrypoint(&manifest, target)?;
     let staged_program = stage.path().join(&entrypoint);
@@ -178,14 +179,10 @@ fn apply_package(
         PackageTransaction::clear(&extension_root)?;
     }
 
-    let protocol = manifest.validated_protocol();
-    Ok(ActiveExtension {
-        extension_id: manifest.id,
-        program: version_root.join(entrypoint),
-        protocol,
-        permissions: manifest.permissions,
-        contributes: manifest.contributes,
-    })
+    Ok(ActiveExtension::from_manifest(
+        manifest,
+        version_root.join(entrypoint),
+    ))
 }
 
 /// Update synchronized enablement and mirror external state in the host database.
@@ -388,7 +385,7 @@ fn resolve_active_extension(
     let canonical_install = fs::canonicalize(install_path)?;
     validate_managed_path(&canonical_root, &canonical_install)?;
     let manifest = load_manifest(canonical_install.join("manifest.jsonc"))?;
-    validate_manifest(&manifest)?;
+    reject_external_builtin_identity(&manifest)?;
     if manifest.id != installed.extension_id
         || installed.active_version.as_deref() != Some(manifest.version.as_str())
     {
@@ -406,14 +403,7 @@ fn resolve_active_extension(
     }
     let program = fs::canonicalize(program)?;
     validate_managed_path(&canonical_install, &program)?;
-    let protocol = manifest.validated_protocol();
-    Ok(ActiveExtension {
-        extension_id: manifest.id,
-        program,
-        protocol,
-        permissions: manifest.permissions,
-        contributes: manifest.contributes,
-    })
+    Ok(ActiveExtension::from_manifest(manifest, program))
 }
 
 fn validate_package_operation(
@@ -601,11 +591,26 @@ fn load_manifest(path: PathBuf) -> Result<ExtensionManifest, ExtensionPackageErr
         ));
     }
     let text = fs::read_to_string(path)?;
-    parse_to_serde_value(&text, &ParseOptions::default())
-        .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))
+    parse_extension_manifest(&text)
 }
 
-fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackageError> {
+/// Parse and validate the manifest contract shared by built-in and external extensions.
+pub fn parse_extension_manifest(source: &str) -> Result<ExtensionManifest, ExtensionPackageError> {
+    if source.is_empty() || source.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(ExtensionPackageError::Manifest(
+            "manifest size is invalid".to_owned(),
+        ));
+    }
+    let manifest = parse_to_serde_value(source, &ParseOptions::default())
+        .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
+    validate_extension_manifest(&manifest)?;
+    Ok(manifest)
+}
+
+/// Validate one extension manifest independently of its distribution identity.
+pub fn validate_extension_manifest(
+    manifest: &ExtensionManifest,
+) -> Result<(), ExtensionPackageError> {
     if manifest.format != MANIFEST_FORMAT || manifest.manifest_version != MANIFEST_VERSION {
         return Err(ExtensionPackageError::Manifest(
             "unsupported manifest format".to_owned(),
@@ -618,11 +623,6 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
     if !nanika_storage::is_valid_extension_id(&manifest.id) {
         return Err(ExtensionPackageError::Manifest(
             "invalid extension id".to_owned(),
-        ));
-    }
-    if nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
-        return Err(ExtensionPackageError::Manifest(
-            "external packages cannot use a built-in extension id".to_owned(),
         ));
     }
     let _ = Version::parse(&manifest.version)
@@ -703,17 +703,45 @@ fn validate_manifest(manifest: &ExtensionManifest) -> Result<(), ExtensionPackag
     Ok(())
 }
 
+fn reject_external_builtin_identity(
+    manifest: &ExtensionManifest,
+) -> Result<(), ExtensionPackageError> {
+    if nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
+        return Err(ExtensionPackageError::Manifest(
+            "external packages cannot use a built-in extension id".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Validate the shared contribution contract used by built-in and external extensions.
 pub fn validate_extension_contributions(
     protocol: ExtensionProtocol,
     contributions: &ExtensionContributions,
 ) -> Result<(), ExtensionPackageError> {
-    if !contributions.commands.is_empty() && !matches!(protocol, ExtensionProtocol::Nanika { .. }) {
+    if (!contributions.commands.is_empty() || !contributions.views.is_empty())
+        && !matches!(protocol, ExtensionProtocol::Nanika { .. })
+    {
         return Err(ExtensionPackageError::Manifest(
-            "command contributions require the Nanika protocol".to_owned(),
+            "command and view contributions require the Nanika protocol".to_owned(),
         ));
     }
     validate_command_contributions(&contributions.commands)?;
+    validate_view_contributions(&contributions.views)?;
+    let command_ids = contributions
+        .commands
+        .iter()
+        .map(|command| command.command.as_str())
+        .collect::<HashSet<_>>();
+    if contributions
+        .views
+        .iter()
+        .any(|view| command_ids.contains(view.id.as_str()))
+    {
+        return Err(ExtensionPackageError::Manifest(
+            "extension contribution ids must be unique across commands and views".to_owned(),
+        ));
+    }
     if let Some(configuration) = &contributions.configuration {
         configuration
             .validate()
@@ -742,24 +770,60 @@ fn validate_command_contributions(
                 "extension command ids must be unique".to_owned(),
             ));
         }
-        validate_contribution_text("title", &command.title, 128)?;
-        validate_contribution_text("description", &command.description, 512)?;
+        validate_contribution_text("command", "title", &command.title, 128)?;
+        validate_contribution_text("command", "description", &command.description, 512)?;
         if let Some(category) = &command.category {
-            validate_contribution_text("category", category, 128)?;
+            validate_contribution_text("command", "category", category, 128)?;
         }
-        if command.keywords.len() > MAX_COMMAND_KEYWORDS {
+        if command.keywords.len() > MAX_CONTRIBUTION_KEYWORDS {
             return Err(ExtensionPackageError::Manifest(
                 "extension command has too many keywords".to_owned(),
             ));
         }
         for keyword in &command.keywords {
-            validate_contribution_text("keyword", keyword, 64)?;
+            validate_contribution_text("command", "keyword", keyword, 64)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), ExtensionPackageError> {
+    if views.len() > MAX_VIEWS {
+        return Err(ExtensionPackageError::Manifest(
+            "extension contributes too many views".to_owned(),
+        ));
+    }
+    let mut ids = HashSet::new();
+    for view in views {
+        if !is_valid_contribution_id(&view.id) {
+            return Err(ExtensionPackageError::Manifest(
+                "extension view id is invalid".to_owned(),
+            ));
+        }
+        if !ids.insert(view.id.as_str()) {
+            return Err(ExtensionPackageError::Manifest(
+                "extension view ids must be unique".to_owned(),
+            ));
+        }
+        validate_contribution_text("view", "title", &view.title, 128)?;
+        validate_contribution_text("view", "description", &view.description, 512)?;
+        if let Some(category) = &view.category {
+            validate_contribution_text("view", "category", category, 128)?;
+        }
+        if view.keywords.len() > MAX_CONTRIBUTION_KEYWORDS {
+            return Err(ExtensionPackageError::Manifest(
+                "extension view has too many keywords".to_owned(),
+            ));
+        }
+        for keyword in &view.keywords {
+            validate_contribution_text("view", "keyword", keyword, 64)?;
         }
     }
     Ok(())
 }
 
 fn validate_contribution_text(
+    contribution: &str,
     field: &str,
     value: &str,
     maximum_chars: usize,
@@ -767,7 +831,7 @@ fn validate_contribution_text(
     let count = value.chars().count();
     if value.trim().is_empty() || count > maximum_chars || value.chars().any(char::is_control) {
         return Err(ExtensionPackageError::Manifest(format!(
-            "extension command {field} is invalid"
+            "extension {contribution} {field} is invalid"
         )));
     }
     Ok(())

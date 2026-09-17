@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use nanika_protocol::{Candidate, IconReference, LaunchArguments, LaunchDescriptor};
+use nanika_protocol::{Candidate, CandidateKind, IconReference, LaunchArguments, LaunchDescriptor};
 
 use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
@@ -30,6 +30,7 @@ pub struct ApplicationEntry {
 impl ApplicationEntry {
     pub fn candidate(&self) -> Candidate {
         Candidate {
+            kind: CandidateKind::Action,
             entry_id: self.entry_id.clone(),
             title: self.display_name.clone(),
             subtitle: Some("Application".to_owned()),
@@ -41,7 +42,7 @@ impl ApplicationEntry {
                 .map(str::to_owned)
                 .collect(),
             icon: IconReference::new(&self.icon_key).ok(),
-            command_icon: None,
+            contribution_icon: None,
         }
     }
 

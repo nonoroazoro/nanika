@@ -1,6 +1,8 @@
 use std::time::{Duration, Instant};
 
-use nanika_search::{Candidate, MAX_QUERY_CHARS, SearchOwner, SearchQueueError, UsageMap};
+use nanika_search::{
+    Candidate, CandidateKind, MAX_QUERY_CHARS, SearchOwner, SearchQueueError, UsageMap,
+};
 
 #[test]
 fn owner_drops_stale_extension_snapshots() {
@@ -13,6 +15,7 @@ fn owner_drops_stale_extension_snapshots() {
             "test.extension",
             stale,
             vec![Candidate::new(
+                CandidateKind::Action,
                 "test.extension",
                 "stale",
                 "Old",
@@ -26,6 +29,7 @@ fn owner_drops_stale_extension_snapshots() {
             "test.extension",
             current,
             vec![Candidate::new(
+                CandidateKind::Action,
                 "test.extension",
                 "current",
                 "Tool",
@@ -104,6 +108,7 @@ fn owner_publishes_initial_extension_results_as_one_snapshot() {
             "first.extension",
             generation,
             vec![Candidate::new(
+                CandidateKind::Action,
                 "first.extension",
                 "first",
                 "First Tool",
@@ -126,6 +131,7 @@ fn owner_publishes_initial_extension_results_as_one_snapshot() {
             "second.extension",
             generation,
             vec![Candidate::new(
+                CandidateKind::Action,
                 "second.extension",
                 "second",
                 "Second Tool",

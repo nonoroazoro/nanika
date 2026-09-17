@@ -2,8 +2,9 @@ use std::io::Write;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
-    ExtensionProtocol, install_package, remove_extension, resolve_active_extensions,
-    set_extension_enabled, update_package,
+    CommandContribution, ExtensionContributions, ExtensionProtocol, ViewContribution,
+    install_package, remove_extension, resolve_active_extensions, set_extension_enabled,
+    update_package, validate_extension_contributions,
 };
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use zip::write::SimpleFileOptions;
@@ -207,6 +208,47 @@ fn manifest_preserves_valid_command_contributions() {
 }
 
 #[test]
+fn manifest_preserves_valid_view_contributions() {
+    let root = temporary_root("view-contributions");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(
+        root.join("data"),
+        root.join("cache"),
+        root.join("config-default"),
+    );
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
+    let package = root.join("views.nanika");
+    create_package_definition_with_runtime_and_contributions(
+        &package,
+        false,
+        &[],
+        "1.2.3",
+        false,
+        false,
+        1,
+        Some(serde_json::json!({
+            "protocol": "nanika",
+            "protocolVersion": 1
+        })),
+        Some(serde_json::json!({
+            "views": [{
+                "id": "example.browser",
+                "title": "Example Browser",
+                "description": "Browse examples.",
+                "keywords": ["sample"]
+            }]
+        })),
+    );
+
+    let installed = install_package(&package, &paths, &store).expect("install package");
+
+    assert!(installed.contributes.commands.is_empty());
+    assert_eq!(installed.contributes.views.len(), 1);
+    assert_eq!(installed.contributes.views[0].id, "example.browser");
+    cleanup(&root);
+}
+
+#[test]
 fn manifest_preserves_valid_configuration_contributions() {
     let root = temporary_root("configuration-contributions");
     cleanup(&root);
@@ -336,9 +378,69 @@ fn manifest_rejects_acp_command_contributions() {
     assert!(
         error
             .to_string()
-            .contains("command contributions require the Nanika protocol")
+            .contains("command and view contributions require the Nanika protocol")
     );
     cleanup(&root);
+}
+
+#[test]
+fn manifest_rejects_acp_view_contributions() {
+    let error = validate_extension_contributions(
+        ExtensionProtocol::Acp {
+            protocol_version: 1,
+        },
+        &ExtensionContributions {
+            views: vec![ViewContribution {
+                id: "example.view".to_owned(),
+                title: "Example".to_owned(),
+                description: "Browse examples.".to_owned(),
+                category: None,
+                keywords: Vec::new(),
+                icon: None,
+            }],
+            ..ExtensionContributions::default()
+        },
+    )
+    .expect_err("ACP view contributions must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("command and view contributions require the Nanika protocol")
+    );
+}
+
+#[test]
+fn manifest_rejects_ids_shared_by_commands_and_views() {
+    let error = validate_extension_contributions(
+        ExtensionProtocol::Nanika {
+            protocol_version: 1,
+        },
+        &ExtensionContributions {
+            commands: vec![CommandContribution {
+                command: "example.open".to_owned(),
+                title: "Open Example".to_owned(),
+                description: "Open the example.".to_owned(),
+                category: None,
+                keywords: Vec::new(),
+                icon: None,
+            }],
+            views: vec![ViewContribution {
+                id: "example.open".to_owned(),
+                title: "Example".to_owned(),
+                description: "Browse examples.".to_owned(),
+                category: None,
+                keywords: Vec::new(),
+                icon: None,
+            }],
+            ..ExtensionContributions::default()
+        },
+    )
+    .expect_err("contribution IDs must be unique");
+    assert!(
+        error
+            .to_string()
+            .contains("unique across commands and views")
+    );
 }
 
 #[test]

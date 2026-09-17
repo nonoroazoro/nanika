@@ -1,5 +1,5 @@
 export * from "./ApplicationSnapshot";
-export * from "./CommandIcon";
+export * from "./ContributionIcon";
 export * from "./DetailContent";
 export * from "./DetailImage";
 export * from "./DetailView";

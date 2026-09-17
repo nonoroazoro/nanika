@@ -1,8 +1,9 @@
-use crate::normalize_query;
+use crate::{CandidateKind, normalize_query};
 
-/// One searchable action contributed by an extension.
+/// One searchable entry contributed by an extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
+    kind: CandidateKind,
     entry_id: String,
     extension_id: String,
     title: String,
@@ -10,12 +11,13 @@ pub struct Candidate {
     action_id: String,
     aliases: Vec<String>,
     icon_key: Option<String>,
-    command_icon: Option<String>,
+    contribution_icon: Option<String>,
     search_values: Vec<String>,
 }
 
 impl Candidate {
     pub fn new(
+        kind: CandidateKind,
         extension_id: impl Into<String>,
         entry_id: impl Into<String>,
         title: impl Into<String>,
@@ -28,6 +30,7 @@ impl Candidate {
             .map(normalize_query)
             .collect();
         Self {
+            kind,
             entry_id: entry_id.into(),
             extension_id: extension_id.into(),
             title,
@@ -35,9 +38,13 @@ impl Candidate {
             action_id: action_id.into(),
             aliases,
             icon_key: None,
-            command_icon: None,
+            contribution_icon: None,
             search_values,
         }
+    }
+
+    pub fn kind(&self) -> CandidateKind {
+        self.kind
     }
 
     pub fn with_icon_key(mut self, icon_key: Option<String>) -> Self {
@@ -45,8 +52,8 @@ impl Candidate {
         self
     }
 
-    pub fn with_command_icon(mut self, command_icon: Option<String>) -> Self {
-        self.command_icon = command_icon;
+    pub fn with_contribution_icon(mut self, contribution_icon: Option<String>) -> Self {
+        self.contribution_icon = contribution_icon;
         self
     }
 
@@ -87,8 +94,8 @@ impl Candidate {
         self.icon_key.as_deref()
     }
 
-    pub fn command_icon(&self) -> Option<&str> {
-        self.command_icon.as_deref()
+    pub fn contribution_icon(&self) -> Option<&str> {
+        self.contribution_icon.as_deref()
     }
 
     pub(crate) fn set_extension_id(&mut self, extension_id: &str) {

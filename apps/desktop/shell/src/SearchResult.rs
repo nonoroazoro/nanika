@@ -11,8 +11,9 @@ pub(crate) struct SearchResult {
     pub(crate) title: String,
     pub(crate) subtitle: Option<String>,
     pub(crate) icon_url: Option<String>,
-    pub(crate) command_icon: Option<String>,
+    pub(crate) contribution_icon: Option<String>,
     pub(crate) kind: String,
+    pub(crate) entry_type: &'static str,
 }
 
 impl SearchResult {
@@ -26,8 +27,12 @@ impl SearchResult {
             icon_url: candidate.icon_key().map(|key| {
                 resource_protocol::url(&format!("{}/{key}/128.png", candidate.extension_id()))
             }),
-            command_icon: candidate.command_icon().map(str::to_owned),
+            contribution_icon: candidate.contribution_icon().map(str::to_owned),
             kind: "Extension".to_owned(),
+            entry_type: match candidate.kind() {
+                nanika_search::CandidateKind::Action => "action",
+                nanika_search::CandidateKind::View => "view",
+            },
         }
     }
 }

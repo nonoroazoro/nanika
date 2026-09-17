@@ -1,4 +1,4 @@
-//! Validation and atomic installation for external extension packages.
+//! Shared manifest validation and atomic external extension package lifecycle.
 
 #![forbid(unsafe_code)]
 
@@ -6,14 +6,14 @@
 mod active_extension;
 #[path = "CommandContribution.rs"]
 mod command_contribution;
-#[path = "CommandIcon.rs"]
-mod command_icon;
 #[path = "ConfigurationContribution.rs"]
 mod configuration_contribution;
 #[path = "ConfigurationProperty.rs"]
 mod configuration_property;
 #[path = "ConfigurationSchema.rs"]
 mod configuration_schema;
+#[path = "ContributionIcon.rs"]
+mod contribution_icon;
 #[path = "ExtensionContributions.rs"]
 mod extension_contributions;
 #[path = "ExtensionManifest.rs"]
@@ -37,13 +37,15 @@ mod root_search_contribution;
 mod staged_package;
 #[path = "StagingDirectory.rs"]
 mod staging_directory;
+#[path = "ViewContribution.rs"]
+mod view_contribution;
 
 pub use active_extension::*;
 pub use command_contribution::*;
-pub use command_icon::*;
 pub use configuration_contribution::*;
 pub use configuration_property::*;
 pub use configuration_schema::*;
+pub use contribution_icon::*;
 pub use extension_contributions::*;
 pub use extension_manifest::*;
 pub use extension_package_error::*;
@@ -56,3 +58,4 @@ pub(crate) use package_transaction::*;
 pub use root_search_contribution::*;
 pub(crate) use staged_package::*;
 pub(crate) use staging_directory::*;
+pub use view_contribution::*;

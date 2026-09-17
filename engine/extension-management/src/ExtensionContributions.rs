@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{CommandContribution, ConfigurationContribution, RootSearchContribution};
+use crate::{
+    CommandContribution, ConfigurationContribution, RootSearchContribution, ViewContribution,
+};
 
 /// Static host integration declared by an extension package.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -8,6 +10,8 @@ use crate::{CommandContribution, ConfigurationContribution, RootSearchContributi
 pub struct ExtensionContributions {
     #[serde(default)]
     pub commands: Vec<CommandContribution>,
+    #[serde(default)]
+    pub views: Vec<ViewContribution>,
     #[serde(default)]
     pub configuration: Option<ConfigurationContribution>,
     #[serde(default)]

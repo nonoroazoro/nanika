@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use nanika_protocol::Candidate;
+use nanika_protocol::{Candidate, CandidateKind};
 use sha2::{Digest, Sha256};
 
 pub const EXTENSION_ID: &str = "com.nanika.command";
@@ -16,13 +16,14 @@ pub fn command_candidate(query: &str) -> Option<(Candidate, String)> {
     let entry_id = format!("command.{}", stable_hash(command));
     Some((
         Candidate {
+            kind: CandidateKind::Action,
             entry_id,
             title: format!("Run command: {command}"),
             subtitle: Some("Command".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
             aliases: vec![query.to_owned()],
             icon: None,
-            command_icon: None,
+            contribution_icon: None,
         },
         command.to_owned(),
     ))

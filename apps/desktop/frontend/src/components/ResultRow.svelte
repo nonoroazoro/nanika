@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { SearchResult } from "../types";
-import CommandIconTile from "./CommandIconTile.svelte";
+import ContributionIconTile from "./ContributionIconTile.svelte";
 
 interface Props
 {
@@ -34,13 +34,12 @@ let iconFailed = $state(false);
     tabindex="-1"
 >
     <span class="icon" aria-hidden="true">
-        {#if result.commandIcon}
-            <CommandIconTile kind={result.commandIcon} />
-        {:else}
+        {#if result.contributionIcon}
+            <ContributionIconTile kind={result.contributionIcon} />
+        {:else if !result.iconUrl || iconFailed}
             <span class="fallback">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="5" y="4" width="14" height="16" rx="3" />
-                    <path d="M9 9h6M9 12h6M9 15h3" />
+                <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 1h22v30H5zM8 13h16M8 17h16M8 21h8" />
                 </svg>
             </span>
         {/if}
@@ -48,6 +47,8 @@ let iconFailed = $state(false);
             <img
                 src={result.iconUrl}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 hidden={iconFailed}
                 onerror={() =>
                 {
@@ -106,14 +107,12 @@ img[hidden] {
 .fallback {
   display: grid;
   place-items: center;
-  border-radius: var(--radius-icon);
-  background: var(--surface-raised);
   color: var(--text-secondary);
 }
 
 .fallback svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 100%;
+  height: 100%;
 }
 
 .copy {
