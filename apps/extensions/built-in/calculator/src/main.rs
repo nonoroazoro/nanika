@@ -151,7 +151,7 @@ fn invoke_host(
                 request_id: response_id,
                 parent_request_id,
                 generation: response_generation,
-                response: HostServiceResponse::ClipboardWritten,
+                response: HostServiceResponse::ClipboardWritten { .. },
             }) if response_id == service_request_id
                 && parent_request_id == request_id
                 && response_generation == generation =>

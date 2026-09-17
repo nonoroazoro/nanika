@@ -8,21 +8,25 @@ use crate::{ClipboardConfig, ClipboardEntry, EncodedClipboardContent};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS clipboard_entries (
-    entry_id TEXT PRIMARY KEY,
+    entry_id TEXT PRIMARY KEY CHECK (entry_id <> ''),
     content_kind TEXT NOT NULL,
-    content_hash TEXT NOT NULL,
-    title TEXT NOT NULL,
+    content_hash TEXT NOT NULL CHECK (content_hash <> ''),
+    title TEXT NOT NULL CHECK (title <> ''),
     text_payload TEXT,
     files_json TEXT,
     image_path TEXT,
-    byte_size INTEGER NOT NULL,
-    captured_at INTEGER NOT NULL,
-    last_used_at INTEGER NOT NULL,
-    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
-    UNIQUE(content_kind, content_hash)
-);
+    byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+    captured_at INTEGER NOT NULL CHECK (captured_at >= 0),
+    UNIQUE(content_kind, content_hash),
+    CHECK (
+        (content_kind = 'text' AND text_payload IS NOT NULL AND files_json IS NULL AND image_path IS NULL)
+        OR (content_kind = 'files' AND text_payload IS NULL AND files_json IS NOT NULL AND image_path IS NULL)
+        OR (content_kind = 'image' AND text_payload IS NULL AND files_json IS NULL AND image_path IS NOT NULL)
+    )
+) STRICT;
 CREATE INDEX IF NOT EXISTS clipboard_entries_ordering
-ON clipboard_entries(pinned DESC, captured_at DESC);
+ON clipboard_entries(captured_at DESC, entry_id);
+PRAGMA user_version=1;
 ";
 
 /// Clipboard extension SQLite owner boundary.
@@ -89,9 +93,9 @@ impl ClipboardDatabase {
             .connection
             .prepare(
                 "SELECT entry_id, content_kind, content_hash, title, text_payload, files_json,
-                        image_path, byte_size, captured_at, pinned
+                        image_path, byte_size, captured_at
                  FROM clipboard_entries
-                 ORDER BY pinned DESC, captured_at DESC, entry_id",
+                 ORDER BY captured_at DESC, entry_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
@@ -106,7 +110,6 @@ impl ClipboardDatabase {
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, i64>(7)?,
                     row.get::<_, i64>(8)?,
-                    row.get::<_, bool>(9)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -114,37 +117,40 @@ impl ClipboardDatabase {
             .map_err(|error| error.to_string())?;
         rows.into_iter()
             .map(
-                |(
-                    entry_id,
-                    kind,
-                    content_hash,
-                    title,
-                    text,
-                    files,
-                    image,
-                    size,
-                    captured,
-                    pinned,
-                )| {
+                |(entry_id, kind, content_hash, title, text, files, image, size, captured)| {
                     Ok(ClipboardEntry {
                         entry_id,
                         content_hash,
                         title,
                         content: decode_content(&kind, text, files, image)?,
-                        byte_size: u64::try_from(size).unwrap_or(0),
-                        captured_at: u64::try_from(captured).unwrap_or(0),
-                        pinned,
+                        byte_size: u64::try_from(size)
+                            .map_err(|error| format!("invalid clipboard byte size: {error}"))?,
+                        captured_at: u64::try_from(captured)
+                            .map_err(|error| format!("invalid clipboard capture time: {error}"))?,
                     })
                 },
             )
             .collect()
     }
 
-    pub fn clear(&self) -> Result<(), String> {
-        self.connection
-            .execute("DELETE FROM clipboard_entries", [])
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+    pub fn clear(&self, entry_ids: &[String]) -> Result<HashSet<PathBuf>, String> {
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        {
+            let mut statement = transaction
+                .prepare("DELETE FROM clipboard_entries WHERE entry_id = ?1")
+                .map_err(|error| error.to_string())?;
+            for entry_id in entry_ids {
+                statement
+                    .execute([entry_id])
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        let retained = image_paths(&transaction)?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(retained)
     }
 }
 
@@ -154,8 +160,8 @@ fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), St
         .execute(
             "INSERT INTO clipboard_entries (
                     entry_id, content_kind, content_hash, title, text_payload, files_json,
-                    image_path, byte_size, captured_at, last_used_at, pinned
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
+                    image_path, byte_size, captured_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(content_kind, content_hash) DO UPDATE SET
                     title = excluded.title,
                     text_payload = excluded.text_payload,
@@ -173,7 +179,6 @@ fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), St
                 encoded.image,
                 integer(entry.byte_size),
                 integer(entry.captured_at),
-                entry.pinned,
             ],
         )
         .map(|_| ())
@@ -193,7 +198,7 @@ fn prune(connection: &Connection, now: u64, config: &ClipboardConfig) -> Result<
              WHERE entry_id IN (
                  SELECT entry_id
                  FROM clipboard_entries
-                 ORDER BY pinned DESC, captured_at DESC, entry_id
+                 ORDER BY captured_at DESC, entry_id
                  LIMIT -1 OFFSET ?1
              )",
             [i64::from(config.max_entries)],

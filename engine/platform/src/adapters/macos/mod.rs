@@ -22,6 +22,19 @@ pub use overlay_position::active_overlay_position;
 pub use single_instance::SingleInstance;
 pub(crate) use startup::{set_enabled as set_startup_enabled, status as startup_status};
 
+/// Current native pasteboard revision used to distinguish host writes from external copies.
+pub fn clipboard_revision() -> u64 {
+    use objc2_app_kit::NSPasteboard;
+
+    NSPasteboard::generalPasteboard().changeCount() as u64
+}
+
+/// Compare opaque pasteboard revisions while preserving wraparound behavior.
+pub fn clipboard_revision_is_after(candidate: u64, baseline: u64) -> bool {
+    let distance = candidate.wrapping_sub(baseline);
+    distance != 0 && distance < (1_u64 << 63)
+}
+
 /// Platform selected by this artifact's compilation target.
 pub const fn target_platform() -> &'static str {
     "macos"

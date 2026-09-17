@@ -3,6 +3,61 @@ use nanika_protocol::ClipboardContent;
 use crate::{ClipboardConfig, ClipboardDatabase, ClipboardEntry};
 
 #[test]
+fn baseline_schema_is_the_only_initial_version() {
+    let root = std::env::temp_dir().join(format!("nanika-clipboard-schema-{}", std::process::id()));
+    let path = root.join("clipboard.db");
+    drop(ClipboardDatabase::open(&path).expect("database"));
+
+    let connection = rusqlite::Connection::open(path).expect("database should reopen");
+    let version: u32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("schema version should load");
+    assert_eq!(version, 1);
+    let columns = connection
+        .prepare("SELECT name FROM pragma_table_info('clipboard_entries') ORDER BY cid")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .expect("clipboard columns should load");
+    assert_eq!(
+        columns,
+        [
+            "entry_id",
+            "content_kind",
+            "content_hash",
+            "title",
+            "text_payload",
+            "files_json",
+            "image_path",
+            "byte_size",
+            "captured_at",
+        ]
+    );
+    let is_strict: bool = connection
+        .query_row(
+            "SELECT strict FROM pragma_table_list WHERE name = 'clipboard_entries'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("table strictness should load");
+    assert!(is_strict);
+    let error = connection
+        .execute(
+            "INSERT INTO clipboard_entries (
+                entry_id, content_kind, content_hash, title, text_payload, files_json,
+                image_path, byte_size, captured_at
+             ) VALUES ('invalid', 'text', 'hash', 'invalid', 'text', '[]', NULL, 1, 1)",
+            [],
+        )
+        .expect_err("mixed payload columns must be rejected");
+    assert!(error.to_string().contains("CHECK constraint failed"));
+    drop(connection);
+    std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
 fn clipboard_database_initializes_deduplicates_and_loads_content() {
     let root =
         std::env::temp_dir().join(format!("nanika-clipboard-database-{}", std::process::id()));
@@ -17,7 +72,6 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
         },
         byte_size: 7,
         captured_at: 10,
-        pinned: false,
     };
     database.upsert(&entry).expect("first capture");
     entry.title = "second".to_owned();
@@ -100,7 +154,7 @@ fn retention_removes_entries_older_than_the_age_limit() {
 }
 
 #[test]
-fn clear_removes_all_clipboard_history() {
+fn clear_removes_requested_clipboard_history() {
     let root = std::env::temp_dir().join(format!("nanika-clipboard-clear-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
@@ -114,10 +168,11 @@ fn clear_removes_all_clipboard_history() {
             },
             byte_size: 3,
             captured_at: 1,
-            pinned: false,
         })
         .expect("capture");
-    database.clear().expect("clear history");
+    database
+        .clear(&["clipboard.one".to_owned()])
+        .expect("clear history");
     assert!(database.load().expect("history").is_empty());
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -133,6 +188,68 @@ fn text_entry(index: u64, captured_at: u64) -> ClipboardEntry {
         },
         byte_size: 7,
         captured_at,
-        pinned: false,
     }
+}
+
+#[test]
+fn clear_preserves_unmatched_entries_and_retained_image_paths() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-clipboard-scoped-clear-{}",
+        std::process::id()
+    ));
+    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let first = text_entry(1, 1);
+    let second = text_entry(2, 2);
+    let mut image = text_entry(3, 3);
+    let image_path = root.join("retained.png");
+    image.content = ClipboardContent::PngFile {
+        path: image_path.to_string_lossy().into_owned(),
+    };
+    for entry in [&first, &second, &image] {
+        database.upsert(entry).expect("capture");
+    }
+    database.clear(&[]).expect("empty scope");
+    assert_eq!(database.load().expect("history").len(), 3);
+    let retained = database
+        .clear(&[first.entry_id.clone(), "missing".to_owned()])
+        .expect("clear one");
+    assert_eq!(retained, std::collections::HashSet::from([image_path]));
+    let loaded = database.load().expect("history");
+    assert_eq!(
+        loaded
+            .iter()
+            .map(|entry| entry.entry_id.as_str())
+            .collect::<Vec<_>>(),
+        ["clipboard.3", "clipboard.2"]
+    );
+    database.clear(&[image.entry_id]).expect("clear image");
+    assert_eq!(
+        database.load().expect("history")[0].entry_id,
+        second.entry_id
+    );
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn clear_rolls_back_the_entire_scope_on_database_failure() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-clipboard-clear-rollback-{}",
+        std::process::id()
+    ));
+    let path = root.join("clipboard.db");
+    let database = ClipboardDatabase::open(&path).expect("database");
+    for index in 1..=2 {
+        database.upsert(&text_entry(index, index)).expect("capture");
+    }
+    let connection = rusqlite::Connection::open(&path).expect("test connection");
+    connection.execute_batch("CREATE TRIGGER reject_delete BEFORE DELETE ON clipboard_entries WHEN OLD.entry_id = 'clipboard.2' BEGIN SELECT RAISE(ABORT, 'test clear failure'); END;").expect("failure trigger");
+    let error = database
+        .clear(&["clipboard.1".to_owned(), "clipboard.2".to_owned()])
+        .expect_err("clear must fail");
+    assert!(error.contains("test clear failure"));
+    assert_eq!(database.load().expect("history").len(), 2);
+    drop(connection);
+    drop(database);
+    std::fs::remove_dir_all(root).expect("cleanup");
 }

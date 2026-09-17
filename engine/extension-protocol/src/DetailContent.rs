@@ -10,7 +10,7 @@ pub enum DetailContent {
         value: String,
     },
     Files {
-        names: Vec<String>,
+        files: Vec<crate::ViewFile>,
     },
     Image {
         source: ImageSource,

@@ -117,8 +117,10 @@ fn write(
             write_png(context, bytes)
         }
     }
-    .map(|()| HostServiceResponse::ClipboardWritten)
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    Ok(HostServiceResponse::ClipboardWritten {
+        revision: crate::clipboard_revision(),
+    })
 }
 
 fn write_png(context: &ClipboardContext, bytes: Vec<u8>) -> ClipboardResult<()> {

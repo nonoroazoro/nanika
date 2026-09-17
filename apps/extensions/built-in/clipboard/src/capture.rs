@@ -34,7 +34,6 @@ pub(crate) fn capture(
                 content: ClipboardContent::Files { paths },
                 byte_size: encoded.len() as u64,
                 captured_at,
-                pinned: false,
             }));
         }
     }
@@ -55,7 +54,6 @@ pub(crate) fn capture(
                 byte_size: value.len() as u64,
                 content: ClipboardContent::Text { value },
                 captured_at,
-                pinned: false,
             }));
         }
     }
@@ -90,7 +88,6 @@ pub(crate) fn capture(
             },
             byte_size: bytes.len() as u64,
             captured_at,
-            pinned: false,
         }));
     }
     Ok(None)

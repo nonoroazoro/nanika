@@ -52,12 +52,15 @@ mod view_action;
 mod view_action_style;
 #[path = "ViewEvent.rs"]
 mod view_event;
+#[path = "ViewFile.rs"]
+mod view_file;
 #[path = "ViewFilter.rs"]
 mod view_filter;
 #[path = "ViewFilterOption.rs"]
 mod view_filter_option;
 #[path = "ViewItemIcon.rs"]
 mod view_item_icon;
+pub use view_file::ViewFile;
 #[path = "ViewMetadata.rs"]
 mod view_metadata;
 

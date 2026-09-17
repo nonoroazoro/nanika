@@ -113,7 +113,7 @@ pub(crate) fn resolve_request(
     };
     if !nanika_foundation::is_valid_extension_id(extension_id)
         || nanika_protocol::IconReference::new(*icon_key).is_err()
-        || !matches!(*file_name, "32.png" | "64.png" | "128.png")
+        || !matches!(*file_name, "32.png" | "64.png" | "128.png" | "512.png")
     {
         return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     }

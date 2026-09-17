@@ -1,3 +1,5 @@
+pub const CLIPBOARD_PAGE_SIZE: usize = 10;
+
 /// Route-local interaction state for the clipboard history view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardViewState {
@@ -14,7 +16,7 @@ impl ClipboardViewState {
             query: String::new(),
             selected_item_id: None,
             content_type: "all".to_owned(),
-            visible_limit: 100,
+            visible_limit: CLIPBOARD_PAGE_SIZE,
             revision: 1,
         }
     }

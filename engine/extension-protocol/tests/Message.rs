@@ -1,7 +1,7 @@
 use nanika_protocol::{
-    DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest, ImageSource,
-    LaunchArguments, LaunchDescriptor, ListItem, ListLayout, ListSection, ListView, Message,
-    NavigationEffect, View, ViewAction, ViewActionStyle, ViewItemIcon,
+    DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest, HostServiceResponse,
+    ImageSource, LaunchArguments, LaunchDescriptor, ListItem, ListLayout, ListSection, ListView,
+    Message, NavigationEffect, View, ViewAction, ViewActionStyle, ViewItemIcon,
 };
 
 #[test]
@@ -23,6 +23,14 @@ fn invocation_identifies_the_selected_entry_and_action() {
     let encoded = serde_json::to_value(message).expect("invoke should encode");
     assert_eq!(encoded["entry_id"], "application.firefox");
     assert_eq!(encoded["action_id"], "application.open");
+}
+
+#[test]
+fn clipboard_write_response_carries_the_opaque_native_revision() {
+    let response = HostServiceResponse::ClipboardWritten { revision: 42 };
+    let encoded = serde_json::to_value(response).expect("clipboard response should encode");
+    assert_eq!(encoded["service"], "clipboardWritten");
+    assert_eq!(encoded["revision"], 42);
 }
 
 #[test]
@@ -115,7 +123,7 @@ fn detail_files_must_not_be_empty() {
     let view = View::Detail {
         detail: DetailView {
             title: None,
-            content: DetailContent::Files { names: Vec::new() },
+            content: DetailContent::Files { files: Vec::new() },
             metadata: Vec::new(),
             actions: Vec::new(),
         },
@@ -301,4 +309,72 @@ fn configuration_updates_carry_a_complete_snapshot() {
     let encoded = serde_json::to_value(message).expect("configuration should encode");
     assert_eq!(encoded["type"], "configurationChanged");
     assert_eq!(encoded["configuration"]["example.enabled"], true);
+}
+
+#[test]
+fn native_view_icons_are_opaque_and_validated() {
+    let reference = nanika_protocol::IconReference::new("file-icon").expect("reference");
+    assert_eq!(
+        serde_json::to_value(ViewItemIcon::Native(reference.clone())).expect("wire shape"),
+        serde_json::json!({"native": {"key": "file-icon"}})
+    );
+    let mut view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Files {
+                files: vec![nanika_protocol::ViewFile {
+                    name: "example.pkg".to_owned(),
+                    path: "/example/example.pkg".to_owned(),
+                    icon: Some(reference),
+                }],
+            },
+            metadata: Vec::new(),
+            actions: Vec::new(),
+        },
+    };
+    view.validate().expect("valid icon reference");
+    let mut oversized = view.clone();
+    if let View::Detail { detail } = &mut oversized
+        && let DetailContent::Files { files } = &mut detail.content
+    {
+        files[0].path = "a".repeat(1024 * 1024 + 1);
+    }
+    assert_eq!(
+        oversized.validate().expect_err("oversized paths"),
+        "detail file paths exceed the supported size"
+    );
+
+    let invalid: nanika_protocol::IconReference =
+        serde_json::from_value(serde_json::json!({"key": "../outside"}))
+            .expect("untrusted serialized reference");
+    if let View::Detail { detail } = &mut view
+        && let DetailContent::Files { files } = &mut detail.content
+    {
+        files[0].icon = Some(invalid.clone());
+    }
+    assert!(view.validate().is_err());
+    let view = View::List {
+        list: Box::new(ListView {
+            title: "Files".to_owned(),
+            search_placeholder: String::new(),
+            search_text: String::new(),
+            layout: ListLayout::Plain,
+            sections: vec![ListSection {
+                id: "files".to_owned(),
+                title: None,
+                items: vec![ListItem {
+                    id: "one".to_owned(),
+                    title: "example.pkg".to_owned(),
+                    subtitle: None,
+                    icon: Some(ViewItemIcon::Native(invalid)),
+                    actions: Vec::new(),
+                }],
+            }],
+            selected_item_id: None,
+            detail: None,
+            filter: None,
+            next_cursor: None,
+        }),
+    };
+    assert!(view.validate().is_err());
 }

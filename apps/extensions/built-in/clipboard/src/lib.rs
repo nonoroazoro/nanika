@@ -19,6 +19,8 @@ mod clipboard_watcher_handler;
 mod clipboard_worker;
 #[path = "EncodedClipboardContent.rs"]
 mod encoded_clipboard_content;
+#[path = "FileIconWorker.rs"]
+mod file_icon_worker;
 #[path = "RuntimePaths.rs"]
 mod runtime_paths;
 mod view;
@@ -33,13 +35,14 @@ pub use clipboard_view_state::*;
 pub(crate) use clipboard_watcher_handler::*;
 pub use clipboard_worker::*;
 pub(crate) use encoded_clipboard_content::*;
+pub use file_icon_worker::*;
 pub use runtime_paths::*;
 pub use view::*;
 
 pub const EXTENSION_ID: &str = "com.nanika.clipboard";
 pub const COPY_ACTION_ID: &str = "clipboard.copy";
 pub const CLEAR_ACTION_ID: &str = "clipboard.clear";
-pub const OPEN_COMMAND_ID: &str = "clipboard.history";
+pub const VIEW_ID: &str = "clipboard.history";
 
 #[cfg(test)]
 #[path = "../tests/capture.rs"]
@@ -50,3 +53,7 @@ mod clipboard_config_tests;
 #[cfg(test)]
 #[path = "../tests/ClipboardDatabase.rs"]
 mod clipboard_database_tests;
+
+#[cfg(test)]
+#[path = "../tests/view.rs"]
+mod view_tests;

@@ -1,27 +1,28 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
+use std::sync::{Arc, Mutex};
 
 use clipboard_rs::ClipboardHandler;
 
-use crate::ClipboardCommand;
+use crate::{ClipboardCaptureGate, ClipboardCommand};
 
 /// Minimal native watcher callback that never performs clipboard I/O.
 pub(crate) struct ClipboardWatcherHandler {
     pub(crate) commands: SyncSender<ClipboardCommand>,
-    pub(crate) suppress_next_change: Arc<AtomicBool>,
+    pub(crate) capture_gate: Arc<Mutex<ClipboardCaptureGate>>,
 }
 
 impl ClipboardHandler for ClipboardWatcherHandler {
     fn on_clipboard_change(&mut self) {
-        if self.suppress_next_change.swap(false, Ordering::AcqRel) {
+        let revision = nanika_platform::clipboard_revision();
+        let should_capture = self
+            .capture_gate
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .observe(revision);
+        if !should_capture {
             return;
         }
-        if self
-            .commands
-            .send(ClipboardCommand::Capture { response: None })
-            .is_err()
-        {
+        if self.commands.send(ClipboardCommand::Capture).is_err() {
             eprintln!("clipboard capture owner closed while delivering a change event");
         }
     }

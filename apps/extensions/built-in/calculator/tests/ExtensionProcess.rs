@@ -74,7 +74,7 @@ fn calculator_process_contributes_and_copies_through_the_host() {
             request_id,
             parent_request_id,
             generation,
-            response: HostServiceResponse::ClipboardWritten,
+            response: HostServiceResponse::ClipboardWritten { revision: 1 },
         },
     )
     .expect("host response should write");

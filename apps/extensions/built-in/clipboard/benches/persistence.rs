@@ -38,7 +38,6 @@ fn entry(index: usize, captured_at: u64) -> ClipboardEntry {
         byte_size: value.len() as u64,
         content: ClipboardContent::Text { value },
         captured_at,
-        pinned: false,
     }
 }
 

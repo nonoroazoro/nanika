@@ -51,6 +51,11 @@ fn validate_list(list: &ListView) -> Result<(), String> {
                 validate_text("list item subtitle", subtitle, 512, true)?;
             }
             validate_actions(&item.actions)?;
+            if let Some(crate::ViewItemIcon::Native(reference)) = &item.icon
+                && !reference.is_valid()
+            {
+                return Err("list item icon reference is invalid".to_owned());
+            }
         }
     }
     if item_count > 500 {
@@ -100,12 +105,23 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
         DetailContent::Text { value } => {
             validate_text("detail text", value, 262_144, true)?;
         }
-        DetailContent::Files { names } => {
-            if names.is_empty() || names.len() > 256 {
+        DetailContent::Files { files } => {
+            if files.is_empty() || files.len() > 256 {
                 return Err("detail file count is invalid".to_owned());
             }
-            for name in names {
-                validate_text("detail file name", name, 512, false)?;
+            if files.iter().map(|file| file.path.len()).sum::<usize>() > 1024 * 1024 {
+                return Err("detail file paths exceed the supported size".to_owned());
+            }
+            for file in files {
+                validate_text("detail file name", &file.name, 512, false)?;
+                validate_text("detail file path", &file.path, 1024 * 1024, false)?;
+                if file
+                    .icon
+                    .as_ref()
+                    .is_some_and(|reference| !reference.is_valid())
+                {
+                    return Err("detail file icon reference is invalid".to_owned());
+                }
             }
         }
         DetailContent::Image {

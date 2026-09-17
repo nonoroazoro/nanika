@@ -5,5 +5,5 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "service", rename_all = "camelCase")]
 pub enum HostServiceResponse {
     Launched,
-    ClipboardWritten,
+    ClipboardWritten { revision: u64 },
 }

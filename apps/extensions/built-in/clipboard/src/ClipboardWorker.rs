@@ -1,6 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
@@ -12,7 +11,6 @@ use crate::{ClipboardCommand, ClipboardConfig, ClipboardDatabase, ClipboardEntry
 pub struct ClipboardWorker {
     commands: SyncSender<ClipboardCommand>,
     last_error: Arc<Mutex<Option<String>>>,
-    suppress_next_capture: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -22,12 +20,12 @@ impl ClipboardWorker {
         payload_root: PathBuf,
         mut config: ClipboardConfig,
         entries: Arc<RwLock<Vec<ClipboardEntry>>>,
+        invalidated: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Self, String> {
         let context = ClipboardContext::new().map_err(|error| error.to_string())?;
         let (commands, receiver) = mpsc::sync_channel(8);
         let (ready, initialized) = mpsc::sync_channel(1);
         let last_error = Arc::new(Mutex::new(None));
-        let suppress_next_capture = Arc::new(AtomicBool::new(false));
         let worker_error = Arc::clone(&last_error);
         let thread = std::thread::Builder::new()
             .name("nanika-clipboard-owner".to_owned())
@@ -53,9 +51,10 @@ impl ClipboardWorker {
                 }
                 while let Ok(command) = receiver.recv() {
                     match command {
-                        ClipboardCommand::Capture { response } => {
+                        ClipboardCommand::Capture => {
                             let result = capture(&context, &payload_root, unix_timestamp_millis())
                                 .and_then(|entry| {
+                                    let changed = entry.is_some();
                                     if let Some(entry) = entry {
                                         let retained = database.upsert_with_retention(
                                             &entry,
@@ -68,29 +67,17 @@ impl ClipboardWorker {
                                             .write()
                                             .unwrap_or_else(|error| error.into_inner()) = loaded;
                                     }
-                                    Ok(())
+                                    Ok(changed)
                                 });
                             *worker_error
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
-                            if let Some(response) = response
-                                && response.send(result.clone()).is_err()
-                            {
-                                eprintln!(
-                                    "clipboard capture requester closed before receiving result"
-                                );
+                            if result.as_ref().is_ok_and(|changed| *changed) {
+                                invalidated();
                             }
                         }
-                        ClipboardCommand::Clear { response } => {
-                            let result = database
-                                .clear()
-                                .and_then(|()| clear_payloads(&payload_root))
-                                .map(|()| {
-                                    entries
-                                        .write()
-                                        .unwrap_or_else(|error| error.into_inner())
-                                        .clear();
-                                });
+                        ClipboardCommand::Clear { entry_ids, response } => {
+                            let result = clear_entries(&database, &payload_root, &entries, &entry_ids);
                             *worker_error
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
@@ -133,7 +120,6 @@ impl ClipboardWorker {
         Ok(Self {
             commands,
             last_error,
-            suppress_next_capture,
             thread: Some(thread),
         })
     }
@@ -142,43 +128,13 @@ impl ClipboardWorker {
         self.commands.clone()
     }
 
-    pub fn capture(&self) -> Result<Receiver<Result<(), String>>, String> {
+    pub fn clear(&self, entry_ids: Vec<String>) -> Result<(), String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
-            .send(ClipboardCommand::Capture {
-                response: Some(response),
+            .send(ClipboardCommand::Clear {
+                entry_ids,
+                response,
             })
-            .map_err(|_| "clipboard capture owner is closed".to_owned())?;
-        Ok(result)
-    }
-
-    pub fn capture_background(&self) -> Result<(), String> {
-        self.commands
-            .send(ClipboardCommand::Capture { response: None })
-            .map_err(|_| "clipboard capture owner is closed".to_owned())
-    }
-
-    pub(crate) fn capture_suppression(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.suppress_next_capture)
-    }
-
-    pub fn suppress_next_capture(&self) {
-        self.suppress_next_capture.store(true, Ordering::Release);
-    }
-
-    pub fn cancel_capture_suppression(&self) {
-        let _ = self.suppress_next_capture.compare_exchange(
-            true,
-            false,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        );
-    }
-
-    pub fn clear(&self) -> Result<(), String> {
-        let (response, result) = mpsc::sync_channel(1);
-        self.commands
-            .send(ClipboardCommand::Clear { response })
             .map_err(|_| "clipboard capture owner is closed".to_owned())?;
         result
             .recv()
@@ -221,13 +177,16 @@ impl ClipboardWorker {
     }
 }
 
-fn clear_payloads(payload_root: &std::path::Path) -> Result<(), String> {
-    match std::fs::remove_dir_all(payload_root) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
-    }
-    std::fs::create_dir_all(payload_root).map_err(|error| error.to_string())
+fn clear_entries(
+    database: &ClipboardDatabase,
+    payload_root: &std::path::Path,
+    entries: &RwLock<Vec<ClipboardEntry>>,
+    entry_ids: &[String],
+) -> Result<(), String> {
+    let retained = database.clear(entry_ids)?;
+    // SQLite has committed. Publish that state even if orphan cleanup later fails.
+    *entries.write().unwrap_or_else(|error| error.into_inner()) = database.load()?;
+    reconcile_payloads(payload_root, &retained)
 }
 
 fn reconcile_payloads(
@@ -278,3 +237,7 @@ fn unix_timestamp_millis() -> u64 {
             u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
         })
 }
+
+#[cfg(test)]
+#[path = "../tests/ClipboardWorker.rs"]
+mod tests;

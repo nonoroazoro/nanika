@@ -77,3 +77,27 @@ fn write_png(path: &Path) {
         .write_image_data(&[0, 0, 0, 0])
         .expect("PNG data");
 }
+
+#[test]
+fn cached_file_icons_support_large_previews_and_reject_arbitrary_sizes() {
+    let root =
+        std::env::temp_dir().join(format!("nanika-file-icon-protocol-{}", std::process::id()));
+    let directory = root.join("icons/com.nanika.clipboard/file-icon");
+    std::fs::create_dir_all(&directory).expect("icon directory");
+    write_png(&directory.join("512.png"));
+    let response = resolve_request(
+        &root,
+        &root.join("payloads"),
+        "launcher",
+        &request("/com.nanika.clipboard/file-icon/512.png"),
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = resolve_request(
+        &root,
+        &root.join("payloads"),
+        "launcher",
+        &request("/com.nanika.clipboard/file-icon/1024.png"),
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

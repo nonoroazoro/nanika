@@ -22,6 +22,17 @@ pub use overlay_position::active_overlay_position;
 pub use single_instance::SingleInstance;
 pub(crate) use startup::{set_enabled as set_startup_enabled, status as startup_status};
 
+/// Current native clipboard sequence used to distinguish host writes from external copies.
+pub fn clipboard_revision() -> u64 {
+    u64::from(unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() })
+}
+
+/// Compare the native 32-bit clipboard sequence while preserving wraparound behavior.
+pub fn clipboard_revision_is_after(candidate: u64, baseline: u64) -> bool {
+    let distance = (candidate as u32).wrapping_sub(baseline as u32);
+    distance != 0 && distance < (1_u32 << 31)
+}
+
 /// Platform selected by this artifact's compilation target.
 pub const fn target_platform() -> &'static str {
     "windows"

@@ -14,9 +14,9 @@ mod adapter;
 
 pub use adapter::{
     ExtensionProcessTree, HotkeyTimingObserver, SingleInstance, acquire_instance,
-    active_overlay_position, atomic_replace, companion_executable, configure_extension_command,
-    make_executable, open_regular_file, report_fatal_error, signal_activate, target_platform,
-    target_triple,
+    active_overlay_position, atomic_replace, clipboard_revision, clipboard_revision_is_after,
+    companion_executable, configure_extension_command, make_executable, open_regular_file,
+    report_fatal_error, signal_activate, target_platform, target_triple,
 };
 pub(crate) use adapter::{set_startup_enabled, startup_status};
 

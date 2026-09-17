@@ -3,10 +3,9 @@ use std::sync::mpsc::SyncSender;
 use crate::ClipboardConfig;
 
 pub(crate) enum ClipboardCommand {
-    Capture {
-        response: Option<SyncSender<Result<(), String>>>,
-    },
+    Capture,
     Clear {
+        entry_ids: Vec<String>,
         response: SyncSender<Result<(), String>>,
     },
     ApplyRetention {

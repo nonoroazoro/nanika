@@ -9,5 +9,4 @@ pub struct ClipboardEntry {
     pub content: ClipboardContent,
     pub byte_size: u64,
     pub captured_at: u64,
-    pub pinned: bool,
 }

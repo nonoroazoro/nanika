@@ -2,18 +2,16 @@ use std::path::Path;
 
 use nanika_protocol::{
     ClipboardContent, DetailContent, DetailView, ImageSource, ListItem, ListLayout, ListSection,
-    ListView, View, ViewAction, ViewActionStyle, ViewFilter, ViewFilterOption, ViewItemIcon,
-    ViewMetadata,
+    ListView, View, ViewAction, ViewActionStyle, ViewFile, ViewFilter, ViewFilterOption,
+    ViewItemIcon, ViewMetadata,
 };
 
 use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
 
+pub const FILE_COLLECTION_PREVIEW_LIMIT: usize = 3;
+
 pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]) -> View {
-    let matching = entries
-        .iter()
-        .filter(|entry| matches_content_type(entry, &state.content_type))
-        .filter(|entry| matches_query(entry, &state.query))
-        .collect::<Vec<_>>();
+    let matching = matching_entries(state, entries);
     let visible = matching
         .iter()
         .copied()
@@ -42,7 +40,7 @@ pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]
     View::List {
         list: Box::new(ListView {
             title: "Clipboard History".to_owned(),
-            search_placeholder: "Filter clipboard history".to_owned(),
+            search_placeholder: "Search for entries".to_owned(),
             search_text: state.query.clone(),
             layout: ListLayout::Split,
             sections,
@@ -63,11 +61,23 @@ pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]
     }
 }
 
+/// Listing and clearing share the same scope, before pagination is applied.
+pub fn matching_entries<'a>(
+    state: &ClipboardViewState,
+    entries: &'a [ClipboardEntry],
+) -> Vec<&'a ClipboardEntry> {
+    entries
+        .iter()
+        .filter(|entry| matches_content_type(entry, &state.content_type))
+        .filter(|entry| matches_query(entry, &state.query))
+        .collect()
+}
+
 fn list_item(entry: &ClipboardEntry) -> ListItem {
     ListItem {
         id: entry.entry_id.clone(),
         title: entry.title.clone(),
-        subtitle: Some(content_type(entry).to_owned()),
+        subtitle: None,
         icon: Some(match &entry.content {
             ClipboardContent::Text { .. } => ViewItemIcon::Text,
             ClipboardContent::Files { .. } => ViewItemIcon::Files,
@@ -85,14 +95,16 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
                 value: value.clone(),
             },
             ClipboardContent::Files { paths } => DetailContent::Files {
-                names: paths
+                files: paths
                     .iter()
-                    .map(|path| {
-                        Path::new(path)
+                    .map(|path| ViewFile {
+                        path: path.clone(),
+                        icon: None,
+                        name: Path::new(path)
                             .file_name()
                             .and_then(|name| name.to_str())
                             .unwrap_or(path)
-                            .to_owned()
+                            .to_owned(),
                     })
                     .collect(),
             },
@@ -135,7 +147,7 @@ fn copy_action() -> ViewAction {
 fn clear_action() -> ViewAction {
     ViewAction {
         id: CLEAR_ACTION_ID.to_owned(),
-        title: "Clear".to_owned(),
+        title: "Clear history".to_owned(),
         style: ViewActionStyle::Destructive,
     }
 }
@@ -190,4 +202,79 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{:.1} MiB", bytes as f64 / 1_048_576.0)
     }
+}
+
+/// Native icon work happens after releasing the clipboard owner's shared snapshot lock.
+pub fn render_clipboard_view(
+    state: &mut ClipboardViewState,
+    entries: &std::sync::RwLock<Vec<ClipboardEntry>>,
+    icon_for_path: &impl Fn(&Path) -> Option<nanika_protocol::IconReference>,
+) -> View {
+    let (mut view, paths) = {
+        let entries = entries.read().unwrap_or_else(|error| error.into_inner());
+        let view = clipboard_view(state, &entries);
+        let View::List { list } = &view else {
+            unreachable!()
+        };
+        let visible_ids = list
+            .sections
+            .iter()
+            .flat_map(|section| &section.items)
+            .map(|item| item.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let paths = entries
+            .iter()
+            .filter_map(|entry| {
+                if !visible_ids.contains(entry.entry_id.as_str()) {
+                    return None;
+                }
+                let ClipboardContent::Files { paths } = &entry.content else {
+                    return None;
+                };
+                Some((entry.entry_id.clone(), paths.clone()))
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        (view, paths)
+    };
+    let View::List { list } = &mut view else {
+        unreachable!()
+    };
+
+    // Rendering only reads complete persistent artifacts. Native acquisition belongs to the
+    // background icon owner so every response remains independent of system icon latency.
+    let selected = list.selected_item_id.clone();
+    let mut selected_references = Vec::new();
+    if let Some(paths) = selected.as_ref().and_then(|selected| paths.get(selected)) {
+        for path in paths.iter().take(FILE_COLLECTION_PREVIEW_LIMIT) {
+            let path = Path::new(path);
+            selected_references.push(icon_for_path(path));
+        }
+    }
+    for item in list
+        .sections
+        .iter_mut()
+        .flat_map(|section| &mut section.items)
+    {
+        let reference = if selected.as_ref() == Some(&item.id) {
+            selected_references.first().cloned().flatten()
+        } else {
+            paths
+                .get(&item.id)
+                .and_then(|paths| paths.first())
+                .and_then(|path| icon_for_path(Path::new(path)))
+        };
+        if let Some(reference) = reference {
+            item.icon = Some(ViewItemIcon::Native(reference));
+        }
+    }
+    if let Some(DetailView {
+        content: DetailContent::Files { files },
+        ..
+    }) = &mut list.detail
+    {
+        for (file, reference) in files.iter_mut().zip(selected_references) {
+            file.icon = reference;
+        }
+    }
+    view
 }
