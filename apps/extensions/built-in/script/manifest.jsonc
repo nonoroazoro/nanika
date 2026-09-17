@@ -1,0 +1,50 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.script",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "targets": {
+    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-script.exe" },
+    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-script" },
+    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-script" }
+  },
+  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+  "permissions": ["process.launch"],
+  "contributes": {
+    "configuration": {
+      "title": "Scripts",
+      "properties": {
+        "script.entries": {
+          "type": "array",
+          "title": "Scripts",
+          "description": "Explicit script commands and their interpreters.",
+          "default": [],
+          "maxItems": 5000,
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "aliases", "interpreter", "script", "arguments", "workingDirectory"],
+            "properties": {
+              "id": { "type": "string", "maxLength": 128 },
+              "title": { "type": "string", "maxLength": 4096 },
+              "aliases": {
+                "type": "array",
+                "maxItems": 64,
+                "items": { "type": "string", "maxLength": 4096 }
+              },
+              "interpreter": { "type": "string", "format": "path", "maxLength": 4096 },
+              "script": { "type": "string", "format": "path", "maxLength": 4096 },
+              "arguments": {
+                "type": "array",
+                "maxItems": 256,
+                "items": { "type": "string", "maxLength": 4096 }
+              },
+              "workingDirectory": { "type": "string", "format": "path", "maxLength": 4096 }
+            }
+          }
+        }
+      }
+    },
+    "rootSearch": {}
+  }
+}

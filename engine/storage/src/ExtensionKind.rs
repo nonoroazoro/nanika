@@ -6,13 +6,6 @@ pub enum ExtensionKind {
 }
 
 impl ExtensionKind {
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::BuiltIn => "built-in",
-            Self::External => "external",
-        }
-    }
-
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "built-in" => Some(Self::BuiltIn),

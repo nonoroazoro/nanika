@@ -4,13 +4,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
-use nanika_extension_package::{ExtensionProtocol, resolve_active_extensions};
+use nanika_extension_package::{ActiveExtension, ExtensionProtocol, resolve_active_extensions};
 use nanika_platform::companion_executable;
 use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
-use nanika_storage::{ExtensionKind, NanikaPaths, SearchStorageWorker};
+use nanika_storage::{NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    ConfigurationUpdateDisposition, DistributionInventory, ExtensionConfigurationRegistry,
+    BuiltInExtensionInventory, ConfigurationUpdateDisposition, ExtensionConfigurationRegistry,
     ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler,
     HostServiceRouter, RuntimeConfigurationUpdate, RuntimeOutputUpdate, RuntimeUpdateBatch,
     RuntimeViewCompletion,
@@ -27,8 +27,8 @@ pub struct RuntimeService {
 }
 
 impl RuntimeService {
-    pub fn start(paths: &NanikaPaths, inventory_source: &str) -> Result<Self, String> {
-        let inventory = DistributionInventory::parse(inventory_source)?;
+    pub fn start(paths: &NanikaPaths, built_in_manifests: &[&str]) -> Result<Self, String> {
+        let inventory = BuiltInExtensionInventory::parse(built_in_manifests)?;
         let mut diagnostics = Vec::new();
         let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
             .map_err(|error| format!("configuration is unavailable: {error}"))?;
@@ -70,8 +70,10 @@ impl RuntimeService {
         let configurations = ExtensionConfigurationRegistry::new(config_store);
 
         let current_executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let mut active_extensions = Vec::new();
         for extension in inventory.extensions {
-            if !registry.is_enabled(&extension.id, true) {
+            let manifest = extension.manifest;
+            if !registry.is_enabled(&manifest.id, true) {
                 continue;
             }
             let program = companion_executable(&current_executable, &extension.binary_name);
@@ -82,63 +84,24 @@ impl RuntimeService {
                 ));
                 continue;
             }
-            router.register_permissions(&extension.id, extension.permissions);
-            let configuration = match configurations
-                .register(&extension.id, extension.contributes.configuration.as_ref())
-            {
-                Ok(configuration) => configuration,
-                Err(error) => {
-                    diagnostics.push(format!(
-                        "extension {} configuration is unavailable: {error}",
-                        extension.id
-                    ));
-                    continue;
-                }
-            };
-            let runtime = match spawn_runtime(
-                &extension.id,
-                extension.runtime,
-                &program,
-                paths,
-                configuration.clone(),
-            ) {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    diagnostics.push(format!(
-                        "extension {} could not start: {error}",
-                        extension.id
-                    ));
-                    continue;
-                }
-            };
             if let Some(storage) = &storage {
                 storage
-                    .register_extension(&extension.id, ExtensionKind::BuiltIn, unix_timestamp())
+                    .register_builtin_extension(&manifest.id, unix_timestamp())
                     .map_err(|error| {
                         format!(
                             "extension {} metadata could not be recorded: {error}",
-                            extension.id
+                            manifest.id
                         )
                     })?;
             }
-            if let Err(error) = extensions.register_with_configuration(
-                &extension.id,
-                runtime,
-                search.clone(),
-                extension.contributes,
-                configuration,
-            ) {
-                diagnostics.push(format!(
-                    "extension {} could not register: {error}",
-                    extension.id
-                ));
-            }
+            active_extensions.push(ActiveExtension::from_manifest(manifest, program));
         }
 
-        let (external, errors) =
+        let (mut external, errors) =
             resolve_active_extensions(paths, &storage_state.extensions, &registry);
         diagnostics.extend(errors.into_iter().map(|error| error.message));
-        for extension in external {
+        active_extensions.append(&mut external);
+        for extension in active_extensions {
             router.register_permissions(&extension.extension_id, extension.permissions);
             let configuration = match configurations.register(
                 &extension.extension_id,

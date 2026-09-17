@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use nanika_search::{Candidate, CandidateKind, SearchOwner, UsageMap, normalize_history_key};
 
-use crate::{ExtensionKind, HostDatabase, SearchStorageWorker, StorageQueueError, unix_timestamp};
+use crate::{HostDatabase, SearchStorageWorker, StorageQueueError, unix_timestamp};
 
 #[test]
 fn history_persists_with_punctuation_preserving_identity() {
@@ -34,7 +34,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
     let search = owner.handle();
     worker.attach_search(search.clone());
     worker
-        .register_extension("test.extension", ExtensionKind::External, unix_timestamp())
+        .register_builtin_extension("test.extension", unix_timestamp())
         .expect("extension registration should enqueue");
     let generation = search.begin_query("tool").expect("query should enqueue");
     search
@@ -93,7 +93,7 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
     cleanup(&database);
     let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
     assert_eq!(
-        worker.register_extension("../escape", ExtensionKind::External, unix_timestamp()),
+        worker.register_builtin_extension("../escape", unix_timestamp()),
         Err(StorageQueueError::InvalidExtensionId)
     );
     worker.shutdown();
@@ -135,7 +135,7 @@ fn usage_is_preserved_until_an_explicit_reset() {
     ));
     cleanup(&database);
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_extension("test.extension", ExtensionKind::External, 1)
+    host.register_builtin_extension("test.extension", 1)
         .expect("extension should register");
     host.record_usage("test.extension", "old", "open", "old", 1)
         .expect("old usage should persist");
@@ -158,31 +158,34 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
     let _ = std::fs::remove_dir_all(&root);
     let database = root.join("nanika.db");
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_extension("com.example.valid", ExtensionKind::External, 1)
+    host.register_builtin_extension("com.example.valid", 1)
         .expect("valid extension should register");
     drop(host);
     let connection = rusqlite::Connection::open(&database).expect("raw database should open");
     connection
+        .execute_batch("PRAGMA ignore_check_constraints=ON")
+        .expect("corrupt fixture should bypass schema checks");
+    connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, health, updated_at
-             ) VALUES ('com.example.invalid', 'corrupt', 'enabled', 'healthy', 1)",
+                extension_id, kind, state, updated_at
+             ) VALUES ('com.example.invalid', 'corrupt', 'enabled', 1)",
             [],
         )
         .expect("invalid fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, health, updated_at
-             ) VALUES ('com.example.invalid-state', 'external', 1, 'healthy', 1)",
+                extension_id, kind, state, updated_at
+             ) VALUES ('com.example.invalid-state', 'external', 'corrupt', 1)",
             [],
         )
         .expect("invalid state fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, health, updated_at
-             ) VALUES ('../escape', 'external', 'enabled', 'healthy', 1)",
+                extension_id, kind, state, updated_at
+             ) VALUES ('../escape', 'external', 'enabled', 1)",
             [],
         )
         .expect("invalid id fixture should be inserted");

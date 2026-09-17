@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 use nanika_search::{SearchHandle, UsageKey};
 
 use crate::{
-    ExtensionKind, HostDatabase, SearchStorageCommand, SearchStorageFailure, SearchStorageState,
+    HostDatabase, SearchStorageCommand, SearchStorageFailure, SearchStorageState,
     StorageQueueError, extension_id::is_valid_extension_id,
 };
 
@@ -59,14 +59,13 @@ impl SearchStorageWorker {
                 let mut failure_sequence = 0_u64;
                 while let Ok(command) = receiver.recv() {
                     let (operation, result, response) = match command {
-                        SearchStorageCommand::RegisterExtension {
+                        SearchStorageCommand::RegisterBuiltInExtension {
                             extension_id,
-                            kind,
                             updated_at,
                             response,
                         } => (
-                            "register extension metadata",
-                            database.register_extension(&extension_id, kind, updated_at),
+                            "register built-in extension metadata",
+                            database.register_builtin_extension(&extension_id, updated_at),
                             response,
                         ),
                         SearchStorageCommand::RecordHistory {
@@ -200,10 +199,9 @@ impl SearchStorageWorker {
             .unwrap_or_else(|error| error.into_inner()) = Some(search);
     }
 
-    pub fn register_extension(
+    pub fn register_builtin_extension(
         &self,
         extension_id: impl Into<String>,
-        kind: ExtensionKind,
         updated_at: u64,
     ) -> Result<(), StorageQueueError> {
         let extension_id = extension_id.into();
@@ -212,9 +210,8 @@ impl SearchStorageWorker {
         }
         let (response, result) = mpsc::sync_channel(1);
         self.send(
-            SearchStorageCommand::RegisterExtension {
+            SearchStorageCommand::RegisterBuiltInExtension {
                 extension_id,
-                kind,
                 updated_at,
                 response,
             },

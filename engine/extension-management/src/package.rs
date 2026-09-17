@@ -387,7 +387,7 @@ fn resolve_active_extension(
     let manifest = load_manifest(canonical_install.join("manifest.jsonc"))?;
     reject_external_builtin_identity(&manifest)?;
     if manifest.id != installed.extension_id
-        || installed.active_version.as_deref() != Some(manifest.version.as_str())
+        || installed.version.as_deref() != Some(manifest.version.as_str())
     {
         return Err(ExtensionPackageError::Manifest(
             "installed manifest identity does not match host state".to_owned(),
@@ -420,13 +420,9 @@ fn validate_package_operation(
             ))
         };
     };
-    let current = previous
-        .active_version
-        .as_deref()
-        .or(previous.installed_version.as_deref())
-        .ok_or_else(|| {
-            ExtensionPackageError::Manifest("installed extension has no current version".to_owned())
-        })?;
+    let current = previous.version.as_deref().ok_or_else(|| {
+        ExtensionPackageError::Manifest("installed extension has no current version".to_owned())
+    })?;
     let current = Version::parse(current)
         .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
     let package = Version::parse(package_version)

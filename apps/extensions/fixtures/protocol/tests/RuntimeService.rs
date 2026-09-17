@@ -15,7 +15,7 @@ const DELAYED: &str = "com.nanika.script";
 struct Fixture {
     paths: NanikaPaths,
     binary: PathBuf,
-    inventory: String,
+    manifests: Vec<String>,
 }
 
 impl Fixture {
@@ -37,10 +37,19 @@ impl Fixture {
             .unwrap()
             .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         std::fs::copy(env!("CARGO_BIN_EXE_nanika-extension-fixture"), &binary).unwrap();
-        let extensions = [HEALTHY, DELAYED].map(|id| {
+        let target = nanika_platform::target_triple();
+        let manifests = [HEALTHY, DELAYED].map(|id| {
             serde_json::json!({
+                "format": "nanika-extension",
+                "manifestVersion": 1,
                 "id": id,
-                "binaryName": name,
+                "version": "0.1.0",
+                "hostApi": "^0.1",
+                "targets": {
+                    target: {
+                        "entrypoint": format!("bin/{target}/{name}{}", std::env::consts::EXE_SUFFIX)
+                    }
+                },
                 "runtime": { "protocol": "nanika", "protocolVersion": 1 },
                 "contributes": {
                     "rootSearch": {},
@@ -56,12 +65,12 @@ impl Fixture {
                     }
                 }
             })
+            .to_string()
         });
-        let inventory = serde_json::json!({ "extensions": extensions }).to_string();
         Self {
             paths: NanikaPaths::from_roots(&root, root.join("cache"), root.join("config")),
             binary,
-            inventory,
+            manifests: manifests.into(),
         }
     }
 
@@ -93,10 +102,11 @@ impl Fixture {
 
     fn start(&self) -> RuntimeService {
         let paths = self.paths.clone();
-        let inventory = self.inventory.clone();
+        let manifests = self.manifests.clone();
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::spawn(move || {
-            let _ = sender.send(RuntimeService::start(&paths, &inventory));
+            let sources = manifests.iter().map(String::as_str).collect::<Vec<_>>();
+            let _ = sender.send(RuntimeService::start(&paths, &sources));
         });
         let result = receiver.recv_timeout(WAIT);
         if result.is_err() {
@@ -307,7 +317,7 @@ fn live_configuration_updates_report_the_correlated_acknowledgement() {
 #[test]
 fn zero_extension_host_is_ready_without_an_initialization_barrier() {
     let mut fixture = Fixture::new();
-    fixture.inventory = "{\"extensions\":[]}".to_owned();
+    fixture.manifests.clear();
     let runtime = fixture.start();
     let generation = runtime.begin_query("empty").unwrap();
     wait_until(|| {

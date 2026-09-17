@@ -1,0 +1,15 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.calculator",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "targets": {
+    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-calculator.exe" },
+    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-calculator" },
+    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-calculator" }
+  },
+  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+  "permissions": ["clipboard.write"],
+  "contributes": { "rootSearch": {} }
+}

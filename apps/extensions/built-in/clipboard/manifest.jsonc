@@ -1,0 +1,48 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.clipboard",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "targets": {
+    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-clipboard.exe" },
+    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-clipboard" },
+    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-clipboard" }
+  },
+  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+  "permissions": ["clipboard.write"],
+  "contributes": {
+    "views": [
+      {
+        "id": "clipboard.history",
+        "title": "Clipboard History",
+        "description": "Search and copy previous clipboard content.",
+        "icon": "clipboard",
+        "keywords": ["clipboard", "history", "paste"]
+      }
+    ],
+    "configuration": {
+      "title": "Clipboard History",
+      "properties": {
+        "clipboard.maxEntries": {
+          "type": "integer",
+          "title": "Maximum history entries",
+          "description": "Maximum number of clipboard history entries retained locally.",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 5000,
+          "multipleOf": 1
+        },
+        "clipboard.maxAgeDays": {
+          "type": "integer",
+          "title": "Maximum age in days",
+          "description": "Maximum age of clipboard history retained locally.",
+          "default": 7,
+          "minimum": 1,
+          "maximum": 3650,
+          "multipleOf": 1
+        }
+      }
+    }
+  }
+}

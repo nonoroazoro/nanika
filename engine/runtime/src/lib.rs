@@ -7,16 +7,16 @@ mod acp_extension_command;
 #[path = "AcpExtensionProcess.rs"]
 mod acp_extension_process;
 mod acp_transport;
+#[path = "BuiltInExtension.rs"]
+mod built_in_extension;
+#[path = "BuiltInExtensionInventory.rs"]
+mod built_in_extension_inventory;
 #[path = "ConfigurationUpdateDisposition.rs"]
 mod configuration_update_disposition;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
 mod diagnostics;
-#[path = "DistributionExtension.rs"]
-mod distribution_extension;
-#[path = "DistributionInventory.rs"]
-mod distribution_inventory;
 #[path = "ExtensionCommand.rs"]
 mod extension_command;
 #[path = "ExtensionConfigurationRegistry.rs"]
@@ -88,11 +88,11 @@ pub(crate) use acp_connection_context::*;
 pub(crate) use acp_extension_command::*;
 pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
+pub use built_in_extension::*;
+pub use built_in_extension_inventory::*;
 pub use configuration_update_disposition::*;
 pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
-pub use distribution_extension::*;
-pub use distribution_inventory::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_configuration_registry::*;
 pub(crate) use extension_configuration_result::*;
@@ -176,6 +176,9 @@ pub fn publish_extension_snapshot(
 #[cfg(test)]
 #[path = "../tests/acp_transport.rs"]
 mod acp_transport_tests;
+#[cfg(test)]
+#[path = "../tests/BuiltInExtensionInventory.rs"]
+mod built_in_extension_inventory_tests;
 #[cfg(test)]
 #[path = "../tests/Diagnostics.rs"]
 mod diagnostics_tests;

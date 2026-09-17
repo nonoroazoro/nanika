@@ -122,10 +122,14 @@ pub fn run() -> Result<(), String> {
             std::thread::Builder::new()
                 .name("nanika-runtime-initializer".to_owned())
                 .spawn(move || {
-                    match nanika_host::RuntimeService::start(
-                        &runtime_paths,
-                        include_str!("../../../extensions/distribution.json"),
-                    ) {
+                    let built_in_manifests = [
+                        include_str!("../../../extensions/built-in/application/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/command/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/script/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),
+                    ];
+                    match nanika_host::RuntimeService::start(&runtime_paths, &built_in_manifests) {
                         Ok(runtime) => {
                             for diagnostic in runtime.startup_diagnostics() {
                                 tracing::warn!(

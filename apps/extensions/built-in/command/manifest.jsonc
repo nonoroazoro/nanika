@@ -1,0 +1,15 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.command",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "targets": {
+    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-command.exe" },
+    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-command" },
+    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-command" }
+  },
+  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+  "permissions": ["process.launch"],
+  "contributes": { "rootSearch": {} }
+}

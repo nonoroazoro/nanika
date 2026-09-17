@@ -70,8 +70,7 @@ fn resolution_error_preserves_safe_extension_context() {
     let extension = StoredExtension {
         extension_id: "com.example.missing".to_owned(),
         kind: ExtensionKind::External,
-        installed_version: Some("1.0.0".to_owned()),
-        active_version: Some("1.0.0".to_owned()),
+        version: Some("1.0.0".to_owned()),
         install_path: Some(
             paths
                 .app_data_root()
@@ -79,8 +78,6 @@ fn resolution_error_preserves_safe_extension_context() {
         ),
         package_digest: None,
         state: "enabled".to_owned(),
-        health: "unknown".to_owned(),
-        last_error: None,
     };
 
     let (active, errors) =

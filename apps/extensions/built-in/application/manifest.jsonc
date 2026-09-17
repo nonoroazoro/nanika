@@ -1,0 +1,38 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.application",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "targets": {
+    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-application.exe" },
+    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-application" },
+    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-application" }
+  },
+  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+  "permissions": ["process.launch"],
+  "contributes": {
+    "configuration": {
+      "title": "Applications",
+      "properties": {
+        "application.roots": {
+          "type": "array",
+          "title": "Additional roots",
+          "description": "Absolute directories searched in addition to platform defaults.",
+          "default": [],
+          "maxItems": 256,
+          "items": { "type": "string", "format": "path", "maxLength": 4096 }
+        },
+        "application.exclusions": {
+          "type": "array",
+          "title": "Excluded paths",
+          "description": "Absolute paths excluded from application discovery.",
+          "default": [],
+          "maxItems": 256,
+          "items": { "type": "string", "format": "path", "maxLength": 4096 }
+        }
+      }
+    },
+    "rootSearch": {}
+  }
+}

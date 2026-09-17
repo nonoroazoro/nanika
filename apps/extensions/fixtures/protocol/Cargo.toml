@@ -12,6 +12,7 @@ nanika-protocol = { path = "../../../../engine/extension-protocol" }
 criterion.workspace = true
 nanika-extension-package = { path = "../../../../engine/extension-management" }
 nanika-host = { path = "../../../../engine/runtime" }
+nanika-platform = { path = "../../../../engine/platform" }
 nanika-search = { path = "../../../../engine/search" }
 nanika-storage = { path = "../../../../engine/storage" }
 serde_json.workspace = true

@@ -7,11 +7,8 @@ use crate::ExtensionKind;
 pub struct StoredExtension {
     pub extension_id: String,
     pub kind: ExtensionKind,
-    pub installed_version: Option<String>,
-    pub active_version: Option<String>,
+    pub version: Option<String>,
     pub install_path: Option<PathBuf>,
     pub package_digest: Option<String>,
     pub state: String,
-    pub health: String,
-    pub last_error: Option<String>,
 }
