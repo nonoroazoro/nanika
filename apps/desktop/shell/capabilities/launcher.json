@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "launcher",
-  "description": "Root Search can access only Nanika's bounded application commands.",
+  "description": "Root Search can access Nanika's bounded application commands and Tauri's debug-only DevTools toggle.",
   "windows": ["launcher"],
   "permissions": [
+    "core:webview:allow-internal-toggle-devtools",
     "allow-acknowledge-search",
     "allow-close-session",
     "allow-dismiss-launcher",

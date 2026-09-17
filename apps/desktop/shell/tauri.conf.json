@@ -32,7 +32,6 @@
         "skipTaskbar": true,
         "center": true,
         "focus": true,
-        "devtools": false,
         "dragDropEnabled": false
       }
     ],
