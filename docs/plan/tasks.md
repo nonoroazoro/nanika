@@ -8,7 +8,7 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 
 - Extensions are the only first-class domain capability unit.
 - The bare host owns infrastructure, orchestration, shared control-plane surfaces, and presentation contracts. It contributes no domain candidate or action.
-- Built-in and external extensions use the same process, protocol, permission, view, action, failure, and diagnostics paths. Built-ins currently use a narrower host-owned distribution record; moving them to the ordinary external manifest wrapper remains required before release.
+- Built-in and external extensions use the same complete manifest schema, validation, process, protocol, permission, view, action, failure, and diagnostics paths. Built-in identity is the only distribution-owned distinction.
 - Built-in status is host-owned distribution metadata. It grants no runtime privilege.
 - Rust owns search, storage, configuration, diagnostics, extension supervision, host services, and platform integration.
 - Tauri owns the desktop shell. Svelte 5, TypeScript, Vite, and plain CSS own presentation and local interaction.
@@ -28,7 +28,7 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [x] Configure Svelte 5, TypeScript, Vite, pnpm, `svelte-check`, ESLint through `eslint-config-zoro`, and dprint without SvelteKit.
 - [x] Create the Tauri 2 shell with a hidden launcher window, explicit capabilities, command pruning, restrictive CSP, Isolation Pattern, disabled asset protocol, tray ownership, global shortcut ownership, single-instance activation, and active-monitor placement.
 - [x] Move search, extension supervision, storage, and permission-checked host services behind the UI-independent `engine/runtime` service.
-- [x] Add reviewed distribution inventory under `apps/extensions` instead of a compiled built-in registry.
+- [x] Give every built-in its own ordinary `manifest.jsonc` and embed the reviewed manifest set as the Host-owned development inventory.
 - [x] Connect Root Search through bounded Rust DTOs, explicit Tauri commands, a session-bound Tauri channel, and one typed frontend bridge.
 - [x] Make query commands acknowledgement-only and deliver initial results, background discovery updates, and search phases through one Channel per page lifetime.
 - [x] Add session/request/revision checks, a sole delivery worker, one in-flight message with receive acknowledgement, latest-state coalescing, and explicit delivery failure diagnostics without acknowledgement expiry.
@@ -43,7 +43,7 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 
 ## Extension-first completion
 
-- [ ] Add ordinary manifests for every bundled extension and derive the development inventory from validated manifest data.
+- [x] Add ordinary manifests for every bundled extension and derive the development inventory from validated manifest data.
 - [x] Stage and declare built-in executables through Tauri `bundle.externalBin` with target-triple filenames.
 - [ ] Derive and verify the packaged built-in inventory in signed release artifacts.
 - [x] Reject external packages that attempt to assert built-in identity or replace a reserved built-in extension.
@@ -71,7 +71,7 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 
 - [ ] Implement the design principles and interaction rules in `ui.md` without redefining behavior inside feature components.
 - [ ] Expand semantic tokens for typography, color, spacing, size, radius, elevation, motion, and interaction states using plain CSS.
-- [ ] Implement shared Svelte primitives for SearchInput, ResultList, ResultRow, SectionHeader, ActionBar, KeyHint, DetailPanel, EmptyState, LoadingState, and DiagnosticState.
+- [ ] Implement shared Svelte primitives for SearchInput, ResultList, ResultRow, SectionHeader, StatusBar, KeyHint, DetailPanel, EmptyState, LoadingState, and DiagnosticState.
 - [x] Keep Tauri imports inside the typed bridge. Components consume application services and typed snapshots only.
 - [x] Use Svelte 5 runes and current event syntax. Use `$derived` for derived state and `$effect` only for external synchronization.
 - [x] Add `<svelte:boundary>` around the application root and handle search startup, delivery, and command failures explicitly.
@@ -82,8 +82,9 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [x] Connect keyboard selection to native `scrollIntoView` with nearest alignment; keep browser scrolling as the source of truth without custom geometry or a parallel scroll model.
 - [ ] Keep every matching result accessible. Measure the complete 1,000- and 2,000-application catalogs before choosing list virtualization.
 - [ ] Define coherent loading, empty, degraded, actionable error, and unavailable states before declaring a surface complete.
-- [ ] Remove the reserved extension action footer when the current view has no actions, and add an explicit accessible Root Search result-count announcement.
-- [x] Normalize launcher application icons in Rust, render host-owned command icons as fixed app-style tiles, and render declarative text, file, and image icons as crisp unboxed semantic glyphs.
+- [x] Remove the extension StatusBar when the current view has no actions.
+- [ ] Add an explicit accessible Root Search result-count announcement.
+- [x] Acquire macOS application icons through `NSWorkspace`, draw them into sRGB pixels, and share alpha-only cropping and cache normalization with Windows Shell icons. Render native icons, host-owned contribution artwork, content-type artwork, and transparent fallbacks in 26 CSS px slots without additional tiles or masks. Publish metadata before icon work, populate application icons in ten-item batches, and paginate Clipboard history in automatic ten-item pages without narrowing search scope.
 - [x] Give Clipboard History a compact shared search header, selected-over-hover precedence, resume synchronization, and visually distinct text, file, and image detail presentations.
 
 ## Testing

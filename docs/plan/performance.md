@@ -25,10 +25,10 @@ Performance results are evidence, not pass or fail gates on ordinary machines. C
 
 ## Reference machines
 
-| Profile | Minimum record |
-| --- | --- |
-| Windows reference | Windows 10 22H2, x86-64 CPU, 16 GiB RAM, mixed-DPI dual monitors, exact WebView2 runtime version |
-| macOS reference | macOS 13 or later, Apple silicon, 16 GiB RAM, Retina display plus one external display, exact operating-system version |
+| Profile           | Minimum record                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Windows reference | Windows 10 22H2, x86-64 CPU, 16 GiB RAM, mixed-DPI dual monitors, exact WebView2 runtime version                       |
+| macOS reference   | macOS 13 or later, Apple silicon, 16 GiB RAM, Retina display plus one external display, exact operating-system version |
 
 ## Deterministic Rust benchmarks
 
@@ -84,6 +84,16 @@ Rust tests may use Tauri's mock runtime where native behavior is irrelevant. UI 
 
 Acceptance starts with the first clean Tauri release build.
 
+## macOS system-icon acquisition evidence
+
+On macOS 26.4.1 (Apple silicon), an optimized acquisition probe tested 89 application bundles with `NSWorkspace.iconForFile` and 256 px sRGB drawing. The first measured pass accumulated 1,821.8 ms, with a per-icon median of 16.71 ms and P95 of 42.68 ms. The second pass took 403.2 ms; four subsequent fully warmed passes took 52.3 to 58.3 ms per 89 applications, with a median of 0.596 ms and P95 of 0.725 ms per icon. OS caches were not cleared, so the first pass is not a cold-boot result.
+
+For context, release-optimized raw-resource decoding succeeded for 87 of those applications and accumulated 160.5 ms in its first pass. It does not produce equivalent system-styled images. These acquisition-only measurements exclude metadata discovery, normalization, PNG encoding, persistent-cache writes, database work, and frontend rendering; they do not establish end-to-end startup performance.
+
+The implemented Rust adapter was also exercised in the debug build with an empty isolated application database and PNG cache. It indexed 88 applications with no scan warnings or icon failures: metadata scanning took 1,264.2 ms, followed by 3,798.8 ms to acquire, normalize, encode, and write all three PNG sizes. A second scan took 528.8 ms and its complete-cache population pass took 0.69 ms. These are single-pass observations with existing OS caches, not latency distributions or Tauri startup measurements. Eight matching reference applications, including Phone, XtraFinder, and Finder, produced 128 px cached images pixel-identical to the native reference drawings after the same normalization.
+
+The application keeps metadata publication ahead of icon population, generates all missing cache sizes from one macOS working image, and bypasses acquisition on complete persistent-cache hits. The Host sends its final ranked first ten entry IDs as a non-blocking preparation hint. Missing icons for those entries are processed first; remaining icons continue in batches of ten, and each completed batch is published. The WebView lazily fetches and asynchronously decodes result images. First-time cache generation can take seconds, but it never gates Root Search presentation. Validate the complete Rust adapter and actual Tauri display after changes. The native API path compiled with a macOS 13.0 deployment target, but its native visual behavior was tested only on macOS 26.4.1. Windows and older macOS runtime acceptance remain separate requirements.
+
 ## Platform acceptance
 
 Validate on physical Windows and macOS machines:
@@ -104,3 +114,9 @@ Validate on physical Windows and macOS machines:
 - hidden-idle CPU, memory, process count, thread count, timers, and animation frames.
 
 Use Windows Performance Recorder or equivalent ETW tooling on Windows, Instruments on macOS, and WebView developer tooling for frontend traces. Keep raw platform captures out of the repository.
+
+The shared file-icon cache was exercised on macOS in a debug unit test using the test executable. Initial native acquisition, 512 px drawing, alpha-only normalization, and writing 128/512 px PNGs took 1,520.3 ms; an unchanged lookup took 54.2 microseconds. The same test verifies a metadata lookup after constructing a new cache instance, both PNG dimensions, unchanged cache modification time, missing-variant repair, non-empty native pixels, and concrete missing-source errors. This is a single headless CLI observation, not a UI latency distribution; AppKit can return low-alpha template artwork in that environment, so opacity remains part of actual Tauri visual acceptance. Native acquisition runs outside the Tauri/WebView event loops. Clipboard's initial view performs no file-icon I/O; a dedicated background worker prioritizes at most the first three selected-entry paths needed by the bounded collection preview and one path per other visible row, then publishes completed icons through a per-extension coalesced invalidation handled outside Root Search delivery. Windows runtime behavior remains unverified.
+
+A separate debug probe resolved the actual `.pkg` file used for visual comparison through the same shared cache. Its first lookup took 283.6 ms and the subsequent metadata/cache lookup took 0.023 ms. Both 128 and 512 px artifacts were generated; the 512 px image was visually inspected and matches the system package-box artwork. This verifies native extraction and PNG output, not the complete Tauri interaction.
+
+A debug regression probe with 100 visible temporary text files measured the former synchronous all-row icon path at 15,780.6 ms on first use. The former one-selected-icon enrichment phase measured 186.3 ms cold and 0.067 ms warm. The current initial view performs in-memory icon lookup only, returns at most ten matching rows, and delegates metadata lookup, persistent cache resolution, and missing visible icon acquisition to a background worker; those earlier enrichment numbers are retained only as the replaced baseline. File-icon I/O no longer contributes to initial extension presentation or grows with the total retained history. Search and filtering still inspect the complete retained history before the ten-row presentation page is selected.
