@@ -98,6 +98,17 @@ pub fn run() -> Result<(), String> {
         paths.payload_dir().to_path_buf(),
     )?;
 
+    let context = tauri::tauri_build_context!();
+    #[cfg(target_os = "windows")]
+    let context = {
+        let mut context = context;
+        // WebViews sharing a data directory must use the same scrollbar style.
+        for window in &mut context.config_mut().app.windows {
+            window.scroll_bar_style = tauri::utils::config::ScrollBarStyle::FluentOverlay;
+        }
+        context
+    };
+
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol(
             "nanika-icon",
@@ -186,6 +197,6 @@ pub fn run() -> Result<(), String> {
             }
             Ok(())
         })
-        .run(tauri::tauri_build_context!())
+        .run(context)
         .map_err(|error| error.to_string())
 }
