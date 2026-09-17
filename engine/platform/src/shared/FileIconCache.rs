@@ -26,7 +26,7 @@ impl FileIconCache {
         if variants_exist(&self.root, &reference) {
             return Ok(reference);
         }
-        let pixels = crate::file_icon_pixels(path, 0, 512)?;
+        let pixels = crate::shell_file_icon_pixels(path, 512)?;
         let large = crate::normalize_icon_rgba(&pixels, 512, 512, 512)
             .ok_or_else(|| std::io::Error::other("system file icon is empty"))?;
         let png = encode_png(&large, 512)?;

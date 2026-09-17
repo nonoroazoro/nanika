@@ -92,7 +92,7 @@ pub use file_icon_cache::FileIconCache;
 
 #[path = "shared/file_icon.rs"]
 mod file_icon;
-pub use file_icon::file_icon_pixels;
+pub use file_icon::{file_icon_pixels, shell_file_icon_pixels};
 
 #[cfg(test)]
 #[path = "../tests/IconNormalizer.rs"]

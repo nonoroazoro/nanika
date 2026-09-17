@@ -2,8 +2,10 @@ use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, SIZE};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
-    IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
+    IShellItemImageFactory, SHCreateItemFromParsingName, SHGetImageList, SHIL_JUMBO, SIIGBF,
+    SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
 };
 use windows::core::PCWSTR;
 use windows_sys::Win32::Graphics::Gdi::{
@@ -11,7 +13,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, SelectObject,
 };
 use windows_sys::Win32::UI::Shell::{
-    ExtractIconExW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW,
+    ExtractIconExW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHGetFileInfoW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
@@ -23,6 +25,57 @@ pub(crate) fn stamp(metadata: &std::fs::Metadata) -> String {
         metadata.file_size(),
         metadata.file_attributes()
     )
+}
+
+pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+    let source = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+        return Err(std::io::Error::other(
+            windows::core::Error::from(initialized).to_string(),
+        ));
+    }
+    let _apartment = Apartment(initialized.is_ok());
+
+    // Explorer prefers a content thumbnail for supported files and falls back
+    // to their icon. This keeps image collections distinguishable while text,
+    // executables, shortcuts, and directories retain their native Shell icon.
+    if let Ok(pixels) = image_factory_pixels(&source, size, SIIGBF_RESIZETOFIT) {
+        return Ok(pixels);
+    }
+
+    // SHGetFileInfo resolves the icon index that Explorer assigns to this
+    // concrete file or directory. SHIL_JUMBO supplies its 256 px native icon
+    // when the item has no thumbnail or thumbnail acquisition fails.
+    let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
+    let resolved = unsafe {
+        SHGetFileInfoW(
+            source.as_ptr(),
+            0,
+            &mut info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_SYSICONINDEX,
+        )
+    };
+    if resolved != 0
+        && let Ok(images) = unsafe { SHGetImageList::<IImageList>(SHIL_JUMBO as i32) }
+        && let Ok(icon) = unsafe { images.GetIcon(info.iIcon, ILD_TRANSPARENT.0) }
+    {
+        let result = icon_pixels(icon.0, size).and_then(visible_pixels);
+        unsafe {
+            DestroyIcon(icon.0);
+        }
+        if result.is_ok() {
+            return result;
+        }
+    }
+
+    shell_file_info_pixels(&source, size)
 }
 
 pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result<Vec<u8>> {
@@ -40,24 +93,8 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
     }
     // Drop all COM interfaces before balancing this thread's initialization.
     let _apartment = Apartment(initialized.is_ok());
-    if let Ok(factory) = unsafe {
-        SHCreateItemFromParsingName::<_, _, IShellItemImageFactory>(PCWSTR(source.as_ptr()), None)
-    } && let Ok(bitmap) = unsafe {
-        factory.GetImage(
-            SIZE {
-                cx: size as i32,
-                cy: size as i32,
-            },
-            SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT,
-        )
-    } {
-        let result = hbitmap_pixels(bitmap.0, size).and_then(visible_pixels);
-        unsafe {
-            DeleteObject(bitmap.0);
-        }
-        if result.is_ok() {
-            return result;
-        }
+    if let Ok(pixels) = image_factory_pixels(&source, size, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT) {
+        return Ok(pixels);
     }
     let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
     let extracted = unsafe {
@@ -95,6 +132,56 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
     let result = icon_pixels(icon, size).and_then(visible_pixels);
     unsafe {
         DestroyIcon(icon);
+    }
+    result
+}
+
+fn image_factory_pixels(source: &[u16], size: u32, flags: SIIGBF) -> std::io::Result<Vec<u8>> {
+    let factory = unsafe {
+        SHCreateItemFromParsingName::<_, _, IShellItemImageFactory>(PCWSTR(source.as_ptr()), None)
+    }
+    .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let bitmap = unsafe {
+        factory.GetImage(
+            SIZE {
+                cx: size as i32,
+                cy: size as i32,
+            },
+            flags,
+        )
+    }
+    .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let result = hbitmap_pixels(bitmap.0, size).and_then(visible_pixels);
+    unsafe {
+        DeleteObject(bitmap.0);
+    }
+    result
+}
+
+fn shell_file_info_pixels(source: &[u16], size: u32) -> std::io::Result<Vec<u8>> {
+    let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
+    let extracted = unsafe {
+        SHGetFileInfoW(
+            source.as_ptr(),
+            0,
+            &mut info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | SHGFI_LARGEICON,
+        )
+    };
+    if extracted == 0 || info.hIcon.is_null() {
+        if !info.hIcon.is_null() {
+            unsafe {
+                DestroyIcon(info.hIcon);
+            }
+        }
+        return Err(std::io::Error::other(
+            "Windows Shell did not provide a file icon",
+        ));
+    }
+    let result = icon_pixels(info.hIcon, size).and_then(visible_pixels);
+    unsafe {
+        DestroyIcon(info.hIcon);
     }
     result
 }

@@ -1,4 +1,4 @@
-use crate::{FileIconCache, file_icon_pixels};
+use crate::{FileIconCache, file_icon_pixels, shell_file_icon_pixels};
 
 #[test]
 fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries() {
@@ -69,5 +69,35 @@ fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries
     );
     assert!(file_icon_pixels(&root, 0, 513).is_err());
     assert!(file_icon_pixels(std::path::Path::new("relative.txt"), 0, 128).is_err());
+    assert!(shell_file_icon_pixels(&root, 513).is_err());
+    assert!(shell_file_icon_pixels(std::path::Path::new("relative.txt"), 128).is_err());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_clipboard_images_use_content_thumbnails() {
+    let root = std::env::temp_dir().join(format!("nanika-file-thumbnail-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("fixture root");
+    let source = root.join("thumbnail.png");
+    let file = std::fs::File::create(&source).expect("thumbnail fixture");
+    let mut encoder = png::Encoder::new(file, 8, 8);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("PNG header");
+    writer
+        .write_image_data(&[220, 20, 30, 255].repeat(8 * 8))
+        .expect("PNG pixels");
+    writer.finish().expect("PNG finish");
+
+    let pixels = shell_file_icon_pixels(&source, 128).expect("Windows image thumbnail");
+    assert!(
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| { pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200 })
+    );
+
     std::fs::remove_dir_all(root).expect("cleanup");
 }
