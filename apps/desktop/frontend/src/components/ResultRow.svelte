@@ -11,7 +11,8 @@ interface Props
 }
 
 const { result, active, onActivate, onInvoke }: Props = $props();
-let iconFailed = $state(false);
+let failedIconUrl = $state<string | null>(null);
+const iconFailed = $derived(result.iconUrl !== null && failedIconUrl === result.iconUrl);
 </script>
 
 <li
@@ -51,11 +52,7 @@ let iconFailed = $state(false);
                 hidden={iconFailed}
                 onerror={() =>
                 {
-                    iconFailed = true;
-                }}
-                onload={() =>
-                {
-                    iconFailed = false;
+                    failedIconUrl = result.iconUrl;
                 }}
             />
         {/if}

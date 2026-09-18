@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { DetailView } from "../types";
 import CachedFileIcon from "./CachedFileIcon.svelte";
+import FileCollectionPreview from "./FileCollectionPreview.svelte";
 const COLLECTION_PREVIEW_LIMIT = 3;
 const FILE_PATH_PREVIEW_LIMIT = 5;
 const { detail, resourceOrigin, extensionId }: {
@@ -22,6 +23,12 @@ function resolveImageSource(): string | null
 
 const text = $derived(detail.content.kind === "text" ? detail.content.value : null);
 const imageSource = $derived(resolveImageSource());
+const previewFiles = $derived(
+    detail.content.kind === "files" ? detail.content.files.slice(0, COLLECTION_PREVIEW_LIMIT) : []
+);
+const previewKey = $derived(
+    JSON.stringify([resourceOrigin, extensionId, previewFiles.map(file => [file.path, file.icon?.key])])
+);
 let body = $state<HTMLTextAreaElement>();
 
 $effect(() =>
@@ -43,7 +50,6 @@ $effect(() =>
             <img
                 src={imageSource}
                 alt={detail.content.alternative_text}
-                loading="lazy"
                 decoding="async"
             />
         </div>
@@ -83,18 +89,7 @@ $effect(() =>
                 role="img"
                 aria-label={`${detail.content.files.length} item collection`}
             >
-                <div class="collection-stack" aria-hidden="true">
-                    {#each detail.content.files.slice(0, COLLECTION_PREVIEW_LIMIT) as file, index (`${index}:${file.path}`)}
-                        <span>
-                            <CachedFileIcon
-                                reference={file.icon}
-                                {resourceOrigin}
-                                {extensionId}
-                                collection
-                            />
-                        </span>
-                    {/each}
-                </div>
+                <FileCollectionPreview files={previewFiles} {resourceOrigin} {extensionId} groupKey={previewKey} />
             </div>
             <ul class="files" aria-label="File collection">
                 <li>
@@ -114,7 +109,7 @@ $effect(() =>
                 <div>
                     <dt>{detail.content.files.length === 1 ? "Path" : "Paths"}</dt>
                     <dd class="file-paths">
-                        {#each detail.content.files.slice(0, FILE_PATH_PREVIEW_LIMIT) as file, index (`${index}:${file.path}`)}
+                        {#each detail.content.files.slice(0, FILE_PATH_PREVIEW_LIMIT) as file, index (index)}
                             <span>{file.path}</span>
                         {/each}
                         {#if detail.content.files.length > FILE_PATH_PREVIEW_LIMIT}
@@ -150,13 +145,6 @@ h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); font-weight: 600; 
 .files + dl { margin-top: 0; }
 .file-preview { margin-bottom: var(--space-3); }
 .collection-preview { display: grid; min-height: 9rem; place-items: center; margin-bottom: var(--space-3); overflow: hidden; }
-.collection-stack { display: flex; isolation: isolate; width: min(100%, 15rem); height: 7rem; align-items: center; justify-content: center; }
-.collection-stack > span { display: grid; place-items: center; flex: 0 0 5.5rem; height: 5.5rem; min-width: 0; margin: 0 -0.5rem; }
-.collection-stack > span:first-child { transform: translateY(0.25rem) rotate(-4deg); }
-.collection-stack > span:last-child { transform: translateY(0.25rem) rotate(4deg); }
-.collection-stack > span:nth-child(1) { z-index: 0; }
-.collection-stack > span:nth-child(2) { z-index: 1; }
-.collection-stack > span:nth-child(3) { z-index: 2; }
 .file-icon { position: relative; display: grid; width: var(--icon-size); height: var(--icon-size); place-items: center; }
 .files span { min-width: 0; overflow-wrap: anywhere; }
 dl { margin-top: var(--space-6); font-size: var(--font-meta); }

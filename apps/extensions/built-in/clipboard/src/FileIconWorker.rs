@@ -108,8 +108,12 @@ impl FileIconWorker {
         scheduled
     }
 
-    /// Returns only in-memory results published by the background owner.
-    pub fn reference(&self, path: &std::path::Path) -> Option<nanika_protocol::IconReference> {
+    /// Outer None means pending; Some(None) is a completed failure. Consumers
+    /// can settle a preview group without waiting forever on unavailable files.
+    pub fn resolution(
+        &self,
+        path: &std::path::Path,
+    ) -> Option<Option<nanika_protocol::IconReference>> {
         self.state
             .0
             .lock()
@@ -117,7 +121,6 @@ impl FileIconWorker {
             .resolved
             .get(path)
             .cloned()
-            .flatten()
     }
 
     pub fn shutdown(mut self) {

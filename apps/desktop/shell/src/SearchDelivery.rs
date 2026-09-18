@@ -14,6 +14,16 @@ pub(crate) enum SearchDelivery {
 /// The sole Channel writer. Core callbacks only wake it, so transport never blocks
 /// a search or extension owner. The next update waits for the WebView acknowledgement.
 pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<SearchDelivery>) {
+    run_delivery_with_preparation(shared, wakes, |runtime, snapshot| {
+        runtime.prepare_visible_entries(snapshot, VISIBLE_ENTRY_PREPARATION_LIMIT);
+    });
+}
+
+pub(crate) fn run_delivery_with_preparation(
+    shared: &Mutex<DesktopRuntime>,
+    wakes: Receiver<SearchDelivery>,
+    prepare: impl Fn(&nanika_host::RuntimeService, &nanika_search::SearchSnapshot),
+) {
     while let Ok(event) = wakes.recv() {
         if matches!(event, SearchDelivery::Shutdown) {
             break;
@@ -34,9 +44,6 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
             .as_ref()
             .and_then(|runtime| runtime.latest_snapshot())
             .filter(|snapshot| snapshot.generation == session.generation);
-        if let (Some(runtime), Some(snapshot)) = (runtime.as_ref(), latest.as_deref()) {
-            runtime.prepare_visible_entries(snapshot, VISIBLE_ENTRY_PREPARATION_LIMIT);
-        }
         if session.in_flight.is_some() {
             continue;
         }
@@ -66,6 +73,17 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
             };
         if unchanged && session.delivered_navigation_revision == session.navigation.revision {
             continue;
+        }
+        // Preparation completion itself wakes delivery. Only a new search
+        // snapshot may schedule it again; acknowledgements, view selection and
+        // error reporting must not feed another PrepareEntries request back.
+        if let (Some(runtime), Some(snapshot)) = (runtime.as_ref(), latest.as_ref())
+            && session
+                .delivered
+                .as_ref()
+                .is_none_or(|previous| !Arc::ptr_eq(snapshot, previous))
+        {
+            prepare(runtime, snapshot);
         }
         session.revision += 1;
         let update = RootSearchSnapshot {

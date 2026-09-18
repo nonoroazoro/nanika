@@ -2,12 +2,13 @@
 import type { IconReference } from "../types";
 import fileIcon from "../assets/clipboard-file.png";
 
-const { reference, resourceOrigin, extensionId, preview = false, collection = false }: {
+const { reference, resourceOrigin, extensionId, preview = false, collection = false, onReady }: {
     reference: IconReference | null;
     resourceOrigin: string;
     extensionId: string;
     preview?: boolean;
     collection?: boolean;
+    onReady?: () => void;
 } = $props();
 const source = $derived(
     reference
@@ -15,18 +16,58 @@ const source = $derived(
         : fileIcon
 );
 let failedSource = $state<string | null>(null);
+let element = $state<HTMLImageElement>();
+
+$effect(() =>
+{
+    const notify = onReady;
+    const image = element;
+    if (!notify || !image)
+    {
+        return;
+    }
+    const requestedSource = failedSource === source ? fileIcon : source;
+    let active = true;
+    // Reused nodes may keep the same src across groups and emit no new load
+    // event. Decode the current source and cancel delivery when selection changes.
+    void image.decode().then(() =>
+    {
+        if (active && image.getAttribute("src") === requestedSource)
+        {
+            notify();
+        }
+    }, () =>
+    {
+        if (active && image.getAttribute("src") === requestedSource)
+        {
+            handleFailure();
+        }
+    });
+    return () =>
+    {
+        active = false;
+    };
+});
+
+function handleFailure(): void
+{
+    if (!reference || failedSource === source)
+    {
+        onReady?.();
+        return;
+    }
+    failedSource = source;
+}
 </script>
 
 <img
+    bind:this={element}
     class:preview
     class:collection
     src={failedSource === source ? fileIcon : source}
     alt=""
     aria-hidden="true"
-    onerror={() =>
-    {
-        failedSource = source;
-    }}
+    onerror={handleFailure}
 />
 
 <style>

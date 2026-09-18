@@ -31,7 +31,7 @@ const {
     onRefresh
 }: Props = $props();
 let query = $state("");
-let requestedActiveIndex = $state(0);
+let requestedActiveId = $state<string | null>(null);
 let input: HTMLInputElement;
 let list = $state<HTMLUListElement>();
 let selectOnNextFocus = false;
@@ -40,7 +40,9 @@ let selectOnNextFocus = false;
 const results = $derived(snapshot.results);
 const warning = $derived(snapshot.warnings.join("\n"));
 const activeIndex = $derived(
-    results.length === 0 ? -1 : clampIndex(requestedActiveIndex, results.length)
+    results.length === 0
+        ? -1
+        : Math.max(0, results.findIndex(result => `${result.extensionId}:${result.entryId}` === requestedActiveId))
 );
 const activeResult = $derived(results[activeIndex] ?? null);
 const activeId = $derived(
@@ -143,10 +145,12 @@ function handleRefreshKey(event: KeyboardEvent): void
 
 function moveSelection(delta: number): void
 {
-    requestedActiveIndex = clampIndex(activeIndex + delta, results.length);
+    const next = clampIndex(activeIndex + delta, results.length);
+    const result = results[next];
+    requestedActiveId = result ? `${result.extensionId}:${result.entryId}` : null;
     // aria-activedescendant preserves input focus but does not scroll the option.
     // Let the browser reveal only the nearest edge, only for keyboard navigation.
-    list?.children.item(requestedActiveIndex)?.scrollIntoView({
+    list?.children.item(next)?.scrollIntoView({
         block: "nearest",
         inline: "nearest",
         behavior: "instant"
@@ -176,7 +180,7 @@ function moveSelection(delta: number): void
             oninput={(event =>
             {
                 selectOnNextFocus = false;
-                requestedActiveIndex = 0;
+                requestedActiveId = null;
                 onQuery(event.currentTarget.value);
             })}
             onkeydown={handleKeydown}
@@ -200,7 +204,7 @@ function moveSelection(delta: number): void
                         active={index === activeIndex}
                         onActivate={() =>
                         {
-                            requestedActiveIndex = index;
+                            requestedActiveId = `${result.extensionId}:${result.entryId}`;
                         }}
                         onInvoke={() =>
                         {

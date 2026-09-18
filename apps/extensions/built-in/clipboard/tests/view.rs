@@ -110,7 +110,7 @@ fn file_views_include_display_paths_and_native_icons_without_removing_missing_fi
     let mut state = ClipboardViewState::new();
     let mut icons = nanika_platform::FileIconCache::new(root.join("icons"));
     let initial = render_clipboard_view(&mut state, &entries, &|path| {
-        icons.cached(path).ok().flatten()
+        icons.cached(path).ok().flatten().map(Some)
     });
     let View::List { list } = initial else {
         panic!("list expected")
@@ -123,7 +123,7 @@ fn file_views_include_display_paths_and_native_icons_without_removing_missing_fi
 
     icons.get(&path).expect("native file icon");
     let view = render_clipboard_view(&mut state, &entries, &|path| {
-        icons.cached(path).ok().flatten()
+        Some(icons.cached(path).ok().flatten())
     });
     view.validate().expect("valid native file view");
     let View::List { list } = view else {
@@ -143,7 +143,7 @@ fn file_views_include_display_paths_and_native_icons_without_removing_missing_fi
     assert_eq!(files[1].path, second_path.to_str().expect("second path"));
     assert_eq!(
         files[1].icon, None,
-        "uncached files retain the semantic fallback until background acquisition completes"
+        "failed files retain the semantic fallback without blocking the group"
     );
     std::fs::remove_dir_all(root).expect("cleanup");
 }
@@ -187,4 +187,54 @@ fn multi_file_detail_bounds_icon_lookups_to_the_collection_preview() {
             .map(PathBuf::from)
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn collection_preview_waits_for_the_group_and_settles_failed_members() {
+    use nanika_protocol::{DetailContent, IconReference, ViewItemIcon};
+    use std::sync::RwLock;
+
+    let paths = (0..4).map(|i| format!("/file-{i}.png")).collect::<Vec<_>>();
+    let entries = RwLock::new(vec![ClipboardEntry {
+        entry_id: "group".to_owned(),
+        content_hash: "group".to_owned(),
+        title: "Group".to_owned(),
+        content: ClipboardContent::Files {
+            paths: paths.clone(),
+        },
+        byte_size: 1,
+        captured_at: 1,
+    }]);
+    let reference = IconReference::new("a".repeat(64)).unwrap();
+    let mut state = ClipboardViewState::new();
+    for completed in 0..=3 {
+        let view = crate::render_clipboard_view(&mut state, &entries, &|path| {
+            let index = paths
+                .iter()
+                .position(|candidate| std::path::Path::new(candidate) == path)
+                .unwrap();
+            (index < completed).then(|| (index != 2).then(|| reference.clone()))
+        });
+        let View::List { list } = view else {
+            panic!("list expected")
+        };
+        assert_eq!(
+            matches!(
+                list.sections[0].items[0].icon,
+                Some(ViewItemIcon::Native(_))
+            ),
+            completed > 0
+        );
+        let DetailContent::Files { files } = list.detail.unwrap().content else {
+            panic!("files expected")
+        };
+        if completed < 3 {
+            assert!(files.iter().all(|file| file.icon.is_none()));
+        } else {
+            assert_eq!(files[0].icon, Some(reference.clone()));
+            assert_eq!(files[1].icon, Some(reference.clone()));
+            assert!(files[2].icon.is_none(), "failed member retains fallback");
+            assert!(files[3].icon.is_none(), "no work beyond the preview bound");
+        }
+    }
 }

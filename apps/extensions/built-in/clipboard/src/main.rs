@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // First paint reads in-memory results only. Filesystem metadata, persistent
                 // cache lookup, and native acquisition all stay on the icon worker.
                 let view = render_clipboard_view(&mut state, &entries, &|path| {
-                    icon_worker.reference(path)
+                    icon_worker.resolution(path)
                 });
                 view_state = Some(state);
                 send_frame(
@@ -366,7 +366,7 @@ fn handle_view_event(
     }
     state.revision = state.revision.saturating_add(1);
     schedule_visible_icons(icon_worker, state, entries);
-    let view = render_clipboard_view(state, entries, &|path| icon_worker.reference(path));
+    let view = render_clipboard_view(state, entries, &|path| icon_worker.resolution(path));
     send_frame(
         output,
         &Message::ViewUpdated {

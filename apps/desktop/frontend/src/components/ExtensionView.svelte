@@ -44,12 +44,26 @@ let query = $state("");
 let input = $state<HTMLInputElement>();
 let options = $state<HTMLUListElement>();
 let listPane = $state<HTMLDivElement>();
+let detailPane = $state<HTMLDivElement>();
+let previousDetailItem: string | null | undefined;
 let loadMoreSentinel = $state<HTMLDivElement>();
 let requestedCursor = $state<string | null>(null);
 let acknowledgedCursor = $state<string | null>(null);
 let failedCursor = $state<string | null>(null);
 let paginationScope = $state("");
 let surface: HTMLElement;
+
+$effect(() =>
+{
+    const item = list?.selected_item_id ?? null;
+    if (detailPane && item !== previousDetailItem)
+    {
+        // A new record starts at its preview; updates to the same record retain
+        // the user's scroll position, including late thumbnail completion.
+        detailPane.scrollTop = 0;
+        previousDetailItem = item;
+    }
+});
 
 $effect(() =>
 {
@@ -353,7 +367,7 @@ function handleKeydown(event: KeyboardEvent): void
                     </div>{/if}
             </div>
         {/if}
-        {#if !list || list.layout === "split"}<div class="detail-pane">
+        {#if !list || list.layout === "split"}<div class="detail-pane" bind:this={detailPane}>
                 {#if detail}
                     <ViewDetail
                         {detail}

@@ -208,7 +208,7 @@ fn format_bytes(bytes: u64) -> String {
 pub fn render_clipboard_view(
     state: &mut ClipboardViewState,
     entries: &std::sync::RwLock<Vec<ClipboardEntry>>,
-    icon_for_path: &impl Fn(&Path) -> Option<nanika_protocol::IconReference>,
+    icon_for_path: &impl Fn(&Path) -> Option<Option<nanika_protocol::IconReference>>,
 ) -> View {
     let (mut view, paths) = {
         let entries = entries.read().unwrap_or_else(|error| error.into_inner());
@@ -256,12 +256,13 @@ pub fn render_clipboard_view(
         .flat_map(|section| &mut section.items)
     {
         let reference = if selected.as_ref() == Some(&item.id) {
-            selected_references.first().cloned().flatten()
+            selected_references.first().cloned().flatten().flatten()
         } else {
             paths
                 .get(&item.id)
                 .and_then(|paths| paths.first())
                 .and_then(|path| icon_for_path(Path::new(path)))
+                .flatten()
         };
         if let Some(reference) = reference {
             item.icon = Some(ViewItemIcon::Native(reference));
@@ -271,9 +272,12 @@ pub fn render_clipboard_view(
         content: DetailContent::Files { files },
         ..
     }) = &mut list.detail
+        && selected_references.iter().all(Option::is_some)
     {
+        // Publish the bounded stack together. List icons remain progressive;
+        // failed members settle with their semantic fallback and do not stall it.
         for (file, reference) in files.iter_mut().zip(selected_references) {
-            file.icon = reference;
+            file.icon = reference.flatten();
         }
     }
     view
