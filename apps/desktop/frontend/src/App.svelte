@@ -440,7 +440,6 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
   border: 1px solid var(--border-window);
   border-radius: var(--radius-window);
   background: var(--surface-window);
-  box-shadow: var(--shadow-window);
   color: var(--text-primary);
   text-align: center;
 }

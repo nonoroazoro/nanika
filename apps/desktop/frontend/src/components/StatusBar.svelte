@@ -85,7 +85,6 @@ function handleInvoke(event: MouseEvent): void
         <button
             class="status-entry"
             type="button"
-            tabindex="-1"
             class:destructive={entry.destructive}
             class:pending={Boolean(entry.pending?.active)}
             data-entry-id={entry.id}
@@ -104,7 +103,15 @@ function handleInvoke(event: MouseEvent): void
     <span class="status-announcement" role="status" aria-live="polite" aria-atomic="true">
         {pendingAnnouncement}
     </span>
-    <footer class="status-bar" class:active role="status" aria-live="off" aria-label="Status bar">
+    <!-- Preserve editing focus on pointer press; button click actions still run. -->
+    <footer
+        class="status-bar"
+        class:active
+        role="status"
+        aria-live="off"
+        aria-label="Status bar"
+        onmousedowncapture={(event => event.preventDefault())}
+    >
         <div class="leading-entries">
             {#each leadingEntries as entry (entry.id)}
                 {@render statusEntry(entry)}

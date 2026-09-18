@@ -232,7 +232,6 @@ function moveSelection(delta: number): void
   border: 1px solid var(--border-window);
   border-radius: var(--radius-window);
   background: var(--surface-window);
-  box-shadow: var(--shadow-window);
 }
 
 .search-shell {

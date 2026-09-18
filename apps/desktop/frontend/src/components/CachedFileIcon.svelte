@@ -32,5 +32,5 @@ let failedSource = $state<string | null>(null);
 <style>
 img { display: block; width: var(--icon-size); height: var(--icon-size); object-fit: contain; }
 img.preview { width: min(100%, 16rem); height: 12rem; margin: 0 auto; }
-img.collection { width: 7rem; height: 7rem; }
+img.collection { width: 100%; height: 100%; min-width: 0; min-height: 0; }
 </style>

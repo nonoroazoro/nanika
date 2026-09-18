@@ -34,9 +34,9 @@ const trailingStatusEntries = $derived(
         ? [{
             id: primaryAction.id,
             title: primaryAction.title,
+            interactive: false,
             keys: ["↵"],
-            ariaShortcut: "Enter",
-            disabled: busy
+            ariaShortcut: "Enter"
         }]
         : []
 );
@@ -135,9 +135,9 @@ function focusSearch(): void
     {
         input.focus({ preventScroll: true });
     }
-    else
+    else if (document.activeElement instanceof HTMLElement)
     {
-        surface.focus({ preventScroll: true });
+        document.activeElement.blur();
     }
 }
 
@@ -182,7 +182,8 @@ function handleKeydown(event: KeyboardEvent): void
         && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
     const fromPreview = list !== null && event.target instanceof HTMLTextAreaElement
         && event.target.readOnly && surface.contains(event.target);
-    if (event.target !== input && event.target !== surface && !(fromPreview && verticalNavigation))
+    const fromDetail = list === null && event.target === document.body;
+    if (event.target !== input && !fromDetail && !(fromPreview && verticalNavigation))
     {
         return;
     }
@@ -228,7 +229,6 @@ function handleKeydown(event: KeyboardEvent): void
 <section
     class="extension-view"
     bind:this={surface}
-    tabindex="-1"
     aria-label={list?.title ?? detail?.title ?? "Extension view"}
 >
     <header class:has-filter={Boolean(list?.filter)}>
@@ -265,7 +265,6 @@ function handleKeydown(event: KeyboardEvent): void
                     {#each list.filter.options as option (option.value)}
                         <button
                             type="button"
-                            tabindex="-1"
                             aria-pressed={option.value === list.filter.selected_value}
                             aria-disabled={busy}
                             onmousedown={(event => event.preventDefault())}
@@ -302,7 +301,6 @@ function handleKeydown(event: KeyboardEvent): void
                                         role="option"
                                         aria-selected={item.id === list.selected_item_id}
                                         aria-disabled={busy}
-                                        tabindex="-1"
                                         onmousedown={(event => event.preventDefault())}
                                         onclick={() =>
                                         {
@@ -373,7 +371,7 @@ function handleKeydown(event: KeyboardEvent): void
 </section>
 
 <style>
-.extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-window); border-radius: var(--radius-window); background: var(--surface-window); box-shadow: var(--shadow-window); color: var(--text-primary); }
+.extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-window); border-radius: var(--radius-window); background: var(--surface-window); color: var(--text-primary); }
 /* Match Root Search's header geometry; the wider back hit target must not shift the search input. */
 header { display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: center; gap: var(--space-3); flex: 0 0 var(--search-height); height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 header.has-filter { grid-template-columns: 1rem minmax(0, 1fr) auto; }

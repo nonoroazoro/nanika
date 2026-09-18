@@ -31,7 +31,6 @@ let iconFailed = $state(false);
             onInvoke();
         }
     })}
-    tabindex="-1"
 >
     <span class="icon" aria-hidden="true">
         {#if result.contributionIcon}
