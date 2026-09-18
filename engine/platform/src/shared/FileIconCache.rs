@@ -30,8 +30,7 @@ impl FileIconCache {
         let large = crate::normalize_icon_rgba(&pixels, 512, 512, 512)
             .ok_or_else(|| std::io::Error::other("system file icon is empty"))?;
         let png = encode_png(&large, 512)?;
-        let small = crate::normalize_icon_rgba(&pixels, 512, 512, 128)
-            .ok_or_else(|| std::io::Error::other("system file icon is empty"))?;
+        let small = crate::file_icon::cached_list_pixels(path, &pixels)?;
         let small_png = encode_png(&small, 128)?;
         let directory = self.root.join(reference.key());
         fs::create_dir_all(&directory)?;

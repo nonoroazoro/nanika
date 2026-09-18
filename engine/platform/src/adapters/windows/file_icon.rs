@@ -78,6 +78,52 @@ pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
     shell_file_info_pixels(&source, size)
 }
 
+pub(crate) fn list_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
+    use std::os::windows::ffi::OsStrExt;
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+        return Err(std::io::Error::other(
+            windows::core::Error::from(initialized).to_string(),
+        ));
+    }
+    let _apartment = Apartment(initialized.is_ok());
+    let source = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // Preserve high-resolution artwork before reducing it for high-DPI list rows.
+    // The image list supplies an HICON without a thumbnail frame. Normalize at
+    // its native 256 px size so legacy icons on a larger transparent canvas fit too.
+    let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
+    let resolved = unsafe {
+        SHGetFileInfoW(
+            source.as_ptr(),
+            0,
+            &mut info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_SYSICONINDEX,
+        )
+    };
+    if resolved != 0
+        && let Ok(images) = unsafe { SHGetImageList::<IImageList>(SHIL_JUMBO as i32) }
+        && let Ok(icon) = unsafe { images.GetIcon(info.iIcon, ILD_TRANSPARENT.0) }
+    {
+        let result = icon_pixels(icon.0, 256).and_then(visible_pixels);
+        unsafe {
+            DestroyIcon(icon.0);
+        }
+        if let Ok(pixels) = result
+            && let Some(normalized) = crate::normalize_icon_rgba(&pixels, 256, 256, size)
+        {
+            return Ok(normalized);
+        }
+    }
+    let pixels = shell_file_info_pixels(&source, size)?;
+    crate::normalize_icon_rgba(&pixels, size, size, size)
+        .ok_or_else(|| std::io::Error::other("Windows provided an empty list icon"))
+}
+
 pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result<Vec<u8>> {
     use std::os::windows::ffi::OsStrExt;
     let source = path

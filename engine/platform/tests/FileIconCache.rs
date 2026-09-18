@@ -99,5 +99,64 @@ fn windows_clipboard_images_use_content_thumbnails() {
             .any(|pixel| { pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200 })
     );
 
+    let list_pixels = crate::file_icon::cached_list_pixels(&source, &[]).expect("list icon");
+    assert_eq!(list_pixels.len(), 128 * 128 * 4);
+    // A solid red image must not become a solid red list thumbnail. Its row
+    // represents the file association, while the detail above represents content.
+    let red_count = list_pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200)
+        .count();
+    assert!(red_count < 128 * 128 / 2);
+
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn windows_4k_file_thumbnail_has_bounded_output() {
+    use std::io::Write;
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .join("target")
+        .join(format!("thumbnail-4k-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("fixture root");
+    let source = root.join("4k.png");
+    let file = std::fs::File::create(&source).expect("fixture file");
+    let mut encoder = png::Encoder::new(file, 3840, 2160);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("PNG header");
+    // Stream fixture rows so the test does not allocate a full-resolution bitmap.
+    let row = [220, 20, 30, 255].repeat(3840);
+    {
+        let mut stream = writer.stream_writer().expect("PNG stream");
+        for _ in 0..2160 {
+            stream.write_all(&row).expect("PNG row");
+        }
+        stream.finish().expect("PNG stream finish");
+    }
+    writer.finish().expect("PNG finish");
+
+    let started = std::time::Instant::now();
+    let pixels = shell_file_icon_pixels(&source, 512).expect("4K thumbnail");
+    eprintln!(
+        "4K Shell thumbnail: {:?}, {} RGBA bytes",
+        started.elapsed(),
+        pixels.len()
+    );
+    assert_eq!(pixels.len(), 512 * 512 * 4);
+    assert!(
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| { pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200 })
+    );
     std::fs::remove_dir_all(root).expect("cleanup");
 }
