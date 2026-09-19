@@ -776,7 +776,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
         std::fs::read_to_string(&marker).is_ok_and(|request| request != first_request)
     });
     let last_request = std::fs::read_to_string(&marker).unwrap();
-    let mut coordinator = Arc::try_unwrap(coordinator).ok().unwrap();
+    let coordinator = Arc::try_unwrap(coordinator).ok().unwrap();
     coordinator.shutdown();
     let last_result = last.recv_timeout(Duration::from_secs(5));
     std::fs::remove_file(marker).unwrap();

@@ -27,6 +27,51 @@ fn view_invalidations_keep_only_the_latest_identity_per_extension() {
 }
 
 #[test]
+fn activation_failure_is_terminal_and_static_catalog_remains_discoverable() {
+    let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
+    let search = owner.handle();
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let starts = Arc::clone(&attempts);
+    let mut coordinator = crate::ExtensionSearchCoordinator::new();
+    coordinator
+        .register_source(
+            "test.extension",
+            crate::ExtensionRuntimeSource::OnDemand(Box::new(move || {
+                starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(std::io::Error::other("fixture activation failure"))
+            })),
+            search.clone(),
+            ExtensionContributions {
+                commands: vec![CommandContribution {
+                    command: "test.command".to_owned(),
+                    title: "Test".to_owned(),
+                    description: "Test command".to_owned(),
+                    category: None,
+                    keywords: Vec::new(),
+                    icon: None,
+                }],
+                ..Default::default()
+            },
+            Default::default(),
+        )
+        .unwrap();
+    assert_eq!(coordinator.ready_extension_ids(), ["test.extension"]);
+    for _ in 0..2 {
+        let error = coordinator
+            .invoke("test.extension", 1, "test.command", "command.execute", "")
+            .unwrap()
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("fixture activation failure"));
+    }
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(coordinator.ready_extension_ids(), ["test.extension"]);
+    coordinator.shutdown();
+    owner.shutdown();
+}
+
+#[test]
 fn view_event_wakes_an_idle_worker() {
     let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
     let worker_state = Arc::clone(&state);

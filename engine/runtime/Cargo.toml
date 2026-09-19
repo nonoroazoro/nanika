@@ -21,6 +21,7 @@ nanika-search = { path = "../search" }
 nanika-protocol = { path = "../extension-protocol" }
 nanika-storage = { path = "../storage" }
 serde_json.workspace = true
+serde.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true

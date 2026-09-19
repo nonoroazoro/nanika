@@ -19,5 +19,6 @@ pub(crate) struct ExtensionSearchState {
     pub(crate) active_invocation_id: Option<u64>,
     pub(crate) cancelled_invocations: HashSet<u64>,
     pub(crate) configurations: VecDeque<ExtensionConfigurationUpdate>,
+    pub(crate) configuration_pending: bool,
     pub(crate) shutdown: Arc<AtomicBool>,
 }

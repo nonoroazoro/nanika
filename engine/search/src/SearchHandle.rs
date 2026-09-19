@@ -64,6 +64,18 @@ impl SearchHandle {
         })
     }
 
+    /// Register immutable contributions once, outside the interactive query path.
+    pub fn register_static_catalog(
+        &self,
+        extension_id: impl Into<String>,
+        candidates: Vec<Candidate>,
+    ) -> Result<(), SearchQueueError> {
+        self.send(SearchCommand::RegisterStaticCatalog {
+            extension_id: extension_id.into(),
+            candidates,
+        })
+    }
+
     pub fn apply_persisted_execution(
         &self,
         key: UsageKey,

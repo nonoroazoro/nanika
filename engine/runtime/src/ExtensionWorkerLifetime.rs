@@ -41,21 +41,11 @@ impl Drop for ExtensionWorkerLifetime {
                 "extension worker closed before handling the view request".to_owned(),
             ));
         }
-        if !configurations.is_empty() {
-            let mut results = self
-                .configuration_results
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            results.extend(
-                configurations
-                    .into_iter()
-                    .map(|update| ExtensionConfigurationResult {
-                        extension_id: self.extension_id.clone(),
-                        request_id: update.request_id,
-                        result: Err(
-                            "extension worker closed before applying the configuration".to_owned()
-                        ),
-                    }),
+        for update in configurations {
+            update.complete(
+                &self.extension_id,
+                &self.configuration_results,
+                Err("extension worker closed before applying the configuration".to_owned()),
             );
         }
         let notify = self

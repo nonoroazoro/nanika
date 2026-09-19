@@ -20,7 +20,7 @@ pub struct ExtensionSearchCoordinator {
     next_view_request_id: AtomicU64,
     next_refresh_id: AtomicU64,
     notifier: ExtensionNotifier,
-    host_services: Option<Arc<dyn HostServiceHandler>>,
+    host_services: Mutex<Option<Arc<dyn HostServiceHandler>>>,
     view_invalidations: Arc<Mutex<HashMap<String, RuntimeViewInvalidation>>>,
 }
 
@@ -32,13 +32,16 @@ impl ExtensionSearchCoordinator {
             next_view_request_id: AtomicU64::new(1),
             next_refresh_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
-            host_services: None,
+            host_services: Mutex::new(None),
             view_invalidations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn set_host_services(&mut self, host_services: Arc<dyn HostServiceHandler>) {
-        self.host_services = Some(host_services);
+        *self
+            .host_services
+            .get_mut()
+            .unwrap_or_else(|error| error.into_inner()) = Some(host_services);
     }
 
     pub fn register(
@@ -65,8 +68,30 @@ impl ExtensionSearchCoordinator {
         contributions: ExtensionContributions,
         configuration: nanika_protocol::ExtensionConfiguration,
     ) -> std::io::Result<()> {
+        self.register_source(
+            extension_id,
+            crate::ExtensionRuntimeSource::Started(Box::new(runtime.into())),
+            search,
+            contributions,
+            configuration,
+        )
+    }
+
+    pub fn register_source(
+        &mut self,
+        extension_id: impl Into<String>,
+        source: crate::ExtensionRuntimeSource,
+        search: SearchHandle,
+        contributions: ExtensionContributions,
+        configuration: nanika_protocol::ExtensionConfiguration,
+    ) -> std::io::Result<()> {
         let extension_id = extension_id.into();
-        let runtime = runtime.into();
+        if source.is_deferred() && contributions.root_search.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "dynamic Root Search requires startup activation",
+            ));
+        }
         if self
             .workers
             .iter()
@@ -79,13 +104,17 @@ impl ExtensionSearchCoordinator {
         }
         self.workers.push(ExtensionSearchWorker::spawn(
             extension_id,
-            runtime,
+            source,
             search,
             contributions,
             configuration,
             ExtensionSearchWorkerContext {
                 notifier: Arc::clone(&self.notifier),
-                host_services: self.host_services.clone(),
+                host_services: self
+                    .host_services
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .clone(),
                 view_invalidations: Arc::clone(&self.view_invalidations),
             },
         )?);
@@ -330,6 +359,7 @@ impl ExtensionSearchCoordinator {
         extension_id: &str,
         request_id: impl Into<String>,
         configuration: nanika_protocol::ExtensionConfiguration,
+        completion: Option<mpsc::SyncSender<Result<(), String>>>,
     ) -> Result<bool, SupervisorError> {
         let Some(worker) = self
             .workers
@@ -341,7 +371,7 @@ impl ExtensionSearchCoordinator {
         if !worker.supports_live_configuration() {
             return Ok(false);
         }
-        match worker.apply_configuration(request_id.into(), configuration) {
+        match worker.apply_configuration(request_id.into(), configuration, completion) {
             Ok(()) => Ok(true),
             Err(SupervisorError::ChannelClosed) => Ok(false),
             Err(error) => Err(error),
@@ -359,14 +389,21 @@ impl ExtensionSearchCoordinator {
         self.workers.is_empty()
     }
 
-    pub fn shutdown(&mut self) {
+    pub fn request_shutdown(&self) {
         for worker in &self.workers {
             worker.request_stop();
         }
-        for worker in &mut self.workers {
+    }
+
+    pub fn shutdown(&self) {
+        self.request_shutdown();
+        for worker in &self.workers {
             worker.join();
         }
-        self.workers.clear();
+        self.host_services
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
     }
 }
 

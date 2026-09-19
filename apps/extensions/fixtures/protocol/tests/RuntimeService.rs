@@ -41,7 +41,8 @@ impl Fixture {
         let manifests = [HEALTHY, DELAYED].map(|id| {
             serde_json::json!({
                 "format": "nanika-extension",
-                "manifestVersion": 1,
+                "name": "Test Extension", "icon": "extension",
+        "manifestVersion": 1,
                 "id": id,
                 "version": "0.1.0",
                 "hostApi": "^0.1",
@@ -326,5 +327,352 @@ fn zero_extension_host_is_ready_without_an_initialization_barrier() {
             .is_some_and(|snapshot| snapshot.generation == generation)
     });
     assert!(runtime.latest_snapshot().unwrap().results.is_empty());
+    fixture.stop(runtime);
+}
+
+#[test]
+fn queries_continue_while_configuration_application_is_pending() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let receipt = runtime
+        .save_configuration(
+            HEALTHY,
+            "deferred-settings",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        )
+        .unwrap();
+    wait_until(|| fixture.entered("deferred-settings"));
+    // The fixture withholds ConfigurationApplied until it can service the next query.
+    let generation = runtime.begin_query("after save").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    assert_eq!(
+        receipt.wait(),
+        nanika_host::ConfigurationSaveOutcome::Applied
+    );
+    fixture.stop(runtime);
+}
+
+#[test]
+fn settings_save_returns_before_application_and_keeps_configuration_readable() {
+    let fixture = Fixture::new();
+    let runtime = std::sync::Arc::new(fixture.start());
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    fixture.block("settings-save");
+    let owner = std::sync::Arc::clone(&runtime);
+    let (sent, received) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        sent.send(owner.save_configuration(
+            HEALTHY,
+            "settings-save",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        ))
+        .unwrap();
+    });
+    wait_until(|| fixture.entered("settings-save"));
+    let receipt = received.recv_timeout(WAIT).unwrap().unwrap();
+    assert!(matches!(
+        receipt,
+        nanika_host::ConfigurationSaveReceipt::Pending(_)
+    ));
+    thread.join().unwrap();
+    assert_eq!(
+        runtime
+            .extension_configurations()
+            .into_iter()
+            .find(|entry| entry.extension_id == HEALTHY)
+            .unwrap()
+            .values["fixture.enabled"],
+        false
+    );
+    fixture.release("settings-save");
+    assert_eq!(
+        receipt.wait(),
+        nanika_host::ConfigurationSaveOutcome::Applied
+    );
+    assert!(
+        runtime.take_updates().configurations.is_empty(),
+        "a save has exactly one completion consumer"
+    );
+    runtime.shutdown();
+}
+
+#[test]
+fn settings_distinguishes_validation_failure_from_saved_application_failure() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    std::fs::write(
+        fixture.paths.app_data_root().join("fail-settings-rejected"),
+        b"reject",
+    )
+    .unwrap();
+    let outcome = runtime
+        .save_configuration(
+            HEALTHY,
+            "settings-rejected",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        )
+        .unwrap()
+        .wait();
+    assert!(
+        matches!(outcome, nanika_host::ConfigurationSaveOutcome::ApplyFailed(error) if error.contains("fixture could not apply configuration"))
+    );
+    let invalid = runtime.save_configuration(
+        HEALTHY,
+        "settings-invalid",
+        std::collections::BTreeMap::from([(
+            "fixture.enabled".to_owned(),
+            serde_json::json!("invalid"),
+        )]),
+    );
+    assert!(invalid.is_err());
+    assert_eq!(
+        runtime
+            .extension_configurations()
+            .into_iter()
+            .find(|entry| entry.extension_id == HEALTHY)
+            .unwrap()
+            .values["fixture.enabled"],
+        false
+    );
+    fixture.stop(runtime);
+    let reopened = fixture.start();
+    assert_eq!(
+        reopened
+            .extension_configurations()
+            .into_iter()
+            .find(|entry| entry.extension_id == HEALTHY)
+            .unwrap()
+            .values["fixture.enabled"],
+        false
+    );
+    fixture.stop(reopened);
+}
+
+#[test]
+fn shutdown_completes_a_waiting_settings_save() {
+    let fixture = Fixture::new();
+    let runtime = std::sync::Arc::new(fixture.start());
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    fixture.block("settings-pending");
+    let owner = std::sync::Arc::clone(&runtime);
+    let (sent, received) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        sent.send(owner.save_configuration(
+            HEALTHY,
+            "settings-pending",
+            std::collections::BTreeMap::from([(
+                "fixture.enabled".to_owned(),
+                serde_json::json!(false),
+            )]),
+        ))
+        .unwrap();
+    });
+    wait_until(|| fixture.entered("settings-pending"));
+    runtime.shutdown();
+    assert!(matches!(
+        received.recv_timeout(WAIT).unwrap().unwrap().wait(),
+        nanika_host::ConfigurationSaveOutcome::ApplyFailed(_)
+    ));
+    thread.join().unwrap();
+}
+
+#[test]
+fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_without_ui() {
+    for activation in ["startup", "onDemand"] {
+        let mut fixture = Fixture::new();
+        fixture.manifests.truncate(1);
+        let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+        manifest["activation"] = activation.into();
+        manifest["contributes"]
+            .as_object_mut()
+            .unwrap()
+            .remove("rootSearch");
+        manifest["contributes"]["commands"] = serde_json::json!([{
+            "command": "fixture.entry", "title": "Fixture command", "description": "A static command"
+        }]);
+        fixture.manifests[0] = manifest.to_string();
+        let initializing = format!("initialize-{HEALTHY}");
+        let runtime = fixture.start();
+        let info = runtime.extension_info();
+        assert_eq!(info.len(), 1);
+        assert_eq!(info[0].id, HEALTHY);
+        assert_eq!(info[0].name, "Test Extension");
+        assert_eq!(serde_json::to_value(&info[0]).unwrap()["icon"], "extension");
+        let generation = runtime.begin_query("fixture").unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        runtime.prepare_visible_entries(&runtime.latest_snapshot().unwrap(), 10);
+        if activation == "startup" {
+            wait_until(|| fixture.entered(&initializing));
+        } else {
+            // A configuration acknowledgement fences the dormant worker after its
+            // preparation hint, proving neither event started the process.
+            runtime
+                .update_configuration(
+                    HEALTHY,
+                    "dormant-config",
+                    std::collections::BTreeMap::from([(
+                        "fixture.enabled".to_owned(),
+                        serde_json::json!(false),
+                    )]),
+                )
+                .unwrap();
+            wait_until(|| !runtime.take_updates().configurations.is_empty());
+            assert!(!fixture.entered(&initializing));
+        }
+        println!(
+            "activation={activation}, initialized_before_invoke={}",
+            usize::from(fixture.entered(&initializing))
+        );
+        let completion = runtime
+            .invoke_recorded(
+                generation,
+                HEALTHY,
+                "fixture.entry",
+                nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                "fixture",
+            )
+            .unwrap();
+        assert!(matches!(
+            completion.outcome,
+            nanika_host::ExtensionInvocationOutcome::Completed { .. }
+        ));
+        assert!(completion.recording_error.is_none());
+        assert!(fixture.entered(&initializing));
+        // Explicit shutdown must work while another owner still holds the runtime.
+        let runtime = std::sync::Arc::new(runtime);
+        let other_owner = std::sync::Arc::clone(&runtime);
+        runtime.shutdown();
+        assert!(
+            runtime
+                .invoke(
+                    generation,
+                    HEALTHY,
+                    "fixture.entry",
+                    nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                    "fixture"
+                )
+                .is_err()
+        );
+        let (storage, stored) =
+            nanika_storage::SearchStorageWorker::spawn(fixture.paths.host_database()).unwrap();
+        assert_eq!(stored.usage.len(), 1);
+        assert_eq!(stored.usage[0].execution_count, 1);
+        assert_eq!(stored.input_history, ["fixture"]);
+        storage.shutdown();
+        drop(other_owner);
+        drop(runtime);
+    }
+}
+
+#[test]
+fn explicit_shutdown_interrupts_initialization_with_a_retained_runtime_owner() {
+    let fixture = Fixture::new();
+    let operation = format!("initialize-{DELAYED}");
+    fixture.block(&operation);
+    let runtime = std::sync::Arc::new(fixture.start());
+    wait_until(|| fixture.entered(&operation));
+    let owner = std::sync::Arc::clone(&runtime);
+    let (sent, received) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        owner.shutdown();
+        sent.send(()).unwrap();
+    });
+    if received.recv_timeout(WAIT).is_err() {
+        fixture.release_all();
+        panic!("explicit shutdown must not depend on dropping the last Arc");
+    }
+    thread.join().unwrap();
+    drop(runtime);
+}
+
+#[test]
+fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["contributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("rootSearch");
+    manifest["contributes"]["views"] = serde_json::json!([{
+        "id": "fixture.view", "title": "Fixture view", "description": "A static view"
+    }]);
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+
+    // Fail the real storage transaction after the extension succeeds, without
+    // changing permissions or replacing a live database on either platform.
+    let database = rusqlite::Connection::open(fixture.paths.host_database()).unwrap();
+    database
+        .execute_batch(
+            "CREATE TRIGGER reject_usage BEFORE INSERT ON usage_stats
+         BEGIN SELECT RAISE(ABORT, 'fixture recording failure'); END;",
+        )
+        .unwrap();
+    let completion = runtime
+        .invoke_recorded(
+            generation,
+            HEALTHY,
+            "fixture.view",
+            nanika_protocol::VIEW_OPEN_ACTION_ID,
+            "fixture",
+        )
+        .unwrap();
+    assert!(
+        completion
+            .recording_error
+            .unwrap()
+            .contains("fixture recording failure")
+    );
+    let nanika_host::ExtensionInvocationOutcome::Completed {
+        effect:
+            nanika_protocol::NavigationEffect::Push {
+                view_id, revision, ..
+            },
+        ..
+    } = completion.outcome
+    else {
+        panic!("recording failure must preserve the created view");
+    };
+    runtime
+        .close_view(HEALTHY, generation, &view_id, revision)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert!(
+        runtime
+            .close_view(HEALTHY, generation, &view_id, revision)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .is_err(),
+        "the first close must release the live view"
+    );
+    let stored = nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
+    assert!(stored.load_usage().unwrap().is_empty());
+    assert!(
+        stored.load_input_history().unwrap().is_empty(),
+        "recording must roll back atomically"
+    );
+    drop(stored);
+    drop(database);
     fixture.stop(runtime);
 }

@@ -15,7 +15,7 @@ pub struct SearchStorageWorker {
     commands: SyncSender<SearchStorageCommand>,
     last_failure: Arc<Mutex<Option<SearchStorageFailure>>>,
     search: Arc<Mutex<Option<SearchHandle>>>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl SearchStorageWorker {
@@ -186,7 +186,7 @@ impl SearchStorageWorker {
                 commands,
                 last_failure,
                 search,
-                thread: Some(thread),
+                thread: Mutex::new(Some(thread)),
             },
             state,
         ))
@@ -293,7 +293,7 @@ impl SearchStorageWorker {
             .clone()
     }
 
-    pub fn shutdown(mut self) {
+    pub fn shutdown(&self) {
         self.stop();
     }
 
@@ -311,14 +311,18 @@ impl SearchStorageWorker {
             .map_err(StorageQueueError::Operation)
     }
 
-    fn stop(&mut self) {
-        if self.thread.is_none() {
+    fn stop(&self) {
+        let mut thread = self
+            .thread
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if thread.is_none() {
             return;
         }
         if self.commands.send(SearchStorageCommand::Shutdown).is_err() {
             tracing::error!("storage owner closed before shutdown was requested");
         }
-        if let Some(thread) = self.thread.take()
+        if let Some(thread) = thread.take()
             && thread.join().is_err()
         {
             tracing::error!("storage owner thread panicked");

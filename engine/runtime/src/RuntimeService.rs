@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{ActiveExtension, ExtensionProtocol, resolve_active_extensions};
@@ -18,10 +18,12 @@ use crate::{
 
 /// UI-independent owner for storage, search, extension processes, and host services.
 pub struct RuntimeService {
-    search_owner: Option<SearchOwner>,
+    search_owner: Mutex<Option<SearchOwner>>,
     search: SearchHandle,
     extensions: ExtensionSearchCoordinator,
+    extension_info: Vec<crate::RuntimeExtensionInfo>,
     configurations: ExtensionConfigurationRegistry,
+    configuration_updates: Mutex<()>,
     storage: Option<SearchStorageWorker>,
     startup_diagnostics: Vec<String>,
 }
@@ -101,6 +103,7 @@ impl RuntimeService {
             resolve_active_extensions(paths, &storage_state.extensions, &registry);
         diagnostics.extend(errors.into_iter().map(|error| error.message));
         active_extensions.append(&mut external);
+        let mut extension_info = Vec::new();
         for extension in active_extensions {
             router.register_permissions(&extension.extension_id, extension.permissions);
             let configuration = match configurations.register(
@@ -116,23 +119,43 @@ impl RuntimeService {
                     continue;
                 }
             };
-            let runtime = match spawn_runtime(
-                &extension.extension_id,
-                extension.protocol,
-                &extension.program,
-                paths,
-                configuration.clone(),
-            ) {
-                Ok(runtime) => runtime,
-                Err(error) => {
-                    diagnostics.push(format!(
-                        "extension {} could not start: {error}",
-                        extension.extension_id
-                    ));
-                    continue;
+            // Settings must remain available when process startup fails so a
+            // saved directory configuration can be corrected without a live worker.
+            extension_info.push(crate::RuntimeExtensionInfo {
+                id: extension.extension_id.clone(),
+                name: extension.name,
+                icon: extension.icon,
+            });
+            let runtime = if extension.activation
+                == nanika_extension_package::ExtensionActivation::OnDemand
+            {
+                let id = extension.extension_id.clone();
+                let program = extension.program.clone();
+                let protocol = extension.protocol;
+                let paths = paths.clone();
+                let configuration = configuration.clone();
+                crate::ExtensionRuntimeSource::OnDemand(Box::new(move || {
+                    spawn_runtime(&id, protocol, &program, &paths, configuration)
+                }))
+            } else {
+                match spawn_runtime(
+                    &extension.extension_id,
+                    extension.protocol,
+                    &extension.program,
+                    paths,
+                    configuration.clone(),
+                ) {
+                    Ok(runtime) => crate::ExtensionRuntimeSource::Started(Box::new(runtime)),
+                    Err(error) => {
+                        diagnostics.push(format!(
+                            "extension {} could not start: {error}",
+                            extension.extension_id
+                        ));
+                        continue;
+                    }
                 }
             };
-            if let Err(error) = extensions.register_with_configuration(
+            if let Err(error) = extensions.register_source(
                 &extension.extension_id,
                 runtime,
                 search.clone(),
@@ -145,11 +168,14 @@ impl RuntimeService {
                 ));
             }
         }
+        extension_info.sort_by(|left, right| left.id.cmp(&right.id));
         Ok(Self {
-            search_owner: Some(owner),
+            search_owner: Mutex::new(Some(owner)),
             search,
             extensions,
+            extension_info,
             configurations,
+            configuration_updates: Mutex::new(()),
             storage,
             startup_diagnostics: diagnostics,
         })
@@ -231,6 +257,32 @@ impl RuntimeService {
             .map_err(|error| error.to_string())
     }
 
+    /// Complete an accepted action and report recording independently of its outcome.
+    /// A recording failure must not discard an already created extension view.
+    pub fn invoke_recorded(
+        &self,
+        generation: u64,
+        extension_id: &str,
+        entry_id: &str,
+        action_id: &str,
+        query_context: &str,
+    ) -> Result<crate::RuntimeInvocationCompletion, String> {
+        let outcome = self
+            .invoke(generation, extension_id, entry_id, action_id, query_context)?
+            .recv()
+            .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
+        let recording_error = if matches!(outcome, ExtensionInvocationOutcome::Completed { .. }) {
+            self.record_execution(extension_id, entry_id, action_id, query_context)
+                .err()
+        } else {
+            None
+        };
+        Ok(crate::RuntimeInvocationCompletion {
+            outcome,
+            recording_error,
+        })
+    }
+
     pub fn record_execution(
         &self,
         extension_id: &str,
@@ -266,8 +318,31 @@ impl RuntimeService {
         &self.startup_diagnostics
     }
 
+    pub fn request_shutdown(&self) {
+        self.extensions.request_shutdown();
+    }
+
+    /// Call after application operations settle; ownership is shared with workers.
+    pub fn shutdown(&self) {
+        let mut owner = self
+            .search_owner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.extensions.shutdown();
+        if let Some(storage) = &self.storage {
+            storage.shutdown();
+        }
+        if let Some(owner) = owner.take() {
+            owner.shutdown();
+        }
+    }
+
     pub fn extension_configurations(&self) -> Vec<crate::RuntimeExtensionConfiguration> {
         self.configurations.snapshots()
+    }
+
+    pub fn extension_info(&self) -> &[crate::RuntimeExtensionInfo] {
+        &self.extension_info
     }
 
     pub fn search_warnings(&self) -> Vec<String> {
@@ -319,16 +394,53 @@ impl RuntimeService {
         request_id: impl Into<String>,
         values: BTreeMap<String, serde_json::Value>,
     ) -> Result<ConfigurationUpdateDisposition, String> {
+        let _update = self
+            .configuration_updates
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let configuration = self.configurations.update(extension_id, values)?;
         if self
             .extensions
-            .apply_configuration(extension_id, request_id, configuration)
+            .apply_configuration(extension_id, request_id, configuration, None)
             .map_err(|error| error.to_string())?
         {
             Ok(ConfigurationUpdateDisposition::LiveApplyQueued)
         } else {
             Ok(ConfigurationUpdateDisposition::SavedForNextLaunch)
         }
+    }
+
+    /// Persist and queue without waiting for discovery or other extension application work.
+    /// Persistence and enqueue order agree even when multiple callers save concurrently.
+    pub fn save_configuration(
+        &self,
+        extension_id: &str,
+        request_id: impl Into<String>,
+        values: BTreeMap<String, serde_json::Value>,
+    ) -> Result<crate::ConfigurationSaveReceipt, String> {
+        let (completion, received) = std::sync::mpsc::sync_channel(1);
+        let queued = {
+            let _update = self
+                .configuration_updates
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let configuration = self.configurations.update(extension_id, values)?;
+            self.extensions.apply_configuration(
+                extension_id,
+                request_id,
+                configuration,
+                Some(completion),
+            )
+        };
+        Ok(match queued {
+            Ok(false) => crate::ConfigurationSaveReceipt::Complete(
+                crate::ConfigurationSaveOutcome::SavedForNextLaunch,
+            ),
+            Err(error) => crate::ConfigurationSaveReceipt::Complete(
+                crate::ConfigurationSaveOutcome::ApplyFailed(error.to_string()),
+            ),
+            Ok(true) => crate::ConfigurationSaveReceipt::Pending(received),
+        })
     }
 
     pub fn take_updates(&self) -> RuntimeUpdateBatch {
@@ -362,13 +474,7 @@ impl RuntimeService {
 
 impl Drop for RuntimeService {
     fn drop(&mut self) {
-        self.extensions.shutdown();
-        if let Some(storage) = self.storage.take() {
-            storage.shutdown();
-        }
-        if let Some(owner) = self.search_owner.take() {
-            owner.shutdown();
-        }
+        self.shutdown();
     }
 }
 

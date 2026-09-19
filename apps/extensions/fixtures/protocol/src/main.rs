@@ -48,14 +48,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .any(|value| value == "--complete-on-cancel");
     let mut pending_query = None;
+    let mut deferred_configuration = None;
     let mut pending_invoke = None;
     let mut previous_result = None;
+    let mut open_views = std::collections::HashSet::new();
     let mut input = stdin().lock();
     let mut output = stdout().lock();
 
     while let Some(message) = read_frame(&mut input)? {
         match message {
             Message::Initialize { request_id, .. } => {
+                if let Some(root) = data_root(&arguments) {
+                    std::fs::write(root.join(format!("{request_id}.entered")), b"initializing")?;
+                }
                 wait_for_release(&arguments, &request_id)?;
                 write_frame(
                     &mut output,
@@ -190,7 +195,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => continue,
                     }
                 }
-                let response = if entry_id == "fixture.entry" && action_id == "fixture.run" {
+                let response = if entry_id == "fixture.view"
+                    && action_id == nanika_protocol::VIEW_OPEN_ACTION_ID
+                {
+                    let view_id = format!("view-{request_id}");
+                    open_views.insert(view_id.clone());
+                    Message::Result {
+                        request_id,
+                        generation,
+                        effect: nanika_protocol::NavigationEffect::Push {
+                            view_id,
+                            revision: 1,
+                            view: Box::new(nanika_protocol::View::Detail {
+                                detail: nanika_protocol::DetailView {
+                                    title: None,
+                                    content: nanika_protocol::DetailContent::Text {
+                                        value: "Fixture view".to_owned(),
+                                    },
+                                    metadata: Vec::new(),
+                                    actions: Vec::new(),
+                                },
+                            }),
+                        },
+                    }
+                } else if entry_id == "fixture.entry"
+                    && (action_id == "fixture.run"
+                        || action_id == nanika_protocol::COMMAND_EXECUTE_ACTION_ID)
+                {
                     Message::Result {
                         request_id,
                         generation,
@@ -201,6 +232,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_id: Some(request_id),
                         code: "unknown_action".to_owned(),
                         message: "fixture entry or action does not exist".to_owned(),
+                    }
+                };
+                write_frame(&mut output, &response)?;
+            }
+            Message::ViewClose {
+                request_id,
+                view_id,
+            } => {
+                let response = if open_views.remove(&view_id) {
+                    Message::ViewClosed {
+                        request_id,
+                        view_id,
+                    }
+                } else {
+                    Message::Error {
+                        request_id: Some(request_id),
+                        code: "unknown_view".to_owned(),
+                        message: "fixture view is not open".to_owned(),
                     }
                 };
                 write_frame(&mut output, &response)?;
@@ -271,7 +320,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
             Message::ConfigurationChanged { request_id, .. } => {
+                if request_id == "deferred-settings" {
+                    if let Some(root) = data_root(&arguments) {
+                        std::fs::write(root.join("deferred-settings.entered"), b"pending")?;
+                    }
+                    deferred_configuration = Some(request_id);
+                    continue;
+                }
                 wait_for_release(&arguments, &request_id)?;
+                if data_root(&arguments)
+                    .is_some_and(|root| root.join(format!("fail-{request_id}")).exists())
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            code: "configuration_failed".to_owned(),
+                            message: "fixture could not apply configuration".to_owned(),
+                        },
+                    )?;
+                    continue;
+                }
                 write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
             Message::PrepareEntries { .. } => {}
@@ -281,7 +350,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::Result { .. }
             | Message::ViewEvent { .. }
             | Message::ViewUpdated { .. }
-            | Message::ViewClose { .. }
             | Message::ViewClosed { .. }
             | Message::Refreshed { .. }
             | Message::HostRequest { .. }
@@ -297,6 +365,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     message: "fixture received an unsupported message type".to_owned(),
                 },
             )?,
+        }
+        if let Some(request_id) = deferred_configuration.take() {
+            write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
         }
     }
 

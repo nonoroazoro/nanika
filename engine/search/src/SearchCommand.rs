@@ -3,6 +3,10 @@ use crate::{Candidate, UsageKey};
 #[derive(Debug)]
 pub(crate) enum SearchCommand {
     WakeQuery,
+    RegisterStaticCatalog {
+        extension_id: String,
+        candidates: Vec<Candidate>,
+    },
     ExtensionSnapshot {
         generation: u64,
         extension_id: String,

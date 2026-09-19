@@ -621,6 +621,15 @@ pub fn validate_extension_manifest(
             "invalid extension id".to_owned(),
         ));
     }
+    if manifest.name.trim().is_empty()
+        || manifest.name.len() > 128
+        || manifest.name.chars().any(char::is_control)
+    {
+        return Err(ExtensionPackageError::Manifest(
+            "extension name must contain 1 to 128 UTF-8 bytes without control characters"
+                .to_owned(),
+        ));
+    }
     let _ = Version::parse(&manifest.version)
         .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
     let host_requirement = VersionReq::parse(&manifest.host_api)
@@ -690,9 +699,13 @@ pub fn validate_extension_manifest(
             "extension dependencies require a future dependency resolver".to_owned(),
         ));
     }
-    if !manifest.activation_events.is_empty() {
+    if manifest.activation == crate::ExtensionActivation::OnDemand
+        && (manifest.contributes.root_search.is_some()
+            || !matches!(manifest.runtime, ExtensionProtocol::Nanika { .. }))
+    {
         return Err(ExtensionPackageError::Manifest(
-            "extension activation events are reserved for a future manifest version".to_owned(),
+            "onDemand activation requires a Nanika extension without dynamic Root Search"
+                .to_owned(),
         ));
     }
     validate_extension_contributions(manifest.runtime, &manifest.contributes)?;

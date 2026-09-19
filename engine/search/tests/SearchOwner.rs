@@ -55,6 +55,58 @@ fn owner_drops_stale_extension_snapshots() {
 }
 
 #[test]
+fn static_catalog_survives_queries_and_preserves_the_dynamic_completion_barrier() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let handle = owner.handle();
+    let (sent, received) = std::sync::mpsc::channel();
+    handle.set_notifier(std::sync::Arc::new(move || {
+        let _ = sent.send(());
+    }));
+    handle
+        .register_static_catalog(
+            "static.extension",
+            vec![Candidate::new(
+                CandidateKind::Action,
+                "untrusted.owner",
+                "static",
+                "Static tool",
+                "open",
+                Vec::new(),
+            )],
+        )
+        .unwrap();
+    let generation = handle
+        .begin_query_with_expected_extensions(
+            "tool",
+            [
+                "static.extension".to_owned(),
+                "dynamic.extension".to_owned(),
+            ],
+        )
+        .unwrap();
+    assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
+    handle
+        .publish_extension_snapshot("dynamic.extension", generation, Vec::new())
+        .unwrap();
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    let snapshot = handle.latest_snapshot().unwrap();
+    assert_eq!(snapshot.generation, generation);
+    assert_eq!(snapshot.results.len(), 1);
+    assert_eq!(
+        snapshot.results[0].candidate.extension_id(),
+        "static.extension"
+    );
+    let next = handle
+        .begin_query_with_expected_extensions("static", ["static.extension".to_owned()])
+        .unwrap();
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    let snapshot = handle.latest_snapshot().unwrap();
+    assert_eq!(snapshot.generation, next);
+    assert_eq!(snapshot.results.len(), 1);
+    owner.shutdown();
+}
+
+#[test]
 fn owner_rejects_oversized_queries_before_enqueueing() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("owner should start");
     let error = owner

@@ -59,3 +59,6 @@ pub use root_search_contribution::*;
 pub(crate) use staged_package::*;
 pub(crate) use staging_directory::*;
 pub use view_contribution::*;
+#[path = "ExtensionActivation.rs"]
+mod extension_activation;
+pub use extension_activation::*;

@@ -11,8 +11,17 @@ mod acp_transport;
 mod built_in_extension;
 #[path = "BuiltInExtensionInventory.rs"]
 mod built_in_extension_inventory;
+#[path = "ConfigurationReply.rs"]
+mod configuration_reply;
+#[path = "ConfigurationSaveOutcome.rs"]
+mod configuration_save_outcome;
+#[path = "ConfigurationSaveReceipt.rs"]
+mod configuration_save_receipt;
+pub(crate) use configuration_reply::{ConfigurationCompletion, ConfigurationReply};
+pub use configuration_save_receipt::ConfigurationSaveReceipt;
 #[path = "ConfigurationUpdateDisposition.rs"]
 mod configuration_update_disposition;
+pub use configuration_save_outcome::ConfigurationSaveOutcome;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
@@ -45,6 +54,9 @@ mod extension_process;
 mod extension_refresh;
 #[path = "ExtensionRuntime.rs"]
 mod extension_runtime;
+#[path = "ExtensionRuntimeSource.rs"]
+mod extension_runtime_source;
+pub use extension_runtime_source::*;
 #[path = "ExtensionRuntimeInvocation.rs"]
 mod extension_runtime_invocation;
 #[path = "ExtensionSearchCoordinator.rs"]
@@ -73,6 +85,10 @@ mod host_service_router;
 mod runtime_configuration_update;
 #[path = "RuntimeExtensionConfiguration.rs"]
 mod runtime_extension_configuration;
+#[path = "RuntimeExtensionInfo.rs"]
+mod runtime_extension_info;
+#[path = "RuntimeInvocationCompletion.rs"]
+mod runtime_invocation_completion;
 #[path = "RuntimeOutputUpdate.rs"]
 mod runtime_output_update;
 #[path = "RuntimeService.rs"]
@@ -123,6 +139,8 @@ pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
 pub use runtime_configuration_update::*;
 pub use runtime_extension_configuration::*;
+pub use runtime_extension_info::*;
+pub use runtime_invocation_completion::*;
 pub use runtime_output_update::*;
 pub use runtime_service::*;
 pub use runtime_update_batch::*;
@@ -145,7 +163,18 @@ pub fn publish_extension_snapshot(
         candidates = entries.len(),
         "extension search snapshot received"
     );
-    let candidates = entries
+    search.publish_extension_snapshot(
+        extension_id,
+        generation,
+        search_candidates(extension_id, entries),
+    )
+}
+
+pub(crate) fn search_candidates(
+    extension_id: &str,
+    entries: Vec<nanika_protocol::Candidate>,
+) -> Vec<nanika_search::Candidate> {
+    entries
         .into_iter()
         .map(|entry| {
             let icon_key = entry
@@ -172,8 +201,7 @@ pub fn publish_extension_snapshot(
             .with_icon_key(icon_key)
             .with_contribution_icon(contribution_icon)
         })
-        .collect();
-    search.publish_extension_snapshot(extension_id, generation, candidates)
+        .collect()
 }
 
 #[cfg(test)]

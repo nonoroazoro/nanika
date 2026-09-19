@@ -19,6 +19,7 @@ use crate::{
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
+    static_catalog: bool,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
@@ -26,13 +27,13 @@ pub(crate) struct ExtensionSearchWorker {
     live_configuration: bool,
     root_search: bool,
     query_ready: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl ExtensionSearchWorker {
     pub(crate) fn spawn(
         extension_id: impl Into<String>,
-        mut runtime: ExtensionRuntime,
+        source: crate::ExtensionRuntimeSource,
         search: SearchHandle,
         contributions: ExtensionContributions,
         configuration: nanika_protocol::ExtensionConfiguration,
@@ -40,47 +41,78 @@ impl ExtensionSearchWorker {
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         let worker_extension_id = extension_id.clone();
-        let worker_contributions = contributions.clone();
-        if let Some(host_services) = context.host_services {
-            runtime.set_host_services(extension_id.clone(), host_services);
+        let contributions = Arc::new(contributions);
+        let worker_contributions = Arc::clone(&contributions);
+        let deferred = source.is_deferred();
+        let live_configuration = source.supports_live_configuration();
+        let static_catalog = contributions.root_search.is_none();
+        if static_catalog {
+            search
+                .register_static_catalog(
+                    &extension_id,
+                    crate::search_candidates(
+                        &extension_id,
+                        contribution_candidates(&contributions),
+                    ),
+                )
+                .map_err(io::Error::other)?;
         }
-        let notifier = context.notifier;
-        let view_invalidations = context.view_invalidations;
+        let root_search = contributions.root_search.is_some();
+        let notifier = Arc::clone(&context.notifier);
+        let view_invalidations = Arc::clone(&context.view_invalidations);
         let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
-        runtime.set_shutdown_signal(Arc::clone(
-            &state
-                .0
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .shutdown,
-        ));
         let worker_state = Arc::clone(&state);
-        if contributions.root_search.is_some() {
-            let changed = Arc::clone(&state);
-            runtime.set_candidate_notifier(Arc::new(move || {
-                let (lock, ready) = &*changed;
-                let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
-                // Coalesce invalidations into one current query. User actions retain priority.
-                if !state.shutdown.load(Ordering::Acquire) && state.query.is_none() {
-                    state.query = state.latest_query.clone();
-                    ready.notify_one();
-                }
+        let factory_extension_id = extension_id.clone();
+        let factory_state = Arc::clone(&state);
+        let factory_notifier = Arc::clone(&notifier);
+        let factory = move |configuration: nanika_protocol::ExtensionConfiguration| {
+            let mut runtime = source
+                .start()
+                .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
+            let extension_id = factory_extension_id;
+            let state = factory_state;
+            let notifier = factory_notifier;
+            if let Some(host_services) = context.host_services {
+                runtime.set_host_services(extension_id.clone(), host_services);
+            }
+            runtime.set_shutdown_signal(Arc::clone(
+                &state
+                    .0
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .shutdown,
+            ));
+            if root_search {
+                let changed = Arc::clone(&state);
+                runtime.set_candidate_notifier(Arc::new(move || {
+                    let (lock, ready) = &*changed;
+                    let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+                    // Coalesce invalidations into one current query. User actions retain priority.
+                    if !state.shutdown.load(Ordering::Acquire) && state.query.is_none() {
+                        state.query = state.latest_query.clone();
+                        ready.notify_one();
+                    }
+                }));
+            }
+            let invalidation_extension_id = extension_id.clone();
+            let invalidation_queue = Arc::clone(&view_invalidations);
+            let invalidation_notifier = Arc::clone(&notifier);
+            runtime.set_view_invalidation_notifier(Arc::new(move |view_id| {
+                queue_view_invalidation(&invalidation_queue, &invalidation_extension_id, view_id);
+                notify(&invalidation_notifier);
             }));
-        }
-        let invalidation_extension_id = extension_id.clone();
-        let invalidation_queue = Arc::clone(&view_invalidations);
-        let invalidation_notifier = Arc::clone(&notifier);
-        runtime.set_view_invalidation_notifier(Arc::new(move |view_id| {
-            queue_view_invalidation(&invalidation_queue, &invalidation_extension_id, view_id);
-            notify(&invalidation_notifier);
-        }));
+            runtime.initialize_with_configuration(
+                format!("initialize-{extension_id}"),
+                configuration,
+            )?;
+            Ok(runtime)
+        };
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
         let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
         let worker_invocation_output = Arc::clone(&invocation_output);
         let configuration_results = Arc::new(Mutex::new(VecDeque::new()));
         let worker_configuration_results = Arc::clone(&configuration_results);
-        let live_configuration = runtime.supports_live_configuration();
         let query_ready = Arc::new(AtomicBool::new(false));
         let worker_query_ready = Arc::clone(&query_ready);
         let thread = std::thread::Builder::new()
@@ -92,19 +124,12 @@ impl ExtensionSearchWorker {
                     configuration_results: Arc::clone(&worker_configuration_results),
                     notifier: Arc::clone(&notifier),
                 };
-                if let Err(error) = runtime.initialize_with_configuration(
-                    format!("initialize-{worker_extension_id}"),
-                    configuration,
-                ) {
-                    set_error(
-                        &worker_error,
-                        Some(extension_failure(
-                            &worker_extension_id,
-                            "initialize extension",
-                            "The extension could not start.",
-                            error,
-                        )),
-                    );
+                let mut runtime = None;
+                let mut factory = Some(factory);
+                let mut configuration = configuration;
+                let mut activation_error = None;
+                if !deferred && let Err(error) = activate_runtime(&mut runtime, &mut factory, &configuration, &mut activation_error) {
+                    set_error(&worker_error, Some(extension_failure(&worker_extension_id, "initialize extension", "The extension could not start.", error)));
                     notify(&notifier);
                     return;
                 }
@@ -115,11 +140,51 @@ impl ExtensionSearchWorker {
                     let Some(work) = work else {
                         break;
                     };
+                    // Visibility hints never activate an idle process. Configuration
+                    // is retained for first initialization without starting it.
+                    if runtime.is_none() {
+                        match work {
+                            ExtensionWork::PrepareEntries { .. } => continue,
+                            ExtensionWork::ApplyConfiguration(update) => {
+                                configuration = update.configuration.clone();
+                                update.complete(&worker_extension_id, &worker_configuration_results, Ok(()));
+                                worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).configuration_pending = false;
+                                notify(&notifier);
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+                    let runtime = match activate_runtime(&mut runtime, &mut factory, &configuration, &mut activation_error) {
+                        Ok(runtime) => runtime,
+                        Err(error) => {
+                            let message = error.to_string();
+                            match work {
+                                ExtensionWork::Invoke(invocation) => {
+                                    let mut state = worker_state.0.lock().unwrap_or_else(|error| error.into_inner());
+                                    state.active_invocation_id = None;
+                                    state.cancelled_invocations.remove(&invocation.invocation_id);
+                                    drop(state);
+                                    let _ = invocation.response.send(Err(message));
+                                }
+                                ExtensionWork::ViewEvent(request) => { let _ = request.completion.send(Err(message)); }
+                                ExtensionWork::Refresh(refresh) => { let _ = refresh.completion.send(Err(message)); }
+                                ExtensionWork::ApplyConfiguration(update) => {
+                                    update.complete(&worker_extension_id, &worker_configuration_results, Err(message));
+                                    worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).configuration_pending = false;
+                                }
+                                _ => {}
+                            }
+                            set_error(&worker_error, Some(extension_failure(&worker_extension_id, "activate extension", "The extension could not start.", error)));
+                            notify(&notifier);
+                            continue;
+                        }
+                    };
                     let result = match work {
                         ExtensionWork::Query(query) => {
                             let generation = query.generation;
                             let result = run_query(
-                                &mut runtime,
+                                runtime,
                                 &worker_extension_id,
                                 query,
                                 &search,
@@ -155,7 +220,7 @@ impl ExtensionSearchWorker {
                             .map(|()| false),
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
-                                &mut runtime,
+                                runtime,
                                 &worker_extension_id,
                                 &invocation,
                                 &worker_state,
@@ -180,7 +245,7 @@ impl ExtensionSearchWorker {
                         ExtensionWork::ViewEvent(request) => {
                             let completion = request.completion.clone();
                             let result = run_view_event(
-                                &mut runtime,
+                                runtime,
                                 &worker_extension_id,
                                 request,
                                 &worker_state,
@@ -198,7 +263,7 @@ impl ExtensionSearchWorker {
                         }
                         ExtensionWork::Refresh(refresh) => {
                             let result = run_refresh(
-                                &mut runtime,
+                                runtime,
                                 &worker_extension_id,
                                 &refresh,
                                 &worker_state,
@@ -212,18 +277,9 @@ impl ExtensionSearchWorker {
                             result
                         }
                         ExtensionWork::ApplyConfiguration(update) => {
-                            let request_id = update.request_id.clone();
-                            let result = run_configuration_update(&mut runtime, update);
-                            let report = ExtensionConfigurationResult {
-                                extension_id: worker_extension_id.clone(),
-                                request_id,
-                                result: result.as_ref().map_err(ToString::to_string).copied(),
-                            };
-                            worker_configuration_results
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .push_back(report);
-                            result.map(|_| true)
+                            run_configuration_update(runtime, update, &worker_extension_id,
+                                &worker_state, &worker_configuration_results, &worker_error, &notifier);
+                            Ok(false)
                         }
                     };
                     match result {
@@ -241,7 +297,7 @@ impl ExtensionSearchWorker {
                     }
                     notify(&notifier);
                 }
-                if let Err(error) = runtime.terminate() {
+                if let Some(runtime) = runtime.as_mut() && let Err(error) = runtime.terminate() {
                     HostDiagnostic::from_error(
                         DiagnosticCode::ExtensionUnavailable,
                         "terminate extension",
@@ -254,6 +310,7 @@ impl ExtensionSearchWorker {
             })?;
         Ok(Self {
             extension_id,
+            static_catalog,
             state,
             last_error,
             invocation_output,
@@ -261,11 +318,14 @@ impl ExtensionSearchWorker {
             live_configuration,
             root_search: contributions.root_search.is_some(),
             query_ready,
-            thread: Some(thread),
+            thread: Mutex::new(Some(thread)),
         })
     }
 
     pub fn query(&self, generation: u64, query: impl Into<String>) {
+        if self.static_catalog {
+            return;
+        }
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
         let query = ExtensionSearchQuery {
@@ -332,6 +392,7 @@ impl ExtensionSearchWorker {
         &self,
         request_id: String,
         configuration: nanika_protocol::ExtensionConfiguration,
+        completion: Option<std::sync::mpsc::SyncSender<Result<(), String>>>,
     ) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
         let mut state = wait_for_capacity(lock, ready)?;
@@ -340,6 +401,7 @@ impl ExtensionSearchWorker {
             .push_back(ExtensionConfigurationUpdate {
                 request_id,
                 configuration,
+                completion,
             });
         ready.notify_one();
         Ok(())
@@ -350,11 +412,14 @@ impl ExtensionSearchWorker {
     }
 
     pub(crate) fn is_query_ready(&self) -> bool {
-        self.query_ready.load(Ordering::Acquire)
-            && self
-                .thread
-                .as_ref()
-                .is_some_and(|thread| !thread.is_finished())
+        self.static_catalog
+            || (self.query_ready.load(Ordering::Acquire)
+                && self
+                    .thread
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .as_ref()
+                    .is_some_and(|thread| !thread.is_finished()))
     }
 
     pub fn last_error(&self) -> Option<HostDiagnostic> {
@@ -398,8 +463,12 @@ impl ExtensionSearchWorker {
         ready.notify_all();
     }
 
-    pub(crate) fn join(&mut self) {
-        if let Some(thread) = self.thread.take()
+    pub(crate) fn join(&self) {
+        let mut thread = self
+            .thread
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(thread) = thread.take()
             && thread.join().is_err()
         {
             tracing::error!(
@@ -441,10 +510,10 @@ pub(crate) fn next_work(
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     while state.query.is_none()
-        && state.refreshes.is_empty()
+        && (state.refreshes.is_empty() || state.configuration_pending)
         && state.invocations.is_empty()
         && state.view_events.is_empty()
-        && state.configurations.is_empty()
+        && (state.configurations.is_empty() || state.configuration_pending)
         && state.entry_preparation.is_none()
         && !state.shutdown.load(Ordering::Acquire)
         && !state.closed
@@ -462,21 +531,24 @@ pub(crate) fn next_work(
     if let Some(event) = state.view_events.pop_front() {
         return Some(ExtensionWork::ViewEvent(event));
     }
-    state
-        .configurations
-        .pop_front()
-        .map(ExtensionWork::ApplyConfiguration)
-        .or_else(|| state.refreshes.pop_front().map(ExtensionWork::Refresh))
-        .or_else(|| state.query.take().map(ExtensionWork::Query))
-        .or_else(|| {
-            state
-                .entry_preparation
-                .take()
-                .map(|(generation, entry_ids)| ExtensionWork::PrepareEntries {
-                    generation,
-                    entry_ids,
-                })
-        })
+    if !state.configuration_pending {
+        if let Some(update) = state.configurations.pop_front() {
+            state.configuration_pending = true;
+            return Some(ExtensionWork::ApplyConfiguration(update));
+        }
+        if let Some(refresh) = state.refreshes.pop_front() {
+            return Some(ExtensionWork::Refresh(refresh));
+        }
+    }
+    state.query.take().map(ExtensionWork::Query).or_else(|| {
+        state
+            .entry_preparation
+            .take()
+            .map(|(generation, entry_ids)| ExtensionWork::PrepareEntries {
+                generation,
+                entry_ids,
+            })
+    })
 }
 
 fn run_view_event(
@@ -524,9 +596,44 @@ fn run_view_event(
 fn run_configuration_update(
     runtime: &mut ExtensionRuntime,
     update: ExtensionConfigurationUpdate,
-) -> Result<(), SupervisorError> {
-    runtime.ensure_running()?;
-    runtime.apply_configuration(update.request_id, update.configuration)
+    extension_id: &str,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+    results: &Arc<Mutex<VecDeque<ExtensionConfigurationResult>>>,
+    error: &Arc<Mutex<Option<HostDiagnostic>>>,
+    notifier: &ExtensionNotifier,
+) {
+    let state = Arc::clone(state);
+    let results = Arc::clone(results);
+    let error = Arc::clone(error);
+    let notifier = Arc::clone(notifier);
+    let extension_id = extension_id.to_owned();
+    runtime.start_configuration_update(
+        update.request_id.clone(),
+        update.configuration.clone(),
+        Box::new(move |result| {
+            let completion = result.as_ref().map_err(ToString::to_string).copied();
+            match result {
+                Ok(()) => set_error(&error, None),
+                Err(cause) => set_error(
+                    &error,
+                    Some(extension_failure(
+                        &extension_id,
+                        "apply configuration",
+                        "Saved settings could not be applied.",
+                        cause,
+                    )),
+                ),
+            }
+            update.complete(&extension_id, &results, completion);
+            state
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .configuration_pending = false;
+            state.1.notify_all();
+            notify(&notifier);
+        }),
+    );
 }
 
 fn run_refresh(
@@ -576,7 +683,7 @@ fn run_query(
             let state = lock.lock().unwrap_or_else(|error| error.into_inner());
             state.shutdown.load(Ordering::Acquire)
                 || state.query.is_some()
-                || !state.refreshes.is_empty()
+                || (!state.configuration_pending && !state.refreshes.is_empty())
                 || !state.invocations.is_empty()
                 || !state.view_events.is_empty()
         },
@@ -646,8 +753,23 @@ fn protocol_contribution_icon(
     icon: nanika_extension_package::ContributionIcon,
 ) -> nanika_protocol::ContributionIcon {
     match icon {
+        nanika_extension_package::ContributionIcon::Applications => {
+            nanika_protocol::ContributionIcon::Applications
+        }
+        nanika_extension_package::ContributionIcon::Calculator => {
+            nanika_protocol::ContributionIcon::Calculator
+        }
         nanika_extension_package::ContributionIcon::Clipboard => {
             nanika_protocol::ContributionIcon::Clipboard
+        }
+        nanika_extension_package::ContributionIcon::Command => {
+            nanika_protocol::ContributionIcon::Command
+        }
+        nanika_extension_package::ContributionIcon::Script => {
+            nanika_protocol::ContributionIcon::Script
+        }
+        nanika_extension_package::ContributionIcon::Extension => {
+            nanika_protocol::ContributionIcon::Extension
         }
     }
 }
@@ -784,4 +906,28 @@ fn wait_for_capacity<'a>(
             .wait(state)
             .unwrap_or_else(|error| error.into_inner());
     }
+}
+
+fn activate_runtime<'a, F>(
+    runtime: &'a mut Option<ExtensionRuntime>,
+    factory: &mut Option<F>,
+    configuration: &nanika_protocol::ExtensionConfiguration,
+    failure: &mut Option<String>,
+) -> Result<&'a mut ExtensionRuntime, SupervisorError>
+where
+    F: FnOnce(nanika_protocol::ExtensionConfiguration) -> Result<ExtensionRuntime, SupervisorError>,
+{
+    if runtime.is_none() {
+        if let Some(error) = failure {
+            return Err(SupervisorError::UnexpectedMessage(error.clone()));
+        }
+        match factory.take().expect("activation is attempted only once")(configuration.clone()) {
+            Ok(started) => *runtime = Some(started),
+            Err(error) => {
+                *failure = Some(error.to_string());
+                return Err(error);
+            }
+        }
+    }
+    Ok(runtime.as_mut().expect("activated runtime"))
 }

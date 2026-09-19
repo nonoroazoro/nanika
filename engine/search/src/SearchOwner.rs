@@ -31,7 +31,8 @@ impl SearchOwner {
                 let mut engine = SearchEngine::new();
                 let mut generation = 0;
                 let mut query = String::new();
-                let mut extension_results: HashMap<String, Vec<Candidate>> = HashMap::new();
+                let mut extension_results: HashMap<String, Arc<Vec<Candidate>>> = HashMap::new();
+                let mut static_catalog: HashMap<String, Arc<Vec<Candidate>>> = HashMap::new();
                 let mut expected_extensions = HashSet::new();
 
                 while let Ok(command) = receiver.recv() {
@@ -39,7 +40,8 @@ impl SearchOwner {
                         generation = next_query.generation;
                         query = next_query.query;
                         expected_extensions = next_query.expected_extensions;
-                        extension_results.clear();
+                        extension_results.clone_from(&static_catalog);
+                        expected_extensions.retain(|id| !static_catalog.contains_key(id));
                         if expected_extensions.is_empty() {
                             publish_current(
                                 &mut engine,
@@ -54,6 +56,29 @@ impl SearchOwner {
                     }
                     match command {
                         SearchCommand::WakeQuery => {}
+                        SearchCommand::RegisterStaticCatalog {
+                            extension_id,
+                            mut candidates,
+                        } => {
+                            for candidate in &mut candidates {
+                                candidate.set_extension_id(&extension_id);
+                            }
+                            let candidates = Arc::new(candidates);
+                            static_catalog.insert(extension_id.clone(), Arc::clone(&candidates));
+                            expected_extensions.remove(&extension_id);
+                            extension_results.insert(extension_id, candidates);
+                            if generation != 0 && expected_extensions.is_empty() {
+                                publish_current(
+                                    &mut engine,
+                                    generation,
+                                    &query,
+                                    &extension_results,
+                                    &initial_usage,
+                                    &owner_latest,
+                                    &owner_notifier,
+                                );
+                            }
+                        }
                         SearchCommand::ExtensionSnapshot {
                             generation: snapshot_generation,
                             extension_id,
@@ -71,7 +96,8 @@ impl SearchOwner {
                                     candidate,
                                 );
                             }
-                            extension_results.insert(extension_id, unique.into_values().collect());
+                            extension_results
+                                .insert(extension_id, Arc::new(unique.into_values().collect()));
                             if !expected_extensions.is_empty() {
                                 continue;
                             }
@@ -170,7 +196,7 @@ fn publish_current(
     engine: &mut SearchEngine,
     generation: u64,
     query: &str,
-    extension_results: &HashMap<String, Vec<Candidate>>,
+    extension_results: &HashMap<String, Arc<Vec<Candidate>>>,
     usage: &UsageMap,
     latest: &Mutex<Option<Arc<SearchSnapshot>>>,
     notifier: &Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,

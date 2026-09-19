@@ -16,6 +16,7 @@ nanika-platform = { path = "../../../../engine/platform" }
 nanika-search = { path = "../../../../engine/search" }
 nanika-storage = { path = "../../../../engine/storage" }
 serde_json.workspace = true
+rusqlite.workspace = true
 
 [lints]
 workspace = true

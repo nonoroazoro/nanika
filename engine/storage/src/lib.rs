@@ -1,4 +1,4 @@
-//! Host-owned paths and SQLite storage.
+//! Host-owned paths and persistent database storage.
 
 #![forbid(unsafe_code)]
 

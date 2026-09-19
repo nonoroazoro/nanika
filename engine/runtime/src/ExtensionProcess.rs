@@ -27,6 +27,7 @@ type ViewInvalidationNotifier = Arc<Mutex<Option<Arc<dyn Fn(String) + Send + Syn
 pub struct ExtensionProcess {
     candidate_changes: ExtensionNotifier,
     view_invalidations: ViewInvalidationNotifier,
+    configuration_reply: Arc<crate::ConfigurationReply>,
     initialized: bool,
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
@@ -98,12 +99,17 @@ impl ExtensionProcess {
         let view_invalidations = Arc::new(Mutex::new(None::<Arc<dyn Fn(String) + Send + Sync>>));
         let changes = Arc::clone(&candidate_changes);
         let invalidations = Arc::clone(&view_invalidations);
+        let configuration_reply = Arc::new(crate::ConfigurationReply::default());
+        let reader_configuration = Arc::clone(&configuration_reply);
         let reader_thread = match std::thread::Builder::new()
             .name("nanika-extension-protocol".to_owned())
             .spawn(move || {
                 let mut reader = BufReader::new(output);
                 loop {
                     let frame = read_frame(&mut reader);
+                    if reader_configuration.dispatch(&frame) {
+                        continue;
+                    }
                     if matches!(frame, Ok(Some(Message::CandidatesChanged))) {
                         let notify = changes
                             .lock()
@@ -129,6 +135,7 @@ impl ExtensionProcess {
                         break;
                     }
                 }
+                reader_configuration.fail(SupervisorError::ChannelClosed);
             }) {
             Ok(thread) => thread,
             Err(error) => {
@@ -157,6 +164,7 @@ impl ExtensionProcess {
         Ok(Self {
             candidate_changes,
             view_invalidations,
+            configuration_reply,
             initialized: false,
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
@@ -352,6 +360,30 @@ impl ExtensionProcess {
             configuration,
         })?;
         self.receive_configuration_applied(request_id)
+    }
+
+    pub(crate) fn start_configuration_update(
+        &mut self,
+        request_id: String,
+        configuration: ExtensionConfiguration,
+        completion: crate::ConfigurationCompletion,
+    ) {
+        if let Err(error) = self.ensure_initialized() {
+            completion(Err(error));
+            return;
+        }
+        if !self
+            .configuration_reply
+            .register(request_id.clone(), completion)
+        {
+            return;
+        }
+        if let Err(error) = self.send(&Message::ConfigurationChanged {
+            request_id,
+            configuration,
+        }) {
+            self.configuration_reply.fail(error);
+        }
     }
 
     pub(crate) fn refresh_cancellable(

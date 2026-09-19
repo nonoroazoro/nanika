@@ -138,6 +138,22 @@ impl ExtensionRuntime {
         }
     }
 
+    pub(crate) fn start_configuration_update(
+        &mut self,
+        request_id: String,
+        configuration: ExtensionConfiguration,
+        completion: crate::ConfigurationCompletion,
+    ) {
+        match self {
+            Self::Nanika(process) => {
+                process.start_configuration_update(request_id, configuration, completion)
+            }
+            Self::Acp(_) => completion(Err(SupervisorError::UnexpectedMessage(
+                "ACP does not support live configuration updates".to_owned(),
+            ))),
+        }
+    }
+
     pub(crate) fn refresh_cancellable(
         &mut self,
         request_id: impl Into<String>,

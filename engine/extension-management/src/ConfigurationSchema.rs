@@ -7,6 +7,8 @@ const MAX_PROPERTIES: usize = 64;
 const MAX_SCHEMA_DEPTH: usize = 4;
 const MAX_STRING_BYTES: u64 = 4_096;
 const MAX_ARRAY_ITEMS: u64 = 5_000;
+const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+const MAX_SAFE_INTEGER_MULTIPLE: u64 = MAX_SAFE_INTEGER as u64;
 
 /// The bounded JSON Schema subset supported by Nanika Settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -14,6 +16,8 @@ const MAX_ARRAY_ITEMS: u64 = 5_000;
 pub struct ConfigurationSchema {
     #[serde(rename = "type")]
     pub value_type: ConfigurationValueType,
+    #[serde(default)]
+    pub allow_unlimited: bool,
     #[serde(default)]
     pub format: Option<ConfigurationStringFormat>,
     #[serde(default)]
@@ -35,6 +39,14 @@ pub struct ConfigurationSchema {
 }
 
 impl ConfigurationSchema {
+    pub fn is_directory_list(&self) -> bool {
+        self.value_type == ConfigurationValueType::Array
+            && self.items.as_deref().is_some_and(|item| {
+                item.value_type == ConfigurationValueType::String
+                    && item.format == Some(ConfigurationStringFormat::Directory)
+            })
+    }
+
     pub(crate) fn validate_definition(&self) -> Result<(), String> {
         self.validate_definition_at_depth(0)
     }
@@ -44,6 +56,9 @@ impl ConfigurationSchema {
     }
 
     fn validate_definition_at_depth(&self, depth: usize) -> Result<(), String> {
+        if self.allow_unlimited && self.value_type != ConfigurationValueType::Integer {
+            return Err("allowUnlimited is supported only for integer limits".to_owned());
+        }
         if depth > MAX_SCHEMA_DEPTH {
             return Err(format!(
                 "configuration schema exceeds depth {MAX_SCHEMA_DEPTH}"
@@ -67,6 +82,14 @@ impl ConfigurationSchema {
                     .ok_or_else(|| "integer configuration is missing multipleOf".to_owned())?;
                 if minimum > maximum || multiple_of == 0 {
                     return Err("integer configuration has invalid bounds".to_owned());
+                }
+                if minimum < -MAX_SAFE_INTEGER
+                    || maximum > MAX_SAFE_INTEGER
+                    || multiple_of > MAX_SAFE_INTEGER_MULTIPLE
+                {
+                    return Err(format!(
+                        "integer configuration exceeds the {MAX_SAFE_INTEGER} safe integer limit"
+                    ));
                 }
                 Ok(())
             }
@@ -134,12 +157,21 @@ impl ConfigurationSchema {
     }
 
     fn validate_value_at_path(&self, value: &Value, path: &str) -> Result<(), String> {
+        if self.allow_unlimited
+            && self.value_type == ConfigurationValueType::Integer
+            && value.is_null()
+        {
+            return Ok(());
+        }
         match self.value_type {
             ConfigurationValueType::Boolean if value.is_boolean() => Ok(()),
             ConfigurationValueType::Integer => {
                 let value = value
                     .as_i64()
                     .ok_or_else(|| format!("{path} must be an integer"))?;
+                if !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value) {
+                    return Err(format!("{path} exceeds the safe integer limit"));
+                }
                 let minimum = self
                     .minimum
                     .ok_or_else(|| format!("{path} schema is missing minimum"))?;
@@ -259,6 +291,7 @@ pub enum ConfigurationValueType {
 #[serde(rename_all = "camelCase")]
 pub enum ConfigurationStringFormat {
     Path,
+    Directory,
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), String> {

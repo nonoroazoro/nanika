@@ -910,6 +910,7 @@ fn create_package_definition_with_runtime_and_contributions(
     let entrypoint = format!("bin/{target}/example{}", std::env::consts::EXE_SUFFIX);
     let mut manifest = serde_json::json!({
         "format": "nanika-extension",
+        "name": "Test Extension", "icon": "extension",
         "manifestVersion": manifest_version,
         "id": "com.example.extension",
         "version": version,

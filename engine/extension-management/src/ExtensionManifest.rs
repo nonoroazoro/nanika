@@ -11,6 +11,8 @@ pub struct ExtensionManifest {
     pub format: String,
     pub manifest_version: u32,
     pub id: String,
+    pub name: String,
+    pub icon: crate::ContributionIcon,
     pub version: String,
     pub host_api: String,
     pub targets: BTreeMap<String, ExtensionTarget>,
@@ -22,7 +24,7 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub dependencies: Vec<String>,
     #[serde(default)]
-    pub activation_events: Vec<String>,
+    pub activation: crate::ExtensionActivation,
     #[serde(default)]
     pub contributes: ExtensionContributions,
 }
