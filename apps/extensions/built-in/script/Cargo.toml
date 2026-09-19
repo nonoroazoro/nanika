@@ -7,8 +7,9 @@ publish.workspace = true
 
 [dependencies]
 nanika-protocol = { path = "../../../../engine/extension-protocol" }
-serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+walkdir.workspace = true
 
 [lints]
 workspace = true

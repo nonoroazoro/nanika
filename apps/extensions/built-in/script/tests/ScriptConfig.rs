@@ -1,74 +1,28 @@
-use std::collections::BTreeMap;
-
 use nanika_extension_script::ScriptConfig;
 use nanika_protocol::ExtensionConfiguration;
+use std::collections::BTreeMap;
 
 #[test]
-fn parses_host_configuration() {
+fn parses_directory_configuration() {
+    let root = std::env::temp_dir().join("nanika-scripts");
     let configuration = ExtensionConfiguration::new(BTreeMap::from([(
-        "script.entries".to_owned(),
-        serde_json::json!([{
-            "id": "build",
-            "title": "Build project",
-            "aliases": ["compile"],
-            "interpreter": executable_path(),
-            "script": script_path(),
-            "arguments": ["--release"],
-            "workingDirectory": working_directory()
-        }]),
+        "script.roots".to_owned(),
+        serde_json::json!([root]),
     )]));
-
-    let config = ScriptConfig::from_configuration(&configuration)
-        .expect("host configuration should be valid");
-
-    assert_eq!(config.scripts.len(), 1);
-    assert_eq!(config.scripts[0].id, "build");
+    let config = ScriptConfig::from_configuration(&configuration).unwrap();
+    assert_eq!(config.roots, vec![root]);
 }
 
 #[test]
-fn rejects_relative_executables() {
-    let configuration = ExtensionConfiguration::new(BTreeMap::from([(
-        "script.entries".to_owned(),
-        serde_json::json!([{
-            "id": "build",
-            "title": "Build project",
-            "aliases": [],
-            "interpreter": "relative",
-            "script": script_path(),
-            "arguments": [],
-            "workingDirectory": ""
-        }]),
-    )]));
-
-    assert!(ScriptConfig::from_configuration(&configuration).is_err());
-}
-
-#[cfg(target_os = "macos")]
-fn executable_path() -> &'static str {
-    "/bin/sh"
-}
-
-#[cfg(windows)]
-fn executable_path() -> &'static str {
-    r"C:\Windows\System32\cmd.exe"
-}
-
-#[cfg(target_os = "macos")]
-fn script_path() -> &'static str {
-    "/tmp/build.sh"
-}
-
-#[cfg(windows)]
-fn script_path() -> &'static str {
-    r"C:\Temp\build.cmd"
-}
-
-#[cfg(target_os = "macos")]
-fn working_directory() -> &'static str {
-    "/tmp"
-}
-
-#[cfg(windows)]
-fn working_directory() -> &'static str {
-    r"C:\Temp"
+fn rejects_missing_relative_and_non_string_directories() {
+    assert!(ScriptConfig::from_configuration(&ExtensionConfiguration::default()).is_err());
+    for value in [
+        serde_json::json!(["relative"]),
+        serde_json::json!([1]),
+        serde_json::json!("path"),
+    ] {
+        let configuration =
+            ExtensionConfiguration::new(BTreeMap::from([("script.roots".to_owned(), value)]));
+        assert!(ScriptConfig::from_configuration(&configuration).is_err());
+    }
 }

@@ -41,6 +41,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Frontend type check failed." }
         & pnpm frontend:build
         if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
+        & pnpm frontend:test
+        if ($LASTEXITCODE -ne 0) { throw "Frontend transport tests failed." }
     }
     finally {
         Pop-Location

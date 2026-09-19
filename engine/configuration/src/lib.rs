@@ -25,6 +25,9 @@ pub use config_error::*;
 pub use config_store::*;
 pub use extension_configuration_file::*;
 pub use extension_registry_config::*;
+#[path = "LauncherPreferences.rs"]
+mod launcher_preferences;
+pub use launcher_preferences::*;
 
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
 

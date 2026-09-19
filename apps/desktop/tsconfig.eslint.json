@@ -5,5 +5,5 @@
         "checkJs": false,
         "types": ["node", "svelte", "vite/client"]
     },
-    "include": ["frontend/**/*.js", "frontend/**/*.svelte", "frontend/**/*.ts"]
+    "include": ["frontend/**/*.js", "frontend/**/*.mjs", "frontend/**/*.svelte", "frontend/**/*.ts"]
 }

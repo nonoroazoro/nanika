@@ -7,10 +7,19 @@ const allowedCommands = new Set([
   'publish_query',
   'refresh_search',
   'view_event',
+  'open_settings',
+  'read_settings',
+  'settings_ready',
+  'save_settings',
+  'pick_settings_directory',
+  'save_host_settings',
+  'set_shortcut_recording',
+  'read_startup',
+  'set_startup',
 ])
 
 window.__TAURI_ISOLATION_HOOK__ = (message) => {
-  // Tauri fetches large Channel payloads using this internal command with a null
+  // The IPC transport fetches large Channel payloads using this internal command with a null
   // body. Blocking it strands an ordered Channel behind its first large message.
   // Keep this exact exception; do not broadly allow plugin commands.
   if (message?.cmd === 'plugin:__TAURI_CHANNEL__|fetch' && message.payload === null) {

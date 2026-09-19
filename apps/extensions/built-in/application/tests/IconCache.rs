@@ -32,8 +32,8 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
             .expect("cached Books icon should read");
         assert_eq!((output.width, output.height), (size, size));
         assert_eq!(output.color_type, png::ColorType::Rgba);
-        // AppKit may return low-alpha template artwork to a headless CLI process.
-        // This test covers cache integrity; opacity is verified in the actual Tauri UI.
+        // The native icon service may return low-alpha template artwork to a headless CLI process.
+        // This test covers cache integrity; opacity is verified in the actual desktop UI.
         assert!(
             pixels[..output.buffer_size()]
                 .as_chunks::<4>()

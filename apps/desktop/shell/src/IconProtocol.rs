@@ -10,12 +10,13 @@ const REQUEST_CAPACITY: usize = 400;
 
 pub(crate) struct IconProtocol {
     requests: async_channel::Sender<IconRequest>,
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl IconProtocol {
     pub(crate) fn spawn(cache_root: PathBuf, payload_root: PathBuf) -> Result<Self, String> {
         let (requests, receiver) = async_channel::bounded::<IconRequest>(REQUEST_CAPACITY);
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("nanika-icon-protocol".to_owned())
             .spawn(move || {
                 while let Ok(request) = receiver.recv_blocking() {
@@ -28,7 +29,23 @@ impl IconProtocol {
                 }
             })
             .map_err(|error| error.to_string())?;
-        Ok(Self { requests })
+        Ok(Self {
+            requests,
+            thread: std::sync::Mutex::new(Some(thread)),
+        })
+    }
+
+    pub(crate) fn shutdown(&self) {
+        self.requests.close();
+        if let Some(thread) = self
+            .thread
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            && thread.join().is_err()
+        {
+            tracing::error!("icon protocol worker panicked");
+        }
     }
 
     pub(crate) fn respond(
@@ -57,6 +74,12 @@ impl IconProtocol {
                 response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", Vec::new()),
             ),
         }
+    }
+}
+
+impl Drop for IconProtocol {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 

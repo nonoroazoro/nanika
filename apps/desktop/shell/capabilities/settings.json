@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Settings can read validated extension configuration and submit bounded configuration values.",
+  "windows": ["settings"],
+  "permissions": ["allow-read-settings", "allow-save-settings", "allow-pick-settings-directory", "allow-settings-ready", "allow-save-host-settings", "allow-set-shortcut-recording", "allow-read-startup", "allow-set-startup"]
+}

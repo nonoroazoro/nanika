@@ -3,6 +3,7 @@ interface StatusBarEntry
 {
     id: string;
     title: string;
+    icon?: "settings";
     interactive?: boolean;
     disabled?: boolean;
     destructive?: boolean;
@@ -60,6 +61,22 @@ function handleInvoke(event: MouseEvent): void
 
 {#snippet statusEntry(entry: StatusBarEntry)}
     {#snippet content()}
+        {#if entry.icon === "settings"}
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                aria-hidden="true"
+            >
+                <path d="M3 6h6m4 0h8M3 12h10m4 0h4M3 18h4m4 0h10" />
+                <circle cx="11" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="9" cy="18" r="2" />
+            </svg>
+        {/if}
         <span class="entry-label" aria-hidden="true">
             <span class="entry-label-value" class:hidden={Boolean(entry.pending?.active)}>{entry.title}</span>
             {#if entry.pending}<span

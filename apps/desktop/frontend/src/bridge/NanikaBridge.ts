@@ -3,6 +3,7 @@ import type {
     InvokeCandidateRequest,
     PublishQueryRequest,
     RootSearchSnapshot,
+    ViewEventReceipt,
     ViewEventRequest
 } from "../types";
 
@@ -16,6 +17,7 @@ export interface NanikaBridge
     publishQuery(request: PublishQueryRequest): Promise<void>;
     refreshSearch(sessionId: number): Promise<void>;
     invokeCandidate(request: InvokeCandidateRequest): Promise<void>;
-    viewEvent(request: ViewEventRequest): Promise<void>;
+    viewEvent(request: ViewEventRequest): Promise<ViewEventReceipt>;
     dismissLauncher(): Promise<void>;
+    openSettings(): Promise<void>;
 }

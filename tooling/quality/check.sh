@@ -46,6 +46,7 @@ pnpm format:check
 pnpm lint
 pnpm frontend:check
 pnpm frontend:build
+pnpm frontend:test
 
 cd "$repository_root"
 cargo fmt --all -- --check

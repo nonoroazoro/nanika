@@ -17,11 +17,11 @@ fn invocation_identifies_the_selected_entry_and_action() {
     let message = Message::Invoke {
         request_id: "invoke".to_owned(),
         generation: 7,
-        entry_id: "application.firefox".to_owned(),
+        entry_id: "application.example".to_owned(),
         action_id: "application.open".to_owned(),
     };
     let encoded = serde_json::to_value(message).expect("invoke should encode");
-    assert_eq!(encoded["entry_id"], "application.firefox");
+    assert_eq!(encoded["entry_id"], "application.example");
     assert_eq!(encoded["action_id"], "application.open");
 }
 
@@ -51,8 +51,8 @@ fn visible_entry_preparation_is_a_requestless_bounded_hint() {
     let message = Message::PrepareEntries {
         generation: 9,
         entry_ids: vec![
-            "application.finder".to_owned(),
-            "application.mail".to_owned(),
+            "application.first".to_owned(),
+            "application.second".to_owned(),
         ],
     };
     let encoded = serde_json::to_value(message).expect("entry hint should encode");

@@ -11,7 +11,7 @@ use crate::{
 
 const ICON_BATCH_SIZE: usize = 10;
 
-/// Named owner for filesystem discovery and application SQLite writes.
+/// Named owner for filesystem discovery and application database writes.
 pub struct DiscoveryWorker {
     commands: Sender<DiscoveryCommand>,
     cancelled_through: Arc<AtomicU64>,

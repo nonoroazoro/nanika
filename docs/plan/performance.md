@@ -1,5 +1,13 @@
 # Performance Validation
 
+## 2026-09-18 implementation review measurements
+
+The Windows shell regression serializes the same 2,000 synthetic results and a 96,000-byte detail through Tauri Channel. A navigation-only busy update previously included a 486,170-byte full payload; omitting unchanged results and the view document produces 166 bytes. Both sizes use the actual Channel serializer. This measures payload size, not renderer latency, IPC round-trip time, CPU or application memory.
+
+The real extension-process fixture compares explicit `startup` and `onDemand` policies for the same static command. Before invocation, process initialization counts are 1 and 0 respectively. Search publication, preparation and a dormant configuration acknowledgement leave the on-demand process unstarted. Its first invocation initializes the process and persists one usage record. This is controlled lifecycle evidence; full-tree memory, startup distributions and first-activation latency in the actual application remain unmeasured. Existing built-in activation defaults are unchanged.
+
+Windows/macOS Tauri interaction, high-DPI rendering, hidden-idle CPU and native Quit/descendant cleanup remain separate runtime acceptance items.
+
 Performance validation covers the two supported release targets: macOS 13+ and Windows 10+. Shared measurements and user-visible budgets must remain comparable, while platform-specific sampling or instrumentation belongs behind the platform adapter for that target. Unsupported platforms are not substituted as fallback validation targets.
 
 Performance results are evidence, not pass or fail gates on ordinary machines. Compare results only on the same hardware, power mode, display topology, operating-system version, WebView version, build profile, and background load.
@@ -90,9 +98,22 @@ On macOS 26.4.1 (Apple silicon), an optimized acquisition probe tested 89 applic
 
 For context, release-optimized raw-resource decoding succeeded for 87 of those applications and accumulated 160.5 ms in its first pass. It does not produce equivalent system-styled images. These acquisition-only measurements exclude metadata discovery, normalization, PNG encoding, persistent-cache writes, database work, and frontend rendering; they do not establish end-to-end startup performance.
 
-The implemented Rust adapter was also exercised in the debug build with an empty isolated application database and PNG cache. It indexed 88 applications with no scan warnings or icon failures: metadata scanning took 1,264.2 ms, followed by 3,798.8 ms to acquire, normalize, encode, and write all three PNG sizes. A second scan took 528.8 ms and its complete-cache population pass took 0.69 ms. These are single-pass observations with existing OS caches, not latency distributions or Tauri startup measurements. Eight matching reference applications, including Phone, XtraFinder, and Finder, produced 128 px cached images pixel-identical to the native reference drawings after the same normalization.
+The implemented Rust adapter was also exercised in the debug build with an empty isolated application database and PNG cache. It indexed 88 applications with no scan warnings or icon failures: metadata scanning took 1,264.2 ms, followed by 3,798.8 ms to acquire, normalize, encode, and write all three PNG sizes. A second scan took 528.8 ms and its complete-cache population pass took 0.69 ms. These are single-pass observations with existing OS caches, not latency distributions or Tauri startup measurements. Eight matching application samples produced 128 px cached images pixel-identical to the native reference drawings after the same normalization.
 
 The application keeps metadata publication ahead of icon population, generates all missing cache sizes from one macOS working image, and bypasses acquisition on complete persistent-cache hits. The Host sends its final ranked first ten entry IDs as a non-blocking preparation hint. Missing icons for those entries are processed first; remaining icons continue in batches of ten, and each completed batch is published. The WebView lazily fetches and asynchronously decodes result images. First-time cache generation can take seconds, but it never gates Root Search presentation. Validate the complete Rust adapter and actual Tauri display after changes. The native API path compiled with a macOS 13.0 deployment target, but its native visual behavior was tested only on macOS 26.4.1. Windows and older macOS runtime acceptance remain separate requirements.
+
+## Clipboard detail continuity evidence
+
+On 2026-09-19, a visible, focused Windows Tauri development window at 200% scaling was exercised with 20 alternating Up/Down inputs, 100 ms apart. The same live clipboard entries were used before and after the fix. Input used WebView2's [documented local debugging connection](https://learn.microsoft.com/en-us/microsoft-edge/webview2/how-to/debug-visual-studio-code), not a simulated DOM. Temporary DOM and animation-frame observers recorded only counts and node identity, without saving clipboard contents.
+
+| Observation | Before | After |
+| --- | --- | --- |
+| Selection changes | 20 | 20 |
+| Detail article removals | 20 | 0 |
+| Frames with no detail article | 7 of 151 | 0 of 152 |
+| Original detail article retained | No | Yes |
+
+The previous optimistic-selection mismatch cleared the complete detail subtree while waiting for the extension. The renderer now retains the committed detail, marks the pane busy, and updates it when the Channel supplies the replacement. The observations establish continuity for this exercised Windows scenario, not universal image-decode behavior, 120 Hz acceptance, or macOS correctness. The temporary probe and raw counts are under ignored `target/review-current/detail-flicker*`; no observer or frame loop was added to production code.
 
 ## Platform acceptance
 

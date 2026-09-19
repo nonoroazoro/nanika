@@ -15,14 +15,17 @@ tauri-build = { workspace = true, features = ["codegen", "isolation"] }
 [dependencies]
 async-channel.workspace = true
 nanika-foundation = { path = "../../../engine/foundation" }
+nanika-config = { path = "../../../engine/configuration" }
 nanika-platform = { path = "../../../engine/platform" }
 nanika-protocol = { path = "../../../engine/extension-protocol" }
 nanika-host = { path = "../../../engine/runtime" }
 nanika-search = { path = "../../../engine/search" }
 nanika-storage = { path = "../../../engine/storage" }
 serde.workspace = true
+serde_json.workspace = true
 tauri = { workspace = true, features = ["common-controls-v6", "compression", "isolation", "macos-private-api", "tray-icon", "wry"] }
 tauri-plugin-global-shortcut.workspace = true
+tauri-plugin-dialog.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

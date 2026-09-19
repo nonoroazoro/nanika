@@ -1,10 +1,14 @@
-//! Built-in configured script extension.
+//! Built-in directory-based script discovery extension.
 
+mod platform;
+#[path = "ScriptCatalog.rs"]
+mod script_catalog;
 #[path = "ScriptConfig.rs"]
 mod script_config;
 #[path = "ScriptEntry.rs"]
 mod script_entry;
 
+pub use script_catalog::*;
 pub use script_config::*;
 pub use script_entry::*;
 

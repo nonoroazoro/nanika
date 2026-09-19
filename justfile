@@ -11,7 +11,7 @@ set shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 default:
     @just --list
 
-# Start the complete Tauri development application with the package-manager pin
+# Start the complete desktop development application with the package-manager pin
 # resolved from apps/desktop/package.json.
 [unix]
 dev:

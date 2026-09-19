@@ -2,8 +2,17 @@
 import { onMount, tick } from "svelte";
 
 import { tauriBridge } from "./bridge";
+import { orderedViewEvents } from "./bridge/orderedViewEvents";
+import { viewInputScheduler } from "./bridge/viewInputScheduler";
 import { ExtensionView, RootSearch } from "./components";
-import type { ApplicationSnapshot, NavigationSnapshot, RootSearchSnapshot, SearchResult, ViewEvent } from "./types";
+import type {
+    ApplicationSnapshot,
+    NavigationSnapshot,
+    RootSearchSnapshot,
+    SearchResult,
+    ViewEvent,
+    ViewEventReceipt
+} from "./types";
 import type { SearchObservation } from "./development";
 
 let application = $state<ApplicationSnapshot | null>(null);
@@ -23,10 +32,9 @@ let navigation = $state.raw<NavigationSnapshot>({
 });
 let viewPending = $state(false);
 let viewInputError = $state<string | null>(null);
-let desiredViewQuery = $state<string | null>(null);
-let submittedNavigationRevision = 0;
 let viewOperation = 0;
-let viewResumeRequested = false;
+const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent);
+const viewInput = viewInputScheduler();
 let rootSearch = $state.raw<RootSearchSnapshot>({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
@@ -256,103 +264,77 @@ function updateNavigation(next: NavigationSnapshot): void
     {
         return;
     }
-    const changedRoute = next.current?.routeId !== navigation.current?.routeId;
     const dismiss = next.dismissCount > navigation.dismissCount;
     navigation = next;
-    if (changedRoute)
-    {
-        desiredViewQuery = next.current?.view.kind === "list" ? next.current.view.list.search_text : null;
-        viewInputError = null;
-        viewResumeRequested = false;
-    }
-    if (viewPending && !next.busy && next.revision > submittedNavigationRevision)
-    {
-        viewPending = false;
-    }
+    viewInput.update(next);
     if (dismiss)
     {
         void tauriBridge.dismissLauncher().catch(fail);
     }
-    if (!next.error)
-    {
-        flushViewQuery();
-        flushViewResume();
-    }
+    reconcileViewInput();
 }
 
 function changeViewQuery(text: string): void
 {
-    desiredViewQuery = text;
-    viewInputError = [...text].length > 4096
-        ? "View search supports up to 4096 characters. Edit the input to continue."
-        : null;
-    flushViewQuery();
-}
-
-function flushViewQuery(): void
-{
-    const current = navigation.current;
-    if (
-        viewPending || navigation.busy || viewInputError || !current || current.view.kind !== "list"
-        || desiredViewQuery === null || desiredViewQuery === current.view.list.search_text
-    )
-    {
-        return;
-    }
-    void sendViewEvent({ kind: "searchChanged", text: desiredViewQuery });
+    viewInput.query(text);
+    reconcileViewInput();
 }
 
 function resumeView(): void
 {
-    viewResumeRequested = true;
-    flushViewResume();
+    viewInput.resume();
+    reconcileViewInput();
 }
 
-function flushViewResume(): void
+function reconcileViewInput(): void
 {
-    if (viewPending || navigation.busy || !application || !navigation.current || !viewResumeRequested)
+    viewPending = viewInput.busy;
+    viewInputError = viewInput.inputError;
+    if (disposed || !application)
     {
         return;
     }
-    viewResumeRequested = false;
-    void sendViewEvent({ kind: "resumed" });
+    const next = viewInput.takeNext();
+    if (next)
+    {
+        void sendViewEvent(next);
+    }
 }
 
-async function sendViewEvent(event: ViewEvent | null): Promise<void>
+async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
 {
     const current = navigation.current;
-    const nonBlocking = event?.kind === "selectionChanged" || event?.kind === "resumed";
     if (!application || !current)
     {
-        return;
+        return null;
     }
     const operation = ++viewOperation;
-    submittedNavigationRevision = navigation.revision;
-    if (!nonBlocking)
-    {
-        viewPending = true;
-    }
+    const blocking = viewInput.begin(event);
+    let receipt: ViewEventReceipt | null = null;
+    reconcileViewInput();
     operationFailure = null;
     try
     {
-        await tauriBridge.viewEvent({
+        receipt = await submitViewEvent({
             sessionId: application.sessionId,
             routeId: current.routeId,
             revision: current.revision,
             operation: event === null ? { kind: "back" } : { kind: "event", event }
         });
+        return receipt?.viewRevision ?? null;
     }
     catch (error)
     {
         if (operation === viewOperation)
         {
-            if (!nonBlocking)
-            {
-                viewPending = false;
-            }
             operationFailure = error instanceof Error ? error.message : String(error);
-            flushViewResume();
         }
+        return null;
+    }
+    finally
+    {
+        viewInput.complete(blocking, receipt);
+        reconcileViewInput();
     }
 }
 
@@ -408,6 +390,13 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 {hasCompletedSearch}
                 {refreshing}
                 onRefresh={refreshSearch}
+                onSettings={() =>
+                {
+                    void tauriBridge.openSettings().catch(error =>
+                    {
+                        operationFailure = error instanceof Error ? error.message : String(error);
+                    });
+                }}
                 inputError={queryFailure}
                 busy={invoking || refreshing || navigation.busy || !application
                 || rootSearch.requestId !== latestRequestId

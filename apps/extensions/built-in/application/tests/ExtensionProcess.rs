@@ -3,7 +3,6 @@ use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use nanika_extension_application::ApplicationConfig;
 use nanika_protocol::{
     ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
 };
@@ -427,16 +426,10 @@ fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Messa
 }
 
 fn application_configuration(application_root: &Path) -> ExtensionConfiguration {
-    ExtensionConfiguration::new(std::collections::BTreeMap::from([
-        (
-            "application.exclusions".to_owned(),
-            serde_json::json!(ApplicationConfig::standard_roots().expect("standard roots")),
-        ),
-        (
-            "application.roots".to_owned(),
-            serde_json::json!([application_root]),
-        ),
-    ]))
+    ExtensionConfiguration::new(std::collections::BTreeMap::from([(
+        "application.roots".to_owned(),
+        serde_json::json!([application_root]),
+    )]))
 }
 
 fn argument(name: &str, value: &Path) -> OsString {

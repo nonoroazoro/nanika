@@ -1,0 +1,145 @@
+<script lang="ts">
+import SettingsValue from "./SettingsValue.svelte";
+import IntegerSetting from "./IntegerSetting.svelte";
+import Switch from "../components/Switch.svelte";
+import { emptyValue, fieldTitle } from "./values";
+import { stringError } from "./stringValue";
+import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+
+const { schema, value, label, id, onChange }: {
+    schema: ConfigurationSchema;
+    value: ConfigurationValue | undefined;
+    label: string;
+    id: string;
+    onChange: (value: ConfigurationValue) => void;
+} = $props();
+const array = $derived(Array.isArray(value) ? value : []);
+const object = $derived(value && typeof value === "object" && !Array.isArray(value) ? value : {});
+let visibleCount = $state(20);
+let stringInput = $state<HTMLInputElement>();
+const currentStringError = $derived(schema.type === "string" ? stringError(schema, value) : null);
+$effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
+</script>
+
+{#if schema.type === "boolean"}
+    <Switch {id} {label} checked={value === true} {onChange} />
+{:else if schema.type === "integer"}
+    <IntegerSetting {id} {schema} {value} {label} {onChange} />
+{:else if schema.type === "string"}
+    <input
+        bind:this={stringInput}
+        {id}
+        type="text"
+        aria-label={label}
+        spellcheck={schema.format !== "path"}
+        maxlength={schema.maxLength ?? 4096}
+        value={typeof value === "string" ? value : ""}
+        oninput={event => onChange(event.currentTarget.value)}
+    />
+{:else if schema.type === "array" && schema.items}
+    <div class="array" role="group" aria-label={label}>
+        {#each array.slice(0, visibleCount) as item, index (index)}
+            <div class="array-item" class:structured={schema.items.type === "object"}>
+                <div class="item-value">
+                    <SettingsValue
+                        schema={schema.items}
+                        value={item}
+                        label={`${label}, entry ${index + 1}`}
+                        id={`${id}-${index}`}
+                        onChange={next => onChange(array.map((current, position) => position === index ? next : current))}
+                    />
+                </div>
+                <button
+                    type="button"
+                    class="remove"
+                    aria-label={`Remove ${label} entry ${index + 1}`}
+                    onclick={() => onChange(array.filter((_, position) => position !== index))}
+                >
+                    Remove
+                </button>
+            </div>
+        {/each}
+        <div class="array-actions">
+            <button
+                type="button"
+                disabled={array.length >= (schema.maxItems ?? 0)}
+                onclick={() =>
+                {
+                    if (schema.items)
+                    {
+                        onChange([...array, emptyValue(schema.items)]);
+                        visibleCount = array.length + 1;
+                    }
+                }}
+            >
+                Add entry
+            </button>
+            {#if array.length > visibleCount}<button
+                    type="button"
+                    onclick={() =>
+                    {
+                        visibleCount += 20;
+                    }}
+                >
+                    Show more ({array.length - visibleCount})
+                </button>{/if}
+            <span>{array.length} / {schema.maxItems}</span>
+        </div>
+    </div>
+{:else if schema.type === "object"}
+    <div class="object" role="group" aria-label={label}>
+        {#each Object.entries(schema.properties) as [key, child] (key)}
+            <div class="object-field">
+                <div class="field-heading">
+                    <span>{fieldTitle(key)}</span>
+                    {#if !schema.required.includes(key)}
+                        <div class="optional">
+                            <span>Include</span><Switch
+                                checked={key in object}
+                                label={`Include ${fieldTitle(key)}`}
+                                onChange={checked =>
+                                {
+                                    const next = { ...object };
+                                    if (checked)
+                                    {
+                                        next[key] = emptyValue(child);
+                                    }
+                                    else
+                                    {
+                                        delete next[key];
+                                    }
+                                    onChange(next);
+                                }}
+                            />
+                        </div>
+                    {/if}
+                </div>
+                {#if key in object || schema.required.includes(key)}
+                    <SettingsValue
+                        schema={child}
+                        value={object[key]}
+                        label={`${label}, ${fieldTitle(key)}`}
+                        id={`${id}-${key}`}
+                        onChange={next => onChange({ ...object, [key]: next })}
+                    />
+                {/if}
+            </div>
+        {/each}
+    </div>
+{/if}
+
+<style>
+input { width: 100%; min-height: 2.25rem; border: 1px solid var(--border-window); border-radius: 0.45rem; padding: 0.4rem 0.65rem; background: var(--surface-window); color: var(--text-primary); }
+.optional { display: flex; align-items: center; gap: var(--space-2); }
+.array, .object { display: grid; gap: var(--space-3); }
+.array-item { display: flex; align-items: flex-start; gap: var(--space-2); }
+.array-item.structured { padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); }
+.item-value { flex: 1; min-width: 0; }
+.remove { flex: 0 0 auto; background: transparent; font-size: var(--font-meta); }
+.array-actions, .field-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.array-actions { justify-content: flex-start; }
+.array-actions span, .optional { color: var(--text-secondary); font-size: var(--font-meta); }
+.object-field { display: grid; gap: var(--space-2); }
+.field-heading { font-size: var(--font-meta); }
+input:focus-visible { background: var(--surface-form); }
+</style>

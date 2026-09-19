@@ -100,8 +100,8 @@ fn retention_removes_entries_outside_the_count_limit() {
         .apply_retention(
             20_000,
             &ClipboardConfig {
-                max_entries: 2,
-                max_age_days: 7,
+                max_entries: Some(2),
+                max_age_days: Some(7),
             },
         )
         .expect("retention");
@@ -131,8 +131,8 @@ fn retention_removes_entries_older_than_the_age_limit() {
         .apply_retention(
             8 * DAY,
             &ClipboardConfig {
-                max_entries: 50,
-                max_age_days: 7,
+                max_entries: Some(50),
+                max_age_days: Some(7),
             },
         )
         .expect("retention");
@@ -143,8 +143,8 @@ fn retention_removes_entries_older_than_the_age_limit() {
         .apply_retention(
             8 * DAY + 1,
             &ClipboardConfig {
-                max_entries: 50,
-                max_age_days: 7,
+                max_entries: Some(50),
+                max_age_days: Some(7),
             },
         )
         .expect("retention after cutoff");
@@ -188,6 +188,74 @@ fn text_entry(index: u64, captured_at: u64) -> ClipboardEntry {
         },
         byte_size: 7,
         captured_at,
+    }
+}
+
+#[test]
+fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
+    const DAY: u64 = 24 * 60 * 60 * 1_000;
+    for (name, config, expected) in [
+        (
+            "unlimited",
+            ClipboardConfig {
+                max_entries: None,
+                max_age_days: None,
+            },
+            vec![3, 2, 1],
+        ),
+        (
+            "count",
+            ClipboardConfig {
+                max_entries: Some(2),
+                max_age_days: None,
+            },
+            vec![3, 2],
+        ),
+        (
+            "age",
+            ClipboardConfig {
+                max_entries: None,
+                max_age_days: Some(1),
+            },
+            vec![3],
+        ),
+    ] {
+        let root =
+            std::env::temp_dir().join(format!("nanika-clipboard-{name}-{}", std::process::id()));
+        let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+        for (index, captured_at) in [(1, DAY), (2, 2 * DAY), (3, 10 * DAY)] {
+            database
+                .upsert(&text_entry(index, captured_at))
+                .expect("capture");
+        }
+        database
+            .apply_retention(10 * DAY, &config)
+            .expect("requested retention");
+        let ids: Vec<_> = database
+            .load()
+            .expect("history")
+            .iter()
+            .map(|entry| entry.entry_id.clone())
+            .collect();
+        assert_eq!(
+            ids,
+            expected
+                .into_iter()
+                .map(|index| format!("clipboard.{index}"))
+                .collect::<Vec<_>>()
+        );
+        database
+            .apply_retention(
+                10 * DAY,
+                &ClipboardConfig {
+                    max_entries: Some(1),
+                    max_age_days: Some(1),
+                },
+            )
+            .expect("reenabled limits");
+        assert_eq!(database.load().expect("history").len(), 1);
+        drop(database);
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }
 

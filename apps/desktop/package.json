@@ -14,6 +14,7 @@
         "frontend:dev": "vite --config frontend/vite.config.ts",
         "frontend:build": "vite build --config frontend/vite.config.ts",
         "frontend:check": "svelte-check --tsconfig frontend/tsconfig.app.json && tsc -p frontend/tsconfig.node.json",
+        "frontend:test": "node --test frontend/src/bridge/*.test.mjs frontend/src/settings/*.test.mjs",
         "extensions:build": "node ../../tooling/build/build-extensions.mjs debug",
         "extensions:build:release": "node ../../tooling/build/build-extensions.mjs release",
         "extensions:prepare": "node ../../tooling/build/prepare-extensions.mjs debug",

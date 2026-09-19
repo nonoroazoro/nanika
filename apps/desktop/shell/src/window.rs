@@ -45,8 +45,38 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
 }
 
 pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
+    if window.label() == "settings" && matches!(event, WindowEvent::Focused(false)) {
+        window
+            .state::<crate::host_settings::HostSettings>()
+            .recording
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+    if window.label() == "settings"
+        && let WindowEvent::CloseRequested { api, .. } = event
+    {
+        api.prevent_close();
+        window
+            .state::<crate::host_settings::HostSettings>()
+            .recording
+            .store(false, std::sync::atomic::Ordering::Release);
+        let state = window.state::<crate::settings::SettingsWindow>();
+        state
+            .requested
+            .store(false, std::sync::atomic::Ordering::Release);
+        state
+            .ready
+            .store(false, std::sync::atomic::Ordering::Release);
+        window.state::<crate::DesktopState>().settings_closed();
+        if let Err(error) = window.hide() {
+            tracing::error!(%error, "settings could not hide after close");
+        }
+    }
     if window.label() == "launcher"
         && matches!(event, WindowEvent::Focused(false))
+        && window
+            .state::<crate::host_settings::HostSettings>()
+            .hide_on_blur
+            .load(std::sync::atomic::Ordering::Acquire)
         && let Err(error) = window.hide()
     {
         tracing::error!(%error, "launcher could not hide after losing focus");

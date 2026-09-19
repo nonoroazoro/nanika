@@ -201,6 +201,7 @@ fn shortcut_icons_preserve_the_configured_resource_index() {
             Some((&resource, index)),
             false,
             SW_SHOWNORMAL,
+            None,
         );
         let mut entry = platform::read_entry(&mut state, &shortcut, 0)
             .unwrap()
@@ -213,6 +214,41 @@ fn shortcut_icons_preserve_the_configured_resource_index() {
         images[0], images[1],
         "different shortcut icons must not become the DLL's generic icon"
     );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn overlapping_roots_and_case_variants_publish_one_native_entry() {
+    let root = test_root("overlapping-roots");
+    let applications = root.join("applications");
+    let nested = applications.join("nested");
+    let shortcuts = root.join("aliases");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir_all(&shortcuts).unwrap();
+    let executable = nested.join("Tool.exe");
+    let shortcut = shortcuts.join("Preferred Tool.lnk");
+    create_executable(&executable);
+    create_shell_link_configured(&shortcut, &executable, None, false, SW_SHOWMAXIMIZED, None);
+    let config = ApplicationConfig {
+        roots: vec![
+            applications.clone(),
+            nested,
+            shortcuts,
+            PathBuf::from(applications.to_string_lossy().to_uppercase()),
+        ],
+        exclusions: platform::standard_roots().unwrap(),
+    };
+    let mut index = ApplicationIndex::new(
+        ApplicationDatabase::open(root.join("application.db")).unwrap(),
+        IconCache::new(root.join("icons")),
+    );
+    let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
+    assert!(report.complete);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].display_name, "Preferred Tool");
+    assert_eq!(entries[0].target_path, shortcut.to_string_lossy());
+    assert_eq!(index.load().unwrap().len(), 1);
+    drop(index);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -310,7 +346,7 @@ fn pre_epoch_shortcut_and_icon_timestamps_do_not_prevent_discovery() {
 }
 
 #[test]
-fn shortcuts_with_distinct_activation_settings_are_not_merged() {
+fn shortcut_activation_variants_share_identity_and_retain_native_launch_paths() {
     let root = test_root("shortcut-activation");
     let executable = root.join("Sample.exe");
     create_executable(&executable);
@@ -318,25 +354,64 @@ fn shortcuts_with_distinct_activation_settings_are_not_merged() {
     let direct = platform::read_entry(&mut state, &executable, 0)
         .unwrap()
         .unwrap();
-    let mut identities = std::collections::HashSet::from([direct.entry_id]);
     for (name, elevated, show_command) in [
         ("Elevated", true, SW_SHOWNORMAL),
         ("Maximized", false, SW_SHOWMAXIMIZED),
     ] {
         let shortcut = root.join(format!("{name}.lnk"));
-        create_shell_link_configured(&shortcut, &executable, None, elevated, show_command);
+        create_shell_link_configured(&shortcut, &executable, None, elevated, show_command, None);
         let entry = platform::read_entry(&mut state, &shortcut, 0)
             .unwrap()
             .unwrap();
-        assert!(
-            identities.insert(entry.entry_id),
-            "activation settings must retain separate candidates"
+        assert_eq!(entry.entry_id, direct.entry_id);
+        assert_eq!(
+            entry.launch_descriptor().unwrap(),
+            nanika_protocol::LaunchDescriptor::WindowsApplication {
+                path: shortcut.to_string_lossy().into_owned(),
+            }
         );
     }
     std::fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(windows)]
+#[test]
+fn shortcuts_with_different_arguments_remain_separate() {
+    let root = test_root("shortcut-arguments");
+    let executable = root.join("Sample.exe");
+    create_executable(&executable);
+    let mut state = DiscoveryState::new();
+    let direct = platform::read_entry(&mut state, &executable, 0)
+        .unwrap()
+        .unwrap();
+    let mut ids = std::collections::HashSet::from([direct.entry_id]);
+    for (name, arguments) in [
+        ("Work", "--profile work"),
+        ("Personal", "--profile personal"),
+    ] {
+        let shortcut = root.join(format!("{name}.lnk"));
+        create_shell_link_configured(
+            &shortcut,
+            &executable,
+            None,
+            false,
+            SW_SHOWNORMAL,
+            Some(arguments),
+        );
+        let entry = platform::read_entry(&mut state, &shortcut, 0)
+            .unwrap()
+            .unwrap();
+        assert!(ids.insert(entry.entry_id));
+        assert_eq!(
+            entry.arguments_json,
+            crate::ApplicationArguments::from_windows_raw(Some(arguments.to_owned()))
+                .to_json()
+                .unwrap()
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn invalid_windows_executables_are_rejected() {
     let root = test_root("invalid-executable");
@@ -418,7 +493,7 @@ fn create_executable(target: &std::path::Path) {
 
 #[cfg(windows)]
 fn create_shell_link(path: &std::path::Path, target: &std::path::Path) {
-    create_shell_link_configured(path, target, None, false, SW_SHOWNORMAL);
+    create_shell_link_configured(path, target, None, false, SW_SHOWNORMAL, None);
 }
 
 fn create_shell_link_configured(
@@ -427,6 +502,7 @@ fn create_shell_link_configured(
     icon: Option<(&std::path::Path, i32)>,
     elevated: bool,
     show_command: SHOW_WINDOW_CMD,
+    arguments: Option<&str>,
 ) {
     let initialization = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     assert!(initialization.is_ok() || initialization == RPC_E_CHANGED_MODE);
@@ -456,6 +532,10 @@ fn create_shell_link_configured(
         };
     }
     let persistence: IPersistFile = shell_link.cast().expect("persistence interface");
+    if let Some(arguments) = arguments {
+        let wide = arguments.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+        unsafe { shell_link.SetArguments(PCWSTR(wide.as_ptr())).unwrap() };
+    }
     unsafe { shell_link.SetShowCmd(show_command).unwrap() };
     if elevated {
         let data: IShellLinkDataList = shell_link.cast().unwrap();

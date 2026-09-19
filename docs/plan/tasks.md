@@ -38,7 +38,7 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [x] Replace the repository quality entry points with `tooling/quality` checks for Rust, frontend formatting, linting, type analysis, production builds, and initial architecture boundaries.
 - [x] Make `just dev` build the latest debug extension binaries before Tauri starts, keep one reusable development target, and make `just check` use and delete a unique temporary Cargo target.
 - [x] Add static `contributes.configuration` data, host-owned complete-snapshot validation, comment-preserving atomic JSONC persistence, configuration-bearing Nanika initialization, request-correlated live application results, and ACP `session/new` metadata.
-- [x] Add Clipboard retention configuration with defaults of 50 entries and 7 days, applied transactionally at startup, after capture, and after a live configuration update.
+- [x] Add Clipboard retention configuration with defaults of 50 entries and 7 days, independently supporting Unlimited through explicit null values, applied transactionally at startup, after capture, and after a live configuration update.
 - [x] Make Application configuration acknowledgement wait for the configuration-driven discovery scan and restore its prior in-memory configuration on queue or scan failure.
 
 ## Extension-first completion
@@ -52,14 +52,25 @@ Status: Tauri is the only pre-1.0 desktop baseline. Every unchecked item is a TO
 - [ ] Deliver invocation completion, streaming output, extension view updates, configuration application results, diagnostics, and runtime state through session-bound Tauri channels.
 - [x] Render extension List, Split, Detail, filter, pagination, nested navigation, Back, and typed actions through shared Svelte components.
 - [x] Route every extension view action through Rust authorization and the versioned protocol to its owning extension.
-- [ ] Expose the implemented runtime configuration registry through a Settings window generated from bounded `contributes.configuration` data, then add the Settings tray action.
+- [x] Expose the runtime configuration registry through a Settings window generated from bounded `contributes.configuration` data, with a Root Search status bar entry and extension-declared icons.
+- [x] Add extension-independent General preferences for launcher shortcut, hide-on-blur, theme, and OS-owned launch at login; share accessible switches and validated integer controls with extension settings.
+- [ ] Add a Settings tray action when the entry-point scope expands beyond Root Search.
 - [ ] Add architecture checks that reject domain implementations outside `apps/extensions`, extension-specific frontend components, extension-owned Web assets, Tauri dependencies in `engine`, and removed top-level layouts.
 
 ## Desktop shell
 
+- [x] Preserve preparation scheduling tied to changed snapshots, fixed in commit `286cf35`.
+- [x] Isolate view operations and invalidation completion by WebView session and enforce the 32-route admission limit.
+- [x] Preserve keyboard selection intent and ordered view events, coalescing only superseded unsent selection.
+- [x] Record successful invocations in the runtime before applying presentation.
+- [x] Omit unchanged results and views from Channel updates and send outside the shared state lock.
+- [x] Coordinate explicit exit across initialization, extension requests, delivery, host services, storage, search, icon requests, instance activation and diagnostics.
+- [x] Register static contributions independently of process activation and support explicit static-only on-demand activation without changing built-in startup defaults.
+- [ ] Validate these lifecycle, input and IPC changes in the actual Tauri application on Windows and macOS, including high-DPI and hidden-idle measurements.
+
 - [x] Make runtime initialization failures visible through a bounded frontend diagnostic instead of logging only.
 - [x] Consume invocation navigation effects without polling and preserve or dismiss the launcher according to the typed effect.
-- [ ] Complete startup enablement, settings-window lifecycle, shutdown coordination, and explicit stale-instance handling through Tauri and platform adapters.
+- [ ] Complete startup enablement, settings-window lifecycle and explicit stale-instance handling through Tauri and platform adapters.
 - [ ] Add frontend readiness, window visibility, focus, and interactive activation milestones while retaining passive native hotkey delivery timing.
 - [ ] Verify permitted and rejected Isolation command envelopes in the actual Tauri application.
 - [ ] Validate the packaged Isolation policy with small/large/small Channel delivery on WKWebView and WebView2 and measure IPC overhead.

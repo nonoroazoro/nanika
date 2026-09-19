@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufReader, BufWriter, stdin, stdout};
 
-use nanika_extension_script::{RUN_ACTION_ID, ScriptConfig};
+use nanika_extension_script::{RUN_ACTION_ID, ScriptConfig, ScriptEntry, discover_scripts};
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME, read_frame,
     write_frame,
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => return Ok(()),
     };
-    let mut config = match ScriptConfig::from_configuration(&configuration) {
+    let (mut config, mut scripts) = match load_scripts(&configuration) {
         Ok(config) => config,
         Err(message) => {
             write_error(
@@ -50,7 +50,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    let mut scripts = index_scripts(&config);
     write_frame(
         &mut output,
         &Message::Initialized {
@@ -83,9 +82,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|_| action_id == RUN_ACTION_ID)
                 .map(|script| script.launch_descriptor())
             {
-                Some(descriptor) => {
+                Some(Ok(descriptor)) => {
                     invoke_host(&mut input, &mut output, request_id, generation, descriptor)?
                 }
+                Some(Err(message)) => write_error(
+                    &mut output,
+                    Some(request_id),
+                    "script_unavailable",
+                    &message,
+                )?,
                 None => write_error(
                     &mut output,
                     Some(request_id),
@@ -96,21 +101,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => write_frame(
-                &mut output,
-                &Message::Refreshed {
-                    request_id,
-                    generation,
-                },
-            )?,
+            } => match discover_scripts(&config) {
+                Ok(updated) => {
+                    scripts = updated;
+                    write_frame(
+                        &mut output,
+                        &Message::Refreshed {
+                            request_id,
+                            generation,
+                        },
+                    )?;
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+                Err(message) => {
+                    write_error(&mut output, Some(request_id), "discovery_failed", &message)?
+                }
+            },
             Message::ConfigurationChanged {
                 request_id,
                 configuration,
-            } => match ScriptConfig::from_configuration(&configuration) {
-                Ok(updated) => {
+            } => match load_scripts(&configuration) {
+                Ok((updated, catalog)) => {
                     config = updated;
-                    scripts = index_scripts(&config);
+                    scripts = catalog;
                     write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
                 }
                 Err(message) => write_error(
                     &mut output,
@@ -136,13 +151,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn index_scripts(config: &ScriptConfig) -> BTreeMap<String, nanika_extension_script::ScriptEntry> {
-    config
-        .scripts
-        .iter()
-        .cloned()
-        .map(|script| (format!("script.{}", script.id), script))
-        .collect()
+fn load_scripts(
+    configuration: &nanika_protocol::ExtensionConfiguration,
+) -> Result<(ScriptConfig, BTreeMap<String, ScriptEntry>), String> {
+    let config = ScriptConfig::from_configuration(configuration)?;
+    let scripts = discover_scripts(&config)?;
+    Ok((config, scripts))
 }
 
 fn invoke_host(

@@ -15,6 +15,7 @@ export * from "./SearchPhase";
 export * from "./SearchResult";
 export * from "./ViewAction";
 export * from "./ViewEvent";
+export * from "./ViewEventReceipt";
 export * from "./ViewEventRequest";
 export * from "./ViewFilter";
 export * from "./ViewFilterOption";

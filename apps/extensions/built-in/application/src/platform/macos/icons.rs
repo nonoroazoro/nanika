@@ -84,7 +84,7 @@ fn append_stamp(
         metadata.len(),
         timestamp_nanos(metadata.modified()?),
     ));
-    // ctime catches Finder custom-icon xattrs; inode catches replacement with preserved timestamps.
+    // ctime catches custom-icon xattrs; inode catches replacement with preserved timestamps.
     stamps.push(format!(
         "{}:{}:{}:{}",
         metadata.dev(),

@@ -8,6 +8,7 @@ export default [
         ignores: ["frontend/dist/**", "frontend/node_modules/**"],
         languageOptions: {
             parserOptions: {
+                extraFileExtensions: [".svelte"],
                 project: "./tsconfig.eslint.json",
                 tsconfigRootDir: import.meta.dirname
             }

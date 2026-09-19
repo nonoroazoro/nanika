@@ -33,6 +33,21 @@
         "center": true,
         "focus": true,
         "dragDropEnabled": false
+      },
+      {
+        "label": "settings",
+        "title": "Nanika Settings",
+        "url": "index.html?surface=settings",
+        "create": false,
+        "width": 920,
+        "height": 680,
+        "minWidth": 700,
+        "minHeight": 500,
+        "visible": false,
+        "resizable": true,
+        "decorations": true,
+        "center": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

@@ -2,6 +2,8 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.calculator",
+  "name": "Calculator",
+  "icon": "calculator",
   "version": "0.1.0",
   "hostApi": "^0.1",
   "targets": {

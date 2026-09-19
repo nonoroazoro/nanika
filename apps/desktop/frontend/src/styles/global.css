@@ -26,6 +26,7 @@
   --text-tertiary: light-dark(#969aa3, #747780);
   --surface-window: light-dark(rgba(248, 248, 250, 0.96), rgba(25, 26, 30, 0.96));
   --surface-raised: light-dark(#e8e9ed, #34363d);
+  --surface-form: light-dark(#fdfdfe, #232428);
   --surface-hovered: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
   --surface-selected: light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.1));
   --surface-danger-hover: light-dark(rgba(190, 76, 66, 0.08), rgba(255, 120, 110, 0.12));
@@ -80,28 +81,36 @@ select {
 }
 
 button {
+  user-select: none;
   display: inline-flex;
   min-height: 2rem;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-window);
+  border: 1px solid transparent;
   border-radius: var(--radius-row);
-  background: var(--surface-raised);
+  background: transparent;
   color: var(--text-primary);
-  padding: 0.35rem 0.75rem;
+  padding: 0.25rem 0.375rem;
+  gap: var(--space-2);
+  font-size: var(--font-meta);
+  font-weight: 500;
   line-height: 1.2;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--border-window);
+  border-color: transparent;
   background: var(--surface-hovered);
 }
 
 button:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+button:focus-visible {
+  background: var(--surface-hovered);
 }
 
 .collection-row {

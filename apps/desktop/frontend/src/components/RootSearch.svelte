@@ -13,6 +13,7 @@ interface Props
     busy?: boolean;
     refreshing?: boolean;
     onRefresh: () => void;
+    onSettings: () => void;
     inputError?: string | null;
     onQuery: (query: string) => void;
     onDismiss: () => void;
@@ -28,7 +29,8 @@ const {
     onQuery,
     onDismiss,
     onInvoke,
-    onRefresh
+    onRefresh,
+    onSettings
 }: Props = $props();
 let query = $state("");
 let requestedActiveId = $state<string | null>(null);
@@ -223,7 +225,11 @@ function moveSelection(delta: number): void
             </div>
         {/if}
     </section>
-    <StatusBar trailingEntries={statusEntries} />
+    <StatusBar
+        leadingEntries={[{ id: "settings", title: "Settings", icon: "settings" }]}
+        trailingEntries={statusEntries}
+        onInvoke={onSettings}
+    />
 </main>
 
 <style>

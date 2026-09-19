@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 use std::thread::JoinHandle;
 
 use crate::{
@@ -10,15 +10,21 @@ use crate::{
 
 pub(crate) struct DesktopState {
     next_session_id: AtomicU64,
+    next_settings_request: AtomicU64,
+    settings_operation_lock: Mutex<()>,
+    settings_applications: Mutex<crate::SettingsApplications>,
+    stopping: AtomicBool,
+    operations: RwLock<()>,
+    initializer: Mutex<Option<JoinHandle<()>>>,
+    instance_bridge: Mutex<Option<JoinHandle<()>>>,
     shared: Arc<Mutex<DesktopRuntime>>,
-    view_operation_lock: Arc<Mutex<()>>,
     wakes: SyncSender<SearchDelivery>,
-    dispatcher: Option<JoinHandle<()>>,
+    dispatcher: Mutex<Option<JoinHandle<()>>>,
     view_invalidation_wakes: SyncSender<ViewInvalidationDelivery>,
-    view_invalidation_dispatcher: Option<JoinHandle<()>>,
+    view_invalidation_dispatcher: Mutex<Option<JoinHandle<()>>>,
     instance: Mutex<Option<nanika_platform::SingleInstance>>,
-    _diagnostics: nanika_host::Diagnostics,
-    _hotkey_timing: Option<nanika_platform::HotkeyTimingObserver>,
+    diagnostics: Mutex<Option<nanika_host::Diagnostics>>,
+    hotkey_timing: Mutex<Option<nanika_platform::HotkeyTimingObserver>>,
 }
 
 impl DesktopState {
@@ -29,21 +35,18 @@ impl DesktopState {
         let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
         let (wakes, receiver) = mpsc::sync_channel(1);
         let worker_state = Arc::clone(&shared);
-        let view_operation_lock = Arc::new(Mutex::new(()));
         let dispatcher = std::thread::Builder::new()
             .name("nanika-search-delivery".to_owned())
             .spawn(move || crate::search_delivery::run_delivery(&worker_state, receiver))
             .map_err(|error| error.to_string())?;
         let (view_invalidation_wakes, view_invalidation_receiver) = mpsc::sync_channel(1);
         let invalidation_state = Arc::clone(&shared);
-        let invalidation_operation_lock = Arc::clone(&view_operation_lock);
         let invalidation_search_wakes = wakes.clone();
         let view_invalidation_dispatcher = std::thread::Builder::new()
             .name("nanika-view-invalidation".to_owned())
             .spawn(move || {
                 crate::view_invalidation_delivery::run_delivery(
                     &invalidation_state,
-                    &invalidation_operation_lock,
                     view_invalidation_receiver,
                     &invalidation_search_wakes,
                 )
@@ -51,15 +54,21 @@ impl DesktopState {
             .map_err(|error| error.to_string())?;
         Ok(Self {
             next_session_id: AtomicU64::new(1),
+            next_settings_request: AtomicU64::new(1),
+            settings_operation_lock: Mutex::new(()),
+            settings_applications: Mutex::new(crate::SettingsApplications::default()),
+            stopping: AtomicBool::new(false),
+            operations: RwLock::new(()),
+            initializer: Mutex::new(None),
+            instance_bridge: Mutex::new(None),
             shared,
-            view_operation_lock,
             wakes,
-            dispatcher: Some(dispatcher),
+            dispatcher: Mutex::new(Some(dispatcher)),
             view_invalidation_wakes,
-            view_invalidation_dispatcher: Some(view_invalidation_dispatcher),
+            view_invalidation_dispatcher: Mutex::new(Some(view_invalidation_dispatcher)),
             instance: Mutex::new(Some(instance)),
-            _diagnostics: diagnostics,
-            _hotkey_timing: nanika_platform::HotkeyTimingObserver::install(),
+            diagnostics: Mutex::new(Some(diagnostics)),
+            hotkey_timing: Mutex::new(nanika_platform::HotkeyTimingObserver::install()),
         })
     }
 
@@ -67,6 +76,7 @@ impl DesktopState {
         &self,
         updates: tauri::ipc::Channel<RootSearchSnapshot>,
     ) -> Result<ApplicationSnapshot, String> {
+        let _operation = self.begin_operation()?;
         let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
         let mut state = self
             .shared
@@ -93,6 +103,7 @@ impl DesktopState {
     }
 
     pub(crate) fn publish_query(&self, request: PublishQueryRequest) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
         if request.request_id == 0
             || request.request_id > 9_007_199_254_740_991
             || request.query.chars().count() > nanika_search::MAX_QUERY_CHARS
@@ -127,6 +138,7 @@ impl DesktopState {
     }
 
     pub(crate) fn refresh_search(&self, session_id: u64) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
         let (runtime, generation) = {
             let mut state = self
                 .shared
@@ -169,7 +181,7 @@ impl DesktopState {
         if let Err(error) = &result {
             tracing::warn!(%error, "root search refresh failed");
         }
-        self.finish_navigation(session_id, result.clone());
+        let _ = self.finish_navigation(session_id, result.clone());
         result
     }
 
@@ -218,6 +230,7 @@ impl DesktopState {
     }
 
     pub(crate) fn run_invocation(&self, request: &InvokeCandidateRequest) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
         let (runtime, query, generation) = {
             let mut state = self
                 .shared
@@ -237,38 +250,47 @@ impl DesktopState {
         };
         self.wake();
         let result = (|| {
-            let completion = runtime.invoke(
+            let completion = runtime.invoke_recorded(
                 generation,
                 &request.extension_id,
                 &request.entry_id,
                 &request.action_id,
                 &query,
             )?;
-            let outcome = completion
-                .recv()
-                .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
-            let nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } = outcome else {
-                return Err("The action was cancelled before it completed.".to_owned());
-            };
-            self.apply_navigation(
-                request.session_id,
-                &runtime,
-                &request.extension_id,
-                generation,
-                effect,
-                false,
-            )?;
-            self.record_execution(request, &query)
+            apply_invocation_completion(completion, |effect| {
+                self.apply_navigation(
+                    request.session_id,
+                    &runtime,
+                    &request.extension_id,
+                    generation,
+                    effect,
+                    false,
+                )
+            })
         })();
-        self.finish_navigation(request.session_id, result.clone());
+        let _ = self.finish_navigation(request.session_id, result.clone());
         result
     }
 
-    pub(crate) fn run_view_event(&self, request: crate::ViewEventRequest) -> Result<(), String> {
-        // Tauri may dispatch pointer and keyboard events concurrently. Serialize all
-        // view operations here so route state is never rejected as already busy.
-        let _operation_guard = self
-            .view_operation_lock
+    pub(crate) fn run_view_event(
+        &self,
+        request: crate::ViewEventRequest,
+    ) -> Result<crate::ViewEventReceipt, String> {
+        let _operation = self.begin_operation()?;
+        // A retired WebView must not hold up an unrelated session's operations.
+        let operation_lock = {
+            let state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let session = state
+                .session
+                .as_ref()
+                .ok_or("The window session is not open.")?;
+            session.authorize(request.session_id)?;
+            Arc::clone(&session.view_operation_lock)
+        };
+        let _operation_guard = operation_lock
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let (runtime, route) = {
@@ -335,7 +357,7 @@ impl DesktopState {
                     .stack
                     .last_mut()
                     .ok_or("No extension view is open.")?;
-                current.view = view;
+                current.view = Arc::new(view);
                 current.revision = completion.revision;
             }
             self.apply_navigation(
@@ -345,10 +367,20 @@ impl DesktopState {
                 route.generation,
                 completion.effect,
                 closing,
-            )
+            )?;
+            Ok(completion.revision)
         })();
-        self.finish_navigation(request.session_id, result.clone());
-        result
+        let navigation_revision = self.finish_navigation(
+            request.session_id,
+            result.as_ref().map(|_| ()).map_err(Clone::clone),
+        );
+        result.and_then(|view_revision| {
+            Ok(crate::ViewEventReceipt {
+                view_revision,
+                navigation_revision: navigation_revision
+                    .ok_or("The originating window session has closed.")?,
+            })
+        })
     }
 
     fn apply_navigation(
@@ -390,7 +422,7 @@ impl DesktopState {
                 {
                     close_runtime_view(runtime, extension_id, generation, &view_id, revision)?;
                 }
-                return Err("The originating window session has closed.".to_owned());
+                return Ok(());
             }
         };
         for route in routes {
@@ -406,53 +438,77 @@ impl DesktopState {
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let session = state
+        // Only release a newly created view. A duplicate id still belongs to an
+        // existing route and must never be closed as rejection cleanup.
+        let cleanup =
+            match &effect {
+                nanika_protocol::NavigationEffect::Push {
+                    view_id, revision, ..
+                } if !state.session.as_ref().is_some_and(|session| {
+                    session.navigation.stack.iter().any(|route| {
+                        route.extension_id == extension_id && route.view_id == *view_id
+                    })
+                }) =>
+                {
+                    Some((view_id.clone(), *revision))
+                }
+                _ => None,
+            };
+        let retired = state
             .session
-            .as_mut()
-            .ok_or("The window session is not open.")?;
-        session.authorize(session_id)?;
-        session.navigation.apply(extension_id, generation, effect)
-    }
-
-    fn finish_navigation(&self, session_id: u64, result: Result<(), String>) {
-        let mut state = self
-            .shared
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if let Some(session) = state
+            .as_ref()
+            .is_none_or(|session| session.id != session_id);
+        let result = if let Some(session) = state
             .session
             .as_mut()
             .filter(|session| session.id == session_id)
         {
-            session.navigation.finish(result);
-        }
+            session.navigation.apply(extension_id, generation, effect)
+        } else {
+            Ok(())
+        };
         drop(state);
-        self.wake();
+        if (retired || result.is_err())
+            && let Some((view_id, revision)) = cleanup
+        {
+            close_runtime_view(runtime, extension_id, generation, &view_id, revision).map_err(
+                |error| {
+                    format!(
+                        "{} Cleanup failed: {error}",
+                        result
+                            .as_ref()
+                            .err()
+                            .map_or("The originating window session has closed.", String::as_str)
+                    )
+                },
+            )?;
+        }
+        result
     }
 
-    pub(crate) fn record_execution(
-        &self,
-        request: &InvokeCandidateRequest,
-        query: &str,
-    ) -> Result<(), String> {
-        let state = self
+    fn finish_navigation(&self, session_id: u64, result: Result<(), String>) -> Option<u64> {
+        let mut state = self
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+        let revision = state
+            .session
+            .as_mut()
+            .filter(|session| session.id == session_id)
+            .map(|session| {
+                session.navigation.finish(result);
+                session.navigation.revision
+            });
         drop(state);
-        runtime.record_execution(
-            &request.extension_id,
-            &request.entry_id,
-            &request.action_id,
-            query,
-        )
+        self.wake();
+        revision
     }
 
     pub(crate) fn install_runtime(
         &self,
         runtime: nanika_host::RuntimeService,
     ) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
         let wakes = self.wakes.clone();
         let view_invalidation_wakes = self.view_invalidation_wakes.clone();
         runtime.set_notifier(Arc::new(move || {
@@ -500,10 +556,203 @@ impl DesktopState {
             tracing::error!("search delivery worker is closed");
         }
     }
-}
 
-impl Drop for DesktopState {
-    fn drop(&mut self) {
+    pub(crate) fn set_initializer(&self, thread: JoinHandle<()>) {
+        *self
+            .initializer
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(thread);
+    }
+
+    pub(crate) fn set_instance_bridge(&self, thread: JoinHandle<()>) {
+        *self
+            .instance_bridge
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(thread);
+    }
+
+    pub(crate) fn begin_operation(&self) -> Result<RwLockReadGuard<'_, ()>, String> {
+        let guard = self
+            .operations
+            .read()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.stopping.load(Ordering::Acquire) {
+            return Err("Nanika is shutting down.".to_owned());
+        }
+        Ok(guard)
+    }
+
+    pub(crate) fn read_settings(
+        &self,
+        general: nanika_config::LauncherPreferences,
+        updates: Option<tauri::ipc::Channel<crate::SettingsEvent>>,
+    ) -> Result<crate::SettingsSnapshot, String> {
+        let _operation = self.begin_operation()?;
+        // Only persistence is serialized here. Discovery never holds this lock.
+        let _settings = self
+            .settings_operation_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone()
+            .ok_or("Nanika is still starting. Try loading Settings again.")?;
+        let mut configurations = runtime
+            .extension_configurations()
+            .into_iter()
+            .map(|configuration| (configuration.extension_id.clone(), configuration))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut applications = self
+            .settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(updates) = updates {
+            applications.updates = Some(updates);
+        }
+        let extensions = runtime
+            .extension_info()
+            .iter()
+            .filter_map(|info| {
+                let configuration = configurations.remove(&info.id)?;
+                if configuration.contribution.properties.is_empty() {
+                    return None;
+                }
+                Some(crate::ExtensionSettings {
+                    configuration,
+                    info: info.clone(),
+                    application: applications.latest.get(&info.id).cloned(),
+                })
+            })
+            .collect();
+        Ok(crate::SettingsSnapshot {
+            version: env!("CARGO_PKG_VERSION"),
+            general,
+            extensions,
+        })
+    }
+
+    pub(crate) fn save_settings(
+        &self,
+        request: crate::SaveSettingsRequest,
+    ) -> Result<
+        (
+            crate::SettingsApplicationUpdate,
+            nanika_host::ConfigurationSaveReceipt,
+        ),
+        String,
+    > {
+        let _operation = self.begin_operation()?;
+        let _settings = self
+            .settings_operation_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        crate::validate_settings_request(&request)?;
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone()
+            .ok_or("Nanika is still starting.")?;
+        let id = self.next_settings_request.fetch_add(1, Ordering::Relaxed);
+        let receipt = runtime.save_configuration(
+            &request.extension_id,
+            format!("settings-{id}"),
+            request.values,
+        )?;
+        let result = match &receipt {
+            nanika_host::ConfigurationSaveReceipt::Complete(outcome) => outcome.clone().into(),
+            nanika_host::ConfigurationSaveReceipt::Pending(_) => crate::SettingsSaveResult {
+                status: crate::SettingsSaveStatus::Applying,
+                error: None,
+            },
+        };
+        let update = crate::SettingsApplicationUpdate {
+            request_id: id,
+            extension_id: request.extension_id,
+            result,
+        };
+        self.publish_settings_application(update.clone());
+        Ok((update, receipt))
+    }
+
+    pub(crate) fn publish_settings_application(&self, update: crate::SettingsApplicationUpdate) {
+        let mut applications = self
+            .settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if applications
+            .latest
+            .get(&update.extension_id)
+            .is_some_and(|current| current.request_id > update.request_id)
+        {
+            return;
+        }
+        applications
+            .latest
+            .insert(update.extension_id.clone(), update.clone());
+        if let Some(channel) = &applications.updates {
+            // A closed Settings window does not cancel a saved configuration.
+            // The latest result remains available to the next window session.
+            if channel
+                .send(crate::SettingsEvent::Application { update })
+                .is_err()
+            {
+                applications.updates = None;
+            }
+        }
+    }
+
+    pub(crate) fn settings_closed(&self) {
+        self.send_settings_event(crate::SettingsEvent::Closed);
+    }
+
+    pub(crate) fn shortcut_recorded(&self) {
+        self.send_settings_event(crate::SettingsEvent::ShortcutPressed);
+    }
+
+    fn send_settings_event(&self, event: crate::SettingsEvent) {
+        let mut applications = self
+            .settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(channel) = &applications.updates
+            && channel.send(event).is_err()
+        {
+            applications.updates = None;
+        }
+    }
+
+    pub(crate) fn shutdown(&self) {
+        if self.stopping.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        if let Some(thread) = self
+            .initializer
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            && thread.join().is_err()
+        {
+            tracing::error!("runtime initializer panicked");
+        }
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone();
+        // Wake blocked protocol receivers before waiting for their shell callers.
+        if let Some(runtime) = &runtime {
+            runtime.request_shutdown();
+        }
+        let _operations = self
+            .operations
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
         if self
             .view_invalidation_wakes
             .send(ViewInvalidationDelivery::Shutdown)
@@ -514,20 +763,72 @@ impl Drop for DesktopState {
         if self.wakes.send(SearchDelivery::Shutdown).is_err() {
             tracing::error!("search delivery worker closed before shutdown was requested");
         }
-        if let Some(thread) = self.dispatcher.take()
+        if let Some(thread) = self
+            .dispatcher
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
             && thread.join().is_err()
         {
             tracing::error!("search delivery worker panicked");
         }
-        if let Some(thread) = self.view_invalidation_dispatcher.take()
+        if let Some(thread) = self
+            .view_invalidation_dispatcher
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
             && thread.join().is_err()
         {
             tracing::error!("view invalidation worker panicked");
         }
+        if let Some(runtime) = runtime {
+            runtime.shutdown();
+        }
         self.instance
-            .get_mut()
+            .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
+        if let Some(thread) = self
+            .instance_bridge
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+            && thread.join().is_err()
+        {
+            tracing::error!("instance bridge panicked");
+        }
+        self.hotkey_timing
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        self.diagnostics
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+    }
+}
+
+impl Drop for DesktopState {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+pub(crate) fn apply_invocation_completion(
+    completion: nanika_host::RuntimeInvocationCompletion,
+    apply: impl FnOnce(nanika_protocol::NavigationEffect) -> Result<(), String>,
+) -> Result<(), String> {
+    let nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } = completion.outcome
+    else {
+        return Err("The action was cancelled before it completed.".to_owned());
+    };
+    // Navigation owns presentation or explicit disposal of any newly opened view.
+    // Reporting the recording error first would orphan that view in the extension.
+    let navigation = apply(effect);
+    match (navigation, completion.recording_error) {
+        (result, None) => result,
+        (Ok(()), Some(error)) => Err(error),
+        (Err(navigation), Some(recording)) => Err(format!("{navigation}; {recording}")),
     }
 }
 

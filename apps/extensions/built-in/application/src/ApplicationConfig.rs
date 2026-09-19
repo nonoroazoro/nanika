@@ -5,7 +5,6 @@ use nanika_protocol::ExtensionConfiguration;
 use crate::ApplicationError;
 
 const ROOTS_KEY: &str = "application.roots";
-const EXCLUSIONS_KEY: &str = "application.exclusions";
 const MAX_PATHS: usize = 256;
 const MAX_PATH_BYTES: usize = 4_096;
 
@@ -23,7 +22,7 @@ impl ApplicationConfig {
         let values = configuration.values();
         let config = Self {
             roots: path_list(values, ROOTS_KEY)?,
-            exclusions: path_list(values, EXCLUSIONS_KEY)?,
+            exclusions: Vec::new(),
         };
         config.validate()?;
         Ok(config)

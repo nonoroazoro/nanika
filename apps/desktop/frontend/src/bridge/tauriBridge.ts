@@ -1,15 +1,38 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { NanikaBridge } from "./index";
-import type { RootSearchSnapshot } from "../types";
+import type { NavigationSnapshot, RootSearchSnapshot } from "../types";
+
+// Channel deltas are merged at the transport boundary; components see coherent
+// snapshots and retain unchanged result and view objects by reference.
+type SearchUpdate = {
+    navigation: { current?: NavigationSnapshot["current"]; } & Omit<NavigationSnapshot, "current">;
+    results?: RootSearchSnapshot["results"];
+} & Omit<RootSearchSnapshot, "navigation" | "results">;
 
 export const tauriBridge: NanikaBridge = {
     openSession: async (listener, onError) =>
     {
-        const updates = new Channel<RootSearchSnapshot>(snapshot =>
+        let previous: RootSearchSnapshot | null = null;
+        const updates = new Channel<SearchUpdate>(update =>
         {
             try
             {
+                if (!previous && (update.results === undefined || update.navigation.current === undefined))
+                {
+                    throw new Error("The first session update must include results and navigation.");
+                }
+                const snapshot: RootSearchSnapshot = {
+                    ...update,
+                    results: update.results ?? previous?.results ?? [],
+                    navigation: {
+                        ...update.navigation,
+                        current: update.navigation.current === undefined
+                            ? previous?.navigation.current ?? null
+                            : update.navigation.current
+                    }
+                };
+                previous = snapshot;
                 listener(snapshot);
                 void invoke("acknowledge_search", {
                     sessionId: snapshot.sessionId,
@@ -28,5 +51,6 @@ export const tauriBridge: NanikaBridge = {
     refreshSearch: async sessionId => invoke("refresh_search", { sessionId }),
     invokeCandidate: async request => invoke("invoke_candidate", { request }),
     viewEvent: async request => invoke("view_event", { request }),
-    dismissLauncher: async () => invoke("dismiss_launcher")
+    dismissLauncher: async () => invoke("dismiss_launcher"),
+    openSettings: async () => invoke("open_settings")
 };

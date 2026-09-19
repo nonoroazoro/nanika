@@ -13,7 +13,7 @@ $localData = [System.IO.Path]::GetFullPath($env:LOCALAPPDATA)
 $productData = [System.IO.Path]::GetFullPath(
     [System.IO.Path]::Combine($localData, 'Nanika')
 )
-# WebView2 owns this browser state outside Nanika's application-managed roots.
+# The embedded browser owns this state outside Nanika's application-managed roots.
 $webviewState = [System.IO.Path]::GetFullPath(
     [System.IO.Path]::Combine($localData, 'app.nanika')
 )

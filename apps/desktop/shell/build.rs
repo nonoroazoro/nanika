@@ -8,6 +8,15 @@ fn main() {
         "publish_query",
         "refresh_search",
         "view_event",
+        "open_settings",
+        "read_settings",
+        "settings_ready",
+        "save_settings",
+        "pick_settings_directory",
+        "save_host_settings",
+        "set_shortcut_recording",
+        "read_startup",
+        "set_startup",
     ];
     tauri_build::try_build(
         tauri_build::Attributes::new()

@@ -10,6 +10,7 @@
     "allow-dismiss-launcher",
     "allow-invoke-candidate",
     "allow-open-session",
+    "allow-open-settings",
     "allow-publish-query",
     "allow-refresh-search",
     "allow-view-event"

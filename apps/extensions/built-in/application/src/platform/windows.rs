@@ -9,11 +9,7 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
     CoUninitialize, IPersistFile, STGM_READ,
 };
-use windows::Win32::UI::Shell::{
-    IShellLinkDataList, IShellLinkW, SLDF_HAS_DARWINID, SLDF_RUN_IN_SEPARATE,
-    SLDF_RUN_WITH_SHIMLAYER, SLDF_RUNAS_USER, SLGP_RAWPATH, ShellLink,
-};
-use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use windows::Win32::UI::Shell::{IShellLinkW, SLGP_RAWPATH, ShellLink};
 use windows::core::{Interface, PCWSTR};
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::Com::CoTaskMemFree;
@@ -225,25 +221,12 @@ fn read_shell_link(
         return Ok(None);
     };
     let working_directory = effective_working_directory(&target, link.working_directory.as_deref());
-    let working_directory_key = working_directory
-        .as_deref()
-        .map_or_else(String::new, path_key);
     let arguments = ApplicationArguments::from_windows_raw(link.arguments);
     let arguments_json = arguments.to_json()?;
     let target_key = path_key(&target);
-    let identity = stable_hash(&[
-        "windows",
-        &target_key,
-        &working_directory_key,
-        &arguments_json,
-    ]);
-    // Target/arguments alone do not establish equivalence for shortcuts carrying
-    // elevation, window-state, installer, or compatibility activation settings.
-    let identity = if link.custom_activation {
-        stable_hash(&["windows-shell-link", &identity, &path_key(path)])
-    } else {
-        identity
-    };
+    // Identity describes the application target, not each discovery source.
+    // The selected shortcut still owns its original native activation behavior.
+    let identity = stable_hash(&["windows", &target_key, &arguments_json]);
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
     let icon_resource = link
@@ -315,16 +298,8 @@ fn read_executable(
     };
     let target_key = path_key(&target);
     let working_directory = effective_working_directory(&target, None);
-    let working_directory_key = working_directory
-        .as_deref()
-        .map_or_else(String::new, path_key);
     let arguments_json = ApplicationArguments::empty().to_json()?;
-    let identity = stable_hash(&[
-        "windows",
-        &target_key,
-        &working_directory_key,
-        &arguments_json,
-    ]);
+    let identity = stable_hash(&["windows", &target_key, &arguments_json]);
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
     Ok(Some(ApplicationEntry {
@@ -451,23 +426,12 @@ fn load_shell_link_initialized(path: &Path) -> Result<Option<ShellLinkMetadata>,
             .GetIconLocation(&mut icon_source, &mut icon_index)
             .map_err(windows_error)?;
     }
-    let data: IShellLinkDataList = shell_link.cast().map_err(windows_error)?;
-    let flags = unsafe { data.GetFlags() }.map_err(windows_error)?;
-    let show_command = unsafe { shell_link.GetShowCmd() }.map_err(windows_error)?;
-    let custom_activation = show_command != SW_SHOWNORMAL
-        || flags
-            & (SLDF_RUNAS_USER.0
-                | SLDF_RUN_IN_SEPARATE.0
-                | SLDF_HAS_DARWINID.0
-                | SLDF_RUN_WITH_SHIMLAYER.0) as u32
-            != 0;
     Ok(Some(ShellLinkMetadata {
         target,
         arguments: wide_string(&arguments),
         working_directory: wide_string(&working_directory),
         icon_source: wide_string(&icon_source),
         icon_index,
-        custom_activation,
     }))
 }
 

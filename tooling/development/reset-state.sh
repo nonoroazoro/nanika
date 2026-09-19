@@ -15,7 +15,7 @@ fi
 user_home=${HOME:?HOME must be set}
 product_data="$user_home/Library/Application Support/Nanika"
 product_cache="$user_home/Library/Caches/Nanika"
-# WKWebView owns this browser state outside Nanika's application-managed roots.
+# The embedded browser owns this state outside Nanika's application-managed roots.
 webview_state="$user_home/Library/WebKit/nanika-desktop"
 webview_cache="$user_home/Library/Caches/nanika-desktop"
 

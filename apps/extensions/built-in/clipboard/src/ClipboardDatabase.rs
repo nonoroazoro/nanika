@@ -29,7 +29,7 @@ ON clipboard_entries(captured_at DESC, entry_id);
 PRAGMA user_version=1;
 ";
 
-/// Clipboard extension SQLite owner boundary.
+/// Clipboard extension database owner boundary.
 pub struct ClipboardDatabase {
     connection: Connection,
 }
@@ -186,25 +186,30 @@ fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), St
 }
 
 fn prune(connection: &Connection, now: u64, config: &ClipboardConfig) -> Result<(), String> {
-    connection
-        .execute(
-            "DELETE FROM clipboard_entries WHERE captured_at < ?1",
-            [integer(config.cutoff_millis(now))],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "DELETE FROM clipboard_entries
+    if let Some(cutoff) = config.cutoff_millis(now) {
+        connection
+            .execute(
+                "DELETE FROM clipboard_entries WHERE captured_at < ?1",
+                [integer(cutoff)],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(maximum) = config.max_entries {
+        connection
+            .execute(
+                "DELETE FROM clipboard_entries
              WHERE entry_id IN (
                  SELECT entry_id
                  FROM clipboard_entries
                  ORDER BY captured_at DESC, entry_id
                  LIMIT -1 OFFSET ?1
              )",
-            [i64::from(config.max_entries)],
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+                [i64::from(maximum)],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn image_paths(connection: &Connection) -> Result<HashSet<PathBuf>, String> {

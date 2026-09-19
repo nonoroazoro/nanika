@@ -4,5 +4,4 @@ pub(super) struct ShellLinkMetadata {
     pub(super) working_directory: Option<String>,
     pub(super) icon_source: Option<String>,
     pub(super) icon_index: i32,
-    pub(super) custom_activation: bool,
 }

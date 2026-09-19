@@ -7,7 +7,7 @@ use clipboard_rs::ClipboardContext;
 
 use crate::{ClipboardCommand, ClipboardConfig, ClipboardDatabase, ClipboardEntry, capture};
 
-/// Single owner for clipboard capture and SQLite writes.
+/// Single owner for clipboard capture and database writes.
 pub struct ClipboardWorker {
     commands: SyncSender<ClipboardCommand>,
     last_error: Arc<Mutex<Option<String>>>,
@@ -184,7 +184,7 @@ fn clear_entries(
     entry_ids: &[String],
 ) -> Result<(), String> {
     let retained = database.clear(entry_ids)?;
-    // SQLite has committed. Publish that state even if orphan cleanup later fails.
+    // The transaction has committed. Publish that state even if orphan cleanup later fails.
     *entries.write().unwrap_or_else(|error| error.into_inner()) = database.load()?;
     reconcile_payloads(payload_root, &retained)
 }

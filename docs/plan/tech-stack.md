@@ -68,6 +68,7 @@ The initial Tauri baseline enables these current stable capabilities:
 - Tauri commands for request-response work, channels for ordered streaming, and events only for low-frequency Rust-to-frontend lifecycle notification.
 - Tauri `WebviewWindow`, `tray`, `menu`, lifecycle, scale-factor, theme, and monitor APIs at the Rust shell boundary.
 - Official `tauri-plugin-global-shortcut` through its Rust API, with no frontend permission.
+- Official `tauri-plugin-dialog` through a Settings-scoped Rust command for directory selection, with no frontend plugin or filesystem permissions.
 - Tauri managed state for one typed shell handle to the UI-independent Rust services. Do not duplicate domain state in Tauri, use global mutable state, or hold a state lock across blocking work or an await point.
 
 Isolation adds cryptographic IPC work. Measure its summon, query, navigation, and channel overhead in release builds, keep the isolation application free of third-party dependencies, and optimize the message shape or frequency if targets are missed. Replacing Isolation with Brownfield requires an explicit security and performance decision, not a silent fallback.
@@ -181,7 +182,7 @@ Extension process
 
 User input and actions travel from Svelte through Tauri `invoke`, an authorized shell command, the Rust runtime, and the extension protocol to the owning extension. The Channel carries Rust-to-frontend updates only. The frontend may update ephemeral presentation state synchronously, but it never executes a domain action. No domain capability may bypass the extension process, protocol validation, Rust authorization, typed bridge, or shared renderer.
 
-There is no first-party capability class. This follows the relevant VS Code extension-host model while retaining a single product-owned Web UI. Nanika does not adopt the Chrome Web Extension execution model: an extension package contains a native executable and declarative metadata, not a frontend bundle that is loaded into the WebView.
+There is no first-party capability class. Nanika retains a single product-owned Web UI. An extension package contains a native executable and declarative metadata; it cannot supply a frontend bundle for the WebView.
 
 Extension classes are distribution classes only:
 
@@ -204,7 +205,7 @@ Do not load extensions in-process or through Rust dynamic libraries. This is pro
 
 The product owns Root Search. Rust owns input history, search aggregation, contextual ranking, final ordering, execution, and durable state. The frontend owns the focused text field, active option, local keyboard interaction, and scroll presentation. An extension does not receive a Root Search row merely because it is installed. `contributes.commands` and `contributes.views` create static entries; presence-based `contributes.rootSearch` lets the extension publish bounded dynamic entries for the current query. An extension may combine these contribution points or use none of them. Calculator declares only `rootSearch`, so it appears only when its query detector returns a calculation. Clipboard declares one static View and no command. Extensions do not control cross-extension ordering.
 
-Nanika follows VS Code's extension-point separation at the manifest boundary: commands are invocable operations, while views are independently registered UI contributions. Nanika does not adopt VS Code's UI provider implementations. A contributed View is opened by ID through the native extension protocol and returns bounded declarative data rendered by the shared Svelte frontend. It never supplies a tree widget implementation, Webview, HTML, CSS, JavaScript, or component code. Static and dynamic search candidates carry an explicit `action` or `view` entry type so Root Search can apply interaction policy without extension-specific checks.
+The manifest separates commands as invocable operations from views as independently registered UI contributions. A contributed View is opened by ID through the native extension protocol and returns bounded declarative data rendered by the shared Svelte frontend. It never supplies a tree widget implementation, Webview, HTML, CSS, JavaScript, or component code. Static and dynamic search candidates carry an explicit `action` or `view` entry type so Root Search can apply interaction policy without extension-specific checks.
 
 A command may complete without a view or push a route-local declarative view. The extension supplies a bounded `ListView` or `DetailView`; the shared frontend owns pixels, typography, accessibility, keyboard behavior, focus, and platform consistency. A list may request the semantic `Plain` or `Split` layout, sections, selection, detail content, filters, pagination, and typed item actions. A standalone detail may declare actions; actions for a detail nested in a list belong to its selected list item. The extension never receives HTML, CSS, JavaScript, a DOM reference, a WebView handle, a native handle, or an arbitrary drawing surface.
 
@@ -261,12 +262,18 @@ The currently registered frontend-to-Rust commands are narrow and task-oriented:
 
 Configuration snapshots and updates, diagnostics export, startup control, and application shutdown are not exposed as Tauri commands yet. Frontend readiness acknowledgement is also not implemented; current hotkey tracing ends at native delivery.
 
-The current Rust-to-frontend Channel carries one `RootSearchSnapshot` state document, not imperative drawing instructions:
+The Rust-to-frontend Channel carries bounded `RootSearchSnapshot` updates. The first update includes results and the current route. Later updates omit unchanged `results` and `navigation.current`; an explicit `null` current route returns to Root Search. The typed bridge reconstructs coherent snapshots while preserving unchanged object identity:
 
 - Root Search state with session ID, frontend request ID, delivery revision, query, phase, result list, warnings, and a safe optional error.
 - Navigation state with its own revision, current extension route snapshot, busy/error state, and dismiss counter.
 
 The runtime already produces typed invocation-output and configuration-result batches, but the desktop shell does not consume or publish those batches yet.
+
+Navigation admits at most 32 routes per WebView session. Overflow rejects the new route explicitly and closes its remote view without evicting existing routes. Each session owns its operation serialization lock. Invalidation completion matches session, extension, view, route and revision. Frontend view submissions preserve input order; only adjacent unsent selections for the same route may coalesce. The input queue admits at most 16 waiting operations and reports overload before accepting another. Actions keep their captured target and are never coalesced. Each successful view RPC returns a completion receipt containing `viewRevision` and `navigationRevision`, without returning UI state. Optimistic selection reconciles against `viewRevision`.
+
+One view-input scheduler owns pending operations, unsent query intent, and resume signals. Channel updates, RPC settlements, and new input all enter the same reconciliation path. Follow-up queries and resume signals wait until accepted RPCs settle and the Channel reaches their completed `navigationRevision`; an unrelated earlier update cannot release this barrier. RPC and Channel arrival order does not affect progress. Only the newest unsent query is retained, and route replacement discards unsent intent belonging to the previous route. Submitted query intent is consumed even on failure, so reconciliation never silently retries it. A subsequent explicit query remains eligible. This contract is shared by Windows and macOS and introduces no timers, polling, retries, or platform-specific behavior.
+
+Delivery reserves its acknowledgement slot under the state lock, then converts results, serializes shared immutable view documents and sends outside that lock. Successful invocation accounting belongs to `RuntimeService::invoke_recorded` and precedes UI navigation, including when the originating session has closed. `RuntimeInvocationCompletion` retains the execution outcome and any recording error separately. The shell always applies navigation or explicitly closes an undeliverable new view before reporting recording failure. If navigation or cleanup also fails, both concrete errors are retained. A recording failure never causes execution to be retried.
 
 Tauri Channels carry data from Rust to the frontend; they are not bidirectional WebSockets. Frontend requests use Tauri's existing `invoke` transport, not a new connection per keystroke. The frontend creates one Channel and its receive callback before calling `open_session`. Hiding or showing the launcher does not recreate it. A page reload creates a new session and replaces the old Channel. No application HTTP server, WebSocket server, or custom RPC transport is involved.
 
@@ -466,7 +473,9 @@ The calculator extension uses `fend-core`. It declines plain search text and sta
 
 ### Command and script
 
-The command extension contributes only for queries beginning with `>` and submits the remaining text as an explicit `Shell` descriptor. The script extension consumes the host-validated `script.entries` snapshot; every entry names an absolute interpreter, script path, structured arguments, and optional working directory. Its current distribution contribution defaults to an empty array. Neither extension reads the configuration root or creates child processes directly.
+The command extension contributes only for queries beginning with `>` and submits the remaining text as an explicit `Shell` descriptor. The script extension consumes `script.roots`, an initially empty list of at most 256 absolute directories. It recursively discovers `.ps1`, `.py`, `.js`, and `.sh` files at startup, explicit refresh, and configuration application. It does not follow symbolic links. Canonical paths provide stable hashed identities and deduplicate overlapping roots; file stems provide titles. Filesystem errors or more than 5,000 scripts reject the replacement catalog without publishing partial data. A failed live update preserves the previous active catalog and configuration while reporting the concrete error; persisted host configuration remains a distinct outcome. Search reads the in-memory catalog without filesystem work.
+
+The script adapter selects explicit interpreter names: Windows uses `pwsh.exe`, `python.exe`, `node.exe`, and `bash.exe`; macOS uses `pwsh`, `python3`, `node`, and `/bin/bash`. Required runtimes must be installed and discoverable by the host launcher. Missing runtimes fail the launch without substitution or an execution-policy bypass. PowerShell receives `-NoProfile -NonInteractive -File`; script paths remain structured arguments, with the script's parent as working directory. No per-script arguments or interpreter editor is exposed in Settings. Neither extension reads the configuration root or creates child processes directly. As with other detached launches, success means the host accepted the launch, not that script execution completed.
 
 ### Startup
 
@@ -477,6 +486,10 @@ Startup status and mutations run through a bounded platform owner and report the
 The Tauri shell creates the tray and menu with `tauri::tray::TrayIconBuilder` and `tauri::menu` on both platforms. The current Rust-owned menu handles only `Open Nanika` and `Quit`; a left click toggles the launcher. Settings is not present until its window exists. Tray behavior never crosses into frontend authority and never exposes a domain capability action.
 
 ## Extension protocol and package
+
+The manifest has `activation: "startup" | "onDemand"`, defaulting to `startup`. `onDemand` is valid only for Nanika-protocol extensions without dynamic `rootSearch`. Startup activation remains required for application discovery, clipboard observation and current query providers. Built-in and external extensions use the same validation and activation policy. No built-in default changes in this stage.
+
+Validated static commands and views are registered once with the search owner, independently of initialization or process health. Query submission only signals the latest query; the search owner reuses immutable static candidate vectors. An on-demand extension creates its process on the first accepted invocation or view operation. Search, visibility preparation and saved configuration do not activate it. Configuration received while dormant becomes the initialization snapshot; its host acknowledgement describes updating that dormant snapshot, not an extension `configurationApplied` message. Activation is attempted once per runtime lifetime. Failure retains its concrete cause and the catalog remains discoverable; there is no retry, restart, eviction, or idle timeout. Each enabled extension still owns one sleeping scheduling thread; this stage removes dormant processes and their pipe-reader threads, not every per-extension allocation.
 
 Nanika protocol v1 uses stdin and stdout with a 4-byte little-endian length prefix, an 8 MiB maximum frame, and a UTF-8 JSON object. ACP v1 uses its standard newline-delimited JSON-RPC 2.0 stdio transport with an 8 MiB frame limit in both directions. The two wire protocols never share a stream.
 

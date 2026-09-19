@@ -10,6 +10,8 @@ use nanika_protocol::{
 fn script_process_consumes_host_configuration_and_requests_host_launch() {
     let root = std::env::temp_dir().join(format!("nanika-script-process-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("Build project.py"), b"print(1)").unwrap();
     let data_root = root.join("data");
     let mut child = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_nanika-extension-script")))
         .args([
@@ -64,11 +66,31 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         request_id,
         parent_request_id,
         generation,
-        ..
+        request,
     }) = read_frame(&mut output).expect("host request")
     else {
         panic!("script extension should request host launch");
     };
+    let nanika_protocol::HostServiceRequest::Launch {
+        descriptor:
+            nanika_protocol::LaunchDescriptor::Program {
+                arguments: nanika_protocol::LaunchArguments::Structured { values },
+                ..
+            },
+    } = request
+    else {
+        panic!("expected a structured launch");
+    };
+    assert_eq!(
+        values,
+        vec![
+            root.join("Build project.py")
+                .canonicalize()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        ]
+    );
     write_frame(
         &mut input,
         &Message::HostResponse {
@@ -83,6 +105,48 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         read_frame(&mut output).expect("action result"),
         Some(Message::Result { .. })
     ));
+    write_frame(
+        &mut input,
+        &Message::ConfigurationChanged {
+            request_id: "bad-directory".to_owned(),
+            configuration: script_configuration(&root.join("missing")),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
+    );
+    std::fs::write(root.join("Second.py"), b"print(2)").unwrap();
+    write_frame(
+        &mut input,
+        &Message::Refresh {
+            request_id: "refresh".to_owned(),
+            generation: 2,
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_frame(&mut output).unwrap(),
+        Some(Message::Refreshed { generation: 2, .. })
+    ));
+    assert!(matches!(
+        read_frame(&mut output).unwrap(),
+        Some(Message::CandidatesChanged)
+    ));
+    write_frame(
+        &mut input,
+        &Message::Query {
+            request_id: "query-updated".to_owned(),
+            generation: 2,
+            query: String::new(),
+        },
+    )
+    .unwrap();
+    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).unwrap() else {
+        panic!("expected refreshed catalog");
+    };
+    // The rejected update retains the previous configured directory; refresh sees new files there.
+    assert_eq!(entries.len(), 2);
     write_frame(
         &mut input,
         &Message::Shutdown {
@@ -100,16 +164,8 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
 
 fn script_configuration(root: &Path) -> ExtensionConfiguration {
     ExtensionConfiguration::new(std::collections::BTreeMap::from([(
-        "script.entries".to_owned(),
-        serde_json::json!([{
-            "id": "build-project",
-            "title": "Build project",
-            "aliases": ["build"],
-            "interpreter": root.join("interpreter"),
-            "script": root.join("build.script"),
-            "arguments": ["--release"],
-            "workingDirectory": root
-        }]),
+        "script.roots".to_owned(),
+        serde_json::json!([root]),
     )]))
 }
 
