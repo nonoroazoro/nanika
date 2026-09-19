@@ -1,13 +1,5 @@
-<script module lang="ts">
-// Remember presentation readiness for this WebView session, not image buffers.
-// Once a group reaches its final artwork, remounting must not show placeholders.
-// The active group's reactive completion state drives rendering; this registry
-// only restores settled state when selecting another group.
-// eslint-disable-next-line svelte/prefer-svelte-reactivity
-const settledGroups = new Set<string>();
-</script>
-
 <script lang="ts">
+import { settledGroups } from "./settledPreviewGroups";
 import type { DetailView } from "../types";
 import fileIcon from "../assets/clipboard-file.png";
 import CachedFileIcon from "./CachedFileIcon.svelte";

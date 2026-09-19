@@ -42,14 +42,14 @@ pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
     }
     let _apartment = Apartment(initialized.is_ok());
 
-    // Explorer prefers a content thumbnail for supported files and falls back
+    // The native image service prefers a thumbnail for supported files and falls back
     // to their icon. This keeps image collections distinguishable while text,
     // executables, shortcuts, and directories retain their native Shell icon.
     if let Ok(pixels) = image_factory_pixels(&source, size, SIIGBF_RESIZETOFIT) {
         return Ok(pixels);
     }
 
-    // SHGetFileInfo resolves the icon index that Explorer assigns to this
+    // SHGetFileInfo resolves the system icon index assigned to this
     // concrete file or directory. SHIL_JUMBO supplies its 256 px native icon
     // when the item has no thumbnail or thumbnail acquisition fails.
     let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };

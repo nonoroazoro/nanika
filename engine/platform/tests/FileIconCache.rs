@@ -21,7 +21,7 @@ fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries
         assert_eq!((reader.info().width, reader.info().height), (size, size));
         let mut pixels = vec![0; reader.output_buffer_size().expect("output size")];
         reader.next_frame(&mut pixels).expect("PNG frame");
-        // AppKit may return a low-alpha template icon to a headless CLI test process.
+        // The native icon service may return a low-alpha template to a headless CLI test process.
         // This cache test verifies valid non-empty native output; rendered opacity is UI-tested.
         assert!(pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0));
     }

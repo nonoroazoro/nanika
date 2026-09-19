@@ -17,7 +17,7 @@ fn workspace_pixels(bundle: &Path, size: usize) -> std::io::Result<Vec<u8>> {
         .ok_or_else(|| std::io::Error::other("could not create the sRGB icon color space"))?;
     let mut pixels = vec![0_u8; size * size * 4];
     {
-        // The initialized RGBA buffer outlives both drawing contexts and is not accessed while borrowed by Core Graphics.
+        // The initialized RGBA buffer outlives both drawing contexts and is not accessed while borrowed by the native renderer.
         let context = unsafe {
             CGBitmapContextCreate(
                 pixels.as_mut_ptr().cast(),
@@ -51,7 +51,7 @@ fn workspace_pixels(bundle: &Path, size: usize) -> std::io::Result<Vec<u8>> {
             );
         }
     }
-    // Core Graphics draws premultiplied channels; the normalizer and PNG encoder require straight RGBA.
+    // Native drawing produces premultiplied channels; normalization and PNG encoding require straight RGBA.
     unpremultiply(&mut pixels);
     Ok(pixels)
 }

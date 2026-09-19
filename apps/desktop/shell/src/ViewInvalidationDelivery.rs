@@ -12,7 +12,6 @@ pub(crate) enum ViewInvalidationDelivery {
 /// Extension completion may block, so this worker must never own the search Channel.
 pub(crate) fn run_delivery(
     shared: &Mutex<DesktopRuntime>,
-    view_operation_lock: &Mutex<()>,
     wakes: Receiver<ViewInvalidationDelivery>,
     search_wakes: &SyncSender<SearchDelivery>,
 ) {
@@ -20,7 +19,7 @@ pub(crate) fn run_delivery(
         if matches!(event, ViewInvalidationDelivery::Shutdown) {
             break;
         }
-        refresh_invalidated_views(shared, view_operation_lock);
+        refresh_invalidated_views(shared);
         if matches!(
             search_wakes.try_send(SearchDelivery::Wake),
             Err(TrySendError::Disconnected(_))
@@ -30,7 +29,7 @@ pub(crate) fn run_delivery(
     }
 }
 
-fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>, view_operation_lock: &Mutex<()>) {
+fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
     let invalidations = {
         let state = shared.lock().unwrap_or_else(|error| error.into_inner());
         state
@@ -39,7 +38,16 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>, view_operation_lock
             .map_or_else(Vec::new, |runtime| runtime.take_view_invalidations())
     };
     for invalidation in invalidations {
-        let _operation_guard = view_operation_lock
+        let Some((session_id, operation_lock)) = ({
+            let state = shared.lock().unwrap_or_else(|error| error.into_inner());
+            state
+                .session
+                .as_ref()
+                .map(|session| (session.id, Arc::clone(&session.view_operation_lock)))
+        }) else {
+            continue;
+        };
+        let _operation_guard = operation_lock
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let Some((runtime, route)) = ({
@@ -48,6 +56,7 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>, view_operation_lock
                 state
                     .session
                     .as_ref()
+                    .filter(|session| session.id == session_id)
                     .and_then(|session| session.navigation.stack.last())
                     .filter(|route| {
                         route.extension_id == invalidation.extension_id
@@ -93,20 +102,34 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>, view_operation_lock
             continue;
         };
         let mut state = shared.lock().unwrap_or_else(|error| error.into_inner());
-        let Some(current) = state
-            .session
-            .as_mut()
-            .and_then(|session| session.navigation.stack.last_mut())
-            .filter(|current| {
-                current.route_id == route.route_id && current.revision == route.revision
-            })
-        else {
-            continue;
-        };
-        current.view = view;
-        current.revision = completion.revision;
-        if let Some(session) = state.session.as_mut() {
-            session.navigation.revision = session.navigation.revision.saturating_add(1);
-        }
+        apply_completion(&mut state, session_id, &route, completion.revision, view);
+    }
+}
+
+pub(crate) fn apply_completion(
+    state: &mut DesktopRuntime,
+    session_id: u64,
+    route: &crate::ExtensionViewSnapshot,
+    revision: u64,
+    view: nanika_protocol::View,
+) {
+    let Some(current) = state
+        .session
+        .as_mut()
+        .filter(|session| session.id == session_id)
+        .and_then(|session| session.navigation.stack.last_mut())
+        .filter(|current| {
+            current.route_id == route.route_id
+                && current.revision == route.revision
+                && current.extension_id == route.extension_id
+                && current.view_id == route.view_id
+        })
+    else {
+        return;
+    };
+    current.view = Arc::new(view);
+    current.revision = revision;
+    if let Some(session) = state.session.as_mut() {
+        session.navigation.revision = session.navigation.revision.saturating_add(1);
     }
 }

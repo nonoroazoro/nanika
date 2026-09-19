@@ -56,7 +56,7 @@ $link.Save()
         );
         std::thread::sleep(Duration::from_millis(5));
     }
-    // cmd writes the active OEM encoding; an ASCII suffix verifies the chosen
+    // The command interpreter writes the active OEM encoding; an ASCII suffix verifies the chosen
     // working directory while the shortcut path itself exercises Unicode.
     let contents = std::fs::read(&marker).unwrap();
     assert!(
@@ -98,7 +98,7 @@ fn invalid_or_deleted_shortcuts_return_errors() {
 #[cfg(windows)]
 #[test]
 fn native_application_accepts_canonical_executable_paths() {
-    // No DLL or entry point is supplied, so rundll32 exits without an action.
+    // No DLL or entry point is supplied, so the library launcher exits without an action.
     let program = std::path::PathBuf::from(std::env::var_os("WINDIR").unwrap())
         .join("System32/rundll32.exe")
         .canonicalize()

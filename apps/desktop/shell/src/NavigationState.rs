@@ -2,6 +2,8 @@ use nanika_protocol::{NavigationEffect, View, ViewEvent};
 
 use crate::{ExtensionViewSnapshot, NavigationSnapshot};
 
+pub(crate) const MAX_NAVIGATION_DEPTH: usize = 32;
+
 #[derive(Default)]
 pub(crate) struct NavigationState {
     pub(crate) stack: Vec<ExtensionViewSnapshot>,
@@ -16,7 +18,7 @@ impl NavigationState {
     pub(crate) fn snapshot(&self) -> NavigationSnapshot {
         NavigationSnapshot {
             revision: self.revision,
-            current: self.stack.last().cloned(),
+            current: Some(self.stack.last().cloned()),
             busy: self.busy,
             error: self.error.clone(),
             dismiss_count: self.dismiss_count,
@@ -78,6 +80,11 @@ impl NavigationState {
                 revision,
                 view,
             } => {
+                if self.stack.len() >= MAX_NAVIGATION_DEPTH {
+                    return Err(format!(
+                        "Navigation is limited to {MAX_NAVIGATION_DEPTH} views. Go back before opening another view."
+                    ));
+                }
                 if self
                     .stack
                     .iter()
@@ -92,7 +99,7 @@ impl NavigationState {
                     generation,
                     view_id,
                     revision,
-                    view: *view,
+                    view: std::sync::Arc::from(view),
                 });
             }
         }

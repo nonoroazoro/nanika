@@ -1,12 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::{RootSearchSnapshot, SearchPhase};
 
 /// One WebView lifetime, with at most one unacknowledged Channel message.
 pub(crate) struct SearchSession {
+    pub(crate) view_operation_lock: Arc<Mutex<()>>,
     pub(crate) navigation: crate::NavigationState,
     pub(crate) delivered_navigation_revision: u64,
+    pub(crate) delivered_route: Option<(u64, u64)>,
     pub(crate) id: u64,
     pub(crate) request_id: u64,
     pub(crate) generation: u64,
@@ -24,8 +26,10 @@ pub(crate) struct SearchSession {
 impl SearchSession {
     pub(crate) fn new(id: u64, updates: tauri::ipc::Channel<RootSearchSnapshot>) -> Self {
         Self {
+            view_operation_lock: Arc::new(Mutex::new(())),
             navigation: crate::NavigationState::default(),
             delivered_navigation_revision: 0,
+            delivered_route: None,
             id,
             request_id: 0,
             generation: 0,

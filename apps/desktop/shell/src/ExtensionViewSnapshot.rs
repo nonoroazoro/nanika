@@ -8,5 +8,5 @@ pub(crate) struct ExtensionViewSnapshot {
     pub(crate) generation: u64,
     pub(crate) view_id: String,
     pub(crate) revision: u64,
-    pub(crate) view: nanika_protocol::View,
+    pub(crate) view: std::sync::Arc<nanika_protocol::View>,
 }

@@ -12,14 +12,26 @@ const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBac
     busy: boolean;
     error: string | null;
     onQuery: (text: string) => void;
-    onEvent: (event: ViewEvent) => void;
+    onEvent: (event: ViewEvent) => Promise<number | null>;
     onResume: () => void;
     onBack: () => void;
 } = $props();
 const list = $derived(snapshot.view.kind === "list" ? snapshot.view.list : null);
-const detail = $derived(snapshot.view.kind === "detail" ? snapshot.view.detail : list?.detail ?? null);
 const items = $derived(list?.sections.flatMap(section => section.items) ?? []);
-const selected = $derived(items.find(item => item.id === list?.selected_item_id) ?? null);
+let selection = $state<{ id: string; revision: number | null; token: number; } | null>(null);
+let selectionToken = 0;
+const selected = $derived(items.find(item => item.id === (selection?.id ?? list?.selected_item_id)) ?? null);
+const detail = $derived.by(() =>
+{
+    if (snapshot.view.kind === "detail")
+    {
+        return snapshot.view.detail;
+    }
+    // Selection intent moves immediately; keep the committed preview mounted
+    // until the Channel supplies its replacement, including during rapid input.
+    return list?.detail ?? null;
+});
+const detailPending = $derived(list !== null && (selected?.id ?? null) !== list.selected_item_id);
 const actions = $derived(list ? selected?.actions ?? [] : detail?.actions ?? []);
 const primaryAction = $derived(actions.find(action => action.style === "primary") ?? null);
 const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
@@ -52,6 +64,32 @@ let acknowledgedCursor = $state<string | null>(null);
 let failedCursor = $state<string | null>(null);
 let paginationScope = $state("");
 let surface: HTMLElement;
+
+$effect(() =>
+{
+    // Reconcile against the completed request's revision, not an earlier response
+    // arriving while the user has already moved to a later item.
+    if (
+        selection && ((selection.revision !== null && snapshot.revision >= selection.revision)
+            || !items.some(item => item.id === selection?.id))
+    )
+    {
+        selection = null;
+    }
+});
+
+function selectItem(id: string): void
+{
+    const token = ++selectionToken;
+    selection = { id, revision: null, token };
+    void onEvent({ kind: "selectionChanged", item_id: id }).then(revision =>
+    {
+        if (selection?.token === token)
+        {
+            selection = revision === null ? null : { id, revision, token };
+        }
+    });
+}
 
 $effect(() =>
 {
@@ -157,6 +195,10 @@ function focusSearch(): void
 
 function activateItem(item: typeof items[number]): void
 {
+    if (busy)
+    {
+        return;
+    }
     const primary = item.actions.find(action => action.style === "primary");
     if (primary)
     {
@@ -209,12 +251,12 @@ function handleKeydown(event: KeyboardEvent): void
             return;
         }
         focusSearch();
-        const index = items.findIndex(item => item.id === list.selected_item_id);
+        const index = items.findIndex(item => item.id === selected?.id);
         const next = Math.max(0, Math.min(items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
         const item = items[next];
         if (item)
         {
-            if (item.id === list.selected_item_id)
+            if (item.id === selected?.id)
             {
                 return;
             }
@@ -223,7 +265,7 @@ function handleKeydown(event: KeyboardEvent): void
                 inline: "nearest",
                 behavior: "instant"
             });
-            onEvent({ kind: "selectionChanged", item_id: item.id });
+            selectItem(item.id);
         }
     }
     if (event.key === "Enter" && !busy)
@@ -313,15 +355,15 @@ function handleKeydown(event: KeyboardEvent): void
                                         class="collection-row"
                                         id={`view-item-${snapshot.routeId}-${item.id}`}
                                         role="option"
-                                        aria-selected={item.id === list.selected_item_id}
+                                        aria-selected={item.id === selected?.id}
                                         aria-disabled={busy}
                                         onmousedown={(event => event.preventDefault())}
                                         onclick={() =>
                                         {
                                             focusSearch();
-                                            if (item.id !== list.selected_item_id)
+                                            if (!busy && item.id !== selected?.id)
                                             {
-                                                onEvent({ kind: "selectionChanged", item_id: item.id });
+                                                selectItem(item.id);
                                             }
                                         }}
                                         ondblclick={() => activateItem(item)}
@@ -367,7 +409,11 @@ function handleKeydown(event: KeyboardEvent): void
                     </div>{/if}
             </div>
         {/if}
-        {#if !list || list.layout === "split"}<div class="detail-pane" bind:this={detailPane}>
+        {#if !list || list.layout === "split"}<div
+                class="detail-pane"
+                bind:this={detailPane}
+                aria-busy={detailPending}
+            >
                 {#if detail}
                     <ViewDetail
                         {detail}
