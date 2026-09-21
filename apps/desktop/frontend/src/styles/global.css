@@ -21,6 +21,7 @@
   --accent: light-dark(#2563eb, #8ab4ff);
   --accent-foreground: light-dark(#ffffff, #111827);
   --text-danger: light-dark(#9f514a, #e5a39c);
+  --text-success: light-dark(#267a4b, #78d9a5);
   --text-primary: light-dark(#17181a, #f4f4f5);
   --text-secondary: light-dark(#666a73, #a9abb3);
   --text-tertiary: light-dark(#969aa3, #747780);
@@ -30,6 +31,7 @@
   --surface-hovered: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
   --surface-selected: light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.1));
   --surface-danger-hover: light-dark(rgba(190, 76, 66, 0.08), rgba(255, 120, 110, 0.12));
+  --surface-success: light-dark(rgba(38, 122, 75, 0.1), rgba(120, 217, 165, 0.13));
   --border-window: light-dark(rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.14));
   --border-subtle: light-dark(rgba(0, 0, 0, 0.09), rgba(255, 255, 255, 0.08));
   --border-danger: light-dark(rgba(170, 76, 68, 0.42), rgba(255, 160, 150, 0.48));

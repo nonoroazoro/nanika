@@ -35,9 +35,13 @@ const detailPending = $derived(list !== null && (selected?.id ?? null) !== list.
 const actions = $derived(list ? selected?.actions ?? [] : detail?.actions ?? []);
 const primaryAction = $derived(actions.find(action => action.style === "primary") ?? null);
 const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
+let confirmation = $state<{ actionId: string; itemId: string | null; } | null>(null);
 const leadingStatusEntries = $derived(secondaryActions.map(action => ({
     id: action.id,
     title: action.title,
+    confirmation: action.confirmation_title
+        ? { title: action.confirmation_title, active: isConfirming(action.id) }
+        : undefined,
     destructive: action.style === "destructive",
     disabled: busy
 })));
@@ -67,6 +71,18 @@ let surface: HTMLElement;
 
 $effect(() =>
 {
+    const current = confirmation;
+    if (
+        current && (current.itemId !== (selected?.id ?? null)
+            || !actions.some(action => action.id === current.actionId && Boolean(action.confirmation_title)))
+    )
+    {
+        confirmation = null;
+    }
+});
+
+$effect(() =>
+{
     // Reconcile against the completed request's revision, not an earlier response
     // arriving while the user has already moved to a later item.
     if (
@@ -80,6 +96,7 @@ $effect(() =>
 
 function selectItem(id: string): void
 {
+    cancelConfirmation();
     const token = ++selectionToken;
     selection = { id, revision: null, token };
     void onEvent({ kind: "selectionChanged", item_id: id }).then(revision =>
@@ -181,6 +198,31 @@ function handleFocus(): void
     onResume();
 }
 
+function cancelConfirmation(): void
+{
+    confirmation = null;
+}
+
+function cancelConfirmationOutsideAction(event: PointerEvent): void
+{
+    const current = confirmation;
+    if (!current || !(event.target instanceof Element))
+    {
+        return;
+    }
+    const action = event.target.closest<HTMLElement>("[data-entry-id]");
+    if (action?.dataset.entryId !== current.actionId)
+    {
+        cancelConfirmation();
+    }
+}
+
+function isConfirming(actionId: string): boolean
+{
+    return confirmation?.actionId === actionId
+        && confirmation.itemId === (selected?.id ?? null);
+}
+
 function focusSearch(): void
 {
     if (input)
@@ -202,17 +244,34 @@ function activateItem(item: typeof items[number]): void
     const primary = item.actions.find(action => action.style === "primary");
     if (primary)
     {
+        cancelConfirmation();
         onEvent({ kind: "actionInvoked", item_id: item.id, action_id: primary.id });
     }
 }
 
 function invokeAction(actionId: string): void
 {
-    if (!busy)
+    if (busy)
     {
-        focusSearch();
-        onEvent({ kind: "actionInvoked", item_id: selected?.id ?? null, action_id: actionId });
+        return;
     }
+    const action = actions.find(candidate => candidate.id === actionId);
+    if (!action)
+    {
+        return;
+    }
+    focusSearch();
+    const itemId = selected?.id ?? null;
+    if (
+        action.confirmation_title
+        && !isConfirming(action.id)
+    )
+    {
+        confirmation = { actionId: action.id, itemId };
+        return;
+    }
+    cancelConfirmation();
+    onEvent({ kind: "actionInvoked", item_id: itemId, action_id: action.id });
 }
 
 function handleKeydown(event: KeyboardEvent): void
@@ -228,6 +287,11 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Escape")
     {
         event.preventDefault();
+        if (confirmation)
+        {
+            cancelConfirmation();
+            return;
+        }
         if (!busy)
         {
             onBack();
@@ -280,7 +344,12 @@ function handleKeydown(event: KeyboardEvent): void
 }
 </script>
 
-<svelte:window onkeydown={handleKeydown} onfocus={handleFocus} />
+<svelte:window
+    onpointerdown={cancelConfirmationOutsideAction}
+    onkeydown={handleKeydown}
+    onfocus={handleFocus}
+    onblur={cancelConfirmation}
+/>
 
 <section
     class="extension-view"
@@ -314,7 +383,11 @@ function handleKeydown(event: KeyboardEvent): void
                 aria-activedescendant={selected ? `view-item-${snapshot.routeId}-${selected.id}` : undefined}
                 autocomplete="off"
                 spellcheck="false"
-                oninput={(event => onQuery(event.currentTarget.value))}
+                oninput={(event =>
+                {
+                    cancelConfirmation();
+                    onQuery(event.currentTarget.value);
+                })}
             />
             {#if list.filter}
                 <div class="filter" role="group" aria-label="Content filter">
@@ -326,6 +399,7 @@ function handleKeydown(event: KeyboardEvent): void
                             onmousedown={(event => event.preventDefault())}
                             onclick={() =>
                             {
+                                cancelConfirmation();
                                 if (!busy && list?.filter && option.value !== list.filter.selected_value)
                                 {
                                     onEvent({ kind: "filterChanged", filter_id: list.filter.id, value: option.value });
@@ -359,6 +433,7 @@ function handleKeydown(event: KeyboardEvent): void
                                         onmousedown={(event => event.preventDefault())}
                                         onclick={() =>
                                         {
+                                            cancelConfirmation();
                                             focusSearch();
                                             if (!busy && item.id !== selected?.id)
                                             {
@@ -432,7 +507,7 @@ function handleKeydown(event: KeyboardEvent): void
 </section>
 
 <style>
-.extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-window); border-radius: var(--radius-window); background: var(--surface-window); color: var(--text-primary); }
+.extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 0; border-radius: var(--radius-window); background: var(--surface-window); color: var(--text-primary); }
 /* Match Root Search's header geometry; the wider back hit target must not shift the search input. */
 header { display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: center; gap: var(--space-3); flex: 0 0 var(--search-height); height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 header.has-filter { grid-template-columns: 1rem minmax(0, 1fr) auto; }

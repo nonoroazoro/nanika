@@ -21,6 +21,18 @@ let startupBusy = $state(false);
 let startupError = $state<string | null>(null);
 let active = true;
 const dirty = $derived(JSON.stringify(preferences) !== JSON.stringify(draft));
+const startupStatusMessage = $derived.by(() =>
+{
+    if (startup === "requiresApproval")
+    {
+        return "Turn this on to open System Settings and allow Nanika.";
+    }
+    if (startup === "needsRepair")
+    {
+        return "Turn this on to repair launch at login.";
+    }
+    return null;
+});
 
 onMount(() =>
 {
@@ -35,7 +47,7 @@ onMount(() =>
         {
             if (active)
             {
-                startupError = String(cause);
+                console.error("Startup settings could not be loaded", cause);
             }
         });
 });
@@ -65,7 +77,8 @@ async function save(event: SubmitEvent): Promise<void>
     {
         if (active)
         {
-            error = String(cause);
+            console.error("General settings could not be saved", cause);
+            error = "Changes could not be saved. Try again.";
         }
     }
     finally
@@ -97,7 +110,8 @@ async function changeStartup(enabled: boolean): Promise<void>
     {
         if (active)
         {
-            startupError = String(cause);
+            console.error("Startup settings could not be updated", cause);
+            startupError = "Launch at login could not be updated. Try again.";
         }
     }
     finally
@@ -158,11 +172,16 @@ async function changeStartup(enabled: boolean): Promise<void>
             <h2 id="startup-settings">Startup</h2>
             <div class="group">
                 <div class="row">
-                    <span>Launch at login</span>
+                    <div class="row-copy">
+                        <span>Launch at login</span>
+                        <p>Launch Nanika automatically when you sign in.</p>
+                        {#if startupStatusMessage}<p>{startupStatusMessage}</p>{/if}
+                        {#if startupError}<p class="error" role="alert">{startupError}</p>{/if}
+                    </div>
                     <Switch
                         label="Launch at login"
-                        checked={startup === "enabled" || startup === "requiresApproval"}
-                        disabled={startup === null || startupBusy || startup === "notFound"}
+                        checked={startup === "enabled"}
+                        disabled={startup === null || startupBusy}
                         onChange={checked =>
                         {
                             void changeStartup(checked);
@@ -170,10 +189,6 @@ async function changeStartup(enabled: boolean): Promise<void>
                     />
                 </div>
             </div>
-            {#if startupError}<p role="alert">{startupError}</p>
-            {:else if startup === "requiresApproval"}<p>Enable Nanika in your system's login items.</p>
-            {:else if startup === "needsRepair"}<p>The startup registration points to another Nanika installation.</p>
-            {:else if startup === "notFound"}<p>Install the Nanika application to configure login startup.</p>{/if}
         </section>
         <SettingsActions
             {dirty}
@@ -199,7 +214,8 @@ fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .group { border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-form); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 16px; font-size: 13px; }
 .row + .row { border-top: 1px solid var(--border-subtle); }
-p { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; }
-p[role="alert"] { color: var(--text-danger); overflow-wrap: anywhere; }
+.row-copy { min-width: 0; }
+.row-copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.row-copy p.error { color: var(--text-danger); overflow-wrap: anywhere; }
 @media (width < 800px) { .general-page { padding: 20px 20px 0; } }
 </style>

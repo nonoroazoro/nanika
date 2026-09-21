@@ -22,7 +22,7 @@ let drafts = $state.raw<Record<string, Record<string, ConfigurationValue>>>({});
 let messages = $state.raw<Record<string, { text: string; failed: boolean; }>>({});
 let selection = $state("general");
 let loading = $state(true);
-let loadError = $state<string | null>(null);
+let loadError = $state(false);
 let saving = $state(false);
 const applicationResults: Record<string, SettingsApplicationUpdate> = {};
 const extensions = $derived(snapshot?.extensions ?? []);
@@ -52,14 +52,15 @@ function prepare(): void
         await settingsBridge.ready();
     }).catch(error =>
     {
-        loadError = String(error);
+        console.error("Settings could not finish opening", error);
+        loadError = true;
     });
 }
 
 async function load(): Promise<void>
 {
     loading = true;
-    loadError = null;
+    loadError = false;
     const buffered: SettingsApplicationUpdate[] = [];
     let receiving = false;
     try
@@ -95,7 +96,8 @@ async function load(): Promise<void>
     }
     catch (error)
     {
-        loadError = error instanceof Error ? error.message : String(error);
+        console.error("Settings could not load", error);
+        loadError = true;
     }
     finally
     {
@@ -117,10 +119,11 @@ function recordApplication(update: SettingsApplicationUpdate): void
     const { result } = update;
     if (result.status === "applyFailed")
     {
+        console.error(`Settings for ${update.extensionId} could not be applied`, result.error);
         messages = {
             ...messages,
             [update.extensionId]: {
-                text: `Changes could not be applied: ${result.error ?? "No application result was provided."}`,
+                text: "Changes were saved but could not be applied.",
                 failed: true
             }
         };
@@ -186,9 +189,10 @@ async function save(event: SubmitEvent): Promise<void>
     }
     catch (error)
     {
+        console.error(`Settings for ${id} could not be saved`, error);
         messages = {
             ...messages,
-            [id]: { text: error instanceof Error ? error.message : String(error), failed: true }
+            [id]: { text: "Changes could not be saved. Try again.", failed: true }
         };
     }
     finally
@@ -246,9 +250,8 @@ async function save(event: SubmitEvent): Promise<void>
         {#if loading}
             <div class="empty-state" role="status">Loading settings…</div>
         {:else if loadError}
-            <div class="empty-state">
+            <div class="empty-state" role="alert">
                 <h1>Settings could not load</h1>
-                <p role="alert">{loadError}</p>
                 <button
                     type="button"
                     onclick={() =>
@@ -360,7 +363,6 @@ form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .property-copy p { margin: 4px 0 0; }
 .property:not(.scalar):not(.directory) .property-control { margin-top: 12px; }
 .empty-state { display: grid; min-height: 100%; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; }
-.empty-state p { overflow-wrap: anywhere; }
 button:focus-visible { background: var(--surface-selected); }
 @media (width < 800px) { .settings { grid-template-columns: 12rem minmax(0, 1fr); } .extension-page { padding: 20px 20px 0; } }
 </style>

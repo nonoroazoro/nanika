@@ -140,6 +140,7 @@ fn copy_action() -> ViewAction {
     ViewAction {
         id: COPY_ACTION_ID.to_owned(),
         title: "Copy to Clipboard".to_owned(),
+        confirmation_title: None,
         style: ViewActionStyle::Primary,
     }
 }
@@ -148,6 +149,7 @@ fn clear_action() -> ViewAction {
     ViewAction {
         id: CLEAR_ACTION_ID.to_owned(),
         title: "Clear history".to_owned(),
+        confirmation_title: Some("Clear now?".to_owned()),
         style: ViewActionStyle::Destructive,
     }
 }

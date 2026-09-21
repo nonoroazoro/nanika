@@ -1,5 +1,6 @@
 use crate::{
-    CLIPBOARD_PAGE_SIZE, ClipboardEntry, ClipboardViewState, clipboard_view, matching_entries,
+    CLEAR_ACTION_ID, CLIPBOARD_PAGE_SIZE, ClipboardEntry, ClipboardViewState, clipboard_view,
+    matching_entries,
 };
 use nanika_protocol::{ClipboardContent, View};
 
@@ -70,6 +71,30 @@ fn clear_scope_matches_type_and_query_before_pagination() {
     state.query.clear();
     state.content_type = "all".to_owned();
     assert_eq!(matching_entries(&state, &entries).len(), entries.len());
+}
+
+#[test]
+fn clear_action_requests_inline_confirmation() {
+    let entries = [ClipboardEntry {
+        entry_id: "text".to_owned(),
+        content_hash: "text".to_owned(),
+        title: "Note".to_owned(),
+        content: ClipboardContent::Text {
+            value: "Example".to_owned(),
+        },
+        byte_size: 7,
+        captured_at: 1,
+    }];
+    let View::List { list } = clipboard_view(&mut ClipboardViewState::new(), &entries) else {
+        panic!("list expected")
+    };
+    let action = list.sections[0].items[0]
+        .actions
+        .iter()
+        .find(|action| action.id == CLEAR_ACTION_ID)
+        .expect("clear action");
+
+    assert_eq!(action.confirmation_title.as_deref(), Some("Clear now?"));
 }
 
 #[test]

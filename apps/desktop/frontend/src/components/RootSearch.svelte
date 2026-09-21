@@ -5,6 +5,7 @@ import type { RootSearchSnapshot, SearchResult } from "../types";
 import { clampIndex } from "../logic";
 import StatusBar from "./StatusBar.svelte";
 import ResultRow from "./ResultRow.svelte";
+import ShortcutKeys from "./ShortcutKeys.svelte";
 
 interface Props
 {
@@ -36,6 +37,8 @@ let query = $state("");
 let requestedActiveId = $state<string | null>(null);
 let input: HTMLInputElement;
 let list = $state<HTMLUListElement>();
+let settingsMenuItem = $state<HTMLButtonElement>();
+let appMenuOpen = $state(false);
 let selectOnNextFocus = false;
 
 // Transport metadata changes during submission without changing the visible list.
@@ -81,6 +84,30 @@ function handleWindowFocus(): void
     focusQuery(selectAll);
 }
 
+function toggleAppMenu(): void
+{
+    appMenuOpen = !appMenuOpen;
+    if (appMenuOpen)
+    {
+        void tick().then(() => settingsMenuItem?.focus({ preventScroll: true }));
+    }
+    else
+    {
+        focusQuery();
+    }
+}
+
+function openSettings(): void
+{
+    appMenuOpen = false;
+    onSettings();
+}
+
+function dismissAppMenu(): void
+{
+    appMenuOpen = false;
+}
+
 function invoke(result: SearchResult): void
 {
     selectOnNextFocus = true;
@@ -90,6 +117,10 @@ function invoke(result: SearchResult): void
 function handleKeydown(event: KeyboardEvent): void
 {
     if (event.isComposing)
+    {
+        return;
+    }
+    if (appMenuOpen)
     {
         return;
     }
@@ -127,8 +158,21 @@ function handleKeydown(event: KeyboardEvent): void
     }
 }
 
-function handleRefreshKey(event: KeyboardEvent): void
+function handleWindowKeydown(event: KeyboardEvent): void
 {
+    if (appMenuOpen && event.key === "Escape")
+    {
+        event.preventDefault();
+        appMenuOpen = false;
+        focusQuery();
+        return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key === "," && !event.altKey && !event.shiftKey)
+    {
+        event.preventDefault();
+        openSettings();
+        return;
+    }
     if (
         event.key !== "F5" || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey
         || event.isComposing || document.visibilityState !== "visible" || !document.hasFocus()
@@ -160,7 +204,7 @@ function moveSelection(delta: number): void
 }
 </script>
 
-<svelte:window onfocus={handleWindowFocus} onkeydown={handleRefreshKey} />
+<svelte:window onfocus={handleWindowFocus} onclick={dismissAppMenu} onkeydown={handleWindowKeydown} />
 
 <main class="launcher" aria-label="Nanika launcher" aria-keyshortcuts="F5">
     <div class="search-shell">
@@ -221,28 +265,103 @@ function moveSelection(delta: number): void
         {:else if hasCompletedSearch}
             <div class="empty" role="status">
                 <span>No results</span>
-                <small>Enable an extension or try another search.</small>
+                <small>Try another search.</small>
             </div>
         {/if}
     </section>
+    {#if appMenuOpen}
+        <menu id="app-menu" class="app-menu" aria-label="Nanika menu">
+            <div class="app-menu-title">Nanika</div>
+            <button bind:this={settingsMenuItem} type="button" role="menuitem" onclick={openSettings}>
+                <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2.75v2m0 14.5v2M2.75 12h2m14.5 0h2M5.46 5.46l1.42 1.42m10.24 10.24 1.42 1.42m0-13.08-1.42 1.42M6.88 17.12l-1.42 1.42" />
+                </svg>
+                <span>Settings</span>
+                <span class="menu-shortcut"><ShortcutKeys keys={["⌘", ","]} /></span>
+            </button>
+        </menu>
+    {/if}
     <StatusBar
-        leadingEntries={[{ id: "settings", title: "Settings", icon: "settings" }]}
+        leadingEntries={[{
+            id: "app-menu",
+            title: "Nanika menu",
+            icon: "app",
+            iconOnly: true,
+            menu: { controls: "app-menu", expanded: appMenuOpen }
+        }]}
         trailingEntries={statusEntries}
-        onInvoke={onSettings}
+        onInvoke={toggleAppMenu}
     />
 </main>
 
 <style>
 .launcher {
+  position: relative;
   display: grid;
   grid-template-rows: var(--search-height) minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--border-window);
+  border: 0;
   border-radius: var(--radius-window);
   background: var(--surface-window);
 }
+
+.app-menu {
+  position: absolute;
+  z-index: 2;
+  bottom: 3.5rem;
+  left: var(--space-5);
+  width: 14rem;
+  margin: 0;
+  padding: 0.375rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-row);
+  background: color-mix(in srgb, var(--surface-window) 92%, transparent);
+  box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(24px) saturate(1.25);
+  list-style: none;
+}
+
+.app-menu-title {
+  padding: 0.5rem 0.625rem 0.375rem;
+  color: var(--text-secondary);
+  font-size: var(--font-meta);
+  font-weight: 600;
+}
+
+.app-menu button {
+  width: 100%;
+  min-height: 2.5rem;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-radius: calc(var(--radius-row) - 0.25rem);
+  color: var(--text-primary);
+}
+
+.app-menu button:hover,
+.app-menu button:focus-visible {
+  background: var(--surface-selected);
+}
+
+.app-menu button svg {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.menu-shortcut { display: flex; margin-left: auto; }
 
 .search-shell {
   display: grid;

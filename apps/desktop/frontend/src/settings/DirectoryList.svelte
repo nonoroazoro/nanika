@@ -39,7 +39,8 @@ async function add(): Promise<void>
     {
         if (active)
         {
-            error = cause instanceof Error ? cause.message : String(cause);
+            console.error("Folder could not be added", cause);
+            error = "Folder could not be added. Try again.";
         }
     }
     finally

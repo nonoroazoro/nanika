@@ -16,7 +16,7 @@ import type {
 import type { SearchObservation } from "./development";
 
 let application = $state<ApplicationSnapshot | null>(null);
-let failure = $state<string | null>(null);
+let failed = $state(false);
 let queryFailure = $state<string | null>(null);
 let invoking = $state(false);
 let refreshing = $state(false);
@@ -35,6 +35,7 @@ let viewInputError = $state<string | null>(null);
 let viewOperation = 0;
 const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent);
 const viewInput = viewInputScheduler();
+const navigationError = $derived(navigation.error ? "The action could not be completed. Try again." : null);
 let rootSearch = $state.raw<RootSearchSnapshot>({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
@@ -97,12 +98,12 @@ function fail(error: unknown): void
     {
         return;
     }
-    failure = error instanceof Error ? error.message : String(error);
+    failed = true;
     if (import.meta.env.DEV)
     {
         observeSearch(latestRequestId, "failed");
     }
-    console.error("Search window failed", failure);
+    console.error("Search failed", error);
 }
 
 async function publishQuery(query: string): Promise<void>
@@ -143,7 +144,8 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     {
         if (requestId === latestRequestId)
         {
-            queryFailure = error instanceof Error ? error.message : String(error);
+            console.error("Search query could not be submitted", error);
+            queryFailure = "Search could not be updated. Try again.";
             if (import.meta.env.DEV)
             {
                 observeSearch(requestId, "rejected");
@@ -166,7 +168,8 @@ async function refreshSearch(): Promise<void>
     }
     catch (error)
     {
-        operationFailure = error instanceof Error ? error.message : String(error);
+        console.error("Search could not be refreshed", error);
+        operationFailure = "Search could not be refreshed. Try again.";
     }
     finally
     {
@@ -197,8 +200,8 @@ async function invokeCandidate(result: SearchResult): Promise<void>
     }
     catch (error)
     {
-        operationFailure = error instanceof Error ? error.message : String(error);
-        console.error("Action failed", operationFailure);
+        console.error("Action failed", error);
+        operationFailure = "The action could not be completed. Try again.";
     }
     finally
     {
@@ -232,7 +235,7 @@ function updateRootSearch(next: RootSearchSnapshot): void
     }
     if (next.phase === "error")
     {
-        fail(next.error ?? "Search failed. Reload the window to reconnect.");
+        fail(next.error ?? "Search failed without an error message.");
         return;
     }
     // Pending work preserves the last coherent list. Its entries cannot be invoked
@@ -265,6 +268,10 @@ function updateNavigation(next: NavigationSnapshot): void
         return;
     }
     const dismiss = next.dismissCount > navigation.dismissCount;
+    if (next.error)
+    {
+        console.error("View operation failed", next.error);
+    }
     navigation = next;
     viewInput.update(next);
     if (dismiss)
@@ -327,7 +334,8 @@ async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
     {
         if (operation === viewOperation)
         {
-            operationFailure = error instanceof Error ? error.message : String(error);
+            console.error("View operation failed", error);
+            operationFailure = "The action could not be completed. Try again.";
         }
         return null;
     }
@@ -360,11 +368,10 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 
 <svelte:window onkeydowncapture={controlLauncherKeyboard} />
 
-{#if failure}
+{#if failed}
     <main class="fatal" role="alert">
         <strong>Search is unavailable.</strong>
-        <span>{failure}</span>
-        <button onclick={() => window.location.reload()}>Reload window</button>
+        <button onclick={() => window.location.reload()}>Try again</button>
     </main>
 {:else}
     <svelte:boundary onerror={(error => fail(error))}>
@@ -374,7 +381,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                     snapshot={navigation.current}
                     resourceOrigin={application?.resourceOrigin ?? ""}
                     busy={viewPending || viewInputError !== null}
-                    error={viewInputError ?? operationFailure ?? navigation.error}
+                    error={viewInputError ?? operationFailure ?? navigationError}
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
                     onResume={resumeView}
@@ -394,7 +401,8 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 {
                     void tauriBridge.openSettings().catch(error =>
                     {
-                        operationFailure = error instanceof Error ? error.message : String(error);
+                        console.error("Settings could not be opened", error);
+                        operationFailure = "Settings could not be opened. Try again.";
                     });
                 }}
                 inputError={queryFailure}
@@ -426,16 +434,11 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
   place-content: center;
   gap: var(--space-2);
   padding: var(--space-6);
-  border: 1px solid var(--border-window);
+  border: 0;
   border-radius: var(--radius-window);
   background: var(--surface-window);
   color: var(--text-primary);
   text-align: center;
-}
-
-.fatal span {
-  color: var(--text-secondary);
-  font-size: var(--font-meta);
 }
 
 .operation-failure {

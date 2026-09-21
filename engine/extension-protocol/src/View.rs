@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::{DetailContent, DetailView, ImageSource, ListView, ViewAction};
+use crate::{DetailContent, DetailView, ImageSource, ListView, ViewAction, ViewActionStyle};
 
 /// One host-rendered extension view document.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,6 +170,12 @@ fn validate_actions(actions: &[ViewAction]) -> Result<(), String> {
     for action in actions {
         validate_id("view action id", &action.id)?;
         validate_text("view action title", &action.title, 128, false)?;
+        if let Some(title) = &action.confirmation_title {
+            validate_text("view action confirmation title", title, 128, false)?;
+            if action.style != ViewActionStyle::Destructive {
+                return Err("view action confirmation requires destructive style".to_owned());
+            }
+        }
         if !ids.insert(action.id.as_str()) {
             return Err("view action ids must be unique".to_owned());
         }

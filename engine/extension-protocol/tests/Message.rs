@@ -81,6 +81,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     actions: vec![ViewAction {
                         id: "paste".to_owned(),
                         title: "Paste".to_owned(),
+                        confirmation_title: None,
                         style: ViewActionStyle::Primary,
                     }],
                 }],
@@ -132,6 +133,56 @@ fn detail_files_must_not_be_empty() {
     assert_eq!(
         view.validate().expect_err("empty file detail must fail"),
         "detail file count is invalid"
+    );
+}
+
+#[test]
+fn view_action_confirmation_titles_are_validated() {
+    let view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Text {
+                value: "Example".to_owned(),
+            },
+            metadata: Vec::new(),
+            actions: vec![ViewAction {
+                id: "example.clear".to_owned(),
+                title: "Clear".to_owned(),
+                confirmation_title: Some(" ".to_owned()),
+                style: ViewActionStyle::Destructive,
+            }],
+        },
+    };
+
+    assert_eq!(
+        view.validate()
+            .expect_err("blank confirmation title must fail"),
+        "view action confirmation title is invalid"
+    );
+}
+
+#[test]
+fn view_action_confirmation_is_limited_to_destructive_actions() {
+    let view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Text {
+                value: "Example".to_owned(),
+            },
+            metadata: Vec::new(),
+            actions: vec![ViewAction {
+                id: "example.open".to_owned(),
+                title: "Open".to_owned(),
+                confirmation_title: Some("Open now".to_owned()),
+                style: ViewActionStyle::Primary,
+            }],
+        },
+    };
+
+    assert_eq!(
+        view.validate()
+            .expect_err("non-destructive confirmation must fail"),
+        "view action confirmation requires destructive style"
     );
 }
 
@@ -248,6 +299,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 actions: vec![ViewAction {
                     id: "example.open".to_owned(),
                     title: "Open".to_owned(),
+                    confirmation_title: None,
                     style: ViewActionStyle::Primary,
                 }],
             }),
