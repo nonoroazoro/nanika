@@ -352,7 +352,6 @@ function handleKeydown(event: KeyboardEvent): void
                             <ul role="group" aria-label={section.title ?? "Items"}>
                                 {#each section.items as item (item.id)}
                                     <li
-                                        class="collection-row"
                                         id={`view-item-${snapshot.routeId}-${item.id}`}
                                         role="option"
                                         aria-selected={item.id === selected?.id}
@@ -376,24 +375,26 @@ function handleKeydown(event: KeyboardEvent): void
                                             }
                                         })}
                                     >
-                                        {#if item.icon}<span class="item-icon" aria-hidden="true">
-                                                {#if typeof item.icon === "string"}
-                                                    <SemanticContentIcon kind={item.icon} />
-                                                {:else}
-                                                    <CachedFileIcon
-                                                        reference={item.icon.native}
-                                                        {resourceOrigin}
-                                                        extensionId={snapshot.extensionId}
-                                                    />
-                                                {/if}
-                                            </span>{/if}
-                                        {#if item.subtitle}
-                                            <span class="item-copy"><span>{item.title}</span><small>{
-                                                    item.subtitle
-                                                }</small></span>
-                                        {:else}
-                                            <span class="item-title">{item.title}</span>
-                                        {/if}
+                                        <div class="collection-row option-surface">
+                                            {#if item.icon}<span class="item-icon" aria-hidden="true">
+                                                    {#if typeof item.icon === "string"}
+                                                        <SemanticContentIcon kind={item.icon} />
+                                                    {:else}
+                                                        <CachedFileIcon
+                                                            reference={item.icon.native}
+                                                            {resourceOrigin}
+                                                            extensionId={snapshot.extensionId}
+                                                        />
+                                                    {/if}
+                                                </span>{/if}
+                                            {#if item.subtitle}
+                                                <span class="item-copy"><span>{item.title}</span><small>{
+                                                        item.subtitle
+                                                    }</small></span>
+                                            {:else}
+                                                <span class="item-title">{item.title}</span>
+                                            {/if}
+                                        </div>
                                     </li>
                                 {/each}
                             </ul>
@@ -449,12 +450,14 @@ input::placeholder { color: var(--text-tertiary); opacity: 1; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
 /* Keep long titles within the pane so keyboard reveal cannot scroll rows sideways. */
-.list-pane [role='group'] { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+.list-pane [role='group'] { display: grid; grid-template-columns: minmax(0, 1fr); }
 .list-pane { padding: var(--space-2); overflow-x: hidden; }
 h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
-[role='option'] { display: flex; }
-[role='option']:hover:not([aria-disabled='true']) { background: var(--surface-hovered); }
-[role='option'][aria-selected='true'], [role='option'][aria-selected='true']:hover { background: var(--surface-selected); }
+[role='option'] { min-width: 0; padding-top: var(--space-1); }
+[role='option']:first-child { padding-top: 0; }
+.option-surface { display: flex; min-width: 0; width: 100%; }
+[role='option']:hover:not([aria-disabled='true']) > .option-surface { background: var(--surface-hovered); }
+[role='option'][aria-selected='true'] > .option-surface, [role='option'][aria-selected='true']:hover > .option-surface { background: var(--surface-selected); }
 .item-icon { display: grid; flex: 0 0 var(--icon-size); width: var(--icon-size); height: var(--icon-size); place-items: center; }
 .item-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; line-height: 1.25; }
 .item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
