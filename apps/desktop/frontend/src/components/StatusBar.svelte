@@ -99,7 +99,16 @@ function handleInvoke(event: MouseEvent): void
             </svg>
         {/if}
         {#if !entry.iconOnly}
-            <span class="entry-label" aria-hidden="true">{displayedTitle(entry)}</span>
+            <span class="entry-label-stack" aria-hidden="true">
+                <span class="entry-label-reserve">{entry.title}</span>
+                {#if entry.confirmation}
+                    <span class="entry-label-reserve">{entry.confirmation.title}</span>
+                {/if}
+                {#if entry.pending}
+                    <span class="entry-label-reserve">{entry.pending.title}</span>
+                {/if}
+                <span class="entry-label">{displayedTitle(entry)}</span>
+            </span>
         {/if}
         {#if entry.keys?.length}<ShortcutKeys keys={entry.keys} />{/if}
     {/snippet}
@@ -179,7 +188,10 @@ button.icon-only:focus-visible { background: transparent; box-shadow: none; colo
 button.icon-only:focus-visible .app-mark { opacity: 0.9; }
 button.icon-only:active:not(:disabled) .app-mark { opacity: 0.95; transform: translateY(1px) scaleX(1.045) scaleY(0.9); transition-duration: 70ms; animation: none; }
 button.pending:disabled { opacity: 1; }
-.entry-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.entry-label-stack { display: grid; min-width: 0; max-width: 40vw; }
+.entry-label, .entry-label-reserve { grid-area: 1 / 1; min-width: 0; white-space: nowrap; }
+.entry-label { overflow: hidden; text-overflow: ellipsis; }
+.entry-label-reserve { visibility: hidden; }
 .pending .entry-label { background: linear-gradient(100deg, var(--text-secondary) 16%, color-mix(in srgb, var(--text-primary) 70%, var(--text-secondary)) 34%, light-dark(rgb(255 255 255 / 78%), rgb(255 255 255 / 94%)) 47%, light-dark(rgb(255 255 255 / 78%), rgb(255 255 255 / 94%)) 54%, color-mix(in srgb, var(--text-primary) 70%, var(--text-secondary)) 68%, var(--text-secondary) 84%); background-position: 100% 0; background-size: 250% 100%; background-clip: text; color: transparent; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: status-bar-shimmer 1600ms ease-in-out infinite paused; }
 .active .pending .entry-label { animation-play-state: running; }
 .destructive { border-color: var(--border-danger); color: var(--text-danger); }
