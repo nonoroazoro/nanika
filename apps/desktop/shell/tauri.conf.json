@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "app.nanika",
   "build": {
-    "beforeDevCommand": "pnpm frontend:dev",
-    "beforeBuildCommand": "pnpm frontend:build",
+    "beforeDevCommand": "corepack pnpm frontend:dev",
+    "beforeBuildCommand": "corepack pnpm frontend:build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../frontend/dist",
     "removeUnusedCommands": true

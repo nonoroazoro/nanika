@@ -5,7 +5,7 @@ import { integerError, normalizeSettings } from "../../src/settings/integerValue
 
 const schema = { type: "integer", minimum: 1, maximum: 5000, allowUnlimited: true };
 
-test("integer drafts retain invalid input without clamping or coercing it to zero", () =>
+void test("integer drafts retain invalid input without clamping or coercing it to zero", () =>
 {
     for (const value of ["", "0", "-1", "5001", "1.5", "1e3", "123456789012345678901234567890"])
     {
@@ -14,7 +14,7 @@ test("integer drafts retain invalid input without clamping or coercing it to zer
     }
 });
 
-test("valid integer drafts normalize only at the persistence boundary", () =>
+void test("valid integer drafts normalize only at the persistence boundary", () =>
 {
     for (const value of ["1", "50", "5000"])
     {
@@ -23,7 +23,7 @@ test("valid integer drafts normalize only at the persistence boundary", () =>
     }
 });
 
-test("unlimited is explicit and requires schema support", () =>
+void test("unlimited is explicit and requires schema support", () =>
 {
     assert.equal(integerError(schema, null), null);
     assert.notEqual(integerError({ ...schema, allowUnlimited: false }, null), null);
@@ -31,7 +31,7 @@ test("unlimited is explicit and requires schema support", () =>
     assert.notEqual(integerError({ ...schema, multipleOf: 5 }, "12"), null);
 });
 
-test("nested integer configuration preserves string properties and optional fields", () =>
+void test("nested integer configuration preserves string properties and optional fields", () =>
 {
     const properties = {
         entries: { type: "array", items: { type: "object", properties: { limit: schema, name: { type: "string" } } } }

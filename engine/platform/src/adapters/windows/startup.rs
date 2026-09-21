@@ -9,8 +9,16 @@ const VALUE_NAME: &str = "Nanika";
 const FILE_NOT_FOUND_HRESULT: i32 = 0x8007_0002_u32 as i32;
 
 pub(crate) fn status(executable: &Path) -> Result<StartupStatus, PlatformError> {
+    status_for(executable, RUN_KEY, VALUE_NAME)
+}
+
+fn status_for(
+    executable: &Path,
+    key_path: &str,
+    value_name: &str,
+) -> Result<StartupStatus, PlatformError> {
     let expected = startup_command(executable)?;
-    let key = match CURRENT_USER.options().read().open(RUN_KEY) {
+    let key = match CURRENT_USER.options().read().open(key_path) {
         Ok(key) => key,
         Err(error) if error.code().0 == FILE_NOT_FOUND_HRESULT => {
             return Ok(StartupStatus::Disabled);
@@ -20,7 +28,7 @@ pub(crate) fn status(executable: &Path) -> Result<StartupStatus, PlatformError> 
     let value = key
         .values()
         .map_err(registry_error)?
-        .find(|(name, _)| name == VALUE_NAME);
+        .find(|(name, _)| name == value_name);
     let Some((_, value)) = value else {
         return Ok(StartupStatus::Disabled);
     };
@@ -34,7 +42,16 @@ pub(crate) fn set_enabled(
     executable: &Path,
     enabled: bool,
 ) -> Result<StartupStatus, PlatformError> {
-    if !enabled && status(executable)? == StartupStatus::Disabled {
+    set_enabled_for(executable, enabled, RUN_KEY, VALUE_NAME)
+}
+
+fn set_enabled_for(
+    executable: &Path,
+    enabled: bool,
+    key_path: &str,
+    value_name: &str,
+) -> Result<StartupStatus, PlatformError> {
+    if !enabled && status_for(executable, key_path, value_name)? == StartupStatus::Disabled {
         return Ok(StartupStatus::Disabled);
     }
     let key = CURRENT_USER
@@ -42,24 +59,24 @@ pub(crate) fn set_enabled(
         .read()
         .write()
         .create()
-        .open(RUN_KEY)
+        .open(key_path)
         .map_err(registry_error)?;
     let previous = key
         .values()
         .map_err(registry_error)?
-        .find(|(name, _)| name == VALUE_NAME)
+        .find(|(name, _)| name == value_name)
         .map(|(_, value)| value);
     if enabled {
-        key.set_string(VALUE_NAME, startup_command(executable)?)
+        key.set_string(value_name, startup_command(executable)?)
             .map_err(registry_error)?;
     } else if key
         .values()
         .map_err(registry_error)?
-        .any(|(name, _)| name == VALUE_NAME)
+        .any(|(name, _)| name == value_name)
     {
-        key.remove_value(VALUE_NAME).map_err(registry_error)?;
+        key.remove_value(value_name).map_err(registry_error)?;
     }
-    let result = status(executable);
+    let result = status_for(executable, key_path, value_name);
     let expected = if enabled {
         StartupStatus::Enabled
     } else {
@@ -69,13 +86,13 @@ pub(crate) fn set_enabled(
         return result;
     }
     match previous {
-        Some(value) => key.set_value(VALUE_NAME, &value).map_err(registry_error)?,
+        Some(value) => key.set_value(value_name, &value).map_err(registry_error)?,
         None if key
             .values()
             .map_err(registry_error)?
-            .any(|(name, _)| name == VALUE_NAME) =>
+            .any(|(name, _)| name == value_name) =>
         {
-            key.remove_value(VALUE_NAME).map_err(registry_error)?;
+            key.remove_value(value_name).map_err(registry_error)?;
         }
         None => {}
     }

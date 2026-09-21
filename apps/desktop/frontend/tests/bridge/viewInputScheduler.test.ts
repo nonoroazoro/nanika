@@ -16,7 +16,7 @@ function navigation(revision, text = "", routeId = 1, busy = false)
 
 for (const first of ["channel", "rpc"])
 {
-    test(`latest query and resume progress exactly once when ${first} finishes first`, () =>
+    void test(`latest query and resume progress exactly once when ${first} finishes first`, () =>
     {
         const input = viewInputScheduler();
         input.update(navigation(1));
@@ -28,8 +28,14 @@ for (const first of ["channel", "rpc"])
         input.query("abc");
         input.resume();
         input.resume();
-        const channel = () => input.update(navigation(5, "a"));
-        const rpc = () => input.complete(blocking, { viewRevision: 2, navigationRevision: 5 });
+        const channel = () =>
+        {
+            input.update(navigation(5, "a"));
+        };
+        const rpc = () =>
+        {
+            input.complete(blocking, { viewRevision: 2, navigationRevision: 5 });
+        };
         (first === "channel" ? channel : rpc)();
         assert.equal(input.busy, true);
         assert.equal(input.takeNext(), null);
@@ -46,7 +52,7 @@ for (const first of ["channel", "rpc"])
     });
 }
 
-test("an unrelated Channel update cannot satisfy an operation's completion receipt", () =>
+void test("an unrelated Channel update cannot satisfy an operation's completion receipt", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));
@@ -61,7 +67,7 @@ test("an unrelated Channel update cannot satisfy an operation's completion recei
     assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "latest" });
 });
 
-test("a failed query is not retried and a newer explicit query remains eligible", () =>
+void test("a failed query is not retried and a newer explicit query remains eligible", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));
@@ -75,7 +81,7 @@ test("a failed query is not retried and a newer explicit query remains eligible"
     assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "new intent" });
 });
 
-test("route changes discard unsubmitted query and resume intent from the old route", () =>
+void test("route changes discard unsubmitted query and resume intent from the old route", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));
@@ -89,7 +95,7 @@ test("route changes discard unsubmitted query and resume intent from the old rou
     assert.deepEqual(input.takeNext(), { kind: "resumed" });
 });
 
-test("selection does not disable input, but queued input waits for its authoritative state", () =>
+void test("selection does not disable input, but queued input waits for its authoritative state", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));
@@ -103,7 +109,7 @@ test("selection does not disable input, but queued input waits for its authorita
     assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "latest" });
 });
 
-test("a coalesced selection does not release an accepted pending action", () =>
+void test("a coalesced selection does not release an accepted pending action", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));
@@ -119,7 +125,7 @@ test("a coalesced selection does not release an accepted pending action", () =>
     assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "next" });
 });
 
-test("oversized input cannot be submitted and editing it resumes normal dispatch", () =>
+void test("oversized input cannot be submitted and editing it resumes normal dispatch", () =>
 {
     const input = viewInputScheduler();
     input.update(navigation(1));

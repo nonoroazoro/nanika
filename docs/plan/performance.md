@@ -68,7 +68,7 @@ Use computer-use to exercise UI interactions and rendering in the actual Tauri a
 
 ## Development monitor
 
-During `pnpm --dir apps/desktop dev`, press `F9` while the Nanika window is focused and visible to toggle an independent frontend overlay. F5 is reserved for Root Search refresh. Sampling starts disabled. Losing window focus, hiding the document, or disposing the component cancels its animation-frame callback and detaches its search observation listener. Resuming starts a fresh sample window and excludes the hidden interval.
+During `corepack pnpm --dir apps/desktop dev`, press `F9` while the Nanika window is focused and visible to toggle an independent frontend overlay. F5 is reserved for Root Search refresh. Sampling starts disabled. Losing window focus, hiding the document, or disposing the component cancels its animation-frame callback and detaches its search observation listener. Resuming starts a fresh sample window and excludes the hidden interval.
 
 The overlay reports estimated FPS, P95 and maximum frame intervals over the most recent 120 positive `requestAnimationFrame` intervals. It refreshes frame statistics at most every 250 ms. This rolling window is an explicit diagnostic sampling policy, not retained benchmark history. The active sampler adds work even on an otherwise static page; its readings include monitoring overhead.
 

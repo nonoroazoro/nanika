@@ -1,6 +1,6 @@
 # Release Process
 
-Status: release acceptance design. Nanika is still in development and has no complete signed release pipeline. Routine development uses `just dev`; packaged development automation may use `pnpm --dir apps/desktop build:debug`. A Tauri release-mode bundle produced by `pnpm --dir apps/desktop build` is only an unsigned packaging primitive, not a releasable artifact.
+Status: release acceptance design. Nanika is still in development and has no complete signed release pipeline. Routine development uses `just dev`; packaged development automation may use `corepack pnpm --dir apps/desktop build:debug`. A Tauri release-mode bundle produced by `corepack pnpm --dir apps/desktop build` is only an unsigned packaging primitive, not a releasable artifact.
 
 ## Supported platform matrix
 

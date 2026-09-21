@@ -8,7 +8,7 @@ function request(event)
     return { sessionId: 1, routeId: 1, revision: 1, operation: { kind: "event", event } };
 }
 
-test("selection stays ordered before a captured action and only unsent selections coalesce", async () =>
+void test("selection stays ordered before a captured action and only unsent selections coalesce", async () =>
 {
     const sent = [];
     let finish;
@@ -42,7 +42,7 @@ test("selection stays ordered before a captured action and only unsent selection
     ]);
 });
 
-test("a failed request retains its cause and does not lose an accepted following action", async () =>
+void test("a failed request retains its cause and does not lose an accepted following action", async () =>
 {
     const cause = new Error("extension rejected selection");
     const sent = [];

@@ -34,7 +34,3 @@ impl Command {
 fn usage() -> String {
     "Usage: nanika-cli <install|update|enable|disable|remove|diagnostics> <value>".to_owned()
 }
-
-#[cfg(test)]
-#[path = "../tests/Command.rs"]
-mod tests;

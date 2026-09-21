@@ -14,7 +14,7 @@ const key = {
     isComposing: false
 };
 
-test("shortcut recording preserves physical keys and every modifier", () =>
+void test("shortcut recording preserves physical keys and every modifier", () =>
 {
     assert.equal(shortcutFromKey(key), "Ctrl+KeyK");
     assert.equal(shortcutFromKey({ ...key, altKey: true, shiftKey: true, metaKey: true }), "Ctrl+Alt+Shift+Super+KeyK");
@@ -23,7 +23,7 @@ test("shortcut recording preserves physical keys and every modifier", () =>
     assert.deepEqual(shortcutKeys("Ctrl+Alt+Digit1"), ["Ctrl", "Alt", "1"]);
 });
 
-test("typing, modifiers, repeats, IME and unidentified events do not create shortcuts", () =>
+void test("typing, modifiers, repeats, IME and unidentified events do not create shortcuts", () =>
 {
     for (
         const override of [

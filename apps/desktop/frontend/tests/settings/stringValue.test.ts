@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { stringError } from "../../src/settings/stringValue.ts";
 
-test("string length follows the UTF-8 byte contract", () =>
+void test("string length follows the UTF-8 byte contract", () =>
 {
     const schema = { type: "string", maxLength: 5 };
     assert.equal(stringError(schema, "hello"), null);

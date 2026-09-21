@@ -17,6 +17,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 export CARGO_TARGET_DIR="$quality_target"
 export CARGO_INCREMENTAL=0
+export RUSTDOCFLAGS="${RUSTDOCFLAGS:+$RUSTDOCFLAGS }-D warnings"
 if [ "$(uname -s)" = "Darwin" ]; then
     export MACOSX_DEPLOYMENT_TARGET=13.0
 fi
@@ -40,13 +41,13 @@ if grep -R --include='*.ts' --include='*.svelte' --exclude-dir=bridge \
 fi
 
 cd apps/desktop
-pnpm extensions:build
-pnpm extensions:prepare
-pnpm format:check
-pnpm lint
-pnpm frontend:check
-pnpm frontend:build
-pnpm frontend:test
+corepack pnpm extensions:build
+corepack pnpm extensions:prepare
+corepack pnpm format:check
+corepack pnpm lint
+corepack pnpm frontend:check
+corepack pnpm frontend:build
+corepack pnpm frontend:test
 
 cd "$repository_root"
 cargo fmt --all -- --check

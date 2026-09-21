@@ -11,9 +11,16 @@ $RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $QualityTarget = Join-Path ([IO.Path]::GetTempPath()) ("nanika-check-" + [Guid]::NewGuid().ToString("N"))
 $PreviousCargoTarget = $env:CARGO_TARGET_DIR
 $PreviousCargoIncremental = $env:CARGO_INCREMENTAL
+$PreviousRustdocFlags = $env:RUSTDOCFLAGS
 New-Item -ItemType Directory -Path $QualityTarget | Out-Null
 $env:CARGO_TARGET_DIR = $QualityTarget
 $env:CARGO_INCREMENTAL = "0"
+if ([string]::IsNullOrWhiteSpace($PreviousRustdocFlags)) {
+    $env:RUSTDOCFLAGS = "-D warnings"
+}
+else {
+    $env:RUSTDOCFLAGS = "$PreviousRustdocFlags -D warnings"
+}
 Push-Location $RepositoryRoot
 try {
     foreach ($RemovedRoot in @("crates", "extensions", "scripts", "packaging", "src-tauri", "web", "rust", "dist")) {
@@ -29,20 +36,20 @@ try {
     if ($FrontendTauri) { throw "Frontend source may import Tauri only through the typed bridge." }
     Push-Location "apps/desktop"
     try {
-        & pnpm extensions:build
+        & corepack.cmd pnpm extensions:build
         if ($LASTEXITCODE -ne 0) { throw "Extension build failed." }
-        & pnpm extensions:prepare
+        & corepack.cmd pnpm extensions:prepare
         if ($LASTEXITCODE -ne 0) { throw "Extension preparation failed." }
-        & pnpm format:check
+        & corepack.cmd pnpm format:check
         if ($LASTEXITCODE -ne 0) { throw "Frontend formatting check failed." }
-        & pnpm lint
+        & corepack.cmd pnpm lint
         if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed." }
-        & pnpm frontend:check
+        & corepack.cmd pnpm frontend:check
         if ($LASTEXITCODE -ne 0) { throw "Frontend type check failed." }
-        & pnpm frontend:build
+        & corepack.cmd pnpm frontend:build
         if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
-        & pnpm frontend:test
-        if ($LASTEXITCODE -ne 0) { throw "Frontend transport tests failed." }
+        & corepack.cmd pnpm frontend:test
+        if ($LASTEXITCODE -ne 0) { throw "Frontend tests failed." }
     }
     finally {
         Pop-Location
@@ -64,5 +71,6 @@ finally {
     Pop-Location
     $env:CARGO_TARGET_DIR = $PreviousCargoTarget
     $env:CARGO_INCREMENTAL = $PreviousCargoIncremental
+    $env:RUSTDOCFLAGS = $PreviousRustdocFlags
     Remove-Item -LiteralPath $QualityTarget -Recurse -Force
 }

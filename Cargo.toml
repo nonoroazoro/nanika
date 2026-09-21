@@ -23,6 +23,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98.0"
 license = "MIT"
 publish = false
 
@@ -31,40 +32,41 @@ serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.151"
 directories = "6.0.0"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
-jsonc-parser = { version = "0.33.1", default-features = false, features = ["serde", "cst"] }
-uuid = { version = "1.24.1", default-features = false, features = ["serde", "v4"] }
+jsonc-parser = { version = "0.33.2", default-features = false, features = ["serde", "cst"] }
+uuid = { version = "1.26.1", default-features = false, features = ["serde", "v4"] }
 nucleo-matcher = "0.3.1"
 criterion = { version = "0.8.2", default-features = false }
-semver = "1.0.27"
+semver = "1.0.28"
 sha2 = "0.11.0"
 thiserror = "2.0.20"
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
-zip = { version = "8.4.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 walkdir = "2.5.0"
-plist = "1.10.0"
+plist = "1.10.1"
 png = "0.18.1"
+libc = "0.2.189"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
 fend-core = "1.5.8"
-windows-registry = "0.6.1"
+windows-registry = "0.100.0"
 objc2-service-management = { version = "0.3.2", default-features = false }
 objc2 = { version = "0.6.4", default-features = false }
 objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
-agent-client-protocol = { version = "2.0.0", default-features = false }
+agent-client-protocol = { version = "2.2.0", default-features = false }
 async-channel = "2.5.0"
 async-io = "2.6.0"
 async-process = "2.5.0"
-futures = { version = "0.3.32", default-features = false, features = ["async-await", "std"] }
+futures = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 futures-lite = "2.6.1"
-rustix = { version = "1.1.4", default-features = false, features = ["process"] }
+rustix = { version = "1.1.5", default-features = false, features = ["process"] }
 sys-locale = "0.3.2"
-tauri = { version = "=2.11.5", default-features = false }
+tauri = { version = "=2.11.6", default-features = false }
 tauri-build = { version = "=2.6.3", default-features = false }
 tauri-plugin-global-shortcut = "=2.3.2"
 tauri-plugin-dialog = { version = "=2.7.3", default-features = false }
