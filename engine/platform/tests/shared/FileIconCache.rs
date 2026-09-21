@@ -74,9 +74,9 @@ fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 #[test]
-fn windows_clipboard_images_use_content_thumbnails() {
+fn clipboard_images_use_content_thumbnails() {
     let root = std::env::temp_dir().join(format!("nanika-file-thumbnail-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("fixture root");
     let source = root.join("thumbnail.png");
@@ -90,7 +90,7 @@ fn windows_clipboard_images_use_content_thumbnails() {
         .expect("PNG pixels");
     writer.finish().expect("PNG finish");
 
-    let pixels = shell_file_icon_pixels(&source, 128).expect("Windows image thumbnail");
+    let pixels = shell_file_icon_pixels(&source, 128).expect("native image thumbnail");
     assert!(
         pixels
             .as_chunks::<4>()
@@ -101,8 +101,8 @@ fn windows_clipboard_images_use_content_thumbnails() {
 
     let list_pixels = crate::file_icon::cached_list_pixels(&source, &[]).expect("list icon");
     assert_eq!(list_pixels.len(), 128 * 128 * 4);
-    // A solid red image must not become a solid red list thumbnail. Its row
-    // represents the file association, while the detail above represents content.
+    // A solid red image must not become a solid red list thumbnail. Its row represents
+    // the native file association, while the collection preview represents content.
     let red_count = list_pixels
         .as_chunks::<4>()
         .0
@@ -114,9 +114,9 @@ fn windows_clipboard_images_use_content_thumbnails() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 #[test]
-fn windows_4k_file_thumbnail_has_bounded_output() {
+fn native_4k_file_thumbnail_has_bounded_output() {
     use std::io::Write;
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -146,7 +146,7 @@ fn windows_4k_file_thumbnail_has_bounded_output() {
     let started = std::time::Instant::now();
     let pixels = shell_file_icon_pixels(&source, 512).expect("4K thumbnail");
     eprintln!(
-        "4K Shell thumbnail: {:?}, {} RGBA bytes",
+        "4K thumbnail: {:?}, {} RGBA bytes",
         started.elapsed(),
         pixels.len()
     );

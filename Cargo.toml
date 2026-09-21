@@ -50,6 +50,7 @@ libc = "0.2.189"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
+block2 = "0.6.2"
 fend-core = "1.5.8"
 windows-registry = "0.100.0"
 objc2-service-management = { version = "0.3.2", default-features = false }
@@ -58,6 +59,8 @@ objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
+objc2-image-io = { version = "0.3.2", default-features = false }
+objc2-quick-look-thumbnailing = { version = "0.3.2", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 async-channel = "2.5.0"
 async-io = "2.6.0"
