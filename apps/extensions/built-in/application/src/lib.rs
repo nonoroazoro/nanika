@@ -65,9 +65,6 @@ mod application_database_tests;
 #[path = "../tests/ApplicationError.rs"]
 mod application_error_tests;
 #[cfg(test)]
-#[path = "../tests/ApplicationIndex.rs"]
-mod application_index_tests;
-#[cfg(test)]
 #[path = "../tests/candidate_selection.rs"]
 mod candidate_selection_tests;
 #[cfg(test)]

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { stringError } from "./stringValue.ts";
+import { stringError } from "../../src/settings/stringValue.ts";
 
 test("string length follows the UTF-8 byte contract", () =>
 {

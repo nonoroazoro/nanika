@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { viewInputScheduler } from "./viewInputScheduler.ts";
+import { viewInputScheduler } from "../../src/bridge/viewInputScheduler.ts";
 
 function navigation(revision, text = "", routeId = 1, busy = false)
 {

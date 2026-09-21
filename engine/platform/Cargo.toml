@@ -35,12 +35,12 @@ objc2-core-graphics = { workspace = true, features = ["std", "CGBitmapContext", 
 
 [[test]]
 name = "ProcessLauncher"
-path = "tests/ProcessLauncher.rs"
+path = "tests/shared/ProcessLauncher.rs"
 
 [[test]]
 name = "SingleInstance"
-path = "tests/SingleInstance.rs"
+path = "tests/adapters/SingleInstance.rs"
 
 [[test]]
 name = "filesystem"
-path = "tests/filesystem.rs"
+path = "tests/shared/filesystem.rs"

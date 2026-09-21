@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shortcutFromKey, shortcutKeys } from "./shortcut.ts";
+import { shortcutFromKey, shortcutKeys } from "../../src/settings/shortcut.ts";
 
 const key = {
     key: "k",

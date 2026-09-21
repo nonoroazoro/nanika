@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { orderedViewEvents } from "./orderedViewEvents.ts";
+import { orderedViewEvents } from "../../src/bridge/orderedViewEvents.ts";
 
 function request(event)
 {

@@ -72,10 +72,10 @@ pub use system_locale::*;
 mod process_launch;
 
 #[cfg(test)]
-#[path = "../tests/HotkeyTiming.rs"]
+#[path = "../tests/shared/hotkey_timing.rs"]
 mod hotkey_timing_tests;
 #[cfg(test)]
-#[path = "../tests/PngResource.rs"]
+#[path = "../tests/shared/PngResource.rs"]
 mod png_resource_tests;
 
 #[path = "shared/IconNormalizer.rs"]
@@ -95,17 +95,17 @@ mod file_icon;
 pub use file_icon::{file_icon_pixels, shell_file_icon_pixels};
 
 #[cfg(test)]
-#[path = "../tests/IconNormalizer.rs"]
+#[path = "../tests/shared/IconNormalizer.rs"]
 mod icon_normalizer_tests;
 
 #[cfg(test)]
-#[path = "../tests/image_resize.rs"]
+#[path = "../tests/shared/image_resize.rs"]
 mod image_resize_tests;
 
 #[cfg(test)]
-#[path = "../tests/windows_alpha_recovery.rs"]
+#[path = "../tests/adapters/windows/alpha_recovery.rs"]
 mod windows_alpha_recovery_tests;
 
 #[cfg(test)]
-#[path = "../tests/FileIconCache.rs"]
+#[path = "../tests/shared/FileIconCache.rs"]
 mod file_icon_cache_tests;

@@ -70,13 +70,13 @@ use search_session::*;
 use window::*;
 
 #[cfg(test)]
-#[path = "../tests/unit/IconProtocol.rs"]
+#[path = "../tests/IconProtocol.rs"]
 mod icon_protocol_tests;
 #[cfg(test)]
-#[path = "../tests/unit/NavigationState.rs"]
+#[path = "../tests/NavigationState.rs"]
 mod navigation_state_tests;
 #[cfg(test)]
-#[path = "../tests/unit/SearchDelivery.rs"]
+#[path = "../tests/SearchDelivery.rs"]
 mod search_delivery_tests;
 
 #[cfg(target_os = "macos")]

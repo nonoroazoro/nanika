@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { integerError, normalizeSettings } from "./integerValue.ts";
+import { integerError, normalizeSettings } from "../../src/settings/integerValue.ts";
 
 const schema = { type: "integer", minimum: 1, maximum: 5000, allowUnlimited: true };
 
