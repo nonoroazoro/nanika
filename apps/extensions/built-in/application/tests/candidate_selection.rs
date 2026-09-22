@@ -1,4 +1,5 @@
 use crate::{ApplicationEntry, select_candidates};
+use nanika_search::{Candidate as SearchCandidate, CandidateKind, SearchEngine, UsageMap};
 
 #[test]
 fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
@@ -58,6 +59,182 @@ fn complete_catalog_keeps_aliases_available_to_host_ranking() {
     assert_eq!(candidate.aliases, ["books"]);
 }
 
+#[test]
+fn romanized_aliases_work_with_the_existing_host_ranker() {
+    let mut entries = [entry(0, "同步"), entry(1, "音乐"), entry(2, "朝阳")];
+    for entry in &mut entries {
+        entry.prepare_search_readings();
+    }
+    for (query, title) in [
+        ("tongbu", "同步"),
+        ("tonbu", "同步"),
+        ("tb", "同步"),
+        ("yinyue", "音乐"),
+        ("yy", "音乐"),
+        ("zhaoyang", "朝阳"),
+        ("chaoyang", "朝阳"),
+        ("同bu", "同步"),
+        ("tong步", "同步"),
+        ("t步", "同步"),
+        ("音yue", "音乐"),
+    ] {
+        let candidates = select_candidates(&entries, query)
+            .into_iter()
+            .map(|candidate| {
+                SearchCandidate::new(
+                    CandidateKind::Action,
+                    "application",
+                    candidate.entry_id,
+                    candidate.title,
+                    candidate.action_id,
+                    candidate.aliases,
+                )
+            })
+            .collect::<Vec<_>>();
+        let ranked = SearchEngine::new().query(query, &candidates, &UsageMap::new(), 0);
+        assert_eq!(
+            ranked
+                .results
+                .first()
+                .map(|result| result.candidate.title()),
+            Some(title),
+            "query: {query}"
+        );
+    }
+}
+
+#[test]
+fn alternate_chinese_names_gain_their_own_romanization() {
+    let mut entry = entry(0, "Music");
+    entry.normalized_tokens = "音乐".to_owned();
+    entry.prepare_search_readings();
+    assert_eq!(entry.candidate().aliases, ["音乐", "yinyue", "yy"]);
+}
+
+#[test]
+fn localized_and_romanized_names_can_be_combined_in_one_query() {
+    let mut entry = entry(0, "音乐");
+    entry.normalized_tokens = "music".to_owned();
+    entry.prepare_search_readings();
+    let candidates = select_candidates(&[entry], "音乐 music")
+        .into_iter()
+        .map(|candidate| {
+            SearchCandidate::new(
+                CandidateKind::Action,
+                "application",
+                candidate.entry_id,
+                candidate.title,
+                candidate.action_id,
+                candidate.aliases,
+            )
+        })
+        .collect::<Vec<_>>();
+    for query in ["音乐 music", "音乐music", "yin music"] {
+        let ranked = SearchEngine::new().query(query, &candidates, &UsageMap::new(), 0);
+        assert_eq!(
+            ranked.results[0].candidate.title(),
+            "音乐",
+            "query: {query}"
+        );
+    }
+}
+
+#[test]
+fn mixed_chinese_and_latin_names_match_without_storing_combinations() {
+    let mut entry = entry(0, "同步 Sync");
+    entry.prepare_search_readings();
+    for query in ["同步sync", "同bu sync"] {
+        let candidate = select_candidates(&[entry.clone()], query)
+            .pop()
+            .expect("complete catalog");
+        assert!(candidate.aliases.iter().any(|alias| alias == query));
+    }
+}
+
+#[test]
+fn literal_mixed_name_keeps_its_exact_match() {
+    let mut entries = [entry(0, "音yue"), entry(1, "音乐")];
+    for entry in &mut entries {
+        entry.prepare_search_readings();
+    }
+    let candidates = select_candidates(&entries, "音yue")
+        .into_iter()
+        .map(|candidate| {
+            SearchCandidate::new(
+                CandidateKind::Action,
+                "application",
+                candidate.entry_id,
+                candidate.title,
+                candidate.action_id,
+                candidate.aliases,
+            )
+        })
+        .collect::<Vec<_>>();
+    let ranked = SearchEngine::new().query("音yue", &candidates, &UsageMap::new(), 0);
+    assert_eq!(ranked.results[0].candidate.title(), "音yue");
+}
+
+#[test]
+fn literal_mixed_name_ranks_above_cross_name_matches() {
+    let mut entries = [entry(0, "同步"), entry(1, "t步"), entry(2, "步行")];
+    entries[2].normalized_tokens = "同伴".to_owned();
+    for entry in &mut entries {
+        entry.prepare_search_readings();
+    }
+    let initial_candidates = select_candidates(&entries, "t步")
+        .into_iter()
+        .map(|candidate| {
+            SearchCandidate::new(
+                CandidateKind::Action,
+                "application",
+                candidate.entry_id,
+                candidate.title,
+                candidate.action_id,
+                candidate.aliases,
+            )
+        })
+        .collect::<Vec<_>>();
+    let initial_results =
+        SearchEngine::new().query("t步", &initial_candidates, &UsageMap::new(), 0);
+    assert_eq!(initial_results.results[0].candidate.title(), "t步");
+    assert!(
+        initial_results
+            .results
+            .iter()
+            .any(|result| result.candidate.title() == "同步")
+    );
+}
+
+#[test]
+fn mixed_query_preserves_exact_prefix_and_infix_order() {
+    let mut entries = [entry(0, "同步"), entry(1, "同步工具"), entry(2, "不同步")];
+    for entry in &mut entries {
+        entry.prepare_search_readings();
+    }
+    let candidates = select_candidates(&entries, "同bu")
+        .into_iter()
+        .map(|candidate| {
+            SearchCandidate::new(
+                CandidateKind::Action,
+                "application",
+                candidate.entry_id,
+                candidate.title,
+                candidate.action_id,
+                candidate.aliases,
+            )
+        })
+        .collect::<Vec<_>>();
+    let ranked = SearchEngine::new().query("同bu", &candidates, &UsageMap::new(), 0);
+    assert_eq!(
+        ranked
+            .results
+            .iter()
+            .map(|result| (result.candidate.title(), result.lexical_tier))
+            .collect::<Vec<_>>(),
+        [("同步", 3), ("同步工具", 2), ("不同步", 1)]
+    );
+}
+
 fn entry(index: usize, name: &str) -> ApplicationEntry {
     let normalized_name = name.to_lowercase();
     ApplicationEntry {
@@ -66,6 +243,7 @@ fn entry(index: usize, name: &str) -> ApplicationEntry {
         display_name: name.to_owned(),
         normalized_name: normalized_name.clone(),
         normalized_tokens: normalized_name,
+        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: format!("Application-{index}.exe"),
         working_directory: None,

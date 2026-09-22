@@ -16,7 +16,8 @@ pub struct ApplicationIndex {
     database: ApplicationDatabase,
     icon_cache: IconCache,
     discovery_state: DiscoveryState,
-    pending_icons: Vec<ApplicationEntry>,
+    prepared_entries: Option<Vec<ApplicationEntry>>,
+    pending_icons: Vec<usize>,
 }
 
 impl ApplicationIndex {
@@ -25,15 +26,27 @@ impl ApplicationIndex {
             database,
             icon_cache,
             discovery_state: DiscoveryState::new(),
+            prepared_entries: None,
             pending_icons: Vec::new(),
         }
     }
 
-    pub fn load(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
-        self.database.load_entries()
+    pub fn load(&mut self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
+        if self.prepared_entries.is_none() {
+            let mut entries = self.database.load_entries()?;
+            for entry in &mut entries {
+                entry.prepare_search_readings();
+            }
+            self.prepared_entries = Some(entries);
+        }
+        Ok(self
+            .prepared_entries
+            .as_ref()
+            .expect("catalog loaded")
+            .clone())
     }
 
-    pub(crate) fn load_presentable(&self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
+    pub(crate) fn load_presentable(&mut self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
         let mut entries = self.load()?;
         if let Err(error) = self.icon_cache.use_available_icons(&mut entries) {
             eprintln!("application icon cache is unavailable: {error}");
@@ -216,14 +229,50 @@ impl ApplicationIndex {
             }
             return Err(commit_error);
         }
-        self.pending_icons = entries;
+        self.cache_scanned_entries(entries)?;
         Ok((report, self.load_presentable()?))
     }
 
-    /// Populates at most `limit` pending icons and reports whether more work remains.
-    ///
-    /// Keeping batches bounded lets the runtime publish the first visible icon set before
-    /// continuing with lower-priority cache work.
+    // Reuse spellings only when their inputs match the committed catalog.
+    fn cache_scanned_entries(
+        &mut self,
+        discovered: Vec<ApplicationEntry>,
+    ) -> Result<(), ApplicationError> {
+        let mut loaded = self.database.load_entries()?;
+        let mut previous = self
+            .prepared_entries
+            .take()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|entry| (entry.entry_id.clone(), entry))
+            .collect::<HashMap<_, _>>();
+        let mut discovered = discovered
+            .into_iter()
+            .map(|entry| (entry.entry_id.clone(), entry))
+            .collect::<HashMap<_, _>>();
+        let mut pending = Vec::with_capacity(discovered.len());
+        for (index, entry) in loaded.iter_mut().enumerate() {
+            if let Some(mut prior) = previous.remove(&entry.entry_id)
+                && prior.display_name == entry.display_name
+                && prior.normalized_tokens == entry.normalized_tokens
+            {
+                entry.search_readings = std::mem::take(&mut prior.search_readings);
+            } else {
+                entry.prepare_search_readings();
+            }
+            if let Some(source) = discovered.remove(&entry.entry_id) {
+                entry.icon_source = source.icon_source;
+                entry.icon_index = source.icon_index;
+                entry.priority = source.priority;
+                pending.push(index);
+            }
+        }
+        self.prepared_entries = Some(loaded);
+        self.pending_icons = pending;
+        Ok(())
+    }
+
+    /// Populate at most `limit` icons so visible results can publish first.
     pub fn populate_icon_batch(
         &mut self,
         cancelled_through: &AtomicU64,
@@ -233,11 +282,16 @@ impl ApplicationIndex {
         let mut failures = Vec::new();
         let count = limit.min(self.pending_icons.len());
         let mut processed = 0;
-        for entry in &mut self.pending_icons[..count] {
+        let entries = self
+            .prepared_entries
+            .as_mut()
+            .expect("pending icons belong to the prepared catalog");
+        for &index in &self.pending_icons[..count] {
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
             processed += 1;
+            let entry = &mut entries[index];
             if let Err(error) = self.icon_cache.prepare(entry) {
                 failures.push(format!("{}: {error}", entry.target_path));
             }
@@ -252,9 +306,13 @@ impl ApplicationIndex {
             .enumerate()
             .map(|(index, entry_id)| (entry_id.as_str(), index))
             .collect::<HashMap<_, _>>();
-        self.pending_icons.sort_by_key(|entry| {
+        let entries = self
+            .prepared_entries
+            .as_ref()
+            .expect("pending icons belong to the prepared catalog");
+        self.pending_icons.sort_by_key(|index| {
             priorities
-                .get(entry.entry_id.as_str())
+                .get(entries[*index].entry_id.as_str())
                 .copied()
                 .unwrap_or(usize::MAX)
         });

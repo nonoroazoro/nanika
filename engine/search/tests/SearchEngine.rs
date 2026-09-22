@@ -33,6 +33,117 @@ fn aliases_receive_the_same_lexical_tiers_as_titles() {
 }
 
 #[test]
+fn different_names_of_one_candidate_satisfy_all_query_terms() {
+    let candidates = [
+        Candidate::new(
+            CandidateKind::Action,
+            "test.extension",
+            "music",
+            "音乐",
+            "open",
+            vec!["music".to_owned(), "yinyue".to_owned()],
+        ),
+        Candidate::new(
+            CandidateKind::Action,
+            "test.extension",
+            "unrelated",
+            "音乐盒",
+            "open",
+            vec!["podcast".to_owned()],
+        ),
+    ];
+    let mut engine = SearchEngine::new();
+    for query in ["音乐 music", "音乐music", "yin music", "music 音乐"] {
+        let snapshot = engine.query(query, &candidates, &UsageMap::new(), 0);
+        assert_eq!(snapshot.results.len(), 1, "query: {query}");
+        assert_eq!(snapshot.results[0].candidate.entry_id(), "music");
+    }
+    assert!(
+        engine
+            .query("音乐 missing", &candidates, &UsageMap::new(), 0)
+            .results
+            .is_empty()
+    );
+}
+
+#[test]
+fn short_terms_follow_the_same_cross_name_rule() {
+    let candidates = [Candidate::new(
+        CandidateKind::Action,
+        "test.extension",
+        "letter",
+        "A",
+        "open",
+        vec!["Music".to_owned()],
+    )];
+    for query in ["a music", "music a"] {
+        let snapshot = SearchEngine::new().query(query, &candidates, &UsageMap::new(), 0);
+        assert_eq!(snapshot.results[0].candidate.entry_id(), "letter");
+    }
+}
+
+#[test]
+fn accented_latin_word_is_not_split_across_unrelated_names() {
+    let candidates = [Candidate::new(
+        CandidateKind::Action,
+        "test.extension",
+        "unrelated",
+        "R",
+        "open",
+        vec!["ésumé".to_owned()],
+    )];
+    let snapshot = SearchEngine::new().query("résumé", &candidates, &UsageMap::new(), 0);
+    assert!(snapshot.results.is_empty());
+}
+
+#[test]
+fn a_contiguous_name_still_ranks_above_cross_name_terms() {
+    let candidates = [
+        candidate("contiguous", "音乐 Music", "open"),
+        Candidate::new(
+            CandidateKind::Action,
+            "test.extension",
+            "separate",
+            "音乐",
+            "open",
+            vec!["music".to_owned()],
+        ),
+    ];
+    let snapshot = SearchEngine::new().query("音乐 music", &candidates, &UsageMap::new(), 0);
+    assert_eq!(snapshot.results[0].candidate.entry_id(), "contiguous");
+    assert_eq!(snapshot.results[1].candidate.entry_id(), "separate");
+}
+
+#[test]
+fn cross_name_terms_beat_a_weak_single_name_fuzzy_match() {
+    let candidates = [Candidate::new(
+        CandidateKind::Action,
+        "test.extension",
+        "music",
+        "音乐",
+        "open",
+        vec!["music".to_owned(), "音乐 other music".to_owned()],
+    )];
+    let snapshot = SearchEngine::new().query("音乐 music", &candidates, &UsageMap::new(), 0);
+    assert_eq!(snapshot.results[0].lexical_tier, 1);
+}
+
+#[test]
+fn repeated_query_terms_do_not_create_cross_name_matches() {
+    let candidates = [Candidate::new(
+        CandidateKind::Action,
+        "test.extension",
+        "unrelated",
+        "Alpha",
+        "open",
+        vec!["Beta".to_owned()],
+    )];
+    let query = "a ".repeat(2_048);
+    let snapshot = SearchEngine::new().query(&query, &candidates, &UsageMap::new(), 0);
+    assert!(snapshot.results.is_empty());
+}
+
+#[test]
 fn weak_fuzzy_matches_are_rejected() {
     let title = format!("a{}b{}c", "x".repeat(200), "y".repeat(200));
     let snapshot = SearchEngine::new().query(

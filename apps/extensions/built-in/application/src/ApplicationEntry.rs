@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use nanika_protocol::{Candidate, CandidateKind, IconReference, LaunchArguments, LaunchDescriptor};
+use nanika_text_search::{RomanizedReading, romanized_readings};
 
 use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
@@ -12,6 +13,8 @@ pub struct ApplicationEntry {
     pub display_name: String,
     pub normalized_name: String,
     pub normalized_tokens: String,
+    /// Prepared search spellings; derived from the original names, never persisted.
+    pub search_readings: Vec<RomanizedReading>,
     pub launch_kind: String,
     /// Native activation path, preserving the original spelling of Shell Links.
     pub target_path: String,
@@ -25,19 +28,43 @@ pub struct ApplicationEntry {
 }
 
 impl ApplicationEntry {
+    pub(crate) fn prepare_search_readings(&mut self) {
+        let mut readings = romanized_readings(&self.display_name);
+        for alias in self
+            .normalized_tokens
+            .lines()
+            .filter(|alias| *alias != self.normalized_name)
+        {
+            for reading in romanized_readings(alias) {
+                if !readings.contains(&reading) {
+                    readings.push(reading);
+                }
+            }
+        }
+        self.search_readings = readings;
+    }
+
     pub fn candidate(&self) -> Candidate {
+        let mut aliases = self
+            .normalized_tokens
+            .lines()
+            .filter(|alias| *alias != self.normalized_name)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for reading in &self.search_readings {
+            for alias in [&reading.full, &reading.initials] {
+                if alias != &self.normalized_name && !aliases.iter().any(|item| item == alias) {
+                    aliases.push(alias.clone());
+                }
+            }
+        }
         Candidate {
             kind: CandidateKind::Action,
             entry_id: self.entry_id.clone(),
             title: self.display_name.clone(),
             subtitle: Some("Application".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
-            aliases: self
-                .normalized_tokens
-                .lines()
-                .filter(|alias| *alias != self.normalized_name)
-                .map(str::to_owned)
-                .collect(),
+            aliases,
             icon: IconReference::new(&self.icon_key).ok(),
             contribution_icon: None,
         }

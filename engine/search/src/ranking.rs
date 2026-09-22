@@ -17,15 +17,21 @@ pub(crate) fn rank<'a>(
     context: &mut MatchContext,
 ) -> SearchSnapshot {
     let normalized_query = normalize_query(query);
+    let cross_field_terms = cross_field_terms(&normalized_query);
     let mut scored = candidates
         .filter_map(|candidate| {
-            let (lexical_tier, fuzzy_score) = lexical_match(
+            let lexical = lexical_match(
                 &normalized_query,
                 candidate,
                 &mut context.matcher,
                 &mut context.haystack_buffer,
                 &mut context.query_buffer,
-            )?;
+            );
+            let (lexical_tier, fuzzy_score) = if lexical.is_some_and(|(tier, _)| tier >= 1) {
+                lexical
+            } else {
+                lexical.max(match_cross_field(&cross_field_terms, candidate))
+            }?;
             let contextual_boost = usage
                 .get(&UsageKey::for_candidate(candidate, query))
                 .map_or(0, |stat| contextual_boost(*stat, now));
@@ -50,6 +56,69 @@ pub(crate) fn rank<'a>(
             )
             .collect(),
     }
+}
+
+// Split explicit terms and adjacent Han/non-Han text, without treating accented
+// Latin letters as a separate script from ASCII letters.
+fn cross_field_terms(query: &str) -> Vec<&str> {
+    if !query.contains(' ') {
+        if query.is_ascii() {
+            return Vec::new();
+        }
+        let mut scripts = query.chars().map(is_han);
+        let first = scripts.next();
+        if scripts.all(|han| Some(han) == first) {
+            return Vec::new();
+        }
+    }
+
+    let mut terms = Vec::new();
+    let mut start = 0;
+    let mut previous_han = None;
+    for (offset, character) in query.char_indices() {
+        if character == ' ' {
+            if start < offset {
+                terms.push(&query[start..offset]);
+            }
+            start = offset + 1;
+            previous_han = None;
+            continue;
+        }
+        let han = is_han(character);
+        if previous_han.is_some_and(|previous| previous != han) {
+            terms.push(&query[start..offset]);
+            start = offset;
+        }
+        previous_han = Some(han);
+    }
+    if start < query.len() {
+        terms.push(&query[start..]);
+    }
+    // Repeated terms impose no additional condition. Compare longer terms first
+    // so an absent, selective term avoids scanning every short term per candidate.
+    terms
+        .sort_unstable_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    terms.dedup();
+    if terms.len() < 2 { Vec::new() } else { terms }
+}
+
+fn is_han(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff | 0x20000..=0x2fa1f
+            | 0x30000..=0x323af
+    )
+}
+
+fn match_cross_field(terms: &[&str], candidate: &Candidate) -> Option<(u8, u32)> {
+    (!terms.is_empty()
+        && terms.iter().all(|term| {
+            candidate
+                .search_values()
+                .iter()
+                .any(|value| value.contains(term))
+        }))
+    .then_some((1, u32::MAX - 3))
 }
 
 fn compare_scored(

@@ -66,6 +66,7 @@ impl ApplicationDatabase {
                 display_name: row.get(2)?,
                 normalized_name: row.get(3)?,
                 normalized_tokens: row.get(4)?,
+                search_readings: Vec::new(),
                 launch_kind: row.get(5)?,
                 target_path: row.get(6)?,
                 working_directory: row.get(7)?,

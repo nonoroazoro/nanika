@@ -77,6 +77,31 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         panic!("application extension should return a snapshot");
     };
     assert!(entries.iter().any(|entry| entry.title == "Nanika Sample"));
+    let music = entries
+        .iter()
+        .find(|entry| entry.title == "音乐")
+        .expect("Chinese application should be discovered");
+    assert!(music.aliases.iter().any(|alias| alias == "yinyue"));
+    assert!(music.aliases.iter().any(|alias| alias == "yy"));
+    let sync = entries
+        .iter()
+        .find(|entry| entry.title == "同步")
+        .expect("synthetic Chinese application should be discovered");
+    assert!(sync.aliases.iter().any(|alias| alias == "tongbu"));
+    assert!(sync.aliases.iter().any(|alias| alias == "tb"));
+    write_frame(
+        &mut input,
+        &Message::Query {
+            request_id: "mixed-pinyin-query".to_owned(),
+            generation: 2,
+            query: "音yue".to_owned(),
+        },
+    )
+    .expect("mixed query should write");
+    let mixed_entries = read_complete_snapshot(&mut output);
+    assert!(mixed_entries.iter().any(|entry| {
+        entry.title == "音乐" && entry.aliases.iter().any(|alias| alias == "音yue")
+    }));
     let entry = entries
         .into_iter()
         .find(|entry| entry.title == "Nanika Sample")
@@ -439,49 +464,61 @@ fn argument(name: &str, value: &Path) -> OsString {
 #[cfg(windows)]
 fn create_application_fixture(root: &Path) {
     create_executable(&root.join("Nanika Sample.exe"));
+    create_executable(&root.join("音乐.exe"));
+    create_executable(&root.join("同步.exe"));
 }
 
 #[cfg(target_os = "macos")]
 fn create_application_fixture(root: &Path) {
     use std::os::unix::fs::PermissionsExt;
 
-    let bundle = root.join("Nanika Sample.app/Contents");
-    let executable = bundle.join("MacOS/nanika-sample");
-    std::fs::create_dir_all(
-        executable
-            .parent()
-            .expect("application executable should have a parent"),
-    )
-    .expect("application executable directory should exist");
-    std::fs::write(
-        bundle.join("Info.plist"),
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+    for (name, identifier) in [
+        ("Nanika Sample", "com.nanika.test.sample"),
+        ("音乐", "com.nanika.test.music"),
+        ("同步", "com.nanika.test.sync"),
+    ] {
+        let bundle = root.join(format!("{name}.app/Contents"));
+        let executable = bundle.join("MacOS/nanika-sample");
+        std::fs::create_dir_all(
+            executable
+                .parent()
+                .expect("application executable should have a parent"),
+        )
+        .expect("application executable directory should exist");
+        std::fs::write(
+            bundle.join("Info.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
   <key>CFBundleDisplayName</key>
-  <string>Nanika Sample</string>
+  <string>{name}</string>
   <key>CFBundleExecutable</key>
   <string>nanika-sample</string>
   <key>CFBundleIdentifier</key>
-  <string>com.nanika.test.sample</string>
+  <string>{identifier}</string>
 </dict>
 </plist>
-"#,
-    )
-    .expect("application property list should exist");
-    create_executable(&executable);
-    let mut permissions = executable
-        .metadata()
-        .expect("application executable metadata")
-        .permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(executable, permissions)
-        .expect("application executable should be executable");
+"#
+            ),
+        )
+        .expect("application property list should exist");
+        create_executable(&executable);
+        let mut permissions = executable
+            .metadata()
+            .expect("application executable metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(executable, permissions)
+            .expect("application executable should be executable");
+    }
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn create_application_fixture(root: &Path) {
     create_executable(&root.join("Nanika Sample.exe"));
+    create_executable(&root.join("音乐.exe"));
+    create_executable(&root.join("同步.exe"));
 }
 
 fn create_executable(target: &Path) {

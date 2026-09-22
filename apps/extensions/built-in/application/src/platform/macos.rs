@@ -95,6 +95,7 @@ pub(super) fn read_entry(
         display_name,
         normalized_name: normalized_name.clone(),
         normalized_tokens,
+        search_readings: Vec::new(),
         launch_kind: "macos-bundle".to_owned(),
         target_path: path.to_string_lossy().into_owned(),
         working_directory: None,

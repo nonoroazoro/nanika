@@ -185,6 +185,7 @@ fn entry(entry_id: &str) -> ApplicationEntry {
         display_name: "Example".to_owned(),
         normalized_name: "example".to_owned(),
         normalized_tokens: "example".to_owned(),
+        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: "example.exe".to_owned(),
         working_directory: None,
