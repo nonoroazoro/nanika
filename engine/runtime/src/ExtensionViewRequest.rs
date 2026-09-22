@@ -1,6 +1,5 @@
 use crate::ExtensionViewRequestKind;
 
-/// One serialized interaction with an extension view session.
 #[derive(Debug, Clone)]
 pub(crate) struct ExtensionViewRequest {
     pub(crate) completion: std::sync::mpsc::Sender<Result<crate::RuntimeViewCompletion, String>>,

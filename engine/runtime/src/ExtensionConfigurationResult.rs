@@ -1,4 +1,3 @@
-/// Application result produced by a running Nanika extension.
 #[derive(Debug)]
 pub(crate) struct ExtensionConfigurationResult {
     pub(crate) extension_id: String,

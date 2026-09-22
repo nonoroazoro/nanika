@@ -1,6 +1,5 @@
 use crate::{CandidateKind, normalize_query};
 
-/// One searchable entry contributed by an extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     kind: CandidateKind,

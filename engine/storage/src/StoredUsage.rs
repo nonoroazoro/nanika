@@ -1,4 +1,3 @@
-/// One persisted contextual usage record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredUsage {
     pub extension_id: String,

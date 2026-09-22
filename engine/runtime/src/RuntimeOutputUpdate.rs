@@ -1,4 +1,3 @@
-/// Latest bounded output produced by a streaming extension invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOutputUpdate {
     pub invocation_id: u64,

@@ -1,4 +1,3 @@
-/// Failure to enqueue a storage command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageQueueError {
     Closed,

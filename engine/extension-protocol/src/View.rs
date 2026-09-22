@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use crate::{DetailContent, DetailView, ImageSource, ListView, ViewAction, ViewActionStyle};
 
-/// One host-rendered extension view document.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum View {

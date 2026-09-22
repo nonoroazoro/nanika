@@ -42,16 +42,12 @@ pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
     }
     let _apartment = Apartment(initialized.is_ok());
 
-    // The native image service prefers a thumbnail for supported files and falls back
-    // to their icon. This keeps image collections distinguishable while text,
-    // executables, shortcuts, and directories retain their native Shell icon.
+    // Prefer content thumbnails where available; otherwise use native file icons.
     if let Ok(pixels) = image_factory_pixels(&source, size, SIIGBF_RESIZETOFIT) {
         return Ok(pixels);
     }
 
-    // SHGetFileInfo resolves the system icon index assigned to this
-    // concrete file or directory. SHIL_JUMBO supplies its 256 px native icon
-    // when the item has no thumbnail or thumbnail acquisition fails.
+    // Use this item's system icon index at native 256 px resolution.
     let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
     let resolved = unsafe {
         SHGetFileInfoW(
@@ -92,9 +88,7 @@ pub(crate) fn list_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
-    // Preserve high-resolution artwork before reducing it for high-DPI list rows.
-    // The image list supplies an HICON without a thumbnail frame. Normalize at
-    // its native 256 px size so legacy icons on a larger transparent canvas fit too.
+    // Normalize at native 256 px resolution before scaling for high-DPI rows.
     let mut info = unsafe { std::mem::zeroed::<SHFILEINFOW>() };
     let resolved = unsafe {
         SHGetFileInfoW(

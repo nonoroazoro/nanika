@@ -1,6 +1,5 @@
 use crate::ProjectIdentity;
 
-/// Product display name.
 pub const PRODUCT_NAME: &str = "Nanika";
 
 /// Current pre-1.0 identity baseline.

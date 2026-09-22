@@ -1,10 +1,6 @@
 import type { FrameStatistics } from "./index";
 
-/**
- * Summarize the monitor's explicitly bounded frame interval window.
- *
- * @param intervals Positive intervals between consecutive visible frame callbacks.
- */
+/** Summarize positive intervals between visible frame callbacks. */
 export function summarizeFrames(intervals: readonly number[]): FrameStatistics | null
 {
     const sorted = [...intervals].sort((left, right) => left - right);

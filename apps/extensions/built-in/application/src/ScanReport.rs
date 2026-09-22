@@ -1,4 +1,3 @@
-/// Result of one application discovery generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanReport {
     pub generation: u64,

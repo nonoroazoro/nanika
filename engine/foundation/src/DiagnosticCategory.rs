@@ -1,4 +1,3 @@
-/// Stable category for one host-owned diagnostic.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DiagnosticCategory {
     Configuration,

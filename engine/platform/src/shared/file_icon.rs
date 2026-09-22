@@ -18,13 +18,8 @@ pub fn file_icon_pixels(
     crate::adapter::file_icon::pixels(path, icon_index, size)
 }
 
-/// Retrieve bounded native artwork for an existing file or directory.
-///
-/// Windows requests a fitted Shell thumbnail. macOS uses Image I/O for images and
-/// Quick Look for other previewable content. Both adapters fall back to native file icons.
-/// Call on a blocking worker. The returned square RGBA buffer is bounded by the requested size,
-/// at most 512 pixels.
-/// Native thumbnail providers may read the source to generate missing thumbnails.
+/// Retrieve a square native preview up to 512 px, falling back to the file icon.
+/// Call on a blocking worker; native providers may read the source.
 pub fn shell_file_icon_pixels(path: &std::path::Path, size: u32) -> std::io::Result<Vec<u8>> {
     if !path.is_absolute()
         || path.as_os_str().as_encoded_bytes().contains(&0)

@@ -1,6 +1,5 @@
 use crate::Candidate;
 
-/// A candidate after lexical and contextual ranking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedCandidate {
     pub candidate: Candidate,

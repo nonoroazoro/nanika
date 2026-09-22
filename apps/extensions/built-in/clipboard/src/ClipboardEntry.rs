@@ -1,6 +1,5 @@
 use nanika_protocol::ClipboardContent;
 
-/// One persisted clipboard history item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardEntry {
     pub entry_id: String,

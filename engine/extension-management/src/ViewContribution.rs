@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::ContributionIcon;
 
-/// One statically discoverable declarative view contributed by an extension.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ViewContribution {

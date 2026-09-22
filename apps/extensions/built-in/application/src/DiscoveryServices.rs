@@ -4,7 +4,6 @@ use std::sync::mpsc::SyncSender;
 
 use crate::{ApplicationConfig, ApplicationEntry, RuntimeEvent};
 
-/// Shared services used by one application discovery owner.
 pub(crate) struct DiscoveryServices<'a> {
     pub(crate) config: &'a RwLock<ApplicationConfig>,
     pub(crate) entries: &'a RwLock<Vec<ApplicationEntry>>,

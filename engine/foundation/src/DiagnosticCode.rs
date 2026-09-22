@@ -1,6 +1,5 @@
 use crate::DiagnosticCategory;
 
-/// Stable code for one host-owned diagnostic.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DiagnosticCode {
     ConfigurationUnavailable,

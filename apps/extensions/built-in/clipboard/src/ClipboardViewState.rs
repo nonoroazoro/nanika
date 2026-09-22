@@ -1,6 +1,5 @@
 pub const CLIPBOARD_PAGE_SIZE: usize = 10;
 
-/// Route-local interaction state for the clipboard history view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardViewState {
     pub query: String,

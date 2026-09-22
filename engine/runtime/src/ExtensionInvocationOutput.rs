@@ -1,4 +1,3 @@
-/// Protocol-neutral output produced by an extension action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtensionInvocationOutput {
     pub(crate) invocation_id: u64,

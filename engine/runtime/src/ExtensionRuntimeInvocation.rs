@@ -1,4 +1,3 @@
-/// One action request submitted to a protocol-aware extension runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionRuntimeInvocation {
     pub(crate) request_id: String,

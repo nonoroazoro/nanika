@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::EXTENSION_ID;
 
-/// Host-supplied generated-data roots for clipboard history.
 pub struct RuntimePaths {
     pub data_root: PathBuf,
     pub cache_root: PathBuf,

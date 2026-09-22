@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use nanika_protocol::ExtensionConfiguration;
 
-/// Directories supplied through the host-owned settings snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptConfig {
     pub roots: Vec<PathBuf>,

@@ -27,8 +27,7 @@ const detail = $derived.by(() =>
     {
         return snapshot.view.detail;
     }
-    // Selection intent moves immediately; keep the committed preview mounted
-    // until the Channel supplies its replacement, including during rapid input.
+    // Keep the committed preview until the Channel resolves the new selection.
     return list?.detail ?? null;
 });
 const detailPending = $derived(list !== null && (selected?.id ?? null) !== list.selected_item_id);
@@ -178,7 +177,7 @@ $effect(() =>
         }
     }, {
         root,
-        // Start the next ten-item request before the current page reaches its last row.
+        // Prefetch the next page before reaching the last row.
         rootMargin: "0px 0px 160px 0px"
     });
     observer.observe(target);
@@ -524,7 +523,6 @@ input::placeholder { color: var(--text-tertiary); opacity: 1; }
 .split .list-pane { flex: 0 1 38%; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
-/* Keep long titles within the pane so keyboard reveal cannot scroll rows sideways. */
 .list-pane [role='group'] { display: grid; grid-template-columns: minmax(0, 1fr); }
 .list-pane { padding: var(--space-2); overflow-x: hidden; }
 h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }

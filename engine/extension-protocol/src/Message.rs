@@ -5,7 +5,6 @@ use crate::{
     View, ViewEvent,
 };
 
-/// One request or response on the extension protocol.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Message {

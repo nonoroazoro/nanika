@@ -1,4 +1,3 @@
-/// One explicit extension refresh generation.
 #[derive(Debug)]
 pub(crate) struct ExtensionRefresh {
     pub(crate) request_id: u64,

@@ -1,6 +1,5 @@
 use std::io;
 
-/// Errors raised while framing or decoding protocol messages.
 #[derive(Debug)]
 pub enum FrameError {
     Io(io::Error),
