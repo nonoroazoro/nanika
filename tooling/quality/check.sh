@@ -46,6 +46,7 @@ corepack pnpm extensions:prepare
 corepack pnpm format:check
 corepack pnpm lint
 corepack pnpm frontend:check
+corepack pnpm tooling:check
 corepack pnpm frontend:build
 corepack pnpm frontend:test
 

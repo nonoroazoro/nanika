@@ -12,25 +12,37 @@ default:
     @just --list
 
 # Start the complete desktop development application with the package-manager pin
-# resolved from apps/desktop/package.json.
+# resolved from apps/desktop/package.json. Refuse to activate another build.
 [unix]
 dev:
-    cd apps/desktop && fnm exec --using .node-version corepack pnpm dev
+    cd apps/desktop && NANIKA_DEV_REQUIRE_PRIMARY=1 fnm exec --using .node-version corepack pnpm dev
 
 [windows]
 dev:
-    Push-Location apps/desktop; try { fnm exec --using .node-version corepack.cmd pnpm dev } finally { Pop-Location }
+    Push-Location apps/desktop; try { $env:NANIKA_DEV_REQUIRE_PRIMARY = '1'; fnm exec --using .node-version corepack.cmd pnpm dev } finally { Remove-Item Env:NANIKA_DEV_REQUIRE_PRIMARY -ErrorAction SilentlyContinue; Pop-Location }
+
+# Build and launch a fresh macOS app bundle for Computer Use. This mode has no HMR.
+[unix]
+dev-computer-use:
+    cd apps/desktop && fnm exec --using .node-version corepack pnpm dev:computer-use
+
+# Windows Computer Use can bind the live development window directly.
+[windows]
+dev-computer-use:
+    just dev
 
 # Delete Nanika development state, then start from a clean baseline.
 [unix]
 dev-fresh:
+    fnm exec --using {{node-version-file}} node tooling/development/verify-dev-target.ts
     sh tooling/development/reset-state.sh
-    cd apps/desktop && fnm exec --using .node-version corepack pnpm dev
+    cd apps/desktop && NANIKA_DEV_REQUIRE_PRIMARY=1 fnm exec --using .node-version corepack pnpm dev
 
 [windows]
 dev-fresh:
+    fnm exec --using {{node-version-file}} node tooling/development/verify-dev-target.ts
     & ./tooling/development/reset-state.ps1
-    Push-Location apps/desktop; try { fnm exec --using .node-version corepack.cmd pnpm dev } finally { Pop-Location }
+    Push-Location apps/desktop; try { $env:NANIKA_DEV_REQUIRE_PRIMARY = '1'; fnm exec --using .node-version corepack.cmd pnpm dev } finally { Remove-Item Env:NANIKA_DEV_REQUIRE_PRIMARY -ErrorAction SilentlyContinue; Pop-Location }
 
 [unix]
 check:

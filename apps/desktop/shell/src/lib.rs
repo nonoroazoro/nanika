@@ -93,6 +93,15 @@ pub fn run() -> Result<(), String> {
     {
         nanika_platform::InstanceRole::Primary(instance) => instance,
         nanika_platform::InstanceRole::Secondary => {
+            // Development and debug QA must never activate another build.
+            if cfg!(debug_assertions)
+                || std::env::var("NANIKA_DEV_REQUIRE_PRIMARY").as_deref() == Ok("1")
+            {
+                return Err(
+                    "Another Nanika instance is running; stop it before starting the development build."
+                        .to_owned(),
+                );
+            }
             nanika_platform::signal_activate(identity, paths.app_data_root())
                 .map_err(|error| error.to_string())?;
             return Ok(());

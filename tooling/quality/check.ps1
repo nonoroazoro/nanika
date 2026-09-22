@@ -41,11 +41,13 @@ try {
         & corepack.cmd pnpm extensions:prepare
         if ($LASTEXITCODE -ne 0) { throw "Extension preparation failed." }
         & corepack.cmd pnpm format:check
-        if ($LASTEXITCODE -ne 0) { throw "Frontend formatting check failed." }
+        if ($LASTEXITCODE -ne 0) { throw "Frontend or tooling formatting check failed." }
         & corepack.cmd pnpm lint
-        if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed." }
+        if ($LASTEXITCODE -ne 0) { throw "Frontend or tooling lint failed." }
         & corepack.cmd pnpm frontend:check
         if ($LASTEXITCODE -ne 0) { throw "Frontend type check failed." }
+        & corepack.cmd pnpm tooling:check
+        if ($LASTEXITCODE -ne 0) { throw "Tooling type check failed." }
         & corepack.cmd pnpm frontend:build
         if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
         & corepack.cmd pnpm frontend:test
