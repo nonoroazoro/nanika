@@ -5,11 +5,12 @@
 - Treat the current pre-release design as the only baseline. Rewrite unpublished schemas and formats directly; leave no stale design, compatibility paths, migrations, or known technical debt when completing a stage.
 - Use `just dev` to start the complete application and `just check` for repository validation. Toolchain pins and delegated commands live in the repository manifests and `justfile`. Keep the current Active LTS Node.js line pinned for development and CI; development tools must not enter production artifacts.
 - Organize by responsibility: `apps` contains deployable processes, `engine` contains reusable UI-independent behavior, and `tooling` contains repository build, quality, and release support. Keep tests and benchmarks with their owning module.
+- Prefer Rust and TypeScript for implementation, including repository tooling. Run tooling TypeScript directly with the pinned Node.js runtime and validate it with `tsc`; retain other formats only where tool or platform integration requires them without extra dependencies or experimental loaders.
 - Keep Svelte presentation and browser assets in `apps/desktop/frontend`; keep Tauri configuration, capabilities, resources, and privileged shell wiring in `apps/desktop/shell`. The CLI belongs in `apps/cli`; built-in executables and test fixtures belong in `apps/extensions`.
 - `engine/foundation` (`nanika-foundation`) owns project identity, extension IDs, and diagnostic primitives. `engine/platform` owns shared native mechanisms behind adapters; runtime, configuration, and extension management retain orchestration and transaction policy.
 - Keep temporary repository outputs and benchmark data under `target`. Do not add top-level `crates`, `extensions`, `src-tauri`, `web`, `rust`, `scripts`, `packaging`, or `dist`; frontend build output stays in `apps/desktop/frontend/dist`.
 
-Detailed baseline: [technical stack](docs/plan/tech-stack.md). Distinguish implemented behavior from planned work in [tasks](docs/plan/tasks.md) and [release](docs/plan/release.md).
+The code and manifests define implemented behavior. Open architecture work is in [technical stack](docs/plan/tech-stack.md), actionable tasks in [tasks](docs/plan/tasks.md), and release gates in [release](docs/plan/release.md).
 
 ## Behavior and platform boundaries
 
@@ -19,7 +20,7 @@ Detailed baseline: [technical stack](docs/plan/tech-stack.md). Distinguish imple
 - Before platform-facing changes, document the shared contract and both Windows and macOS implementations. Keep native APIs, handles, OS-specific paths, and platform conditionals inside adapters, outside shared engine, protocol, frontend, and extension code. Conditionals must name a supported platform or an explicit unsupported branch. Exceptions require a review note naming platforms, semantics, and validation evidence.
 - Adapters may vary mechanisms, not product semantics. Process containment, file replacement, executable permissions, target selection, and diagnostic file opening belong in `engine/platform`; callers retain lifecycle, validation, and transaction decisions. Validate changes on both supported platforms.
 
-Contract details and review gates: [platform architecture](docs/plan/platform-architecture.md).
+Open platform validation and review gates: [platform architecture](docs/plan/platform-architecture.md).
 
 ## Core, extensions, and IPC
 
@@ -39,7 +40,7 @@ Contract details and review gates: [platform architecture](docs/plan/platform-ar
 - Do not add SvelteKit, a router, global state framework, component library, utility CSS, CSS-in-JS, simulated DOM, or animation library without a demonstrated requirement.
 - Keep blocking work off the Tauri event-loop and WebView main thread. Hidden UI must not poll or run animation frame loops. Measure latency, frame pacing, and resource use; maintain smooth 60 Hz and 120 Hz behavior where available.
 
-Presentation and measurement details: [UI](docs/plan/ui.md) and [performance](docs/plan/performance.md).
+Open presentation and measurement work: [UI](docs/plan/ui.md) and [performance](docs/plan/performance.md).
 
 ## Validation
 
