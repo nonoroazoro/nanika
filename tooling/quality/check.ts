@@ -1,11 +1,11 @@
 import "../runtime.ts";
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runProcessTree } from "./process-tree.ts";
+import { buildExtensions } from "../build/build-extensions.ts";
+import { withBuildTarget } from "../build/with-build-target.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const desktop = join(root, "apps/desktop");
@@ -39,33 +39,15 @@ for await (const path of new Bun.Glob("**/*.{ts,svelte}").scan(join(desktop, "fr
     }
 }
 
-// Keep validation builds isolated from a running development application.
-await mkdir(join(root, "target"), { recursive: true });
-const target = await mkdtemp(join(root, "target/check-"));
-const environment = {
-    ...process.env,
-    CARGO_TARGET_DIR: target,
-    CARGO_INCREMENTAL: "0",
-    RUSTDOCFLAGS: `${process.env.RUSTDOCFLAGS ?? ""} -D warnings`.trim(),
-    ...(process.platform === "darwin" ? { MACOSX_DEPLOYMENT_TARGET: "13.0" } : {})
-};
-const cancellation = new AbortController();
-const interrupt = () =>
+// Cargo serializes compiler writes; each command stages its own sidecars.
+await withBuildTarget(root, "check", async (target, run) =>
 {
-    cancellation.abort("SIGINT");
-};
-const terminate = () =>
-{
-    cancellation.abort("SIGTERM");
-};
-let targetInUse = false;
-process.on("SIGINT", interrupt);
-process.on("SIGTERM", terminate);
-try
-{
+    const environment = {
+        TAURI_CONFIG: await buildExtensions(target, "debug", run, join(root, "target/cargo")),
+        RUSTDOCFLAGS: `${process.env.RUSTDOCFLAGS ?? ""} -D warnings`.trim()
+    };
     for (
         const script of [
-            "extensions:build",
             "format:check",
             "lint",
             "frontend:check",
@@ -75,34 +57,14 @@ try
         ]
     )
     {
-        await _run([process.execPath, "run", script]);
+        await run([process.execPath, "run", script]);
     }
-    await _run(["cargo", "fmt", "--all", "--", "--check"]);
-    await _run(["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]);
-    await _run(["cargo", "test", "--workspace", "--all-targets", "--locked"]);
-    await _run(["cargo", "doc", "--workspace", "--no-deps", "--locked"]);
-}
-finally
-{
-    // Retain compiler output when process termination could not be verified.
-    if (!targetInUse)
-    {
-        await rm(target, { recursive: true, force: true });
-    }
-    process.removeListener("SIGINT", interrupt);
-    process.removeListener("SIGTERM", terminate);
-}
-
-async function _run(command: string[]): Promise<void>
-{
-    cancellation.signal.throwIfAborted();
-    targetInUse = true;
-    const child = await runProcessTree(command, root, environment, cancellation.signal);
-    targetInUse = false;
-    if (cancellation.signal.aborted || child.exitCode !== 0)
-    {
-        throw new Error(
-            `${command.join(" ")} failed: ${cancellation.signal.reason ?? child.signalCode ?? child.exitCode}`
-        );
-    }
-}
+    await run(["cargo", "fmt", "--all", "--", "--check"]);
+    await run(
+        ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
+        root,
+        environment
+    );
+    await run(["cargo", "test", "--workspace", "--all-targets", "--locked"], root, environment);
+    await run(["cargo", "doc", "--workspace", "--no-deps", "--locked"], root, environment);
+});

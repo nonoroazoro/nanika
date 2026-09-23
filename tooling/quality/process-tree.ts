@@ -1,5 +1,5 @@
 /**
- * Runs a validation command independently of the terminal's process group.
+ * Runs a build command independently of the terminal's process group.
  * macOS cancellation signals the owned group and waits until it is absent.
  * Windows cancellation uses taskkill /T /F and waits for taskkill and the child.
  * A termination failure rejects without claiming that descendants have exited.
@@ -7,7 +7,7 @@
  * @param command Executable and arguments
  * @param cwd Command working directory
  * @param environment Explicit command environment
- * @param cancellation Cancellation shared by the validation pipeline
+ * @param cancellation Cancellation shared by the build pipeline
  */
 export async function runProcessTree(
     command: string[],
@@ -46,6 +46,12 @@ export async function runProcessTree(
         if (cancellation.aborted)
         {
             await stopped.promise;
+        }
+        else if (process.platform === "darwin" && _groupExists(child.pid))
+        {
+            // A CLI can leave a frontend server behind even after a successful exit.
+            // Stop owned descendants before releasing the build slot.
+            await _terminate(child, "SIGTERM");
         }
         return child;
     }

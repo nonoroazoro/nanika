@@ -83,11 +83,11 @@
       "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     },
     "externalBin": [
-      "../../../target/tauri-binaries/nanika-extension-application",
-      "../../../target/tauri-binaries/nanika-extension-command",
-      "../../../target/tauri-binaries/nanika-extension-script",
-      "../../../target/tauri-binaries/nanika-extension-calculator",
-      "../../../target/tauri-binaries/nanika-extension-clipboard"
+      "nanika-extension-application",
+      "nanika-extension-command",
+      "nanika-extension-script",
+      "nanika-extension-calculator",
+      "nanika-extension-clipboard"
     ],
     "macOS": {
       "minimumSystemVersion": "13.0"

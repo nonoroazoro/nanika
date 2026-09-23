@@ -16,6 +16,26 @@ For each new platform-facing behavior, record:
 
 Cross-target compilation is not native runtime validation.
 
+## Build tooling ownership
+
+Invocations reuse `target/cargo` with Cargo's default incremental compilation.
+Each command has a fixed staging directory. Dev, build, check, and Computer Use
+share one exclusive SQLite lock for the complete compile, stage, package, and launch
+pipeline. Cargo's internal lock alone cannot protect the steps after compilation.
+The OS releases the lock on process death. Tooling tests can run independently.
+Build failures stop the pipeline; only freshly generated bundles are published.
+Development refuses an already running Nanika instance instead of activating it.
+The script owns Vite and awaits its listener before passing that exact URL to Tauri;
+an occupied frontend port fails instead of reusing a previous server.
+
+Cleanup is manual: `just clean` recursively removes the entire repository `target`,
+including compiler caches, bundles, and lock files. Stop builds and the development
+app first. Startup performs no size scans, capacity checks, or automatic eviction.
+
+On macOS, tooling signals the command's process group and waits for it to stop.
+On Windows, cancellation uses `taskkill /T /F`. Unsupported platforms fail before
+build work begins. Native Windows execution remains a required validation gate.
+
 ## Pending validation
 
 - Exercise startup enablement, second-instance activation, stale-instance recovery, global shortcuts, native focus, active-monitor placement, and explicit shutdown on physical Windows and macOS systems.

@@ -25,3 +25,11 @@ dev-fresh:
 
 check:
     bun run check
+
+# Build the current release bundle using the shared Cargo cache.
+build:
+    bun run build
+
+# Delete the entire target directory. Stop builds and the development app first.
+clean:
+    bun tooling/build/clean.ts

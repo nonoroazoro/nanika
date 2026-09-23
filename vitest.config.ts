@@ -14,7 +14,7 @@ export default defineConfig({
             {
                 test: {
                     name: "tooling",
-                    include: ["tooling/**/*.test.ts"]
+                    include: ["tooling/tests/**/*.test.ts"]
                 }
             }
         ]

@@ -2,17 +2,17 @@ import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
-const repository = resolve(import.meta.dirname, "../..");
+const repository = resolve(import.meta.dirname, "../../..");
 
 test.runIf(process.platform === "darwin").each(
     [
         {
-            name: "SIGINT waits for descendants before removing build output",
+            name: "SIGINT waits for descendants and retains output until the next invocation",
             signal: "SIGINT",
             inspectionFailure: false
         },
         {
-            name: "SIGTERM waits for descendants before removing build output",
+            name: "SIGTERM waits for descendants and retains output until the next invocation",
             signal: "SIGTERM",
             inspectionFailure: false
         },
@@ -79,12 +79,17 @@ test.runIf(process.platform === "darwin").each(
             if (inspectionFailure)
             {
                 expect(stderr).toContain("inspection denied");
-                expect(await readdir(join(fixture, "target"))).toHaveLength(1);
+                expect((await readdir(join(fixture, "target"))).filter(name => !name.startsWith(".build-lock")))
+                    .toEqual(["cargo", "check-work"]);
             }
             else
             {
                 expect(stderr).toContain(signal);
-                expect(await readdir(join(fixture, "target")), stderr).toEqual([]);
+                expect((await readdir(join(fixture, "target"))).sort(), stderr).toEqual([
+                    ".build-locks",
+                    "cargo",
+                    "check-work"
+                ]);
                 expect(_running(ready.pid)).toBe(false);
             }
             expect(await Bun.file(join(fixture, "later-stage")).exists()).toBe(false);
@@ -119,7 +124,10 @@ test("a failed command preserves its exit cause and stops before later stages", 
         const [exitCode, stderr] = await Promise.all([check.exited, new Response(check.stderr).text()]);
         expect(exitCode).not.toBe(0);
         expect(stderr).toContain("failed: 23");
-        expect(await readdir(join(fixture, "target"))).toEqual([]);
+        expect((await readdir(join(fixture, "target"))).filter(name => !name.startsWith(".build-lock"))).toEqual([
+            "cargo",
+            "check-work"
+        ]);
         expect(await Bun.file(join(fixture, "later-stage")).exists()).toBe(false);
     }
     finally
@@ -130,9 +138,11 @@ test("a failed command preserves its exit cause and stops before later stages", 
 
 async function _fixture(): Promise<string>
 {
-    await mkdir(join(repository, "target"), { recursive: true });
-    const directory = await mkdtemp(join(repository, "target/check-test-"));
+    const fixtureRoot = process.env.CARGO_TARGET_DIR ?? join(repository, "target/test-work");
+    await mkdir(fixtureRoot, { recursive: true });
+    const directory = await mkdtemp(join(fixtureRoot, "check-test-"));
     await mkdir(join(directory, "tooling/quality"), { recursive: true });
+    await mkdir(join(directory, "tooling/build"), { recursive: true });
     await mkdir(join(directory, "apps/desktop/frontend/src"), { recursive: true });
     await mkdir(join(directory, "engine"));
     for (
@@ -140,7 +150,9 @@ async function _fixture(): Promise<string>
             "bunfig.toml",
             "tooling/runtime.ts",
             "tooling/quality/check.ts",
-            "tooling/quality/process-tree.ts"
+            "tooling/quality/process-tree.ts",
+            "tooling/build/with-build-target.ts",
+            "tooling/build/with-build-lock.ts"
         ]
     )
     {
@@ -151,10 +163,16 @@ async function _fixture(): Promise<string>
         JSON.stringify({
             packageManager: `bun@${Bun.version}`,
             scripts: {
-                "extensions:build": "bun worker.ts",
                 "format:check": "bun later.ts"
             }
         })
+    );
+    await Bun.write(
+        join(directory, "tooling/build/build-extensions.ts"),
+        `export async function buildExtensions(_target, _profile, run) {
+            await run([process.execPath, "worker.ts"]);
+            return "{}";
+        }`
     );
     await Bun.write(join(directory, "later.ts"), "await Bun.write('later-stage', 'unexpected');");
     return directory;
