@@ -65,7 +65,7 @@ impl ApplicationIndex {
     ) -> Result<(ScanReport, Vec<ApplicationEntry>), ApplicationError> {
         self.database.begin_scan(generation)?;
         self.discovery_state.begin_scan();
-        let standard_roots = match platform::standard_roots() {
+        let standard_roots = match platform::configured_roots(&config.enabled_builtin_roots) {
             Ok(roots) => roots,
             Err(error) => {
                 if let Err(record_error) = self.database.fail_scan(generation, &error.to_string()) {
@@ -76,16 +76,35 @@ impl ApplicationIndex {
                 return Err(error);
             }
         };
+        let roots_resolved = standard_roots
+            .failures
+            .iter()
+            .all(|failure| failure.path.is_some());
+        let mut warnings = standard_roots.failures.len();
+        let mut complete = warnings == 0;
+        for failure in &standard_roots.failures {
+            eprintln!("application discovery source failed: {}", failure.message);
+        }
         let mut roots = standard_roots
+            .paths
             .into_iter()
             .map(|path| (path, 0_usize))
             .chain(config.roots.iter().cloned().map(|path| (path, 1_usize)))
             .collect::<Vec<_>>();
         deduplicate_paths(&mut roots);
 
+        let mut coverage = crate::scan_coverage::ScanCoverage::new(
+            roots.iter().map(|(path, _)| path_key(path)),
+            roots_resolved,
+        );
+        for path in standard_roots
+            .failures
+            .iter()
+            .filter_map(|failure| failure.path.as_deref())
+        {
+            coverage.failed(path);
+        }
         let mut entries = HashMap::<String, ApplicationEntry>::new();
-        let mut warnings = 0_usize;
-        let mut complete = true;
         for (root, priority) in &roots {
             if is_cancelled(cancelled_through, generation) {
                 break;
@@ -99,6 +118,7 @@ impl ApplicationIndex {
                 // then retire its old records without recreating the directory.
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => {
+                    coverage.failed(root);
                     eprintln!(
                         "application scan could not read root {}: {error}",
                         root.display()
@@ -109,6 +129,7 @@ impl ApplicationIndex {
                 }
             };
             if metadata.file_type().is_symlink() {
+                coverage.failed(root);
                 eprintln!("application scan skipped symlink root: {}", root.display());
                 warnings = warnings.saturating_add(1);
                 complete = false;
@@ -121,10 +142,12 @@ impl ApplicationIndex {
                     &mut self.discovery_state,
                     &mut entries,
                     &mut warnings,
+                    &mut coverage,
                 );
                 continue;
             }
             if !metadata.is_dir() {
+                coverage.failed(root);
                 eprintln!("application scan root is unavailable: {}", root.display());
                 warnings = warnings.saturating_add(1);
                 complete = false;
@@ -138,6 +161,7 @@ impl ApplicationIndex {
                 let entry = match result {
                     Ok(entry) => entry,
                     Err(error) => {
+                        coverage.failed(error.path().unwrap_or(root));
                         eprintln!("application scan could not read a path: {error}");
                         warnings = warnings.saturating_add(1);
                         complete = false;
@@ -158,6 +182,7 @@ impl ApplicationIndex {
                         &mut self.discovery_state,
                         &mut entries,
                         &mut warnings,
+                        &mut coverage,
                     );
                     walker.skip_current_dir();
                 } else if entry.file_type().is_file() && platform::is_application_path(path) {
@@ -167,6 +192,7 @@ impl ApplicationIndex {
                         &mut self.discovery_state,
                         &mut entries,
                         &mut warnings,
+                        &mut coverage,
                     );
                 }
             }
@@ -215,9 +241,19 @@ impl ApplicationIndex {
             cancelled: was_cancelled,
         };
         let error = (warnings > 0).then(|| format!("scan completed with {warnings} warnings"));
-        if let Err(commit_error) = self
-            .database
-            .commit_scan(report, &entries, error.as_deref())
+        let replaced = if was_cancelled || complete {
+            Vec::new()
+        } else {
+            self.database
+                .load_entries()?
+                .into_iter()
+                .filter(|entry| coverage.replaces(&entry.source_key))
+                .map(|entry| entry.entry_id)
+                .collect::<Vec<_>>()
+        };
+        if let Err(commit_error) =
+            self.database
+                .commit_scan(report, &entries, &replaced, error.as_deref())
         {
             if let Err(record_error) = self
                 .database
@@ -333,6 +369,7 @@ fn collect_entry(
     discovery_state: &mut DiscoveryState,
     entries: &mut HashMap<String, ApplicationEntry>,
     warnings: &mut usize,
+    coverage: &mut crate::scan_coverage::ScanCoverage,
 ) -> bool {
     match platform::read_entry(discovery_state, path, priority) {
         Ok(Some(entry)) => match entries.get(&entry.entry_id) {
@@ -346,12 +383,13 @@ fn collect_entry(
         },
         Ok(None) => {}
         Err(error) => {
+            coverage.failed(path);
             eprintln!(
                 "application entry could not be read at {}: {error}",
                 path.display()
             );
             *warnings = warnings.saturating_add(1);
-            return !matches!(error, ApplicationError::Io(_));
+            return false;
         }
     }
     true

@@ -10,6 +10,11 @@ pub struct ConfigurationProperty {
     #[serde(default)]
     pub description: Option<String>,
     pub default: Value,
+    /// Empty means the property is shown on every supported platform.
+    #[serde(default)]
+    pub platforms: Vec<String>,
+    #[serde(default)]
+    pub order: u16,
     #[serde(flatten)]
     pub schema: ConfigurationSchema,
 }

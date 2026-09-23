@@ -2,8 +2,17 @@ use std::path::{Path, PathBuf};
 
 use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
+#[path = "platform/DiscoveryRoots.rs"]
+mod discovery_roots;
+use discovery_roots::DiscoveryRoots;
+#[path = "platform/DiscoveryFailure.rs"]
+mod discovery_failure;
+use discovery_failure::DiscoveryFailure;
+
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(windows)]
+mod scoop_shim;
 #[cfg(windows)]
 #[path = "platform/ShellLinkMetadata.rs"]
 mod shell_link_metadata;
@@ -20,7 +29,13 @@ use unsupported as implementation;
 use windows as implementation;
 
 pub(crate) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
-    implementation::standard_roots()
+    implementation::standard_roots(|_| true).map(|roots| roots.paths)
+}
+
+pub(crate) fn configured_roots(
+    enabled: &std::collections::BTreeSet<String>,
+) -> Result<DiscoveryRoots, ApplicationError> {
+    implementation::standard_roots(|key| enabled.contains(key))
 }
 
 pub(crate) fn is_application_path(path: &Path) -> bool {

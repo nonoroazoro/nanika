@@ -1,9 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+use super::DiscoveryRoots;
 
 use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
-pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
-    Ok(Vec::new())
+pub(super) fn standard_roots(
+    _enabled: impl Fn(&str) -> bool,
+) -> Result<DiscoveryRoots, ApplicationError> {
+    Err(ApplicationError::Configuration(
+        "application discovery is unsupported on this platform".to_owned(),
+    ))
 }
 
 pub(super) fn is_application_path(_path: &Path) -> bool {

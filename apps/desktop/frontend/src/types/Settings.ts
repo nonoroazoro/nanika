@@ -31,6 +31,8 @@ export interface ConfigurationProperty extends ConfigurationSchema
     title: string;
     description: string | null;
     default: ConfigurationValue;
+    platforms?: Array<"macos" | "windows">;
+    order?: number;
 }
 
 export interface ExtensionSettings

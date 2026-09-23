@@ -23,6 +23,15 @@ impl ConfigurationContribution {
         }
         for (key, property) in &self.properties {
             validate_key(key)?;
+            if property.platforms.len() > 2
+                || property
+                    .platforms
+                    .iter()
+                    .any(|platform| !matches!(platform.as_str(), "windows" | "macos"))
+                || (property.platforms.len() == 2 && property.platforms[0] == property.platforms[1])
+            {
+                return Err(format!("invalid configuration platforms for {key}"));
+            }
             validate_text(&property.title, 128, "configuration property title")?;
             if let Some(description) = &property.description {
                 validate_text(description, 512, "configuration property description")?;
@@ -50,6 +59,19 @@ impl ConfigurationContribution {
             .iter()
             .map(|(key, property)| (key.clone(), property.default.clone()))
             .collect()
+    }
+
+    /// Select presentation properties while retaining the complete value contract separately.
+    pub fn for_platform(&self, platform: &str) -> Self {
+        let mut visible = self.clone();
+        visible.properties.retain(|_, property| {
+            property.platforms.is_empty()
+                || property
+                    .platforms
+                    .iter()
+                    .any(|candidate| candidate == platform)
+        });
+        visible
     }
 
     pub fn validate_values(&self, values: &BTreeMap<String, Value>) -> Result<(), String> {

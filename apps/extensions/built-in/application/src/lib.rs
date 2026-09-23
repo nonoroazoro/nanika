@@ -29,6 +29,8 @@ mod platform;
 mod runtime_event;
 #[path = "RuntimePaths.rs"]
 mod runtime_paths;
+#[path = "ScanCoverage.rs"]
+mod scan_coverage;
 #[path = "ScanReport.rs"]
 mod scan_report;
 
@@ -70,3 +72,6 @@ mod candidate_selection_tests;
 #[cfg(test)]
 #[path = "../tests/IconCache.rs"]
 mod icon_cache_tests;
+#[cfg(test)]
+#[path = "../tests/ScanCoverage.rs"]
+mod scan_coverage_tests;

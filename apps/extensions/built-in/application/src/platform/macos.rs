@@ -11,19 +11,42 @@ mod icons;
 
 pub(super) use icons::{extract_icons, icon_cache_key};
 
+use super::DiscoveryRoots;
 use crate::normalization::{normalize_name, path_key, stable_hash};
 use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
 
-pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
-    let mut roots = vec![
-        PathBuf::from("/Applications"),
-        PathBuf::from("/System/Applications"),
-    ];
-    if let Some(home) = std::env::var_os("HOME") {
-        let user_applications = PathBuf::from(home).join("Applications");
-        if user_applications.is_dir() {
-            roots.push(user_applications);
-        }
+const SYSTEM_APPLICATION_ROOT: &str = "/Applications";
+const SYSTEM_APPLICATIONS_ROOT: &str = "/System/Applications";
+const USER_APPLICATION_DIRECTORY: &str = "Applications";
+const HOME_ENVIRONMENT: &str = "HOME";
+const SYSTEM_APPLICATIONS_KEY: &str = "application.builtin.macos.systemApplications";
+const USER_APPLICATIONS_KEY: &str = "application.builtin.macos.userApplications";
+
+pub(super) fn standard_roots(
+    enabled: impl Fn(&str) -> bool,
+) -> Result<DiscoveryRoots, ApplicationError> {
+    let mut roots = DiscoveryRoots::default();
+    if enabled(SYSTEM_APPLICATIONS_KEY) {
+        roots.paths.extend(
+            [SYSTEM_APPLICATION_ROOT, SYSTEM_APPLICATIONS_ROOT]
+                .into_iter()
+                .map(PathBuf::from),
+        );
+    }
+    if enabled(USER_APPLICATIONS_KEY) {
+        let user_root = std::env::var_os(HOME_ENVIRONMENT)
+            .map(PathBuf::from)
+            .ok_or_else(|| ApplicationError::Configuration("HOME is not set".to_owned()))
+            .and_then(|home| {
+                if home.is_absolute() {
+                    Ok(Some(home.join(USER_APPLICATION_DIRECTORY)))
+                } else {
+                    Err(ApplicationError::Configuration(
+                        "HOME must be an absolute path".to_owned(),
+                    ))
+                }
+            });
+        roots.include(USER_APPLICATIONS_KEY, user_root);
     }
     Ok(roots)
 }

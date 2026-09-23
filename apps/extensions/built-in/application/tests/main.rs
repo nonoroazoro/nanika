@@ -537,3 +537,120 @@ fn test_root(name: &str) -> PathBuf {
     std::fs::create_dir_all(&root).expect("test root should exist");
     root
 }
+
+#[test]
+fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
+    let root = test_root("partial-refresh");
+    let applications = root.join("applications");
+    std::fs::create_dir_all(&applications).unwrap();
+    create_application_fixture(&applications);
+    let broken = _broken_application(&root);
+    let configuration = ExtensionConfiguration::new(std::collections::BTreeMap::from([(
+        "application.roots".to_owned(),
+        serde_json::json!([broken, applications]),
+    )]));
+    let data_root = root.join("data");
+    let cache_root = root.join("cache");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nanika-extension-application"))
+        .args([
+            argument("data-root", &data_root),
+            argument("cache-root", &cache_root),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = BufWriter::new(child.stdin.take().unwrap());
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    write_frame(
+        &mut input,
+        &Message::Initialize {
+            request_id: "initialize-partial".to_owned(),
+            protocol: PROTOCOL_NAME.to_owned(),
+            configuration: configuration.clone(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_response(&mut output, "initialize"),
+        Some(Message::Initialized { .. })
+    ));
+    query_until_candidate(
+        &mut input,
+        &mut output,
+        "query-partial",
+        1,
+        "nanika sample",
+        "Nanika Sample",
+    );
+    write_frame(
+        &mut input,
+        &Message::ConfigurationChanged {
+            request_id: "configure-partial".to_owned(),
+            configuration,
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(read_response(&mut output, "configuration"), Some(Message::ConfigurationApplied { request_id }) if request_id == "configure-partial")
+    );
+    write_frame(
+        &mut input,
+        &Message::Refresh {
+            request_id: "refresh-partial".to_owned(),
+            generation: 3,
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_response(&mut output, "refresh"),
+        Some(Message::Refreshed { generation: 3, .. })
+    ));
+    write_frame(
+        &mut input,
+        &Message::Query {
+            request_id: "query-after-refresh".to_owned(),
+            generation: 4,
+            query: "nanika sample".to_owned(),
+        },
+    )
+    .unwrap();
+    assert!(
+        read_complete_snapshot(&mut output)
+            .iter()
+            .any(|entry| entry.title == "Nanika Sample")
+    );
+    write_frame(
+        &mut input,
+        &Message::Shutdown {
+            request_id: "shutdown-partial".to_owned(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_response(&mut output, "shutdown"),
+        Some(Message::ShutdownAck { .. })
+    ));
+    assert!(child.wait().unwrap().success());
+    let mut log = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut log).unwrap();
+    assert!(log.contains("path errors"), "{log}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+fn _broken_application(root: &Path) -> PathBuf {
+    let package = root.join("broken-package");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::write(package.join("AppxManifest.xml"), "invalid manifest").unwrap();
+    package
+}
+
+#[cfg(target_os = "macos")]
+fn _broken_application(root: &Path) -> PathBuf {
+    let bundle = root.join("Broken.app");
+    std::fs::create_dir_all(bundle.join("Contents")).unwrap();
+    std::fs::write(bundle.join("Contents/Info.plist"), "invalid plist").unwrap();
+    bundle
+}

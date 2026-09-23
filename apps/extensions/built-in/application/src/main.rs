@@ -309,25 +309,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } if !report.cancelled => {
                 refresh_requests.remove(&request_id);
                 write_frame(&mut output, &Message::CandidatesChanged)?;
-                if report.complete && report.warnings == 0 {
-                    write_frame(
-                        &mut output,
-                        &Message::Refreshed {
-                            request_id,
-                            generation: response_generation,
-                        },
-                    )?;
-                } else {
-                    write_error(
-                        &mut output,
-                        Some(request_id),
-                        "refresh_incomplete",
-                        &format!(
-                            "application scan was incomplete with {} path errors",
-                            report.warnings
-                        ),
-                    )?;
+                if !report.complete || report.warnings > 0 {
+                    eprintln!(
+                        "application scan was incomplete with {} path errors",
+                        report.warnings
+                    );
                 }
+                // Refresh acknowledges completion; path failures stay in the scan log
+                // and partial scan state instead of becoming user-facing errors.
+                write_frame(
+                    &mut output,
+                    &Message::Refreshed {
+                        request_id,
+                        generation: response_generation,
+                    },
+                )?;
             }
             RuntimeEvent::ScanFinished {
                 request_id,

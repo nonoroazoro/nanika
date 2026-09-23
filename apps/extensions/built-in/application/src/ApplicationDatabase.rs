@@ -101,6 +101,7 @@ impl ApplicationDatabase {
         &mut self,
         report: ScanReport,
         entries: &[ApplicationEntry],
+        replaced: &[String],
         last_error: Option<&str>,
     ) -> Result<(), ApplicationError> {
         let transaction = self.connection.transaction()?;
@@ -108,6 +109,14 @@ impl ApplicationDatabase {
             // A complete scan is an authoritative snapshot. Replacing rows inside the same
             // transaction removes absent applications without exposing a partial catalogue.
             transaction.execute("DELETE FROM app_entries", [])?;
+        }
+        // Discovery owns path coverage. Retire only its authoritative records,
+        // atomically with their replacements, while retaining failed paths.
+        if !report.complete && !report.cancelled {
+            let mut remove = transaction.prepare("DELETE FROM app_entries WHERE entry_id = ?1")?;
+            for entry_id in replaced {
+                remove.execute([entry_id])?;
+            }
         }
         {
             let mut statement = transaction.prepare(

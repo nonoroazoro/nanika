@@ -7,6 +7,7 @@ import DirectoryList from "./settings/DirectoryList.svelte";
 import GeneralSettings from "./settings/GeneralSettings.svelte";
 import SettingsActions from "./settings/SettingsActions.svelte";
 import { normalizeSettings } from "./settings/integerValue";
+import { orderedProperties } from "./settings/properties";
 import ContributionIconTile from "./components/ContributionIconTile.svelte";
 import type {
     ConfigurationValue,
@@ -27,7 +28,7 @@ let saving = $state(false);
 const applicationResults: Record<string, SettingsApplicationUpdate> = {};
 const extensions = $derived(snapshot?.extensions ?? []);
 const selected = $derived(extensions.find(extension => extension.id === selection) ?? null);
-const properties = $derived(Object.entries(selected?.configuration?.contribution.properties ?? {}));
+const properties = $derived(orderedProperties(selected?.configuration?.contribution.properties ?? {}));
 const values = $derived(drafts[selection] ?? {});
 const dirty = $derived(selected !== null && isDirty(selected));
 const message = $derived(messages[selection]);

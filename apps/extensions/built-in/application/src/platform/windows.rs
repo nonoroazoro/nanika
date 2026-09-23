@@ -15,44 +15,108 @@ use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_CommonPrograms, FOLDERID_Programs, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+    FOLDERID_CommonPrograms, FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData,
+    FOLDERID_ProgramFiles, FOLDERID_Programs, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
 };
 
+use super::DiscoveryRoots;
 use super::shell_link_metadata::ShellLinkMetadata;
 use crate::normalization::{normalize_name, path_key, stable_hash, timestamp_nanos};
 use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
 
-pub(super) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
-    let roots: Vec<PathBuf> = [FOLDERID_Programs, FOLDERID_CommonPrograms]
-        .iter()
-        .map(known_folder)
-        .collect::<Result<_, _>>()?;
-    let mut roots = roots;
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA")
-        && let Some(root) = packaged_root(PathBuf::from(local_app_data).join("Packages"))
-    {
-        roots.push(root);
+const SCOOP_ENVIRONMENT: &str = "SCOOP";
+const SCOOP_GLOBAL_ENVIRONMENT: &str = "SCOOP_GLOBAL";
+const SCOOP_DIRECTORY: &str = "scoop";
+const SCOOP_SHIMS_DIRECTORY: &str = "shims";
+
+pub(super) fn standard_roots(
+    enabled: impl Fn(&str) -> bool,
+) -> Result<DiscoveryRoots, ApplicationError> {
+    let mut roots = DiscoveryRoots::default();
+    if enabled(USER_PROGRAMS_KEY) {
+        roots.include(
+            USER_PROGRAMS_KEY,
+            known_folder(&FOLDERID_Programs).map(Some),
+        );
     }
-    if let Ok(program_files) = std::env::var("ProgramFiles")
-        && let Some(root) = packaged_root(PathBuf::from(program_files).join("WindowsApps"))
-    {
-        roots.push(root);
+    if enabled(SYSTEM_PROGRAMS_KEY) {
+        roots.include(
+            SYSTEM_PROGRAMS_KEY,
+            known_folder(&FOLDERID_CommonPrograms).map(Some),
+        );
+    }
+    if enabled(SCOOP_USER_KEY) {
+        roots.include(
+            SCOOP_USER_KEY,
+            scoop_shim_root(std::env::var_os(SCOOP_ENVIRONMENT), &FOLDERID_Profile).map(Some),
+        );
+    }
+    if enabled(SCOOP_GLOBAL_KEY) {
+        roots.include(
+            SCOOP_GLOBAL_KEY,
+            scoop_shim_root(
+                std::env::var_os(SCOOP_GLOBAL_ENVIRONMENT),
+                &FOLDERID_ProgramData,
+            )
+            .map(Some),
+        );
+    }
+    if enabled(USER_PACKAGED_KEY) {
+        _include_packaged_root(
+            &mut roots,
+            USER_PACKAGED_KEY,
+            known_folder(&FOLDERID_LocalAppData).map(|root| root.join(PACKAGES_DIRECTORY)),
+        );
+    }
+    if enabled(SYSTEM_PACKAGED_KEY) {
+        _include_packaged_root(
+            &mut roots,
+            SYSTEM_PACKAGED_KEY,
+            known_folder(&FOLDERID_ProgramFiles).map(|root| root.join(WINDOWS_APPS_DIRECTORY)),
+        );
     }
     Ok(roots)
 }
+const USER_PROGRAMS_KEY: &str = "application.builtin.windows.userPrograms";
+const SYSTEM_PROGRAMS_KEY: &str = "application.builtin.windows.systemPrograms";
+const USER_PACKAGED_KEY: &str = "application.builtin.windows.userPackaged";
+const SYSTEM_PACKAGED_KEY: &str = "application.builtin.windows.systemPackaged";
+const SCOOP_USER_KEY: &str = "application.builtin.windows.scoopUser";
+const SCOOP_GLOBAL_KEY: &str = "application.builtin.windows.scoopGlobal";
+const PACKAGES_DIRECTORY: &str = "Packages";
+const WINDOWS_APPS_DIRECTORY: &str = "WindowsApps";
 
-fn packaged_root(root: PathBuf) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(&root).ok()?;
-    if entries
-        .filter_map(Result::ok)
-        .any(|entry| entry.path().join("AppxManifest.xml").is_file())
-    {
-        Some(root)
-    } else {
-        None
+fn packaged_root(root: PathBuf) -> Result<Option<PathBuf>, ApplicationError> {
+    let entries = match std::fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry.path().join("AppxManifest.xml").is_file() {
+            return Ok(Some(root));
+        }
     }
+    Ok(None)
 }
 
+fn _include_packaged_root(
+    roots: &mut DiscoveryRoots,
+    source: &str,
+    path: Result<PathBuf, ApplicationError>,
+) {
+    match path {
+        Ok(path) => match packaged_root(path.clone()) {
+            Ok(result) => roots.include(source, Ok(result)),
+            Err(error) => roots.failures.push(super::DiscoveryFailure {
+                message: format!("{source}: {}: {error}", path.display()),
+                path: Some(path),
+            }),
+        },
+        Err(error) => roots.include(source, Err(error)),
+    }
+}
 pub(super) fn is_application_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -222,9 +286,12 @@ fn read_shell_link(
         return Ok(None);
     };
     let working_directory = effective_working_directory(&target, link.working_directory.as_deref());
-    let arguments = ApplicationArguments::from_windows_raw(link.arguments);
+    let Some((identity_target, arguments)) = super::scoop_shim::identity(&target, link.arguments)?
+    else {
+        return Ok(None);
+    };
     let arguments_json = arguments.to_json()?;
-    let target_key = path_key(&target);
+    let target_key = path_key(&identity_target);
     // Identity describes the application target, not each discovery source.
     // The selected shortcut still owns its original native activation behavior.
     let identity = stable_hash(&["windows", &target_key, &arguments_json]);
@@ -298,9 +365,12 @@ fn read_executable(
     else {
         return Ok(None);
     };
-    let target_key = path_key(&target);
+    let Some((identity_target, arguments)) = super::scoop_shim::identity(&target, None)? else {
+        return Ok(None);
+    };
+    let target_key = path_key(&identity_target);
     let working_directory = effective_working_directory(&target, None);
-    let arguments_json = ApplicationArguments::empty().to_json()?;
+    let arguments_json = arguments.to_json()?;
     let identity = stable_hash(&["windows", &target_key, &arguments_json]);
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
@@ -474,3 +544,24 @@ fn wide_null(value: &std::ffi::OsStr) -> Vec<u16> {
 
     value.encode_wide().chain(std::iter::once(0)).collect()
 }
+
+fn scoop_shim_root(
+    configured: Option<std::ffi::OsString>,
+    default_folder: &windows_sys::core::GUID,
+) -> Result<PathBuf, ApplicationError> {
+    let root = match configured {
+        Some(root) => PathBuf::from(root),
+        None => known_folder(default_folder)?.join(SCOOP_DIRECTORY),
+    };
+    if !root.is_absolute() {
+        return Err(ApplicationError::Configuration(format!(
+            "Scoop installation path must be absolute: {}",
+            root.display()
+        )));
+    }
+    Ok(root.join(SCOOP_SHIMS_DIRECTORY))
+}
+
+#[cfg(test)]
+#[path = "../../tests/platform/windows.rs"]
+mod tests;

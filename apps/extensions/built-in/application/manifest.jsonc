@@ -28,11 +28,76 @@
     "configuration": {
       "title": "Applications",
       "properties": {
+        "application.builtin.macos.systemApplications": {
+          "type": "boolean",
+          "title": "System applications",
+          "description": "Search system application folders.",
+          "default": true,
+          "platforms": ["macos"],
+          "order": 10
+        },
+        "application.builtin.macos.userApplications": {
+          "type": "boolean",
+          "title": "User applications",
+          "description": "Search applications in your user folder.",
+          "default": true,
+          "platforms": ["macos"],
+          "order": 20
+        },
+        "application.builtin.windows.systemPackaged": {
+          "type": "boolean",
+          "title": "System packaged applications",
+          "description": "Search packaged applications installed for all users.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 10
+        },
+        "application.builtin.windows.systemPrograms": {
+          "type": "boolean",
+          "title": "System Start Menu",
+          "description": "Search the shared Windows Start Menu.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 20
+        },
+        "application.builtin.windows.scoopGlobal": {
+          "type": "boolean",
+          "title": "Global Scoop shims",
+          "description": "Search active shims from the machine-wide Scoop installation.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 30
+        },
+        "application.builtin.windows.scoopUser": {
+          "type": "boolean",
+          "title": "User Scoop shims",
+          "description": "Search active shims from your Scoop installation.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 40
+        },
+        "application.builtin.windows.userPackaged": {
+          "type": "boolean",
+          "title": "User packaged applications",
+          "description": "Search packaged applications installed for your user.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 50
+        },
+        "application.builtin.windows.userPrograms": {
+          "type": "boolean",
+          "title": "User Start Menu",
+          "description": "Search your Windows Start Menu.",
+          "default": true,
+          "platforms": ["windows"],
+          "order": 60
+        },
         "application.roots": {
           "type": "array",
           "title": "Folders",
           "description": "Search these folders in addition to your system applications.",
           "default": [],
+          "order": 100,
           "maxItems": 256,
           "items": {
             "type": "string",

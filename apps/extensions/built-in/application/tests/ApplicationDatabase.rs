@@ -87,7 +87,7 @@ fn corrupt_application_table_fails_explicitly() {
     let mut database = ApplicationDatabase::open(&path).expect("database should open");
     database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry("app.corrupt")], None)
+        .commit_scan(report(1, true), &[entry("app.corrupt")], &[], None)
         .expect("application row should persist");
     drop(database);
     let connection = rusqlite::Connection::open(&path).expect("database should reopen");
@@ -131,19 +131,19 @@ fn complete_scans_replace_the_previous_snapshot() {
     let entry = entry("app.one");
     database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry], None)
+        .commit_scan(report(1, true), &[entry], &[], None)
         .expect("first scan should commit");
     assert_eq!(database.load_entries().expect("entries").len(), 1);
 
     database.begin_scan(2).expect("scan should begin");
     database
-        .commit_scan(report(2, true), &[], None)
+        .commit_scan(report(2, true), &[], &[], None)
         .expect("second scan should commit");
     assert!(database.load_entries().expect("entries").is_empty());
 
     database.begin_scan(3).expect("scan should begin");
     database
-        .commit_scan(report(3, true), &[], None)
+        .commit_scan(report(3, true), &[], &[], None)
         .expect("third scan should commit");
     assert!(database.load_entries().expect("entries").is_empty());
     drop(database);
@@ -157,15 +157,52 @@ fn partial_scans_preserve_entries_not_seen_during_failures() {
     let mut database = ApplicationDatabase::open(path).expect("database should open");
     database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry("app.one")], None)
+        .commit_scan(report(1, true), &[entry("app.one")], &[], None)
         .expect("first scan should commit");
     database.begin_scan(2).expect("scan should begin");
     database
-        .commit_scan(report(2, false), &[], Some("permission denied"))
+        .commit_scan(report(2, false), &[], &[], Some("permission denied"))
         .expect("partial scan should commit");
     assert_eq!(database.load_entries().expect("entries").len(), 1);
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
+}
+
+#[test]
+fn partial_scan_replaces_changed_identity_only_for_observed_sources() {
+    let root = test_root("changed-source");
+    let mut database = ApplicationDatabase::open(root.join("application.db")).unwrap();
+    let old = entry("app.old-target");
+    let mut unavailable = entry("app.unavailable");
+    unavailable.source_key = "unavailable-source".to_owned();
+    database.begin_scan(1).unwrap();
+    database
+        .commit_scan(report(1, true), &[old, unavailable.clone()], &[], None)
+        .unwrap();
+    let current = entry("app.current-target");
+    database.begin_scan(2).unwrap();
+    database
+        .commit_scan(
+            report(2, false),
+            std::slice::from_ref(&current),
+            &["app.old-target".to_owned()],
+            Some("unavailable source"),
+        )
+        .unwrap();
+    let entries = database.load_entries().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.entry_id == current.entry_id)
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.entry_id == unavailable.entry_id)
+    );
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 fn report(generation: u64, complete: bool) -> ScanReport {

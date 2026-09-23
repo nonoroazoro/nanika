@@ -93,17 +93,27 @@ impl ExtensionConfigurationRegistry {
             .registered
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let contribution = registered
+        let (contribution, previous_values) = registered
             .get(extension_id)
-            .map(|registered| registered.contribution.clone())
+            .map(|registered| (registered.contribution.clone(), registered.values.clone()))
             .ok_or_else(|| {
                 format!("extension does not contribute configuration: {extension_id}")
             })?;
-        contribution.validate_values(&values)?;
+        // Settings submits every visible field. Only fields hidden on this platform
+        // may be omitted, so an incomplete form cannot silently reuse stale values.
+        let visible = contribution.for_platform(nanika_platform::target_platform());
+        for key in visible.properties.keys() {
+            if !values.contains_key(key) {
+                return Err(format!("missing configuration property: {key}"));
+            }
+        }
+        let mut effective = previous_values;
+        effective.extend(values);
+        contribution.validate_values(&effective)?;
 
         let path = self.store.extension_configuration_file(extension_id);
         if path.is_file() {
-            let updates = values
+            let updates = effective
                 .iter()
                 .map(|(key, value)| (key.clone(), Some(value.clone())))
                 .collect::<Vec<_>>();
@@ -115,15 +125,15 @@ impl ExtensionConfigurationRegistry {
                 .map_err(|error| error.to_string())?;
         } else {
             self.store
-                .save(&path, &ExtensionConfigurationFile::new(values.clone()))
+                .save(&path, &ExtensionConfigurationFile::new(effective.clone()))
                 .map_err(|error| error.to_string())?;
         }
 
         let current = registered
             .get_mut(extension_id)
             .ok_or_else(|| format!("extension configuration disappeared: {extension_id}"))?;
-        current.values = values.clone();
-        Ok(ExtensionConfiguration::new(values))
+        current.values = effective.clone();
+        Ok(ExtensionConfiguration::new(effective))
     }
 
     pub(crate) fn snapshots(&self) -> Vec<RuntimeExtensionConfiguration> {
@@ -131,12 +141,22 @@ impl ExtensionConfigurationRegistry {
             .registered
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        let platform = nanika_platform::target_platform();
         let mut snapshots = registered
             .iter()
-            .map(|(extension_id, registered)| RuntimeExtensionConfiguration {
-                extension_id: extension_id.clone(),
-                contribution: registered.contribution.clone(),
-                values: registered.values.clone(),
+            .map(|(extension_id, registered)| {
+                let contribution = registered.contribution.for_platform(platform);
+                let values = registered
+                    .values
+                    .iter()
+                    .filter(|(key, _)| contribution.properties.contains_key(*key))
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                RuntimeExtensionConfiguration {
+                    extension_id: extension_id.clone(),
+                    contribution,
+                    values,
+                }
             })
             .collect::<Vec<_>>();
         snapshots.sort_by(|left, right| left.extension_id.cmp(&right.extension_id));

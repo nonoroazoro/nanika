@@ -155,6 +155,7 @@ fn commit(index: &mut ApplicationIndex, generation: u64, application: &Applicati
                 cancelled: false,
             },
             std::slice::from_ref(application),
+            &[],
             None,
         )
         .unwrap();
@@ -195,6 +196,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
+            enabled_builtin_roots: Default::default(),
         };
         let (report, entries) = index
             .scan(&config, 1, &AtomicU64::new(0))
@@ -209,6 +211,50 @@ mod windows {
     }
 
     #[test]
+    fn partial_scan_cleans_successful_paths_and_removed_roots_but_preserves_failed_paths() {
+        let root = test_root("independent-roots");
+        let valid = root.join("valid");
+        let broken = valid.join("broken-package");
+        let removed = root.join("removed");
+        std::fs::create_dir_all(&valid).unwrap();
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::create_dir_all(&removed).unwrap();
+        create_executable(&removed.join("Removed.exe"));
+        std::fs::write(broken.join("AppxManifest.xml"),
+            r#"<Package><Identity Name="Retained"/><Application Id="App" DisplayName="Retained"/></Package>"#).unwrap();
+        create_executable(&valid.join("Previous.exe"));
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(root.join("application.db")).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        let mut config = ApplicationConfig {
+            roots: vec![valid.clone(), removed],
+            exclusions: Vec::new(),
+            enabled_builtin_roots: Default::default(),
+        };
+        assert!(
+            index
+                .scan(&config, 1, &AtomicU64::new(0))
+                .unwrap()
+                .0
+                .complete
+        );
+        std::fs::remove_file(valid.join("Previous.exe")).unwrap();
+        create_executable(&valid.join("Current.exe"));
+        std::fs::write(broken.join("AppxManifest.xml"), "invalid manifest").unwrap();
+        config.roots.pop();
+        let (report, entries) = index.scan(&config, 2, &AtomicU64::new(0)).unwrap();
+        assert!(!report.complete);
+        assert_eq!(report.warnings, 1);
+        assert!(entries.iter().any(|entry| entry.display_name == "Current"));
+        assert!(entries.iter().any(|entry| entry.display_name == "Retained"));
+        assert!(!entries.iter().any(|entry| entry.display_name == "Previous"));
+        assert!(!entries.iter().any(|entry| entry.display_name == "Removed"));
+        drop(index);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn cancellation_does_not_stale_the_previous_snapshot() {
         let root = test_root("cancellation");
         let applications = root.join("applications");
@@ -220,6 +266,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications.clone()],
             exclusions: platform::standard_roots().expect("standard roots"),
+            enabled_builtin_roots: Default::default(),
         };
         index
             .scan(&config, 1, &AtomicU64::new(0))
@@ -253,6 +300,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![removed.clone(), retained.clone()],
             exclusions: platform::standard_roots().unwrap(),
+            enabled_builtin_roots: Default::default(),
         };
         let (report, initial) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
         assert!(report.complete);
@@ -280,17 +328,45 @@ mod windows {
         let config = ApplicationConfig {
             roots: Vec::new(),
             exclusions: Vec::new(),
+            enabled_builtin_roots: serde_json::from_str::<serde_json::Value>(include_str!(
+                "../manifest.jsonc"
+            ))
+            .unwrap()["contributes"]["configuration"]["properties"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter(|(_, property)| property["default"] == true)
+                .map(|(key, _)| key.clone())
+                .collect(),
         };
         let (report, entries) = index
             .scan(&config, 1, &AtomicU64::new(0))
             .expect("standard application scan should complete");
-        assert!(report.complete);
+        assert!(!report.cancelled);
         assert!(!entries.is_empty());
         assert!(entries.iter().all(|entry| {
             !entry.entry_id.is_empty()
                 && !entry.display_name.is_empty()
                 && PathBuf::from(&entry.target_path).is_file()
         }));
+        // Explicit folders remain eligible after their built-in discovery source is disabled.
+        let retained = entries
+            .iter()
+            .find(|entry| {
+                entry.launch_kind == "windows-shell-link" || entry.launch_kind == "executable"
+            })
+            .unwrap();
+        let mut disabled = config.clone();
+        disabled.enabled_builtin_roots.clear();
+        disabled.roots = vec![PathBuf::from(&retained.target_path)];
+        let (report, remaining) = index.scan(&disabled, 2, &AtomicU64::new(0)).unwrap();
+        assert!(report.complete);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].entry_id, retained.entry_id);
+        disabled.roots.clear();
+        let (report, empty) = index.scan(&disabled, 3, &AtomicU64::new(0)).unwrap();
+        assert!(report.complete);
+        assert!(empty.is_empty());
         drop(index);
         std::fs::remove_dir_all(root).expect("test root should be removable");
     }
@@ -329,6 +405,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
+            enabled_builtin_roots: Default::default(),
         };
 
         let (_, entries) = index
@@ -396,6 +473,7 @@ mod windows {
                 PathBuf::from(applications.to_string_lossy().to_uppercase()),
             ],
             exclusions: platform::standard_roots().unwrap(),
+            enabled_builtin_roots: Default::default(),
         };
         let mut index = ApplicationIndex::new(
             ApplicationDatabase::open(root.join("application.db")).unwrap(),
@@ -424,6 +502,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
+            enabled_builtin_roots: Default::default(),
         };
         let mut index = ApplicationIndex::new(
             ApplicationDatabase::open(&database_path).unwrap(),
@@ -474,6 +553,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
+            enabled_builtin_roots: Default::default(),
         };
         let database_path = root.join("application.db");
         let mut index = ApplicationIndex::new(
@@ -632,6 +712,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
+            enabled_builtin_roots: Default::default(),
         };
 
         assert!(index.scan(&config, 1, &AtomicU64::new(0)).is_err());
@@ -644,6 +725,94 @@ mod windows {
         drop(observer);
         drop(index);
         std::fs::remove_dir_all(root).expect("test root should be removable");
+    }
+
+    #[test]
+    fn scoop_shims_share_target_identity_but_preserve_arguments_and_native_activation() {
+        let root = test_root("shim-identity");
+        let shims = root.join("shims");
+        let apps = root.join("apps");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&apps).unwrap();
+        let target = apps.join("Sample App.exe");
+        create_executable(&target);
+        let shim = shims.join("alias.exe");
+        create_executable(&shim);
+        std::fs::write(
+            shim.with_extension("shim"),
+            format!("path = \"{}\"\r\n", target.display()),
+        )
+        .unwrap();
+        let mut state = DiscoveryState::new();
+        let direct = platform::read_entry(&mut state, &target, 0)
+            .unwrap()
+            .unwrap();
+        let alias = platform::read_entry(&mut state, &shim, 0).unwrap().unwrap();
+        assert_eq!(alias.entry_id, direct.entry_id);
+        assert_eq!(
+            alias.launch_descriptor().unwrap(),
+            nanika_protocol::LaunchDescriptor::WindowsApplication {
+                path: shim.canonicalize().unwrap().to_string_lossy().into_owned(),
+            }
+        );
+        let link = root.join("shortcut.lnk");
+        create_shell_link(&link, &target);
+        assert_eq!(
+            platform::read_entry(&mut state, &link, 0)
+                .unwrap()
+                .unwrap()
+                .entry_id,
+            alias.entry_id
+        );
+        create_shell_link(&link, &shim);
+        assert_eq!(
+            platform::read_entry(&mut state, &link, 0)
+                .unwrap()
+                .unwrap()
+                .entry_id,
+            alias.entry_id
+        );
+
+        std::fs::write(
+            shim.with_extension("shim"),
+            format!("path = \"{}\"\nargs = --profile work\n", target.display()),
+        )
+        .unwrap();
+        let profile = platform::read_entry(&mut state, &shim, 0).unwrap().unwrap();
+        assert_ne!(profile.entry_id, direct.entry_id);
+        create_shell_link_configured(
+            &link,
+            &target,
+            None,
+            false,
+            SW_SHOWNORMAL,
+            Some("--profile work"),
+        );
+        assert_eq!(
+            platform::read_entry(&mut state, &link, 0)
+                .unwrap()
+                .unwrap()
+                .entry_id,
+            profile.entry_id
+        );
+
+        let next = apps.join("Updated.exe");
+        create_executable(&next);
+        std::fs::write(
+            shim.with_extension("shim"),
+            format!("path = \"{}\"\n", next.display()),
+        )
+        .unwrap();
+        let updated = platform::read_entry(&mut state, &shim, 0).unwrap().unwrap();
+        assert_ne!(updated.entry_id, direct.entry_id);
+        assert_eq!(
+            updated.entry_id,
+            platform::read_entry(&mut state, &next, 0)
+                .unwrap()
+                .unwrap()
+                .entry_id
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn create_executable(target: &std::path::Path) {
