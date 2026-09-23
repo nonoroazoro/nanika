@@ -384,5 +384,5 @@ fn is_excluded(path: &Path, exclusions: &[PathBuf]) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../tests/ApplicationIndexPriority.rs"]
-mod priority_tests;
+#[path = "../tests/ApplicationIndex.rs"]
+mod tests;

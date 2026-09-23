@@ -25,3 +25,12 @@ workspace = true
 [[bench]]
 name = "activation"
 harness = false
+
+# These host integration tests need Cargo's fixture binary environment.
+[[test]]
+name = "ExtensionProcess"
+path = "../../../../engine/runtime/tests/ExtensionProcess.rs"
+
+[[test]]
+name = "RuntimeService"
+path = "../../../../engine/runtime/tests/RuntimeService.rs"

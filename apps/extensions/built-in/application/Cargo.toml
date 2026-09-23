@@ -46,8 +46,8 @@ criterion.workspace = true
 nanika-search = { path = "../../../../engine/search" }
 
 [[test]]
-name = "ExtensionProcess"
-path = "tests/ExtensionProcess.rs"
+name = "main"
+path = "tests/main.rs"
 
 [[bench]]
 name = "indexing"

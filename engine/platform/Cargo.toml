@@ -43,9 +43,5 @@ name = "ProcessLauncher"
 path = "tests/shared/ProcessLauncher.rs"
 
 [[test]]
-name = "SingleInstance"
-path = "tests/adapters/SingleInstance.rs"
-
-[[test]]
-name = "filesystem"
-path = "tests/shared/filesystem.rs"
+name = "lib"
+path = "tests/lib.rs"

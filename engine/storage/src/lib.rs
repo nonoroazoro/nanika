@@ -26,7 +26,7 @@ mod stored_extension_load;
 #[path = "StoredUsage.rs"]
 mod stored_usage;
 #[cfg(test)]
-#[path = "../tests/time.rs"]
+#[path = "../tests/support/time.rs"]
 mod time;
 
 pub use extension_id::*;
