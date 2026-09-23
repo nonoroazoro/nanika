@@ -57,7 +57,7 @@ await withBuildTarget(root, "check", async (target, run) =>
         ]
     )
     {
-        await run([process.execPath, "run", script]);
+        await run(["bun", "run", script]);
     }
     await run(["cargo", "fmt", "--all", "--", "--check"]);
     await run(

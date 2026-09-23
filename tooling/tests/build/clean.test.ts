@@ -22,7 +22,7 @@ test("manual clean deletes the entire repository target, ignores cwd and tolerat
         await Bun.write(join(fixture, "unrelated/target/keep"), "unrelated output");
         for (let attempt = 0; attempt < 2; attempt++)
         {
-            const child = Bun.spawn([process.execPath, join(fixture, "tooling/build/clean.ts")], {
+            const child = Bun.spawn(["bun", join(fixture, "tooling/build/clean.ts")], {
                 cwd: join(fixture, "unrelated"),
                 stdout: "pipe",
                 stderr: "pipe"

@@ -7,5 +7,10 @@ import { withBuildTarget } from "../build/with-build-target.ts";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 await withBuildTarget(root, "test", async (_target, run) =>
 {
-    await run([process.execPath, "run", "vitest", "run", ...process.argv.slice(2)]);
+    await run([
+        "bun",
+        fileURLToPath(new URL("../../node_modules/vitest/vitest.mjs", import.meta.url)),
+        "run",
+        ...process.argv.slice(2)
+    ]);
 });

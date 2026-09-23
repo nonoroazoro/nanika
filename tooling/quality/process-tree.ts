@@ -1,7 +1,7 @@
 /**
- * Runs a build command independently of the terminal's process group.
+ * Runs a build command with platform-specific process ownership.
  * macOS cancellation signals the owned group and waits until it is absent.
- * Windows cancellation uses taskkill /T /F and waits for taskkill and the child.
+ * Windows hides command windows; cancellation uses taskkill /T /F and waits for the child.
  * A termination failure rejects without claiming that descendants have exited.
  *
  * @param command Executable and arguments
@@ -24,7 +24,9 @@ export async function runProcessTree(
     const child = Bun.spawn(command, {
         cwd,
         env: environment,
-        detached: true,
+        // macOS cancellation owns a process group; Windows must not create a new console.
+        detached: process.platform === "darwin",
+        windowsHide: true,
         stdin: "ignore",
         stdout: "inherit",
         stderr: "inherit"
@@ -76,6 +78,7 @@ async function _terminate(child: Bun.Subprocess, signal: "SIGINT" | "SIGTERM"): 
     else if (process.platform === "win32")
     {
         const termination = Bun.spawn(["taskkill", "/PID", String(child.pid), "/T", "/F"], {
+            windowsHide: true,
             stdin: "ignore",
             stdout: "pipe",
             stderr: "pipe"

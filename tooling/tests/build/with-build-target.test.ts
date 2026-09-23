@@ -20,7 +20,7 @@ test("repeated builds reuse compiler output and preserve unrelated artifacts", a
                 expect(await readdir(target)).toEqual([]);
                 expect(await Bun.file(join(fixture, "target/cargo/object")).exists()).toBe(index > 0);
                 await run([
-                    process.execPath,
+                    "bun",
                     "-e",
                     `await Bun.write(process.env.CARGO_TARGET_DIR + "/object", new Uint8Array(1024 * 1024));`
                 ]);
@@ -47,7 +47,7 @@ test("Cargo pipelines exclude each other through staging and reuse cache after t
     {
         await withBuildTarget(fixture, "dev", async (_target, run) =>
         {
-            await run([process.execPath, "-e", 'await Bun.write(process.env.CARGO_TARGET_DIR + "/shared", "cache");']);
+            await run(["bun", "-e", 'await Bun.write(process.env.CARGO_TARGET_DIR + "/shared", "cache");']);
             for (const slot of ["dev", "check", "build", "computer-use"] as const)
             {
                 await expect(withBuildTarget(fixture, slot, async () =>
@@ -60,7 +60,7 @@ test("Cargo pipelines exclude each other through staging and reuse cache after t
         {
             expect(target).toBe(join(fixture, "target/check-work"));
             await run([
-                process.execPath,
+                "bun",
                 "-e",
                 'if (await Bun.file(process.env.CARGO_TARGET_DIR + "/shared").text() !== "cache") process.exit(1);'
             ]);
@@ -114,7 +114,7 @@ test("a forcibly killed owner releases its slot and preserves reusable output", 
             });
         `
         );
-        owner = Bun.spawn([process.execPath, "owner.ts"], { cwd: fixture, stdout: "ignore", stderr: "inherit" });
+        owner = Bun.spawn(["bun", "owner.ts"], { cwd: fixture, stdout: "ignore", stderr: "inherit" });
         const deadline = performance.now() + 5000;
         while (!(await Bun.file(join(fixture, "ready")).exists()))
         {
@@ -176,14 +176,14 @@ test.runIf(process.platform === "darwin")(
             await Bun.write(
                 join(fixture, "leader.ts"),
                 `
-            Bun.spawn([process.execPath, "descendant.ts"], { stdout: "inherit", stderr: "inherit" });
+            Bun.spawn(["bun", "descendant.ts"], { stdout: "inherit", stderr: "inherit" });
             while (!await Bun.file("ready").exists()) await Bun.sleep(10);
             process.exit(0);
         `
             );
             await withBuildTarget(fixture, "dev", async (_target, run) =>
             {
-                await run([process.execPath, "leader.ts"]);
+                await run(["bun", "leader.ts"]);
                 expect(await Bun.file(join(fixture, "stopped")).text()).toBe("done");
             });
             expect((await readdir(join(fixture, "target"))).sort()).toEqual([

@@ -30,7 +30,7 @@ test.runIf(process.platform === "darwin").each(
             await Bun.write(
                 join(fixture, "worker.ts"),
                 `
-                const child = Bun.spawn([process.execPath, "descendant.ts"], { stdout: "inherit", stderr: "inherit" });
+                const child = Bun.spawn(["bun", "descendant.ts"], { stdout: "inherit", stderr: "inherit" });
                 await child.exited;
             `
             );
@@ -59,7 +59,7 @@ test.runIf(process.platform === "darwin").each(
                 await chmod(join(bin, "lsof"), 0o755);
                 environment.PATH = `${bin}:${process.env.PATH}`;
             }
-            check = Bun.spawn([process.execPath, "tooling/quality/check.ts"], {
+            check = Bun.spawn(["bun", "tooling/quality/check.ts"], {
                 cwd: fixture,
                 env: environment,
                 stdout: "pipe",
@@ -116,7 +116,7 @@ test("a failed command preserves its exit cause and stops before later stages", 
     try
     {
         await Bun.write(join(fixture, "worker.ts"), "process.exit(23);");
-        const check = Bun.spawn([process.execPath, "tooling/quality/check.ts"], {
+        const check = Bun.spawn(["bun", "tooling/quality/check.ts"], {
             cwd: fixture,
             stdout: "pipe",
             stderr: "pipe"
@@ -170,7 +170,7 @@ async function _fixture(): Promise<string>
     await Bun.write(
         join(directory, "tooling/build/build-extensions.ts"),
         `export async function buildExtensions(_target, _profile, run) {
-            await run([process.execPath, "worker.ts"]);
+            await run(["bun", "worker.ts"]);
             return "{}";
         }`
     );

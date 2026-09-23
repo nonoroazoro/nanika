@@ -31,9 +31,8 @@ export async function runDev(root: string, config: string, run: BuildCommand): P
         const override = JSON.parse(config) as { bundle: { externalBin: string[]; }; };
         await run(
             [
-                process.execPath,
-                "run",
-                "tauri",
+                "bun",
+                join(root, "node_modules/@tauri-apps/cli/tauri.js"),
                 "dev",
                 "--config",
                 JSON.stringify({ ...override, build: { beforeDevCommand: "", devUrl } })

@@ -51,7 +51,7 @@ export async function buildExtensions(
 
 function _hostTriple(): string
 {
-    const result = Bun.spawnSync(["rustc", "-vV"], { stderr: "pipe" });
+    const result = Bun.spawnSync(["rustc", "-vV"], { stderr: "pipe", windowsHide: true });
     if (!result.success)
     {
         throw new Error(

@@ -36,7 +36,7 @@ await withBuildTarget(root, mode, async (target, run) =>
         await runDev(root, config, run);
         return;
     }
-    const command = [process.execPath, "run", "tauri", "build"];
+    const command = ["bun", join(root, "node_modules/@tauri-apps/cli/tauri.js"), "build"];
     // A successful invocation may publish only bundles created by that invocation.
     // Keep the compiler cache and the previously published bundle intact.
     await rm(join(cargoTarget, profile, "bundle"), { recursive: true, force: true });
@@ -51,6 +51,6 @@ await withBuildTarget(root, mode, async (target, run) =>
     if (mode === "computer-use")
     {
         // Hold the work slot until Launch Services has started the retained bundle.
-        await run([process.execPath, "tooling/development/launch-computer-use-app.ts"]);
+        await run(["bun", "tooling/development/launch-computer-use-app.ts"]);
     }
 });

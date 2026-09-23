@@ -10,5 +10,5 @@ exact = true
 dir = "target/bun-cache"
 
 [run]
-bun = true
+bun = false
 shell = "bun"

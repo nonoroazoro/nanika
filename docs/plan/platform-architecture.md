@@ -18,6 +18,8 @@ Cross-target compilation is not native runtime validation.
 
 ## Build tooling ownership
 
+All JavaScript tooling resolves the installed, pinned Bun through PATH on Windows and macOS. JavaScript dependency CLIs run explicitly through Bun, without Node alias shims or machine-specific executable paths.
+
 Invocations reuse `target/cargo` with Cargo's default incremental compilation.
 Each command has a fixed staging directory. Dev, build, check, and Computer Use
 share one exclusive SQLite lock for the complete compile, stage, package, and launch
@@ -33,7 +35,7 @@ including compiler caches, bundles, and lock files. Stop builds and the developm
 app first. Startup performs no size scans, capacity checks, or automatic eviction.
 
 On macOS, tooling signals the command's process group and waits for it to stop.
-On Windows, cancellation uses `taskkill /T /F`. Unsupported platforms fail before
+On Windows, commands stay attached to the caller with console windows hidden; cancellation uses `taskkill /T /F` with its window hidden as well. Unsupported platforms fail before
 build work begins. Native Windows execution remains a required validation gate.
 
 ## Configurable application discovery sources

@@ -20,6 +20,7 @@ export function nanikaProcesses(): string[]
     if (process.platform === "win32")
     {
         const result = Bun.spawnSync(["tasklist", "/FI", "IMAGENAME eq nanika-desktop.exe", "/FO", "CSV", "/NH"], {
+            windowsHide: true,
             stderr: "pipe"
         });
         if (!result.success)

@@ -122,7 +122,7 @@ async function _fixture(): Promise<string>
         `
         import { join } from 'node:path';
         export async function runDev(root, config, run) {
-            await run([process.execPath, 'run', 'tauri', 'dev', '--config', config], join(root, 'apps/desktop'));
+            await run(["bun", join(root, 'node_modules/@tauri-apps/cli/tauri.js'), 'dev', '--config', config], join(root, 'apps/desktop'));
         }
     `
     );
@@ -133,6 +133,7 @@ async function _fixture(): Promise<string>
         await Bun.write(new URL('../../launched', import.meta.url), version);
     `
     );
+    await Bun.write(join(fixture, "node_modules/@tauri-apps/cli/tauri.js"), "await import('../../../tauri.ts');");
     // The fixture uses real Cargo and staging; this CLI stand-in observes the
     // executable handed to Tauri without starting a GUI inside the test suite.
     await Bun.write(
@@ -161,7 +162,7 @@ async function _fixture(): Promise<string>
 
 async function _run(root: string, mode: string): Promise<{ exitCode: number; stderr: string; }>
 {
-    const child = Bun.spawn([process.execPath, "tooling/build/run.ts", mode], {
+    const child = Bun.spawn(["bun", "tooling/build/run.ts", mode], {
         cwd: root,
         stdout: "pipe",
         stderr: "pipe"
