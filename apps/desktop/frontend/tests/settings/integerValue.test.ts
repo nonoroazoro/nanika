@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 
 import { integerError, normalizeSettings } from "../../src/settings/integerValue.ts";
 
-const schema = { type: "integer", minimum: 1, maximum: 5000, allowUnlimited: true };
+import type { ConfigurationSchema } from "../../src/types/Settings.ts";
 
-void test("integer drafts retain invalid input without clamping or coercing it to zero", () =>
+const schema: ConfigurationSchema = {
+    type: "integer",
+    minimum: 1,
+    maximum: 5000,
+    allowUnlimited: true,
+    properties: {},
+    required: []
+};
+
+test("integer drafts retain invalid input without clamping or coercing it to zero", () =>
 {
     for (const value of ["", "0", "-1", "5001", "1.5", "1e3", "123456789012345678901234567890"])
     {
@@ -14,7 +23,7 @@ void test("integer drafts retain invalid input without clamping or coercing it t
     }
 });
 
-void test("valid integer drafts normalize only at the persistence boundary", () =>
+test("valid integer drafts normalize only at the persistence boundary", () =>
 {
     for (const value of ["1", "50", "5000"])
     {
@@ -23,7 +32,7 @@ void test("valid integer drafts normalize only at the persistence boundary", () 
     }
 });
 
-void test("unlimited is explicit and requires schema support", () =>
+test("unlimited is explicit and requires schema support", () =>
 {
     assert.equal(integerError(schema, null), null);
     assert.notEqual(integerError({ ...schema, allowUnlimited: false }, null), null);
@@ -31,10 +40,19 @@ void test("unlimited is explicit and requires schema support", () =>
     assert.notEqual(integerError({ ...schema, multipleOf: 5 }, "12"), null);
 });
 
-void test("nested integer configuration preserves string properties and optional fields", () =>
+test("nested integer configuration preserves string properties and optional fields", () =>
 {
-    const properties = {
-        entries: { type: "array", items: { type: "object", properties: { limit: schema, name: { type: "string" } } } }
+    const properties: Record<string, ConfigurationSchema> = {
+        entries: {
+            type: "array",
+            properties: {},
+            required: [],
+            items: {
+                type: "object",
+                properties: { limit: schema, name: { type: "string", properties: {}, required: [] } },
+                required: []
+            }
+        }
     };
     assert.deepEqual(normalizeSettings(properties, { entries: [{ limit: "50", name: "001" }, { limit: null }] }), {
         entries: [{ limit: 50, name: "001" }, { limit: null }]

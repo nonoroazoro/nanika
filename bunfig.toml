@@ -1,0 +1,14 @@
+# Tooling must use installed, locked dependencies and explicit environment inputs.
+env = false
+
+[install]
+registry = "https://registry.npmjs.org"
+auto = "disable"
+exact = true
+
+[install.cache]
+dir = "target/bun-cache"
+
+[run]
+bun = true
+shell = "bun"

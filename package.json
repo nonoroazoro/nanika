@@ -1,0 +1,52 @@
+{
+    "name": "nanika",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "bun tooling/development/verify-dev-target.ts && bun run extensions:build && cd apps/desktop && NANIKA_DEV_REQUIRE_PRIMARY=1 tauri dev",
+        "build": "bun run extensions:build:release && cd apps/desktop && tauri build",
+        "dev:computer-use": "bun tooling/development/verify-dev-target.ts && bun run extensions:build && cd apps/desktop && tauri build --debug --bundles app && bun ../../tooling/development/launch-computer-use-app.ts",
+        "frontend:dev": "vite --config apps/desktop/frontend/vite.config.ts",
+        "frontend:build": "vite build --config apps/desktop/frontend/vite.config.ts",
+        "frontend:check": "svelte-check --workspace apps/desktop/frontend --tsconfig ./tsconfig.json && tsc --project apps/desktop/frontend/tests/tsconfig.json",
+        "tooling:check": "tsc --project tsconfig.json",
+        "test": "vitest run",
+        "extensions:build": "bun tooling/build/build-extensions.ts debug",
+        "extensions:build:release": "bun tooling/build/build-extensions.ts release",
+        "lint": "eslint apps/desktop/frontend tooling *.config.ts --max-warnings 0",
+        "lint:fix": "bun run lint --fix",
+        "format": "DPRINT_CACHE_DIR=\"$(pwd)/target/dprint-cache\" dprint fmt",
+        "format:check": "DPRINT_CACHE_DIR=\"$(pwd)/target/dprint-cache\" dprint check",
+        "preinstall": "bun tooling/runtime.ts",
+        "check": "bun tooling/quality/check.ts"
+    },
+    "dependencies": {
+        "@tauri-apps/api": "2.11.1",
+        "svelte": "5.57.1"
+    },
+    "devDependencies": {
+        "@sveltejs/vite-plugin-svelte": "7.3.0",
+        "@tauri-apps/cli": "2.11.5",
+        "@tsconfig/svelte": "5.0.8",
+        "@types/bun": "1.4.2",
+        "@types/node": "24.13.6",
+        "@typescript-eslint/eslint-plugin": "8.70.0",
+        "@typescript-eslint/parser": "8.70.0",
+        "dprint": "0.57.4",
+        "eslint": "9.39.5",
+        "eslint-config-zoro": "9.3.0",
+        "eslint-plugin-svelte": "3.23.0",
+        "svelte-check": "4.7.6",
+        "typescript": "6.0.2",
+        "vite": "8.3.0",
+        "vitest": "5.0.1"
+    },
+    "packageManager": "bun@1.4.2",
+    "engines": {
+        "bun": "1.4.2"
+    },
+    "trustedDependencies": [
+        "dprint"
+    ]
+}

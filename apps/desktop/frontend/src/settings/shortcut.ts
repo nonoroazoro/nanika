@@ -9,7 +9,12 @@ export function shortcutModifiers(event: Pick<KeyboardEvent, "altKey" | "ctrlKey
         .filter((key): key is string => typeof key === "string");
 }
 
-export function shortcutFromKey(event: KeyboardEvent): string | null
+export function shortcutFromKey(
+    event: Pick<
+        KeyboardEvent,
+        "altKey" | "code" | "ctrlKey" | "isComposing" | "key" | "metaKey" | "repeat" | "shiftKey"
+    >
+): string | null
 {
     if (
         event.repeat || event.isComposing || !event.code || event.code === "Unidentified"

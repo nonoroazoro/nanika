@@ -19,7 +19,16 @@
     "json": {
         "trailingCommas": "never"
     },
-    "excludes": ["**/dist", "**/node_modules", "shell/**"],
+    "includes": [
+        "package.json",
+        "tsconfig*.json",
+        "dprint.json",
+        "AGENTS.md",
+        "*.config.ts",
+        "apps/desktop/frontend/**/*.{ts,js,svelte,json,html,css}",
+        "tooling/**/*.ts"
+    ],
+    "excludes": ["**/dist", "**/node_modules", "target/**"],
     "plugins": [
         "npm:dprint-plugin-markup@0.27.3",
         "npm:@dprint/json@0.24.0",

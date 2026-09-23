@@ -1,4 +1,0 @@
-allowBuilds:
-  dprint: true
-pmOnFail: error
-storeDir: ../../target/pnpm-store

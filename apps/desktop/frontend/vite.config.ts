@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
     root: import.meta.dirname,
     plugins: [svelte(), {
-        name: "exclude-development-monitor",
+        name: "exclude-development-code",
         apply: "build",
         generateBundle(_options, bundle)
         {
@@ -12,10 +12,14 @@ export default defineConfig({
             {
                 if (
                     output.type === "chunk"
-                    && Object.keys(output.modules).some(id => id.replaceAll("\\", "/").includes("/src/development/"))
+                    && Object.keys(output.modules).some(id =>
+                    {
+                        const path = id.replaceAll("\\", "/");
+                        return path.includes("/src/development/") || path.includes("/tooling/");
+                    })
                 )
                 {
-                    this.error("Development monitoring must not enter production assets.");
+                    this.error("Development monitoring and repository tooling must not enter production assets.");
                 }
             }
         }

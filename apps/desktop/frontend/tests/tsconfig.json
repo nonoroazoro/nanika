@@ -1,0 +1,9 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "allowImportingTsExtensions": true,
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "types": ["bun", "svelte", "vite/client"]
+    },
+    "include": ["**/*.ts"]
+}

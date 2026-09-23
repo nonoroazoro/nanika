@@ -1,4 +1,15 @@
 {
-    "files": [],
-    "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+    "extends": "@tsconfig/svelte/tsconfig.json",
+    "compilerOptions": {
+        "target": "ES2023",
+        "module": "ESNext",
+        "types": ["svelte", "vite/client"],
+        "allowArbitraryExtensions": true,
+        "noEmit": true,
+        "allowJs": false,
+        "checkJs": false,
+        "moduleDetection": "force",
+        "noUncheckedIndexedAccess": true
+    },
+    "include": ["src/**/*.ts", "src/**/*.svelte"]
 }

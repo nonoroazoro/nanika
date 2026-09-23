@@ -1,8 +1,0 @@
-{
-    "extends": "./frontend/tsconfig.node.json",
-    "compilerOptions": {
-        "strict": true,
-        "noUncheckedIndexedAccess": true
-    },
-    "include": ["../../tooling/**/*.ts"]
-}

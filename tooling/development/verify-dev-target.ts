@@ -1,36 +1,13 @@
-import { spawnSync } from "node:child_process";
+import "../runtime.ts";
+
 import { existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-if (process.platform === "darwin")
+import { nanikaProcesses } from "./processes.ts";
+
+if (nanikaProcesses().length !== 0)
 {
-    const running = spawnSync("lsof", ["-t", "-c", "nanika-desktop"], { encoding: "utf8" });
-    if (running.error || running.stderr || (running.status !== 0 && running.status !== 1))
-    {
-        throw new Error(`Could not check for a running Nanika instance: ${running.error ?? running.stderr}`);
-    }
-    if (running.status === 0)
-    {
-        throw new Error("Stop the running Nanika instance before starting another development mode.");
-    }
-}
-else if (process.platform === "win32")
-{
-    const running = spawnSync("tasklist", ["/FI", "IMAGENAME eq nanika-desktop.exe", "/FO", "CSV", "/NH"], {
-        encoding: "utf8"
-    });
-    if (running.error || running.status !== 0)
-    {
-        throw new Error(`Could not check for a running Nanika instance: ${running.error ?? running.stderr}`);
-    }
-    if (running.stdout.split(/\r?\n/).some(line => /^"nanika-desktop\.exe",/i.test(line)))
-    {
-        throw new Error("Stop the running Nanika instance before starting another development mode.");
-    }
-}
-else
-{
-    throw new Error(`Unsupported development platform: ${process.platform}`);
+    throw new Error("Stop the running Nanika instance before starting another development mode.");
 }
 
 // Remove old bundles while retaining Cargo's incremental artifacts.
