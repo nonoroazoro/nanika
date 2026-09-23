@@ -184,9 +184,9 @@ fn read_packaged_application(
         ApplicationArguments::from_windows_raw(Some(format!("shell:AppsFolder\\{package_id}")))
             .to_json()?;
     let entry_id = stable_hash(&["windows-packaged", &package_id, &path_key(package_root)]);
-    let icon_key = icon.as_ref().map_or_else(String::new, |path| {
-        crate::icon_cache::key_from_stamp(path, 0, 0, 0)
-    });
+    let icon_key = icon
+        .as_ref()
+        .map_or_else(String::new, |path| _icon_key_from_stamp(path, 0, 0, 0));
     Ok(Some(ApplicationEntry {
         entry_id: format!("app.{entry_id}"),
         source_key: path_key(package_root),
@@ -227,7 +227,7 @@ pub(super) fn icon_cache_key(
     state: &mut DiscoveryState,
 ) -> Result<String, ApplicationError> {
     let metadata = state.metadata(source)?;
-    Ok(crate::icon_cache::key_from_stamp(
+    Ok(_icon_key_from_stamp(
         source,
         icon_index,
         metadata.len(),
@@ -305,21 +305,21 @@ fn read_shell_link(
         .unwrap_or_else(|| target.clone());
     let icon_key = (|| -> Result<String, ApplicationError> {
         let resource_stamp = state.metadata(&icon_resource)?;
-        let resource_key = crate::icon_cache::key_from_stamp(
+        let resource_key = _icon_key_from_stamp(
             &icon_resource,
             link.icon_index,
             resource_stamp.len(),
             timestamp_nanos(resource_stamp.modified()?),
         );
         let shortcut_stamp = state.metadata(path)?;
-        let shortcut_key = crate::icon_cache::key_from_stamp(
+        let shortcut_key = _icon_key_from_stamp(
             path,
             link.icon_index,
             shortcut_stamp.len(),
             timestamp_nanos(shortcut_stamp.modified()?),
         );
         let target_key_for_icon =
-            crate::icon_cache::key_from_stamp(&target, 0, executable_length, executable_modified);
+            _icon_key_from_stamp(&target, 0, executable_length, executable_modified);
         Ok(stable_hash(&[
             &shortcut_key,
             &resource_key,
@@ -386,12 +386,7 @@ fn read_executable(
         working_directory: working_directory.map(|path| path.to_string_lossy().into_owned()),
         arguments_json,
         bundle_id: None,
-        icon_key: crate::icon_cache::key_from_stamp(
-            &target,
-            0,
-            executable_length,
-            executable_modified,
-        ),
+        icon_key: _icon_key_from_stamp(&target, 0, executable_length, executable_modified),
         icon_source: Some(target),
         icon_index: 0,
         priority,
@@ -565,3 +560,10 @@ fn scoop_shim_root(
 #[cfg(test)]
 #[path = "../../tests/platform/windows.rs"]
 mod tests;
+
+fn _icon_key_from_stamp(source: &Path, icon_index: i32, length: u64, modified: i128) -> String {
+    stable_hash(&[
+        "windows-native-list-v1",
+        &crate::icon_cache::key_from_stamp(source, icon_index, length, modified),
+    ])
+}

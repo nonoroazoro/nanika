@@ -119,6 +119,13 @@ pub(crate) fn list_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
 }
 
 pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result<Vec<u8>> {
+    // Application rows need the same native artwork and transparent bounds as file rows.
+    // Explicit resource indices retain their existing extraction path.
+    if icon_index == 0
+        && let Ok(pixels) = list_pixels(path, size)
+    {
+        return Ok(pixels);
+    }
     use std::os::windows::ffi::OsStrExt;
     let source = path
         .as_os_str()

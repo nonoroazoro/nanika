@@ -58,6 +58,10 @@ Paste-to-foreground requires a host service with one shared authorization and re
 
 Adding another operating system requires an explicit product decision, a complete adapter set, packaging, CI, physical acceptance, and updated release support. No implicit fallback or compatibility layer is planned.
 
+## Windows application list artwork
+
+Windows application icons with the default resource index share the native 256 px image list and transparent-bound normalization used by clipboard file rows. Explicit resource indices retain their existing extraction path. Windows application cache keys include a rendering revision to regenerate prior artwork. macOS extraction and cache keys remain unchanged. Rendered UI validation remains pending.
+
 ## Application scan reconciliation by path
 
 On Windows and macOS, uninterrupted discovery replaces records in successfully scanned paths even when another path fails. Failed files or subtrees retain their previous records. Missing paths and removed or excluded roots retire their records; newly discovered entries are inserted in the same transaction. Path matching respects directory separators, using the existing platform path normalization. A cancelled scan performs no deletion. If a built-in root cannot be resolved, cleanup is limited to resolved roots because the unknown source cannot be safely assigned a path. Regression tests cover a failed subtree alongside deleted files and a removed root, path boundaries, unknown root resolution, cancellation, and transactional replacement.

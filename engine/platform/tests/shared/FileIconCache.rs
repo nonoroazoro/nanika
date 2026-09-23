@@ -1,5 +1,24 @@
 use crate::{FileIconCache, file_icon_pixels, shell_file_icon_pixels};
 
+#[cfg(target_os = "windows")]
+#[test]
+fn application_and_clipboard_rows_use_the_same_native_artwork() {
+    let source = std::env::current_exe().expect("fixture executable");
+    for size in [32, 64, 128] {
+        let application = file_icon_pixels(&source, 0, size).expect("application icon");
+        let clipboard =
+            crate::adapter::file_icon::list_pixels(&source, size).expect("clipboard list icon");
+        assert_eq!(application, clipboard);
+        assert!(
+            application
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel[3] != 0)
+        );
+    }
+}
+
 #[test]
 fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries() {
     let root = std::env::temp_dir().join(format!("nanika-file-icons-{}", std::process::id()));
