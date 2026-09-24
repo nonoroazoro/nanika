@@ -1,6 +1,14 @@
 import { mount } from "svelte";
 
+import { uiActivity } from "./ui/activity";
+
 import "./styles/global.css";
+
+const stopActivity = uiActivity.subscribe(activity =>
+{
+    document.documentElement.dataset.uiActive = String(activity.visible && activity.focused);
+});
+import.meta.hot?.dispose(stopActivity);
 
 const target = document.getElementById("app");
 

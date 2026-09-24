@@ -1,4 +1,6 @@
 <script lang="ts">
+import Button from "../components/Button.svelte";
+import Input from "../components/Input.svelte";
 import SettingsValue from "./SettingsValue.svelte";
 import IntegerSetting from "./IntegerSetting.svelte";
 import Switch from "../components/Switch.svelte";
@@ -26,8 +28,8 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
 {:else if schema.type === "integer"}
     <IntegerSetting {id} {schema} {value} {label} {onChange} />
 {:else if schema.type === "string"}
-    <input
-        bind:this={stringInput}
+    <Input
+        bind:ref={stringInput}
         {id}
         type="text"
         aria-label={label}
@@ -49,19 +51,17 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                         onChange={next => onChange(array.map((current, position) => position === index ? next : current))}
                     />
                 </div>
-                <button
-                    type="button"
+                <Button
                     class="remove"
                     aria-label={`Remove ${label} entry ${index + 1}`}
                     onclick={() => onChange(array.filter((_, position) => position !== index))}
                 >
                     Remove
-                </button>
+                </Button>
             </div>
         {/each}
         <div class="array-actions">
-            <button
-                type="button"
+            <Button
                 disabled={array.length >= (schema.maxItems ?? 0)}
                 onclick={() =>
                 {
@@ -73,16 +73,15 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                 }}
             >
                 Add entry
-            </button>
-            {#if array.length > visibleCount}<button
-                    type="button"
+            </Button>
+            {#if array.length > visibleCount}<Button
                     onclick={() =>
                     {
                         visibleCount += 20;
                     }}
                 >
                     Show more ({array.length - visibleCount})
-                </button>{/if}
+                </Button>{/if}
             <span>{array.length} / {schema.maxItems}</span>
         </div>
     </div>
@@ -129,17 +128,15 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
 {/if}
 
 <style>
-input { width: 100%; min-height: 2.25rem; border: 1px solid var(--border-window); border-radius: 0.45rem; padding: 0.4rem 0.65rem; background: var(--surface-window); color: var(--text-primary); }
 .optional { display: flex; align-items: center; gap: var(--space-2); }
 .array, .object { display: grid; gap: var(--space-3); }
 .array-item { display: flex; align-items: flex-start; gap: var(--space-2); }
 .array-item.structured { padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); }
 .item-value { flex: 1; min-width: 0; }
-.remove { flex: 0 0 auto; background: transparent; font-size: var(--font-meta); }
+.array-item :global(.remove) { flex: 0 0 auto; }
 .array-actions, .field-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .array-actions { justify-content: flex-start; }
 .array-actions span, .optional { color: var(--text-secondary); font-size: var(--font-meta); }
 .object-field { display: grid; gap: var(--space-2); }
 .field-heading { font-size: var(--font-meta); }
-input:focus-visible { background: var(--surface-form); }
 </style>

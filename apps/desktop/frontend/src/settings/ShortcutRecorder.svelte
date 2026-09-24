@@ -1,4 +1,5 @@
 <script lang="ts">
+import Button from "../components/Button.svelte";
 import { onDestroy } from "svelte";
 import { settingsBridge } from "../bridge/settingsBridge";
 import ShortcutKeys from "../components/ShortcutKeys.svelte";
@@ -14,7 +15,7 @@ let recording = $state(false);
 let preview = $state<string[]>([]);
 let confirmed = $state(false);
 let error = $state<string | null>(null);
-let recorderButton: HTMLButtonElement;
+let recorderButton = $state<HTMLButtonElement>();
 let active = true;
 let pending = Promise.resolve();
 let session = 0;
@@ -98,7 +99,7 @@ function cancel(): void
 
 function toggleRecording(): void
 {
-    recorderButton.focus({ preventScroll: true });
+    recorderButton?.focus({ preventScroll: true });
     setRecording(!recording);
 }
 
@@ -155,10 +156,10 @@ onDestroy(() =>
 
 <svelte:window onblur={cancel} onkeydown={capture} onkeyup={updatePreview} />
 <div class="recorder">
-    <button
-        bind:this={recorderButton}
-        type="button"
-        class:recording
+    <Button
+        variant="outline"
+        bind:ref={recorderButton}
+        class={{ recording }}
         aria-label="Open launcher shortcut"
         aria-pressed={recording}
         aria-describedby={error ? "shortcut-help" : undefined}
@@ -170,7 +171,7 @@ onDestroy(() =>
                 keys={recording ? preview : shortcutKeys(value)}
                 success={confirmed}
             />{/if}
-    </button>
+    </Button>
     {#if error}
         <div class="help" id="shortcut-help" role="alert">{error}</div>
     {/if}
@@ -178,9 +179,8 @@ onDestroy(() =>
 
 <style>
 .recorder { position: relative; flex-shrink: 0; }
-button { min-width: 156px; min-height: 32px; gap: 4px; padding: 4px 7px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-window); font-size: 12px; }
-.help { position: absolute; z-index: 1; top: calc(100% + 8px); right: 0; width: max-content; max-width: 260px; padding: 9px 12px; border: 1px solid var(--border-window); border-radius: 6px; background: var(--surface-form); color: var(--text-secondary); font-size: 12px; line-height: 1.5; box-shadow: 0 4px 12px rgb(0 0 0 / 8%); }
+.recorder :global(button) { min-width: 156px; gap: var(--space-1); }
+.help { position: absolute; z-index: 1; top: calc(100% + 8px); right: 0; width: max-content; max-width: 260px; padding: 9px 12px; border: 1px solid var(--border-window); border-radius: var(--control-radius); background: var(--surface-form); color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; box-shadow: 0 4px 12px rgb(0 0 0 / 8%); }
 .help[role="alert"] { color: var(--text-danger); }
-button:focus-visible { background: var(--surface-hovered); }
-button.recording, button.recording:hover, button.recording:focus-visible { border-color: color-mix(in srgb, var(--accent) 58%, var(--border-subtle)); background: color-mix(in srgb, var(--accent) 8%, var(--surface-window)); }
+.recorder :global(button.recording), .recorder :global(button.recording:hover), .recorder :global(button.recording:focus-visible) { border-color: var(--accent); background: var(--surface-accent); }
 </style>

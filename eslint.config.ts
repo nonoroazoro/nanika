@@ -46,7 +46,9 @@ export default [
             }
         },
         rules: {
-            "no-console": ["error", { allow: ["error"] }]
+            "no-console": ["error", { allow: ["error"] }],
+            // Svelte bindable props share one destructuring declaration with readonly props.
+            "prefer-const": ["error", { destructuring: "all" }]
         }
     }
 ];

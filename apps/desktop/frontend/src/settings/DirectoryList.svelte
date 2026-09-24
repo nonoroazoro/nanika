@@ -1,4 +1,5 @@
 <script lang="ts">
+import Button from "../components/Button.svelte";
 import { onDestroy } from "svelte";
 
 const { paths, maximum, label, titleId, description, onPick, onChange }: {
@@ -59,8 +60,8 @@ async function add(): Promise<void>
             <h2 id={titleId}>{label}</h2>
             {#if description}<p>{description}</p>{/if}
         </div>
-        <button
-            type="button"
+        <Button
+            variant="outline"
             class="add-folder"
             disabled={picking || paths.length >= maximum}
             onclick={() =>
@@ -80,7 +81,7 @@ async function add(): Promise<void>
                 <path d="M12 5v14M5 12h14" />
             </svg>
             {picking ? "Choosing folder…" : "Add folder"}
-        </button>
+        </Button>
     </div>
     {#if paths.length > 0}<div class="directory-items">
             {#each paths as path, index (index)}
@@ -97,8 +98,7 @@ async function add(): Promise<void>
                         <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
                     </svg>
                     <span class="path" title={path}>{path}</span>
-                    <button
-                        type="button"
+                    <Button
                         class="remove-folder"
                         aria-label={`Remove folder ${path}`}
                         title="Remove folder"
@@ -117,7 +117,7 @@ async function add(): Promise<void>
                             <circle cx="12" cy="12" r="8.5" />
                             <path d="M8 12h8" />
                         </svg>
-                    </button>
+                    </Button>
                 </div>
             {/each}
         </div>{/if}
@@ -130,17 +130,15 @@ async function add(): Promise<void>
 .directory-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .copy { min-width: 0; }
 h2 { margin: 0; font-size: 13px; font-weight: 500; }
-.copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
-.add-folder { flex-shrink: 0; min-height: 32px; padding: 5px 10px; border: 1px solid var(--border-window); border-radius: 6px; background: var(--surface-form); font-size: 12px; }
-.add-folder:hover:not(:disabled) { border-color: var(--border-window); background: var(--surface-raised); }
-.directory-items { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; scrollbar-gutter: stable; }
-.directory-items { border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+.copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; }
+.directories :global(.add-folder) { flex-shrink: 0; }
+.directory-items { display: grid; gap: var(--space-2); max-height: 320px; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
 .directory { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .directory > svg { flex-shrink: 0; color: var(--text-secondary); }
-.path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; }
-.directory button { flex-shrink: 0; }
-.remove-folder { width: 32px; height: 32px; padding: 7px; border-radius: 6px; color: var(--text-danger); }
-.remove-folder:hover:not(:disabled) { background: var(--surface-danger-hover); color: var(--text-danger); }
-.remove-folder:focus-visible { background: var(--surface-danger-hover); }
+.path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }
+.directory :global(button) { flex-shrink: 0; }
+.directories :global(.remove-folder) { width: 32px; height: 32px; padding: 7px; border-radius: var(--control-radius); color: var(--text-danger); }
+.directories :global(.remove-folder:hover:not(:disabled)) { background: var(--surface-danger-hover); color: var(--text-danger); }
+.directories :global(.remove-folder:focus-visible) { background: var(--surface-danger-hover); }
 p[role="alert"] { color: var(--text-danger); margin: 0; overflow-wrap: anywhere; }
 </style>

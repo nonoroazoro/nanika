@@ -1,4 +1,6 @@
 <script lang="ts">
+import Button from "../components/Button.svelte";
+import Input from "../components/Input.svelte";
 import { integerError } from "./integerValue";
 import { emptyValue } from "./values";
 import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
@@ -21,9 +23,14 @@ $effect(() =>
 });
 </script>
 
-<div class="integer-setting" class:invalid={error !== null} class:unlimited={value === null && schema.allowUnlimited}>
-    <input
-        bind:this={input}
+<div
+    class="control-field integer-setting"
+    class:invalid={error !== null}
+    class:unlimited={value === null && schema.allowUnlimited}
+>
+    <Input
+        variant="embedded"
+        bind:ref={input}
         {id}
         type="text"
         inputmode="numeric"
@@ -34,7 +41,7 @@ $effect(() =>
         readonly={value === null && schema.allowUnlimited}
         tabindex={value === null && schema.allowUnlimited ? -1 : 0}
         required={value !== null || !schema.allowUnlimited}
-        value={value === null && schema.allowUnlimited ? "Unlimited" : numericText}
+        value={value === null && schema.allowUnlimited ? "Unlimited" : String(numericText)}
         oninput={event =>
         {
             const raw = event.currentTarget.value;
@@ -43,8 +50,7 @@ $effect(() =>
         }}
     />
     {#if schema.allowUnlimited}
-        <button
-            type="button"
+        <Button
             class="limit-toggle"
             aria-label={`${label}: Unlimited`}
             aria-pressed={value === null}
@@ -74,18 +80,16 @@ $effect(() =>
             >
                 <path d="M12 12c-2-3-3.2-4.5-5.5-4.5a4.5 4.5 0 1 0 0 9c2.3 0 3.5-1.5 5.5-4.5s3.2-4.5 5.5-4.5a4.5 4.5 0 1 1 0 9c-2.3 0-3.5-1.5-5.5-4.5Z" />
             </svg>
-        </button>
+        </Button>
     {/if}
 </div>
 
 <style>
-.integer-setting { display: flex; align-items: center; width: 112px; height: 32px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-window); }
-input { width: 100%; min-width: 0; padding: 5px 10px; border: 0; outline: 0; background: transparent; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
-.unlimited input { color: var(--text-secondary); text-align: left; }
-.limit-toggle { width: 32px; min-width: 32px; min-height: 26px; height: 26px; margin-right: 2px; padding: 4px; border-radius: 4px; color: var(--text-secondary); }
-.limit-toggle[aria-pressed="true"] { color: var(--accent); background: var(--surface-selected); }
-.limit-toggle:hover:not(:disabled) { background: var(--surface-hovered); color: var(--text-primary); }
+.integer-setting { display: flex; align-items: center; width: 7rem; padding: 0; }
+.integer-setting :global(input) { text-align: right; font-variant-numeric: tabular-nums; }
+.unlimited :global(input) { color: var(--text-secondary); text-align: left; }
+.integer-setting :global(.limit-toggle) { width: 32px; min-width: 32px; min-height: 26px; height: 26px; margin-right: 2px; padding: 4px; border-radius: 4px; color: var(--text-secondary); }
+.integer-setting :global(.limit-toggle[aria-pressed="true"]) { color: var(--accent); background: var(--surface-selected); }
+.integer-setting :global(.limit-toggle:hover:not(:disabled)) { background: var(--surface-hovered); color: var(--text-primary); }
 .integer-setting.invalid { border-color: var(--border-danger); }
-.integer-setting:focus-within { border-color: var(--border-window); }
-input:focus-visible, .limit-toggle:focus-visible { outline: none; }
 </style>

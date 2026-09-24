@@ -181,7 +181,8 @@ async function changeStartup(enabled: boolean): Promise<void>
                     <Switch
                         label="Launch at login"
                         checked={startup === "enabled"}
-                        disabled={startup === null || startupBusy}
+                        disabled={startup === null}
+                        busy={startupBusy}
                         onChange={checked =>
                         {
                             void changeStartup(checked);
@@ -208,14 +209,14 @@ async function changeStartup(enabled: boolean): Promise<void>
 .general-page { display: flex; flex-direction: column; min-height: 100%; max-width: 52rem; margin: 0 auto; padding: 24px 28px 0; }
 form { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 h1 { margin: 0 0 24px; font-size: 20px; font-weight: 600; }
-h2 { margin: 0 0 9px; font-size: 12px; font-weight: 600; }
+h2 { margin: 0 0 9px; font-size: var(--font-control); font-weight: 600; }
 section { margin-bottom: 24px; }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
-.group { border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--surface-form); }
+.group { border: 1px solid var(--border-subtle); border-radius: var(--radius-row); background: var(--surface-form); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 16px; font-size: 13px; }
 .row + .row { border-top: 1px solid var(--border-subtle); }
 .row-copy { min-width: 0; }
-.row-copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.row-copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; }
 .row-copy p.error { color: var(--text-danger); overflow-wrap: anywhere; }
 @media (width < 800px) { .general-page { padding: 20px 20px 0; } }
 </style>

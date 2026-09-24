@@ -1,4 +1,5 @@
 <script lang="ts">
+import Textarea from "./Textarea.svelte";
 import type { DetailView } from "../types";
 import CachedFileIcon from "./CachedFileIcon.svelte";
 import FileCollectionPreview from "./FileCollectionPreview.svelte";
@@ -54,15 +55,16 @@ $effect(() =>
             />
         </div>
     {:else if detail.content.kind === "text"}
-        <textarea
-            bind:this={body}
+        <Textarea
+            variant="plain"
+            bind:ref={body}
             class="copyable"
             value={detail.content.value}
             aria-label="Detail content"
-            rows="1"
+            rows={1}
             readonly
             spellcheck="false"
-        ></textarea>
+        ></Textarea>
     {:else if detail.content.kind === "files"}
         {#if detail.content.files.length === 1}
             <div class="file-preview">
@@ -135,7 +137,7 @@ article { min-width: 0; padding: var(--space-5); }
 article.image-detail { display: flex; flex-direction: column; height: 100%; }
 .image-detail > h2, .image-detail > dl { flex: 0 0 auto; }
 article > :last-child { margin-bottom: 0; }
-.copyable { display: block; width: 100%; margin: 0; overflow: hidden; resize: none; appearance: none; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: var(--font-row); line-height: 1.45; }
+article :global(.copyable) { overflow: hidden; }
 h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); font-weight: 600; overflow-wrap: anywhere; }
 .image-preview { position: relative; flex: 1 1 auto; width: 100%; min-height: 12rem; max-height: 55vh; overflow: hidden; border-radius: var(--radius-row); background: var(--surface-raised); }
 .image-preview img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: scale-down; }
@@ -151,7 +153,7 @@ dl { margin-top: var(--space-6); font-size: var(--font-meta); }
 dl div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); }
 dt { color: var(--text-secondary); }
 dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-.file-paths { display: grid; gap: var(--space-2); user-select: text; }
+.file-paths { display: grid; gap: var(--space-2); -webkit-user-select: text; user-select: text; }
 .file-paths span { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
 .remaining-files { color: var(--text-secondary); }
 </style>
