@@ -50,6 +50,7 @@ fn make_candidates(count: usize) -> Vec<Candidate> {
                 format!("entry-{index}"),
                 format!("Application {index}"),
                 "launch",
+                vec![nanika_protocol::Action::primary("launch", "Open")],
                 Vec::new(),
             )
         })

@@ -1,6 +1,10 @@
 fn main() {
+    // Isolation is embedded by codegen, including development builds.
+    println!("cargo:rerun-if-changed=isolation");
     let commands: &'static [&'static str] = &[
         "dismiss_launcher",
+        "read_context_menu",
+        "invoke_context_menu",
         "acknowledge_search",
         "close_session",
         "invoke_candidate",

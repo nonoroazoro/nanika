@@ -20,6 +20,10 @@ impl ScriptEntry {
             title: self.title.clone(),
             subtitle: Some(self.path.to_string_lossy().into_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
+            actions: vec![nanika_protocol::Action::primary(
+                RUN_ACTION_ID.to_owned(),
+                "Run",
+            )],
             aliases: Vec::new(),
             icon: None,
             contribution_icon: Some(ContributionIcon::Script),

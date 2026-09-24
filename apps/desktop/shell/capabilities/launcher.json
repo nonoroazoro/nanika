@@ -8,6 +8,8 @@
     "allow-acknowledge-search",
     "allow-close-session",
     "allow-dismiss-launcher",
+    "allow-read-context-menu",
+    "allow-invoke-context-menu",
     "allow-invoke-candidate",
     "allow-open-session",
     "allow-open-settings",

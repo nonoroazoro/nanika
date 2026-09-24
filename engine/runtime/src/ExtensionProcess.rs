@@ -575,6 +575,19 @@ impl ExtensionProcess {
                     complete,
                     entries,
                 }) if response_id == request_id && response_generation == generation => {
+                    for entry in &entries {
+                        nanika_protocol::validate_actions(&entry.actions)
+                            .map_err(SupervisorError::UnexpectedMessage)?;
+                        if !entry
+                            .actions
+                            .iter()
+                            .any(|action| action.id == entry.action_id)
+                        {
+                            return Err(SupervisorError::UnexpectedMessage(
+                                "candidate default action is not declared".to_owned(),
+                            ));
+                        }
+                    }
                     if !cancellation_sent {
                         publish(entries)?;
                     }

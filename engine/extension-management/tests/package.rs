@@ -189,6 +189,7 @@ fn manifest_preserves_valid_command_contributions() {
             "rootSearch": {},
             "commands": [{
                 "command": "example.open",
+                "action": nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Run"),
                 "title": "Open Example",
                 "description": "Open the example view.",
                 "keywords": ["sample"]
@@ -363,6 +364,7 @@ fn manifest_rejects_acp_command_contributions() {
         Some(serde_json::json!({
             "commands": [{
                 "command": "example.open",
+                "action": nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Run"),
                 "title": "Open Example",
                 "description": "Open the example view."
             }]
@@ -414,6 +416,10 @@ fn manifest_rejects_ids_shared_by_commands_and_views() {
         },
         &ExtensionContributions {
             commands: vec![CommandContribution {
+                action: nanika_protocol::Action::primary(
+                    nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                    "Run",
+                ),
                 command: "example.open".to_owned(),
                 title: "Open Example".to_owned(),
                 description: "Open the example.".to_owned(),
@@ -987,7 +993,7 @@ mod activation {
             "id": "test.extension", "version": "0.1.0", "hostApi": "^0.1",
             "targets": { "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/test.exe" } },
             "runtime": { "protocol": "nanika", "protocolVersion": 1 },
-            "contributes": { "commands": [{ "command": "test", "title": "Test", "description": "Test command" }] }
+            "contributes": { "commands": [{ "command": "test", "action": nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Run"), "title": "Test", "description": "Test command" }] }
         });
         assert_eq!(
             parse_extension_manifest(&manifest.to_string())
@@ -1051,4 +1057,30 @@ mod presentation {
             assert!(parse_extension_manifest(&invalid.to_string()).is_err());
         }
     }
+}
+
+#[test]
+fn static_command_requires_valid_explicit_action_policy() {
+    let command = serde_json::json!({
+        "command": "system.empty", "title": "Empty", "description": "Empty system storage"
+    });
+    assert!(serde_json::from_value::<CommandContribution>(command.clone()).is_err());
+    let mut action =
+        nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Empty");
+    action.style = nanika_protocol::ActionStyle::Destructive;
+    action.confirmation_title = Some("Empty now?".to_owned());
+    let mut value = command;
+    value["action"] = serde_json::to_value(&action).unwrap();
+    let mut contributions = ExtensionContributions {
+        commands: vec![serde_json::from_value(value).unwrap()],
+        ..ExtensionContributions::default()
+    };
+    let protocol = ExtensionProtocol::Nanika {
+        protocol_version: 1,
+    };
+    assert!(validate_extension_contributions(protocol, &contributions).is_err());
+    contributions.commands[0].action.allow_default_execution = false;
+    validate_extension_contributions(protocol, &contributions).unwrap();
+    contributions.commands[0].action.id = "wrong".to_owned();
+    assert!(validate_extension_contributions(protocol, &contributions).is_err());
 }

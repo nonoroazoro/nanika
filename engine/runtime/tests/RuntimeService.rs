@@ -235,11 +235,12 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
     );
     runtime
         .invoke(
-            generation,
+            &runtime.latest_snapshot().unwrap(),
             HEALTHY,
             "fixture.entry",
             "fixture.run",
             "failure",
+            nanika_protocol::ActionInvocation::Default,
         )
         .unwrap()
         .recv_timeout(WAIT)
@@ -503,7 +504,8 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
             .unwrap()
             .remove("rootSearch");
         manifest["contributes"]["commands"] = serde_json::json!([{
-            "command": "fixture.entry", "title": "Fixture command", "description": "A static command"
+            "command": "fixture.entry",
+            "action": nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Run"), "title": "Fixture command", "description": "A static command"
         }]);
         fixture.manifests[0] = manifest.to_string();
         let initializing = format!("initialize-{HEALTHY}");
@@ -540,11 +542,12 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
         );
         let completion = runtime
             .invoke_recorded(
-                generation,
+                &runtime.latest_snapshot().unwrap(),
                 HEALTHY,
                 "fixture.entry",
                 nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
                 "fixture",
+                nanika_protocol::ActionInvocation::Default,
             )
             .unwrap();
         assert!(matches!(
@@ -560,11 +563,12 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
         assert!(
             runtime
                 .invoke(
-                    generation,
+                    &runtime.latest_snapshot().unwrap(),
                     HEALTHY,
                     "fixture.entry",
                     nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
-                    "fixture"
+                    "fixture",
+                    nanika_protocol::ActionInvocation::Default,
                 )
                 .is_err()
         );
@@ -628,11 +632,12 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
         .unwrap();
     let completion = runtime
         .invoke_recorded(
-            generation,
+            &runtime.latest_snapshot().unwrap(),
             HEALTHY,
             "fixture.view",
             nanika_protocol::VIEW_OPEN_ACTION_ID,
             "fixture",
+            nanika_protocol::ActionInvocation::Default,
         )
         .unwrap();
     assert!(
@@ -674,5 +679,141 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
     );
     drop(stored);
     drop(database);
+    fixture.stop(runtime);
+}
+
+#[test]
+fn restricted_candidates_stay_searchable_but_enforce_execution_policy() {
+    use nanika_protocol::ActionInvocation;
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let runtime = fixture.start();
+    for (query, accepted) in [
+        ("explicit-only", ActionInvocation::Explicit),
+        ("confirm-action", ActionInvocation::Confirmed),
+    ] {
+        let generation = runtime.begin_query(query).unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        let invoke = |invocation| {
+            runtime.invoke(
+                &runtime.latest_snapshot().unwrap(),
+                HEALTHY,
+                "fixture.entry",
+                "fixture.run",
+                query,
+                invocation,
+            )
+        };
+        assert!(invoke(ActionInvocation::Default).is_err());
+        if query == "confirm-action" {
+            assert!(invoke(ActionInvocation::Explicit).is_err());
+        }
+        let outcome = invoke(accepted)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            outcome,
+            nanika_host::ExtensionInvocationOutcome::Completed { .. }
+        ));
+    }
+    fixture.stop(runtime);
+}
+
+#[test]
+fn static_command_preserves_confirmation_policy_through_runtime_dispatch() {
+    use nanika_protocol::{Action, ActionInvocation, ActionStyle, COMMAND_EXECUTE_ACTION_ID};
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    let mut action = Action::primary(COMMAND_EXECUTE_ACTION_ID, "Empty");
+    action.allow_default_execution = false;
+    action.style = ActionStyle::Destructive;
+    action.confirmation_title = Some("Empty now?".to_owned());
+    manifest["contributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("rootSearch");
+    manifest["contributes"]["commands"] = serde_json::json!([{
+        "command": "fixture.entry", "title": "Fixture command", "description": "A static command",
+        "action": action,
+    }]);
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let snapshot = runtime.latest_snapshot().unwrap();
+    let candidate = &snapshot.results[0].candidate;
+    assert_eq!(candidate.actions(), &[action]);
+    let invoke = |invocation| {
+        runtime.invoke(
+            &runtime.latest_snapshot().unwrap(),
+            HEALTHY,
+            "fixture.entry",
+            COMMAND_EXECUTE_ACTION_ID,
+            "fixture",
+            invocation,
+        )
+    };
+    assert!(invoke(ActionInvocation::Default).is_err());
+    assert!(invoke(ActionInvocation::Explicit).is_err());
+    assert!(matches!(
+        invoke(ActionInvocation::Confirmed)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap(),
+        nanika_host::ExtensionInvocationOutcome::Completed { .. }
+    ));
+    fixture.stop(runtime);
+}
+
+#[test]
+fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
+    use nanika_protocol::ActionInvocation;
+    let fixture = Fixture::new();
+    let initializing = format!("initialize-{DELAYED}");
+    fixture.block(&initializing);
+    let runtime = fixture.start();
+    wait_until(|| fixture.entered(&initializing));
+    let generation = runtime.begin_query("confirm-action").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let reviewed = runtime.latest_snapshot().unwrap();
+
+    // A late contributor replaces the runtime snapshot while a WebView may still
+    // be displaying the previous revision awaiting channel acknowledgement.
+    fixture.release(&initializing);
+    wait_until(|| has_result(&runtime, generation, DELAYED));
+    let current = runtime.latest_snapshot().unwrap();
+    assert_eq!(reviewed.generation, current.generation);
+    assert!(!std::sync::Arc::ptr_eq(&reviewed, &current));
+    let rejected = runtime.invoke_recorded(
+        &reviewed,
+        HEALTHY,
+        "fixture.entry",
+        "fixture.run",
+        "confirm-action",
+        ActionInvocation::Confirmed,
+    );
+    assert!(matches!(rejected, Err(error) if error.contains("Search changed")));
+    let stored = nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
+    assert!(stored.load_usage().unwrap().is_empty());
+    drop(stored);
+
+    let completion = runtime
+        .invoke_recorded(
+            &current,
+            HEALTHY,
+            "fixture.entry",
+            "fixture.run",
+            "confirm-action",
+            ActionInvocation::Confirmed,
+        )
+        .unwrap();
+    assert!(matches!(
+        completion.outcome,
+        nanika_host::ExtensionInvocationOutcome::Completed { .. }
+    ));
     fixture.stop(runtime);
 }

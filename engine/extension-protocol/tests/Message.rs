@@ -1,7 +1,7 @@
 use nanika_protocol::{
-    DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest, HostServiceResponse,
-    ImageSource, LaunchArguments, LaunchDescriptor, ListItem, ListLayout, ListSection, ListView,
-    Message, NavigationEffect, View, ViewAction, ViewActionStyle, ViewItemIcon,
+    Action, ActionStyle, DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest,
+    HostServiceResponse, ImageSource, LaunchArguments, LaunchDescriptor, ListItem, ListLayout,
+    ListSection, ListView, Message, NavigationEffect, View, ViewItemIcon,
 };
 
 #[test]
@@ -78,11 +78,14 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     title: "Example".to_owned(),
                     subtitle: Some("Text".to_owned()),
                     icon: Some(ViewItemIcon::Text),
-                    actions: vec![ViewAction {
+                    actions: vec![Action {
                         id: "paste".to_owned(),
                         title: "Paste".to_owned(),
                         confirmation_title: None,
-                        style: ViewActionStyle::Primary,
+                        allow_default_execution: true,
+                        style: ActionStyle::Primary,
+                        enabled: true,
+                        group: None,
                     }],
                 }],
             }],
@@ -145,11 +148,14 @@ fn view_action_confirmation_titles_are_validated() {
                 value: "Example".to_owned(),
             },
             metadata: Vec::new(),
-            actions: vec![ViewAction {
+            actions: vec![Action {
                 id: "example.clear".to_owned(),
                 title: "Clear".to_owned(),
                 confirmation_title: Some(" ".to_owned()),
-                style: ViewActionStyle::Destructive,
+                allow_default_execution: false,
+                style: ActionStyle::Destructive,
+                enabled: true,
+                group: None,
             }],
         },
     };
@@ -170,11 +176,14 @@ fn view_action_confirmation_is_limited_to_destructive_actions() {
                 value: "Example".to_owned(),
             },
             metadata: Vec::new(),
-            actions: vec![ViewAction {
+            actions: vec![Action {
                 id: "example.open".to_owned(),
                 title: "Open".to_owned(),
                 confirmation_title: Some("Open now".to_owned()),
-                style: ViewActionStyle::Primary,
+                allow_default_execution: false,
+                style: ActionStyle::Primary,
+                enabled: true,
+                group: None,
             }],
         },
     };
@@ -296,11 +305,14 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                     value: "Example".to_owned(),
                 },
                 metadata: Vec::new(),
-                actions: vec![ViewAction {
+                actions: vec![Action {
                     id: "example.open".to_owned(),
                     title: "Open".to_owned(),
                     confirmation_title: None,
-                    style: ViewActionStyle::Primary,
+                    allow_default_execution: true,
+                    style: ActionStyle::Primary,
+                    enabled: true,
+                    group: None,
                 }],
             }),
             filter: None,

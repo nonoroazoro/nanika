@@ -190,6 +190,10 @@ impl ExtensionRuntime {
                         title: format!("Ask {}", process.extension_id()),
                         subtitle: Some("AI Command".to_owned()),
                         action_id: "prompt".to_owned(),
+                        actions: vec![nanika_protocol::Action::primary(
+                            "prompt".to_owned(),
+                            "Open",
+                        )],
                         aliases: vec![query],
                         icon: None,
                         contribution_icon: None,

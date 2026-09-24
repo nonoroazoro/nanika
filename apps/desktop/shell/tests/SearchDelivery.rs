@@ -82,6 +82,7 @@ fn channel_callback_can_acknowledge_without_the_shared_state_lock() {
 fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
     let results = (0..2000)
         .map(|index| crate::SearchResult {
+            allow_default_execution: true,
             extension_id: "test.extension".to_owned(),
             entry_id: format!("entry-{index}"),
             action_id: "open".to_owned(),

@@ -20,6 +20,7 @@ fn owner_drops_stale_extension_snapshots() {
                 "stale",
                 "Old",
                 "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
                 Vec::new(),
             )],
         )
@@ -34,6 +35,7 @@ fn owner_drops_stale_extension_snapshots() {
                 "current",
                 "Tool",
                 "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
                 Vec::new(),
             )],
         )
@@ -71,6 +73,7 @@ fn static_catalog_survives_queries_and_preserves_the_dynamic_completion_barrier(
                 "static",
                 "Static tool",
                 "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
                 Vec::new(),
             )],
         )
@@ -165,6 +168,7 @@ fn owner_publishes_initial_extension_results_as_one_snapshot() {
                 "first",
                 "First Tool",
                 "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
                 Vec::new(),
             )],
         )
@@ -188,6 +192,7 @@ fn owner_publishes_initial_extension_results_as_one_snapshot() {
                 "second",
                 "Second Tool",
                 "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
                 Vec::new(),
             )],
         )

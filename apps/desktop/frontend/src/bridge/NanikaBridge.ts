@@ -6,9 +6,17 @@ import type {
     ViewEventReceipt,
     ViewEventRequest
 } from "../types";
+import type { Action } from "../types/Action";
+import type { ContextMenuRequest } from "../types/ContextMenuRequest";
 
 export interface NanikaBridge
 {
+    readContextMenu(request: ContextMenuRequest): Promise<Action[]>;
+    invokeContextMenu(
+        request: ContextMenuRequest,
+        actionId: string,
+        confirmed: boolean
+    ): Promise<ViewEventReceipt | null>;
     openSession(
         listener: (snapshot: RootSearchSnapshot) => void,
         onError: (error: unknown) => void

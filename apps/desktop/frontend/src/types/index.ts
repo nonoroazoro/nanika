@@ -1,3 +1,4 @@
+export * from "./Action";
 export * from "./ApplicationSnapshot";
 export * from "./ContributionIcon";
 export * from "./DetailContent";
@@ -13,7 +14,6 @@ export * from "./PublishQueryRequest";
 export * from "./RootSearchSnapshot";
 export * from "./SearchPhase";
 export * from "./SearchResult";
-export * from "./ViewAction";
 export * from "./ViewEvent";
 export * from "./ViewEventReceipt";
 export * from "./ViewEventRequest";

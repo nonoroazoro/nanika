@@ -3,6 +3,25 @@ use nanika_protocol::{ClipboardContent, HostServiceRequest, LaunchArguments, Lau
 use super::{HostServiceHandler, HostServiceRouter, ProcessLauncher};
 
 #[test]
+fn reveal_requires_its_own_permission_before_accessing_the_platform() {
+    let router = HostServiceRouter {
+        launcher: Err("launcher unavailable".to_owned()),
+        clipboard: Err("clipboard unavailable".to_owned()),
+        payload_root: Err("payload unavailable".to_owned()),
+        permissions: Default::default(),
+    };
+    router.register_permissions("com.nanika.test", ["process.launch".to_owned()]);
+    let request = || HostServiceRequest::RevealPath {
+        path: "relative.exe".to_owned(),
+    };
+    let error = router.submit("com.nanika.test", request()).unwrap_err();
+    assert!(error.contains("files.reveal"));
+    router.register_permissions("com.nanika.test", ["files.reveal".to_owned()]);
+    let error = router.submit("com.nanika.test", request()).unwrap_err();
+    assert!(error.contains("launcher unavailable"));
+}
+
+#[test]
 fn clipboard_and_payload_unavailability_do_not_disable_process_launch() {
     let router = HostServiceRouter {
         launcher: Ok(ProcessLauncher::spawn().expect("launcher")),

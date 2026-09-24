@@ -1,37 +1,14 @@
 <script lang="ts">
+import Button from "./Button.svelte";
 import ShortcutKeys from "./ShortcutKeys.svelte";
 
-interface StatusBarEntry
-{
-    id: string;
-    title: string;
-    icon?: "app";
-    iconOnly?: boolean;
-    menu?: {
-        controls: string;
-        expanded: boolean;
-    };
-    interactive?: boolean;
-    disabled?: boolean;
-    destructive?: boolean;
-    confirmation?: {
-        title: string;
-        active: boolean;
-    };
-    keys?: string[];
-    ariaShortcut?: string;
-    pending?: {
-        title: string;
-        active: boolean;
-    };
-}
+import type { StatusBarEntry } from "../types/StatusBarEntry";
 
 const { leadingEntries = [], trailingEntries = [], onInvoke }: {
     leadingEntries?: StatusBarEntry[];
     trailingEntries?: StatusBarEntry[];
     onInvoke?: (id: string) => void;
 } = $props();
-let active = $state(document.visibilityState === "visible" && document.hasFocus());
 const statusAnnouncement = $derived.by(() =>
 {
     const titles: string[] = [];
@@ -51,11 +28,6 @@ const statusAnnouncement = $derived.by(() =>
     }
     return titles.join(". ");
 });
-
-function updateActivity(): void
-{
-    active = document.visibilityState === "visible" && document.hasFocus();
-}
 
 function displayedTitle(entry: StatusBarEntry): string
 {
@@ -80,9 +52,6 @@ function handleInvoke(event: MouseEvent): void
     }
 }
 </script>
-
-<svelte:document onvisibilitychange={updateActivity} />
-<svelte:window onfocus={updateActivity} onblur={updateActivity} />
 
 {#snippet statusEntry(entry: StatusBarEntry)}
     {#snippet content()}
@@ -115,6 +84,7 @@ function handleInvoke(event: MouseEvent): void
     {#if entry.interactive === false}
         <span
             class="status-entry passive"
+            role="group"
             class:pending={Boolean(entry.pending?.active)}
             aria-busy={entry.pending?.active ? "true" : undefined}
             aria-keyshortcuts={entry.ariaShortcut}
@@ -123,13 +93,13 @@ function handleInvoke(event: MouseEvent): void
             {@render content()}
         </span>
     {:else}
-        <button
-            class="status-entry"
-            class:icon-only={entry.iconOnly}
-            class:selected={entry.menu?.expanded}
-            type="button"
-            class:destructive={entry.destructive}
-            class:pending={Boolean(entry.pending?.active)}
+        <Button
+            class={["status-entry", {
+                "icon-only": entry.iconOnly,
+                selected: entry.menu?.expanded,
+                pending: Boolean(entry.pending?.active)
+            }]}
+            variant={entry.destructive ? "danger" : "ghost"}
             data-entry-id={entry.id}
             disabled={entry.disabled || Boolean(entry.pending?.active)}
             aria-busy={entry.pending?.active ? "true" : undefined}
@@ -137,11 +107,11 @@ function handleInvoke(event: MouseEvent): void
             aria-label={displayedTitle(entry)}
             aria-haspopup={entry.menu ? "menu" : undefined}
             aria-expanded={entry.menu?.expanded}
-            aria-controls={entry.menu?.controls}
+            aria-controls={entry.menu?.expanded ? entry.menu.controls : undefined}
             onclick={handleInvoke}
         >
             {@render content()}
-        </button>
+        </Button>
     {/if}
 {/snippet}
 
@@ -152,10 +122,6 @@ function handleInvoke(event: MouseEvent): void
     <!-- Preserve editing focus on pointer press; button click actions still run. -->
     <footer
         class="status-bar"
-        class:active
-        role="status"
-        aria-live="off"
-        aria-label="Status bar"
         onmousedowncapture={(event => event.preventDefault())}
     >
         <div class="leading-entries">
@@ -177,33 +143,34 @@ function handleInvoke(event: MouseEvent): void
 .leading-entries, .trailing-entries { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
 .leading-entries { flex: 1 1 auto; }
 .trailing-entries { flex: 0 1 auto; margin-left: auto; }
-.status-entry { display: inline-flex; min-width: 0; max-width: 40vw; min-height: 2rem; flex: 0 1 auto; align-items: center; gap: var(--space-2); border: 1px solid transparent; border-radius: var(--radius-row); background: transparent; color: var(--text-primary); padding: 0.25rem 0.375rem; font-size: var(--font-meta); font-weight: 500; line-height: 1.2; white-space: nowrap; }
-button:hover:not(:disabled) { border-color: transparent; background: var(--surface-hovered); }
-button.icon-only { width: var(--icon-size); min-width: var(--icon-size); height: var(--icon-size); min-height: var(--icon-size); flex: 0 0 var(--icon-size); justify-content: center; border: 0; border-radius: 0.625rem; background: transparent; color: var(--text-tertiary); padding: 0; }
-button.icon-only .app-mark { opacity: 0.48; transform-origin: center bottom; transform-box: fill-box; transition: opacity 120ms ease, color 120ms ease; }
-button.icon-only:hover:not(:disabled), button.icon-only.selected { background: transparent; color: var(--text-secondary); }
-button.icon-only:hover:not(:disabled) .app-mark { opacity: 0.82; animation: app-mark-hop 520ms both; }
-button.icon-only.selected .app-mark { opacity: 0.82; }
-button.icon-only:focus-visible { background: transparent; box-shadow: none; color: var(--text-secondary); }
-button.icon-only:focus-visible .app-mark { opacity: 0.9; }
-button.icon-only:active:not(:disabled) .app-mark { opacity: 0.95; transform: translateY(1px) scaleX(1.045) scaleY(0.9); transition-duration: 70ms; animation: none; }
-button.pending:disabled { opacity: 1; }
+.status-bar :global(.status-entry) { display: inline-flex; min-width: 0; max-width: 40vw; flex: 0 1 auto; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.passive { min-height: var(--control-height); padding: 0.25rem 0.375rem; border: 1px solid transparent; color: var(--text-primary); font-size: var(--font-meta); font-weight: 500; line-height: 1.2; }
+.status-bar :global(button.icon-only) { width: var(--icon-size); min-width: var(--icon-size); height: var(--icon-size); min-height: var(--icon-size); flex: 0 0 var(--icon-size); justify-content: center; border: 0; border-radius: 0.625rem; background: transparent; color: var(--text-tertiary); padding: 0; }
+.status-bar :global(button.icon-only .app-mark) { opacity: 0.48; transform-origin: center bottom; transform-box: fill-box; transition: opacity var(--motion-control) var(--motion-ease), color var(--motion-control) var(--motion-ease); }
+.status-bar :global(button.icon-only:hover:not(:disabled)), .status-bar :global(button.icon-only.selected) { background: transparent; color: var(--text-secondary); }
+.status-bar :global(button.icon-only:hover:not(:disabled) .app-mark) { opacity: 0.82; }
+.status-bar :global(button.icon-only.selected .app-mark) { opacity: 0.82; }
+.status-bar :global(button.icon-only:focus-visible) { background: transparent; box-shadow: none; color: var(--text-secondary); }
+.status-bar :global(button.icon-only:focus-visible .app-mark) { opacity: 0.9; }
+.status-bar :global(button.icon-only:active:not(:disabled) .app-mark) { opacity: 0.95; transform: none; }
+.status-bar :global(button.pending:disabled) { opacity: 1; }
 .entry-label-stack { display: grid; min-width: 0; max-width: 40vw; }
 .entry-label, .entry-label-reserve { grid-area: 1 / 1; min-width: 0; white-space: nowrap; }
 .entry-label { overflow: hidden; text-overflow: ellipsis; }
 .entry-label-reserve { visibility: hidden; }
-.pending .entry-label { background: linear-gradient(100deg, var(--text-secondary) 16%, color-mix(in srgb, var(--text-primary) 70%, var(--text-secondary)) 34%, light-dark(rgb(255 255 255 / 78%), rgb(255 255 255 / 94%)) 47%, light-dark(rgb(255 255 255 / 78%), rgb(255 255 255 / 94%)) 54%, color-mix(in srgb, var(--text-primary) 70%, var(--text-secondary)) 68%, var(--text-secondary) 84%); background-position: 100% 0; background-size: 250% 100%; background-clip: text; color: transparent; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: status-bar-shimmer 1600ms ease-in-out infinite paused; }
-.active .pending .entry-label { animation-play-state: running; }
-.destructive { border-color: var(--border-danger); color: var(--text-danger); }
-.destructive:hover:not(:disabled) { border-color: var(--border-danger-hover); background: var(--surface-danger-hover); }
+:global(.pending) .entry-label { color: var(--text-secondary); }
+@media (prefers-reduced-motion: no-preference) {
+  :global(:root[data-ui-active="true"]) .status-bar :global(button.icon-only:hover:not(:disabled) .app-mark) { animation: app-mark-hop 520ms both; }
+  :global(:root[data-ui-active="true"]) .status-bar :global(button.icon-only:active:not(:disabled) .app-mark) { transform: translateY(1px) scaleX(1.045) scaleY(0.9); transition-duration: 70ms; animation: none; }
+  :global(:root[data-ui-active="true"]) :global(.pending) .entry-label { background: linear-gradient(100deg, var(--text-secondary) 20%, var(--text-primary) 50%, var(--text-secondary) 80%); background-position: 100% 0; background-size: 250% 100%; background-clip: text; color: transparent; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: var(--motion-loading); }
+}
 .separator { width: 1px; height: 1rem; margin: 0 var(--space-1); background: var(--border-subtle); }
 .status-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-@keyframes status-bar-shimmer {
+@keyframes -global-status-bar-shimmer {
   0%, 18% { background-position: 100% 0; }
   82%, 100% { background-position: 0 0; }
 }
-
 @keyframes app-mark-hop {
   0% { transform: translateY(0) scale(1); animation-timing-function: cubic-bezier(0.3, 0, 0.5, 1); }
   12% { transform: translateY(0) scaleX(1.03) scaleY(0.96); animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -211,11 +178,5 @@ button.pending:disabled { opacity: 1; }
   60% { transform: translateY(0) scaleX(1.025) scaleY(0.975); animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
   78% { transform: translateY(-0.8px) scaleX(0.995) scaleY(1.005); animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
   100% { transform: translateY(0) scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  button.icon-only:hover:not(:disabled) .app-mark { animation: none; }
-  button.icon-only:active:not(:disabled) .app-mark { transform: none; }
-  .pending .entry-label { background: none; color: var(--text-secondary); -webkit-text-fill-color: currentColor; animation: none; }
 }
 </style>

@@ -46,6 +46,10 @@ impl CalculatorEngine {
                 title: format!("= {result}"),
                 subtitle: Some("Calculator".to_owned()),
                 action_id: COPY_ACTION_ID.to_owned(),
+                actions: vec![nanika_protocol::Action::primary(
+                    COPY_ACTION_ID,
+                    "Copy result",
+                )],
                 aliases: vec![query.to_owned()],
                 icon: None,
                 contribution_icon: None,

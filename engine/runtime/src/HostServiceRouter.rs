@@ -115,6 +115,10 @@ impl HostServiceHandler for HostServiceRouter {
             return Err("host service request has an invalid extension id".to_owned());
         }
         match request {
+            HostServiceRequest::RevealPath { path } => {
+                self.require_permission(extension_id, "files.reveal")?;
+                self.launcher()?.reveal(path)
+            }
             HostServiceRequest::Launch { descriptor } => {
                 self.require_permission(extension_id, "process.launch")?;
                 self.launcher()?.submit(descriptor)

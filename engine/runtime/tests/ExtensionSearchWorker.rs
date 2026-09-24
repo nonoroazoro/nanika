@@ -43,6 +43,10 @@ fn activation_failure_is_terminal_and_static_catalog_remains_discoverable() {
             search.clone(),
             ExtensionContributions {
                 commands: vec![CommandContribution {
+                    action: nanika_protocol::Action::primary(
+                        nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                        "Run",
+                    ),
                     command: "test.command".to_owned(),
                     title: "Test".to_owned(),
                     description: "Test command".to_owned(),
@@ -128,6 +132,10 @@ fn latest_visible_entry_hint_is_coalesced_behind_a_query() {
 fn static_contribution_candidates_preserve_type_and_declared_metadata() {
     let candidates = contribution_candidates(&ExtensionContributions {
         commands: vec![CommandContribution {
+            action: nanika_protocol::Action::primary(
+                nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                "Run",
+            ),
             command: "example.open".to_owned(),
             title: "Open Example".to_owned(),
             description: "Open the example view.".to_owned(),

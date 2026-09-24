@@ -1,9 +1,14 @@
 <script lang="ts">
+import Button from "./components/Button.svelte";
 import { onMount, tick } from "svelte";
 
+import { uiActivity } from "./ui/activity";
 import { tauriBridge } from "./bridge";
 import { orderedViewEvents } from "./bridge/orderedViewEvents";
 import { viewInputScheduler } from "./bridge/viewInputScheduler";
+import ContextMenu from "./components/ContextMenu.svelte";
+import type { ContextMenuPresentation } from "./types/ContextMenuPresentation";
+import type { MenuTarget } from "./types/MenuTarget";
 import { ExtensionView, RootSearch } from "./components";
 import type {
     ApplicationSnapshot,
@@ -19,6 +24,9 @@ let application = $state<ApplicationSnapshot | null>(null);
 let failed = $state(false);
 let queryFailure = $state<string | null>(null);
 let invoking = $state(false);
+let contextMenu = $state.raw<ContextMenuPresentation | null>(null);
+let menuRequest = 0;
+let menuOpen = $state(false);
 let refreshing = $state(false);
 let operationFailure = $state<string | null>(null);
 // A completed empty view survives pending queries just like a completed list.
@@ -33,7 +41,7 @@ let navigation = $state.raw<NavigationSnapshot>({
 let viewPending = $state(false);
 let viewInputError = $state<string | null>(null);
 let viewOperation = 0;
-const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent);
+const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent, tauriBridge.invokeContextMenu);
 const viewInput = viewInputScheduler();
 const navigationError = $derived(navigation.error ? "The action could not be completed. Try again." : null);
 let rootSearch = $state.raw<RootSearchSnapshot>({
@@ -55,6 +63,14 @@ let disposed = false;
 
 onMount(() =>
 {
+    const stopActivity = uiActivity.subscribe(activity =>
+    {
+        if (!activity.visible || !activity.focused)
+        {
+            closeContextMenu();
+            contextMenu = null;
+        }
+    });
     void (async () =>
     {
         try
@@ -84,6 +100,7 @@ onMount(() =>
     })();
     return () =>
     {
+        stopActivity();
         disposed = true;
         if (application)
         {
@@ -104,6 +121,144 @@ function fail(error: unknown): void
         observeSearch(latestRequestId, "failed");
     }
     console.error("Search failed", error);
+}
+
+async function showContextMenu(target: MenuTarget, position: [number, number] | null): Promise<void>
+{
+    closeContextMenu();
+    if (!application)
+    {
+        return;
+    }
+    const token = ++menuRequest;
+    const request = { sessionId: application.sessionId, target };
+    operationFailure = null;
+    try
+    {
+        const actions = await tauriBridge.readContextMenu(request);
+        if (token !== menuRequest || !document.hasFocus() || actions.length === 0)
+        {
+            return;
+        }
+        contextMenu = { request, actions, position };
+        menuOpen = true;
+    }
+    catch (error)
+    {
+        if (token === menuRequest)
+        {
+            operationFailure = String(error);
+        }
+    }
+}
+
+function closeContextMenu(): void
+{
+    menuRequest++;
+    menuOpen = false;
+}
+
+async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<void>
+{
+    const current = contextMenu;
+    closeContextMenu();
+    if (!current)
+    {
+        return;
+    }
+    try
+    {
+        if (current.request)
+        {
+            const request = current.request;
+            if (request.target.kind === "view")
+            {
+                if (viewInput.busy)
+                {
+                    return;
+                }
+                await runViewInput(
+                    {
+                        kind: "actionInvoked",
+                        item_id: request.target.itemId,
+                        action_id: actionId,
+                        invocation: confirmed ? "confirmed" : "explicit"
+                    },
+                    () => submitViewEvent.menu(request, actionId, confirmed)
+                );
+            }
+            else
+            {
+                if (invoking || refreshing || navigation.busy)
+                {
+                    return;
+                }
+                invoking = true;
+                operationFailure = null;
+                try
+                {
+                    await tauriBridge.invokeContextMenu(request, actionId, confirmed);
+                }
+                finally
+                {
+                    invoking = false;
+                }
+            }
+        }
+        else if (actionId === "settings")
+        {
+            await openSettings();
+        }
+    }
+    catch (error)
+    {
+        operationFailure = String(error);
+    }
+}
+
+async function openSettings(): Promise<void>
+{
+    closeContextMenu();
+    operationFailure = null;
+    try
+    {
+        await tauriBridge.openSettings();
+    }
+    catch (error)
+    {
+        operationFailure = String(error);
+    }
+}
+
+async function showAppMenu(): Promise<void>
+{
+    const wasOpen = menuOpen && contextMenu?.request === null;
+    closeContextMenu();
+    if (wasOpen)
+    {
+        return;
+    }
+    const token = menuRequest;
+    await tick();
+    if (token !== menuRequest || !document.hasFocus())
+    {
+        return;
+    }
+    contextMenu = {
+        request: null,
+        heading: "Nanika",
+        shortcuts: { settings: ["Ctrl", ","] },
+        actions: [{
+            id: "settings",
+            title: "Settings",
+            enabled: true,
+            allow_default_execution: false,
+            style: "secondary",
+            group: null
+        }],
+        position: [20, window.innerHeight - 56]
+    };
+    menuOpen = true;
 }
 
 async function publishQuery(query: string): Promise<void>
@@ -180,8 +335,8 @@ async function refreshSearch(): Promise<void>
 async function invokeCandidate(result: SearchResult): Promise<void>
 {
     if (
-        invoking || refreshing || !application || rootSearch.requestId !== latestRequestId
-        || rootSearch.phase !== "ready"
+        invoking || refreshing || navigation.busy || !application || rootSearch.requestId !== latestRequestId
+        || rootSearch.phase !== "ready" || !result.allowDefaultExecution
     )
     {
         return;
@@ -311,10 +466,24 @@ function reconcileViewInput(): void
 async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
 {
     const current = navigation.current;
-    if (!application || !current)
+    if (!application || !current || viewInput.busy)
     {
         return null;
     }
+    const request = {
+        sessionId: application.sessionId,
+        routeId: current.routeId,
+        revision: current.revision,
+        operation: event === null ? { kind: "back" as const } : { kind: "event" as const, event }
+    };
+    return runViewInput(event, () => submitViewEvent.event(request));
+}
+
+async function runViewInput(
+    event: ViewEvent | null,
+    submit: () => Promise<ViewEventReceipt | null>
+): Promise<number | null>
+{
     const operation = ++viewOperation;
     const blocking = viewInput.begin(event);
     let receipt: ViewEventReceipt | null = null;
@@ -322,12 +491,7 @@ async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
     operationFailure = null;
     try
     {
-        receipt = await submitViewEvent({
-            sessionId: application.sessionId,
-            routeId: current.routeId,
-            revision: current.revision,
-            operation: event === null ? { kind: "back" } : { kind: "event", event }
-        });
+        receipt = await submit();
         return receipt?.viewRevision ?? null;
     }
     catch (error)
@@ -335,7 +499,7 @@ async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
         if (operation === viewOperation)
         {
             console.error("View operation failed", error);
-            operationFailure = "The action could not be completed. Try again.";
+            operationFailure = String(error);
         }
         return null;
     }
@@ -357,9 +521,39 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
 
 function controlLauncherKeyboard(event: KeyboardEvent): void
 {
-    // Product keys never fall through to implicit WebView behavior. Surface
-    // handlers may still provide an explicit action after this capture phase.
-    if (event.key === "Tab" || event.key === "F5")
+    if (
+        !navigation.current && !event.isComposing && (event.metaKey || event.ctrlKey)
+        && event.key === "," && !event.altKey && !event.shiftKey
+    )
+    {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat)
+        {
+            void openSettings();
+        }
+        return;
+    }
+    // F5 has one owner and never reloads the WebView, including inside a menu.
+    if (event.key === "F5")
+    {
+        event.preventDefault();
+        if (
+            !menuOpen && !event.isComposing && !event.repeat
+            && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+            && document.visibilityState === "visible" && document.hasFocus()
+        )
+        {
+            void refreshSearch();
+        }
+        return;
+    }
+    // Bits owns menu navigation and Escape; preventing default suppresses its handlers.
+    if (event.target instanceof Element && event.target.closest("[role=menu]"))
+    {
+        return;
+    }
+    if (event.key === "Tab")
     {
         event.preventDefault();
     }
@@ -371,7 +565,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 {#if failed}
     <main class="fatal" role="alert">
         <strong>Search is unavailable.</strong>
-        <button onclick={() => window.location.reload()}>Try again</button>
+        <Button onclick={() => window.location.reload()}>Try again</Button>
     </main>
 {:else}
     <svelte:boundary onerror={(error => fail(error))}>
@@ -385,6 +579,13 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
                     onResume={resumeView}
+                    onContextMenu={(itemId, position) =>
+                    {
+                        const route = navigation.current;
+                        return route
+                            ? showContextMenu({ kind: "view", routeId: route.routeId, revision: route.revision, itemId }, position)
+                            : Promise.resolve();
+                    }}
                     onBack={() =>
                     {
                         void sendViewEvent(null);
@@ -396,14 +597,10 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 snapshot={rootSearch}
                 {hasCompletedSearch}
                 {refreshing}
-                onRefresh={refreshSearch}
-                onSettings={() =>
+                appMenuOpen={menuOpen && contextMenu?.request === null}
+                onAppMenu={() =>
                 {
-                    void tauriBridge.openSettings().catch(error =>
-                    {
-                        console.error("Settings could not be opened", error);
-                        operationFailure = "Settings could not be opened. Try again.";
-                    });
+                    void showAppMenu();
                 }}
                 inputError={queryFailure}
                 busy={invoking || refreshing || navigation.busy || !application
@@ -415,6 +612,14 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                     tauriBridge.dismissLauncher().catch(fail);
                 }}
                 onInvoke={invokeCandidate}
+                onContextMenu={(result, position) =>
+                showContextMenu({
+                    kind: "search",
+                    requestId: rootSearch.requestId,
+                    revision: rootSearch.revision,
+                    extensionId: result.extensionId,
+                    entryId: result.entryId
+                }, position)}
             />
         {/if}
         {#if operationFailure && !navigation.current}
@@ -425,6 +630,26 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
         {/snippet}
     </svelte:boundary>
 {/if}
+
+<ContextMenu
+    actions={contextMenu?.actions ?? []}
+    position={contextMenu?.position ?? null}
+    heading={contextMenu?.heading}
+    shortcuts={contextMenu?.shortcuts}
+    open={menuOpen}
+    onClose={closeContextMenu}
+    onClosed={() =>
+    {
+        if (!menuOpen)
+        {
+            contextMenu = null;
+        }
+    }}
+    onInvoke={(id, confirmed) =>
+    {
+        void invokeContextMenu(id, confirmed);
+    }}
+/>
 
 <style>
 .fatal {

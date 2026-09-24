@@ -301,7 +301,9 @@ fn handle_view_event(
         ViewEvent::LoadMore { cursor } if cursor == state.visible_limit.to_string() => {
             state.visible_limit = state.visible_limit.saturating_add(CLIPBOARD_PAGE_SIZE);
         }
-        ViewEvent::ActionInvoked { item_id, action_id } if action_id == COPY_ACTION_ID => {
+        ViewEvent::ActionInvoked {
+            item_id, action_id, ..
+        } if action_id == COPY_ACTION_ID => {
             let content = item_id.as_deref().and_then(|item_id| {
                 entries
                     .read()

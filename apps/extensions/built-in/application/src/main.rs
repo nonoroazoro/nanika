@@ -9,9 +9,7 @@ use nanika_extension_application::{
     ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
     select_candidates,
 };
-use nanika_protocol::{
-    HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
-};
+use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
 
 #[path = "PendingInvocation.rs"]
 mod pending_invocation;
@@ -139,10 +137,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap_or_else(|error| error.into_inner())
                         .iter()
                         .find(|entry| entry.entry_id == entry_id)
-                        .filter(|_| action_id == nanika_extension_application::RUN_ACTION_ID)
                         .ok_or_else(|| "application entry or action does not exist".to_owned())
                         .and_then(|entry| {
-                            entry.launch_descriptor().map_err(|error| error.to_string())
+                            entry
+                                .host_request(&action_id)
+                                .map_err(|error| error.to_string())
                         });
                     match descriptor {
                         Ok(descriptor) => {
@@ -153,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     request_id: service_request_id.clone(),
                                     parent_request_id: request_id.clone(),
                                     generation,
-                                    request: HostServiceRequest::Launch { descriptor },
+                                    request: descriptor,
                                 },
                             )?;
                             pending_invocations.insert(
@@ -213,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     parent_request_id,
                     generation: response_generation,
-                    response: HostServiceResponse::Launched,
+                    response: HostServiceResponse::Launched | HostServiceResponse::PathRevealed,
                 } => {
                     if let Some(pending) = pending_invocations.remove(&request_id) {
                         if parent_request_id == pending.request_id

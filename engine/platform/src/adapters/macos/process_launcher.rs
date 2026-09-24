@@ -79,6 +79,14 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32, shutdown: Arc
                             );
                         }
                     }
+                    Ok(LauncherCommand::Reveal { path, response }) => {
+                        let result = super::reveal::reveal(std::path::Path::new(&path))
+                            .map(|()| HostServiceResponse::PathRevealed)
+                            .map_err(|error| error.to_string());
+                        if response.send(result).is_err() {
+                            tracing::warn!("reveal requester closed before receiving the result");
+                        }
+                    }
                     Err(TryRecvError::Disconnected) => {
                         break 'owner;
                     }

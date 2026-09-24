@@ -6,6 +6,32 @@ use crate::{
 };
 
 #[tauri::command]
+pub(crate) fn read_context_menu(
+    window: tauri::WebviewWindow,
+    request: crate::ContextMenuRequest,
+) -> Result<Vec<nanika_protocol::Action>, String> {
+    authorize_launcher(&window)?;
+    window.state::<crate::DesktopState>().menu_actions(&request)
+}
+
+#[tauri::command]
+pub(crate) async fn invoke_context_menu(
+    window: tauri::WebviewWindow,
+    request: crate::ContextMenuRequest,
+    action_id: String,
+    confirmed: bool,
+) -> Result<Option<crate::ViewEventReceipt>, String> {
+    authorize_launcher(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        window
+            .state::<crate::DesktopState>()
+            .invoke_menu_action(&request, action_id, confirmed)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub(crate) async fn open_session(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
@@ -74,7 +100,11 @@ pub(crate) async fn invoke_candidate(
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<DesktopState>().run_invocation(&request)
+        app.state::<DesktopState>().run_invocation(
+            &request,
+            None,
+            nanika_protocol::ActionInvocation::Default,
+        )
     })
     .await
     .map_err(|error| format!("could not wait for the action result: {error}"))?
@@ -88,7 +118,7 @@ pub(crate) async fn view_event(
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<DesktopState>().run_view_event(request)
+        app.state::<DesktopState>().run_view_event(request, None)
     })
     .await
     .map_err(|error| format!("could not wait for the view result: {error}"))?

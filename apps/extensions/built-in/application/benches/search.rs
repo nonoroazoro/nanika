@@ -88,6 +88,7 @@ fn complete_query(entries: &[ApplicationEntry], query: &str, engine: &mut Search
                 entry.entry_id,
                 entry.title,
                 entry.action_id,
+                entry.actions,
                 entry.aliases,
             )
         })

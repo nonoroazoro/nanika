@@ -6,6 +6,8 @@ use crate::ContributionIcon;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandContribution {
     pub command: String,
+    /// Static commands use the same action contract as runtime search and views.
+    pub action: nanika_protocol::Action,
     pub title: String,
     pub description: String,
     #[serde(default)]

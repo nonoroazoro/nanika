@@ -64,6 +64,7 @@ impl ApplicationEntry {
             title: self.display_name.clone(),
             subtitle: Some("Application".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
+            actions: self.actions(),
             aliases,
             icon: IconReference::new(&self.icon_key).ok(),
             contribution_icon: None,
@@ -93,5 +94,63 @@ impl ApplicationEntry {
             arguments,
             working_directory: self.working_directory.clone(),
         })
+    }
+
+    pub fn actions(&self) -> Vec<nanika_protocol::Action> {
+        let mut actions = vec![nanika_protocol::Action::primary(RUN_ACTION_ID, "Open")];
+        if self.launch_kind != "windows-packaged" {
+            let title = match self.launch_kind.as_str() {
+                "windows-shell-link" => "Open shortcut location",
+                "macos-bundle" => "Show in Finder",
+                _ => "Open file location",
+            };
+            actions.push(nanika_protocol::Action {
+                id: "application.reveal".to_owned(),
+                title: title.to_owned(),
+                allow_default_execution: false,
+                style: nanika_protocol::ActionStyle::Secondary,
+                enabled: true,
+                group: Some("location".to_owned()),
+                confirmation_title: None,
+            });
+            if self.launch_kind == "windows-shell-link" {
+                actions.push(nanika_protocol::Action {
+                    id: "application.revealTarget".to_owned(),
+                    title: "Open target location".to_owned(),
+                    allow_default_execution: false,
+                    style: nanika_protocol::ActionStyle::Secondary,
+                    enabled: true,
+                    group: Some("location".to_owned()),
+                    confirmation_title: None,
+                });
+            }
+        }
+        actions
+    }
+
+    pub fn host_request(
+        &self,
+        action: &str,
+    ) -> Result<nanika_protocol::HostServiceRequest, ApplicationError> {
+        match action {
+            RUN_ACTION_ID => Ok(nanika_protocol::HostServiceRequest::Launch {
+                descriptor: self.launch_descriptor()?,
+            }),
+            "application.reveal" if self.launch_kind != "windows-packaged" => {
+                Ok(nanika_protocol::HostServiceRequest::RevealPath {
+                    path: self.target_path.clone(),
+                })
+            }
+            "application.revealTarget" if self.launch_kind == "windows-shell-link" => {
+                Ok(nanika_protocol::HostServiceRequest::RevealPath {
+                    path: crate::platform::shortcut_target(std::path::Path::new(
+                        &self.target_path,
+                    ))?,
+                })
+            }
+            _ => Err(ApplicationError::Configuration(
+                "application action is unavailable".to_owned(),
+            )),
+        }
     }
 }

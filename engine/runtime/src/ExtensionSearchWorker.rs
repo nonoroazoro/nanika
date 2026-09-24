@@ -724,6 +724,7 @@ pub(crate) fn contribution_candidates(
                 .clone()
                 .or_else(|| Some("Command".to_owned())),
             action_id: nanika_protocol::COMMAND_EXECUTE_ACTION_ID.to_owned(),
+            actions: vec![command.action.clone()],
             aliases,
             icon: None,
             contribution_icon: command.icon.map(protocol_contribution_icon),
@@ -741,6 +742,10 @@ pub(crate) fn contribution_candidates(
             title: view.title.clone(),
             subtitle: view.category.clone().or_else(|| Some("View".to_owned())),
             action_id: nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
+            actions: vec![nanika_protocol::Action::primary(
+                nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
+                "Open",
+            )],
             aliases,
             icon: None,
             contribution_icon: view.icon.map(protocol_contribution_icon),

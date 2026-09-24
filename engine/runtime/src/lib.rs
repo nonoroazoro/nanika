@@ -195,6 +195,7 @@ pub(crate) fn search_candidates(
                 entry.entry_id,
                 entry.title,
                 entry.action_id,
+                entry.actions,
                 entry.aliases,
             )
             .with_subtitle(entry.subtitle)

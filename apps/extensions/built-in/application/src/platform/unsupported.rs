@@ -48,3 +48,9 @@ pub(super) fn extract_icons(
         "application discovery is unsupported on this platform".to_owned(),
     ))
 }
+
+pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> {
+    Err(ApplicationError::Configuration(
+        "Windows shortcut targets are unavailable on this platform".to_owned(),
+    ))
+}

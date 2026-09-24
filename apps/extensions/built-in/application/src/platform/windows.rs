@@ -567,3 +567,11 @@ fn _icon_key_from_stamp(source: &Path, icon_index: i32, length: u64, modified: i
         &crate::icon_cache::key_from_stamp(source, icon_index, length, modified),
     ])
 }
+
+pub(super) fn shortcut_target(path: &Path) -> Result<String, ApplicationError> {
+    let link = load_shell_link(path)?.ok_or_else(|| {
+        ApplicationError::Configuration("shortcut target is unavailable".to_owned())
+    })?;
+    let target = expand_environment(&link.target).canonicalize()?;
+    Ok(target.to_string_lossy().into_owned())
+}

@@ -665,7 +665,10 @@ pub fn validate_extension_manifest(
     }
     let mut permissions = HashSet::new();
     for permission in &manifest.permissions {
-        if !matches!(permission.as_str(), "process.launch" | "clipboard.write") {
+        if !matches!(
+            permission.as_str(),
+            "process.launch" | "clipboard.write" | "files.reveal"
+        ) {
             return Err(ExtensionPackageError::Manifest(format!(
                 "unsupported extension permission: {permission}"
             )));
@@ -769,6 +772,13 @@ fn validate_command_contributions(
     }
     let mut ids = HashSet::new();
     for command in commands {
+        nanika_protocol::validate_actions(std::slice::from_ref(&command.action))
+            .map_err(ExtensionPackageError::Manifest)?;
+        if command.action.id != nanika_protocol::COMMAND_EXECUTE_ACTION_ID {
+            return Err(ExtensionPackageError::Manifest(
+                "static command action id must be command.execute".to_owned(),
+            ));
+        }
         if !is_valid_contribution_id(&command.command) {
             return Err(ExtensionPackageError::Manifest(
                 "extension command id is invalid".to_owned(),

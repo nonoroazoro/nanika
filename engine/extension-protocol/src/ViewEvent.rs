@@ -20,6 +20,7 @@ pub enum ViewEvent {
         cursor: String,
     },
     ActionInvoked {
+        invocation: crate::ActionInvocation,
         item_id: Option<String>,
         action_id: String,
     },

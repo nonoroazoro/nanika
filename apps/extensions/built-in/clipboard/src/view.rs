@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use nanika_protocol::{
-    ClipboardContent, DetailContent, DetailView, ImageSource, ListItem, ListLayout, ListSection,
-    ListView, View, ViewAction, ViewActionStyle, ViewFile, ViewFilter, ViewFilterOption,
-    ViewItemIcon, ViewMetadata,
+    Action, ActionStyle, ClipboardContent, DetailContent, DetailView, ImageSource, ListItem,
+    ListLayout, ListSection, ListView, View, ViewFile, ViewFilter, ViewFilterOption, ViewItemIcon,
+    ViewMetadata,
 };
 
 use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
@@ -136,21 +136,27 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
     }
 }
 
-fn copy_action() -> ViewAction {
-    ViewAction {
+fn copy_action() -> Action {
+    Action {
         id: COPY_ACTION_ID.to_owned(),
         title: "Copy to Clipboard".to_owned(),
         confirmation_title: None,
-        style: ViewActionStyle::Primary,
+        allow_default_execution: true,
+        style: ActionStyle::Primary,
+        enabled: true,
+        group: None,
     }
 }
 
-fn clear_action() -> ViewAction {
-    ViewAction {
+fn clear_action() -> Action {
+    Action {
         id: CLEAR_ACTION_ID.to_owned(),
         title: "Clear history".to_owned(),
         confirmation_title: Some("Clear now?".to_owned()),
-        style: ViewActionStyle::Destructive,
+        allow_default_execution: false,
+        style: ActionStyle::Destructive,
+        enabled: true,
+        group: None,
     }
 }
 

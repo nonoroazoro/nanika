@@ -18,7 +18,7 @@ export function viewInputScheduler()
     return {
         get busy(): boolean
         {
-            return blocking > 0 || navigation.revision < blockingRevision;
+            return blocking > 0 || navigation.revision < blockingRevision || (pending === 0 && navigation.busy);
         },
         get inputError(): string | null
         {

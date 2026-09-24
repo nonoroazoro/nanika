@@ -1,4 +1,6 @@
 <script lang="ts">
+import Button from "./Button.svelte";
+import Input from "./Input.svelte";
 import { onMount } from "svelte";
 import type { ExtensionViewSnapshot, ViewEvent } from "../types";
 import CachedFileIcon from "./CachedFileIcon.svelte";
@@ -6,7 +8,7 @@ import StatusBar from "./StatusBar.svelte";
 import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
 
-const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBack }: {
+const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBack, onContextMenu }: {
     snapshot: ExtensionViewSnapshot;
     resourceOrigin: string;
     busy: boolean;
@@ -15,6 +17,7 @@ const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBac
     onEvent: (event: ViewEvent) => Promise<number | null>;
     onResume: () => void;
     onBack: () => void;
+    onContextMenu: (itemId: string | null, position: [number, number] | null) => Promise<void>;
 } = $props();
 const list = $derived(snapshot.view.kind === "list" ? snapshot.view.list : null);
 const items = $derived(list?.sections.flatMap(section => section.items) ?? []);
@@ -32,9 +35,13 @@ const detail = $derived.by(() =>
 });
 const detailPending = $derived(list !== null && (selected?.id ?? null) !== list.selected_item_id);
 const actions = $derived(list ? selected?.actions ?? [] : detail?.actions ?? []);
-const primaryAction = $derived(actions.find(action => action.style === "primary") ?? null);
+const primaryAction = $derived(
+    actions.find(action =>
+        action.style === "primary" && action.enabled && action.allow_default_execution && !action.confirmation_title
+    ) ?? null
+);
 const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
-let confirmation = $state<{ actionId: string; itemId: string | null; } | null>(null);
+let confirmation = $state<{ actionId: string; itemId: string | null; revision: number; } | null>(null);
 const leadingStatusEntries = $derived(secondaryActions.map(action => ({
     id: action.id,
     title: action.title,
@@ -42,7 +49,7 @@ const leadingStatusEntries = $derived(secondaryActions.map(action => ({
         ? { title: action.confirmation_title, active: isConfirming(action.id) }
         : undefined,
     destructive: action.style === "destructive",
-    disabled: busy
+    disabled: busy || !action.enabled
 })));
 const trailingStatusEntries = $derived(
     primaryAction
@@ -72,7 +79,7 @@ $effect(() =>
 {
     const current = confirmation;
     if (
-        current && (current.itemId !== (selected?.id ?? null)
+        current && (current.revision !== snapshot.revision || current.itemId !== (selected?.id ?? null)
             || !actions.some(action => action.id === current.actionId && Boolean(action.confirmation_title)))
     )
     {
@@ -219,7 +226,8 @@ function cancelConfirmationOutsideAction(event: PointerEvent): void
 function isConfirming(actionId: string): boolean
 {
     return confirmation?.actionId === actionId
-        && confirmation.itemId === (selected?.id ?? null);
+        && confirmation.itemId === (selected?.id ?? null)
+        && confirmation.revision === snapshot.revision;
 }
 
 function focusSearch(): void
@@ -240,11 +248,13 @@ function activateItem(item: typeof items[number]): void
     {
         return;
     }
-    const primary = item.actions.find(action => action.style === "primary");
+    const primary = item.actions.find(action =>
+        action.style === "primary" && action.enabled && action.allow_default_execution && !action.confirmation_title
+    );
     if (primary)
     {
         cancelConfirmation();
-        onEvent({ kind: "actionInvoked", item_id: item.id, action_id: primary.id });
+        onEvent({ kind: "actionInvoked", item_id: item.id, action_id: primary.id, invocation: "default" });
     }
 }
 
@@ -255,7 +265,7 @@ function invokeAction(actionId: string): void
         return;
     }
     const action = actions.find(candidate => candidate.id === actionId);
-    if (!action)
+    if (!action || !action.enabled)
     {
         return;
     }
@@ -266,11 +276,12 @@ function invokeAction(actionId: string): void
         && !isConfirming(action.id)
     )
     {
-        confirmation = { actionId: action.id, itemId };
+        confirmation = { actionId: action.id, itemId, revision: snapshot.revision };
         return;
     }
+    const invocation = isConfirming(action.id) ? "confirmed" : "explicit";
     cancelConfirmation();
-    onEvent({ kind: "actionInvoked", item_id: itemId, action_id: action.id });
+    onEvent({ kind: "actionInvoked", item_id: itemId, action_id: action.id, invocation });
 }
 
 function handleKeydown(event: KeyboardEvent): void
@@ -333,13 +344,29 @@ function handleKeydown(event: KeyboardEvent): void
     }
     if (event.key === "Enter" && !busy)
     {
-        const action = actions.find(candidate => candidate.style === "primary");
+        const action = primaryAction;
         if (action)
         {
             event.preventDefault();
-            onEvent({ kind: "actionInvoked", item_id: selected?.id ?? null, action_id: action.id });
+            onEvent({
+                kind: "actionInvoked",
+                item_id: selected?.id ?? null,
+                action_id: action.id,
+                invocation: "default"
+            });
         }
     }
+}
+
+function _openContextMenu(itemId: string | null, event: MouseEvent): void
+{
+    event.preventDefault();
+    if (busy || (list && !itemId))
+    {
+        return;
+    }
+    cancelConfirmation();
+    void onContextMenu(itemId, [event.clientX, event.clientY]);
 }
 </script>
 
@@ -350,13 +377,14 @@ function handleKeydown(event: KeyboardEvent): void
     onblur={cancelConfirmation}
 />
 
-<section
+<main
     class="extension-view"
     bind:this={surface}
     aria-label={list?.title ?? detail?.title ?? "Extension view"}
+    oncontextmenu={list ? undefined : event => _openContextMenu(null, event)}
 >
     <header class:has-filter={Boolean(list?.filter)}>
-        <button class="back" type="button" onclick={onBack} disabled={busy} aria-label="Back to previous view">
+        <Button class="back" onclick={onBack} disabled={busy} aria-label="Back to previous view">
             <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -368,10 +396,11 @@ function handleKeydown(event: KeyboardEvent): void
             >
                 <path d="m14.5 5-7 7 7 7" />
             </svg>
-        </button>
+        </Button>
         {#if list}
-            <input
-                bind:this={input}
+            <Input
+                variant="search"
+                bind:ref={input}
                 bind:value={query}
                 role="combobox"
                 aria-label={list.search_placeholder || "Search this view"}
@@ -391,8 +420,7 @@ function handleKeydown(event: KeyboardEvent): void
             {#if list.filter}
                 <div class="filter" role="group" aria-label="Content filter">
                     {#each list.filter.options as option (option.value)}
-                        <button
-                            type="button"
+                        <Button
                             aria-pressed={option.value === list.filter.selected_value}
                             aria-disabled={busy}
                             onmousedown={(event => event.preventDefault())}
@@ -406,7 +434,7 @@ function handleKeydown(event: KeyboardEvent): void
                             }}
                         >
                             {option.title}
-                        </button>
+                        </Button>
                     {/each}
                 </div>
             {/if}
@@ -429,6 +457,10 @@ function handleKeydown(event: KeyboardEvent): void
                                         role="option"
                                         aria-selected={item.id === selected?.id}
                                         aria-disabled={busy}
+                                        oncontextmenu={event =>
+                                        {
+                                            void _openContextMenu(item.id, event);
+                                        }}
                                         onmousedown={(event => event.preventDefault())}
                                         onclick={() =>
                                         {
@@ -503,7 +535,7 @@ function handleKeydown(event: KeyboardEvent): void
         trailingEntries={trailingStatusEntries}
         onInvoke={invokeAction}
     />
-</section>
+</main>
 
 <style>
 .extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 0; border-radius: var(--radius-window); background: var(--surface-window); color: var(--text-primary); }
@@ -511,13 +543,10 @@ function handleKeydown(event: KeyboardEvent): void
 header { display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: center; gap: var(--space-3); flex: 0 0 var(--search-height); height: var(--search-height); padding: 0 var(--space-5); border-bottom: 1px solid var(--border-subtle); }
 header.has-filter { grid-template-columns: 1rem minmax(0, 1fr) auto; }
 h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-search); line-height: 1.2; }
-button { color: inherit; font-size: var(--font-meta); }
 /* Pending view requests keep toolbar contrast stable; native disabled and aria-busy still expose the interaction state. */
-button:disabled { opacity: 1; }
-.back { display: grid; justify-self: center; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
-.back svg { width: 1rem; height: 1rem; }
-input { min-width: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: var(--font-search); caret-color: var(--accent); }
-input::placeholder { color: var(--text-tertiary); opacity: 1; }
+header :global(button:disabled) { opacity: 1; }
+header :global(.back) { display: grid; justify-self: center; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
+header :global(.back svg) { width: 1rem; height: 1rem; }
 .content { display: flex; flex: 1; min-height: 0; }
 .list-pane, .detail-pane { min-width: 0; flex: 1; overflow: auto; }
 .split .list-pane { flex: 0 1 38%; }
@@ -539,11 +568,11 @@ small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: v
 .empty { color: var(--text-secondary); text-align: center; padding: var(--space-5); }
 .load-more-sentinel { height: 1px; pointer-events: none; }
 .filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); white-space: nowrap; }
-.filter button { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
+.filter :global(button) { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
 /* aria-disabled preserves filter focus while its guarded event waits for the extension. */
-.filter button[aria-disabled='true'] { cursor: default; }
-.filter button:hover { border-color: transparent; background: var(--surface-hovered); }
-.filter button[aria-pressed='true'] { background: var(--surface-selected); }
-.filter button[aria-pressed='true']:hover { background: var(--surface-selected); }
+.filter :global(button[aria-disabled='true']) { cursor: default; }
+.filter :global(button:hover) { border-color: transparent; background: var(--surface-hovered); }
+.filter :global(button[aria-pressed='true']) { background: var(--surface-selected); }
+.filter :global(button[aria-pressed='true']:hover) { background: var(--surface-selected); }
 .error { padding: var(--space-2) var(--space-5); font-size: var(--font-meta); }
 </style>

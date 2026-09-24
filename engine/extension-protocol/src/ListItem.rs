@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{ViewAction, ViewItemIcon};
+use crate::{Action, ViewItemIcon};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListItem {
@@ -8,5 +8,5 @@ pub struct ListItem {
     pub title: String,
     pub subtitle: Option<String>,
     pub icon: Option<ViewItemIcon>,
-    pub actions: Vec<ViewAction>,
+    pub actions: Vec<Action>,
 }

@@ -32,6 +32,10 @@ pub(crate) fn standard_roots() -> Result<Vec<PathBuf>, ApplicationError> {
     implementation::standard_roots(|_| true).map(|roots| roots.paths)
 }
 
+pub(crate) fn shortcut_target(path: &Path) -> Result<String, ApplicationError> {
+    implementation::shortcut_target(path)
+}
+
 pub(crate) fn configured_roots(
     enabled: &std::collections::BTreeSet<String>,
 ) -> Result<DiscoveryRoots, ApplicationError> {

@@ -224,3 +224,9 @@ fn normalized_aliases<'a>(
 fn string_value(value: Option<&Value>) -> Option<&str> {
     value.and_then(Value::as_string)
 }
+
+pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> {
+    Err(ApplicationError::Configuration(
+        "Windows shortcut targets are unavailable on this platform".to_owned(),
+    ))
+}

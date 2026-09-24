@@ -2,6 +2,8 @@ const allowedCommands = new Set([
   'acknowledge_search',
   'close_session',
   'dismiss_launcher',
+  'read_context_menu',
+  'invoke_context_menu',
   'invoke_candidate',
   'open_session',
   'publish_query',

@@ -9,6 +9,7 @@ mod instance;
 mod overlay_position;
 pub(crate) mod process_launch;
 pub(crate) mod process_launcher;
+mod reveal;
 #[path = "SingleInstance.rs"]
 mod single_instance;
 pub(crate) mod startup;

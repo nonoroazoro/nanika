@@ -54,6 +54,38 @@ impl NavigationState {
             .ok_or_else(|| "The extension view changed. Use its current state.".to_owned())
     }
 
+    /// Queued input addresses stable item/action IDs in the current route. Its
+    /// captured revision can precede completed selections or invalidations.
+    /// A menu instead authorizes the exact snapshot from which it was opened.
+    pub(crate) fn authorize_input(
+        &self,
+        request: &crate::ViewEventRequest,
+        menu_revision: Option<u64>,
+    ) -> Result<&ExtensionViewSnapshot, String> {
+        let route = self.authorize_route(request.route_id)?;
+        if menu_revision.is_some_and(|revision| revision != route.revision) {
+            return Err("The view changed. Reopen the menu.".to_owned());
+        }
+        if request.revision > route.revision {
+            return Err("The extension view revision is ahead of the current state.".to_owned());
+        }
+        if let crate::ViewOperation::Event { event } = &request.operation {
+            // Confirmation applies to what the user reviewed, never a newer snapshot.
+            if matches!(
+                event,
+                ViewEvent::ActionInvoked {
+                    invocation: nanika_protocol::ActionInvocation::Confirmed,
+                    ..
+                }
+            ) && request.revision != route.revision
+            {
+                return Err("The view changed. Confirm the action again.".to_owned());
+            }
+            authorize_view_event(&route.view, event)?;
+        }
+        Ok(route)
+    }
+
     pub(crate) fn finish(&mut self, result: Result<(), String>) {
         self.busy = false;
         self.error = result.err();
@@ -133,21 +165,29 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             ViewEvent::ActionInvoked {
                 item_id: Some(item_id),
                 action_id,
+                invocation,
             },
         ) => list
             .sections
             .iter()
             .flat_map(|section| &section.items)
             .any(|item| {
-                &item.id == item_id && item.actions.iter().any(|action| &action.id == action_id)
+                &item.id == item_id
+                    && item.actions.iter().any(|action| {
+                        &action.id == action_id && action.allows_invocation(*invocation)
+                    })
             }),
         (
             View::Detail { detail },
             ViewEvent::ActionInvoked {
                 item_id: None,
                 action_id,
+                invocation,
             },
-        ) => detail.actions.iter().any(|action| &action.id == action_id),
+        ) => detail
+            .actions
+            .iter()
+            .any(|action| &action.id == action_id && action.allows_invocation(*invocation)),
         _ => false,
     };
     if valid {

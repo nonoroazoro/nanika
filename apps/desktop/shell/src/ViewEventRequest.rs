@@ -12,7 +12,6 @@ pub(crate) enum ViewOperation {
 pub(crate) struct ViewEventRequest {
     pub(crate) session_id: u64,
     pub(crate) route_id: u64,
-    #[serde(rename = "revision")]
-    pub(crate) _revision: u64,
+    pub(crate) revision: u64,
     pub(crate) operation: ViewOperation,
 }

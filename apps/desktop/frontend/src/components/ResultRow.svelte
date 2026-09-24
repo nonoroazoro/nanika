@@ -8,9 +8,10 @@ interface Props
     active: boolean;
     onActivate: () => void;
     onInvoke: () => void;
+    onContextMenu: (event: MouseEvent) => void;
 }
 
-const { result, active, onActivate, onInvoke }: Props = $props();
+const { result, active, onActivate, onInvoke, onContextMenu }: Props = $props();
 let failedIconUrl = $state<string | null>(null);
 const iconFailed = $derived(result.iconUrl !== null && failedIconUrl === result.iconUrl);
 </script>
@@ -24,6 +25,7 @@ const iconFailed = $derived(result.iconUrl !== null && failedIconUrl === result.
     onpointermove={onActivate}
     onmousedown={(event => event.preventDefault())}
     onclick={onInvoke}
+    oncontextmenu={onContextMenu}
     onkeydown={(event =>
     {
         if (event.key === "Enter" || event.key === " ")

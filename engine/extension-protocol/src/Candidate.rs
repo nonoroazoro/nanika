@@ -9,7 +9,9 @@ pub struct Candidate {
     pub entry_id: String,
     pub title: String,
     pub subtitle: Option<String>,
+    /// Preferred action. It may forbid default execution and remain menu-only.
     pub action_id: String,
+    pub actions: Vec<crate::Action>,
     pub aliases: Vec<String>,
     pub icon: Option<IconReference>,
     pub contribution_icon: Option<ContributionIcon>,

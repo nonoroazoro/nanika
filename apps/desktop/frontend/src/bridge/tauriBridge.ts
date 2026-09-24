@@ -11,6 +11,9 @@ type SearchUpdate = {
 } & Omit<RootSearchSnapshot, "navigation" | "results">;
 
 export const tauriBridge: NanikaBridge = {
+    readContextMenu: async request => invoke("read_context_menu", { request }),
+    invokeContextMenu: async (request, actionId, confirmed) =>
+        invoke("invoke_context_menu", { request, actionId, confirmed }),
     openSession: async (listener, onError) =>
     {
         let previous: RootSearchSnapshot | null = null;

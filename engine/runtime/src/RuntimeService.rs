@@ -226,16 +226,19 @@ impl RuntimeService {
 
     pub fn invoke(
         &self,
-        generation: u64,
+        snapshot: &Arc<SearchSnapshot>,
         extension_id: &str,
         entry_id: &str,
         action_id: &str,
         query_context: &str,
+        invocation: nanika_protocol::ActionInvocation,
     ) -> Result<std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, String>>, String> {
-        let snapshot = self
+        if !self
             .latest_snapshot()
-            .filter(|snapshot| snapshot.generation == generation)
-            .ok_or_else(|| "the selected search generation is no longer active".to_owned())?;
+            .is_some_and(|current| Arc::ptr_eq(&current, snapshot))
+        {
+            return Err("Search changed. Select a current result.".to_owned());
+        }
         let candidate = snapshot
             .results
             .iter()
@@ -243,15 +246,19 @@ impl RuntimeService {
             .find(|candidate| {
                 candidate.extension_id() == extension_id
                     && candidate.entry_id() == entry_id
-                    && candidate.action_id() == action_id
+                    && (invocation != nanika_protocol::ActionInvocation::Default
+                        || candidate.action_id() == action_id)
+                    && candidate.actions().iter().any(|action| {
+                        action.id == action_id && action.allows_invocation(invocation)
+                    })
             })
             .ok_or_else(|| "the selected candidate is no longer available".to_owned())?;
         self.extensions
             .invoke(
                 extension_id,
-                generation,
+                snapshot.generation,
                 candidate.entry_id(),
-                candidate.action_id(),
+                action_id,
                 query_context,
             )
             .map_err(|error| error.to_string())
@@ -261,22 +268,37 @@ impl RuntimeService {
     /// A recording failure must not discard an already created extension view.
     pub fn invoke_recorded(
         &self,
-        generation: u64,
+        snapshot: &Arc<SearchSnapshot>,
         extension_id: &str,
         entry_id: &str,
         action_id: &str,
         query_context: &str,
+        invocation: nanika_protocol::ActionInvocation,
     ) -> Result<crate::RuntimeInvocationCompletion, String> {
+        let is_default = snapshot.results.iter().any(|result| {
+            let candidate = &result.candidate;
+            candidate.extension_id() == extension_id
+                && candidate.entry_id() == entry_id
+                && candidate.action_id() == action_id
+        });
         let outcome = self
-            .invoke(generation, extension_id, entry_id, action_id, query_context)?
+            .invoke(
+                snapshot,
+                extension_id,
+                entry_id,
+                action_id,
+                query_context,
+                invocation,
+            )?
             .recv()
             .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
-        let recording_error = if matches!(outcome, ExtensionInvocationOutcome::Completed { .. }) {
-            self.record_execution(extension_id, entry_id, action_id, query_context)
-                .err()
-        } else {
-            None
-        };
+        let recording_error =
+            if is_default && matches!(outcome, ExtensionInvocationOutcome::Completed { .. }) {
+                self.record_execution(extension_id, entry_id, action_id, query_context)
+                    .err()
+            } else {
+                None
+            };
         Ok(crate::RuntimeInvocationCompletion {
             outcome,
             recording_error,

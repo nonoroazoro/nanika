@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invoke-context-menu"
+description = "Enables the invoke_context_menu command without any pre-configured scope."
+commands.allow = ["invoke_context_menu"]
+
+[[permission]]
+identifier = "deny-invoke-context-menu"
+description = "Denies the invoke_context_menu command without any pre-configured scope."
+commands.deny = ["invoke_context_menu"]

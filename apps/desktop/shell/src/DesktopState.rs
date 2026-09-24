@@ -28,6 +28,137 @@ pub(crate) struct DesktopState {
 }
 
 impl DesktopState {
+    pub(crate) fn menu_actions(
+        &self,
+        request: &crate::ContextMenuRequest,
+    ) -> Result<Vec<nanika_protocol::Action>, String> {
+        let state = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let session = state
+            .session
+            .as_ref()
+            .ok_or("The window session is not open.")?;
+        session.authorize(request.session_id)?;
+        if session.navigation.busy {
+            return Err("An action is still running.".to_owned());
+        }
+        let actions = match &request.target {
+            crate::MenuTarget::Search {
+                request_id,
+                revision,
+                extension_id,
+                entry_id,
+            } => {
+                if session.request_id != *request_id
+                    || session.revision != *revision
+                    || !session.navigation.stack.is_empty()
+                {
+                    return Err("Search changed. Reopen the menu.".to_owned());
+                }
+                session
+                    .delivered
+                    .as_ref()
+                    .and_then(|snapshot| {
+                        snapshot.results.iter().find(|result| {
+                            result.candidate.extension_id() == extension_id
+                                && result.candidate.entry_id() == entry_id
+                        })
+                    })
+                    .ok_or("The result is no longer available.")?
+                    .candidate
+                    .actions()
+                    .to_vec()
+            }
+            crate::MenuTarget::View {
+                route_id,
+                revision,
+                item_id,
+            } => {
+                let route = session.navigation.authorize_route(*route_id)?;
+                if route.revision != *revision {
+                    return Err("The view changed. Reopen the menu.".to_owned());
+                }
+                match (&*route.view, item_id) {
+                    (nanika_protocol::View::List { list }, Some(id)) => list
+                        .sections
+                        .iter()
+                        .flat_map(|section| &section.items)
+                        .find(|item| &item.id == id)
+                        .ok_or("The item is no longer available.")?
+                        .actions
+                        .clone(),
+                    (nanika_protocol::View::Detail { detail }, None) => detail.actions.clone(),
+                    _ => return Err("The menu target is unavailable.".to_owned()),
+                }
+            }
+        };
+        nanika_protocol::validate_actions(&actions)?;
+        Ok(actions)
+    }
+
+    pub(crate) fn invoke_menu_action(
+        &self,
+        request: &crate::ContextMenuRequest,
+        action_id: String,
+        confirmed: bool,
+    ) -> Result<Option<crate::ViewEventReceipt>, String> {
+        let invocation = if confirmed {
+            nanika_protocol::ActionInvocation::Confirmed
+        } else {
+            nanika_protocol::ActionInvocation::Explicit
+        };
+        let actions = self.menu_actions(request)?;
+        if !actions
+            .iter()
+            .any(|action| action.id == action_id && action.allows_invocation(invocation))
+        {
+            return Err("The action is unavailable.".to_owned());
+        }
+        match &request.target {
+            crate::MenuTarget::Search {
+                request_id,
+                extension_id,
+                entry_id,
+                revision,
+            } => self
+                .run_invocation(
+                    &InvokeCandidateRequest {
+                        session_id: request.session_id,
+                        request_id: *request_id,
+                        extension_id: extension_id.clone(),
+                        entry_id: entry_id.clone(),
+                        action_id,
+                    },
+                    Some(*revision),
+                    invocation,
+                )
+                .map(|()| None),
+            crate::MenuTarget::View {
+                route_id,
+                revision,
+                item_id,
+            } => self
+                .run_view_event(
+                    crate::ViewEventRequest {
+                        session_id: request.session_id,
+                        route_id: *route_id,
+                        revision: *revision,
+                        operation: crate::ViewOperation::Event {
+                            event: nanika_protocol::ViewEvent::ActionInvoked {
+                                invocation,
+                                item_id: item_id.clone(),
+                                action_id,
+                            },
+                        },
+                    },
+                    Some(*revision),
+                )
+                .map(Some),
+        }
+    }
+
     pub(crate) fn new(
         instance: nanika_platform::SingleInstance,
         diagnostics: nanika_host::Diagnostics,
@@ -229,9 +360,14 @@ impl DesktopState {
         self.wake();
     }
 
-    pub(crate) fn run_invocation(&self, request: &InvokeCandidateRequest) -> Result<(), String> {
+    pub(crate) fn run_invocation(
+        &self,
+        request: &InvokeCandidateRequest,
+        menu_revision: Option<u64>,
+        invocation: nanika_protocol::ActionInvocation,
+    ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
-        let (runtime, query, generation) = {
+        let (runtime, query, snapshot) = {
             let mut state = self
                 .shared
                 .lock()
@@ -242,20 +378,31 @@ impl DesktopState {
                 .as_mut()
                 .ok_or("The window session is not open.")?;
             session.authorize(request.session_id)?;
-            if session.request_id != request.request_id || !session.navigation.stack.is_empty() {
+            // Recheck a menu's revision under the same lock that starts the action.
+            if session.request_id != request.request_id
+                || menu_revision.is_some_and(|revision| revision != session.revision)
+                || !session.navigation.stack.is_empty()
+            {
                 return Err("Search changed. Select a current result.".to_owned());
             }
+            let snapshot = session
+                .delivered
+                .clone()
+                .filter(|snapshot| snapshot.generation == session.generation)
+                .ok_or("Search results are not ready.")?;
             session.navigation.begin()?;
-            (runtime, session.query.clone(), session.generation)
+            (runtime, session.query.clone(), snapshot)
         };
         self.wake();
+        let generation = snapshot.generation;
         let result = (|| {
             let completion = runtime.invoke_recorded(
-                generation,
+                &snapshot,
                 &request.extension_id,
                 &request.entry_id,
                 &request.action_id,
                 &query,
+                invocation,
             )?;
             apply_invocation_completion(completion, |effect| {
                 self.apply_navigation(
@@ -275,6 +422,7 @@ impl DesktopState {
     pub(crate) fn run_view_event(
         &self,
         request: crate::ViewEventRequest,
+        menu_revision: Option<u64>,
     ) -> Result<crate::ViewEventReceipt, String> {
         let _operation = self.begin_operation()?;
         // A retired WebView must not hold up an unrelated session's operations.
@@ -304,16 +452,12 @@ impl DesktopState {
                 .as_mut()
                 .ok_or("The window session is not open.")?;
             session.authorize(request.session_id)?;
+            // The operation lock also excludes invalidation delivery. Validate against
+            // the same route that is passed to the extension, never a UI prediction.
             let route = session
                 .navigation
-                .authorize_route(request.route_id)?
+                .authorize_input(&request, menu_revision)?
                 .clone();
-            if request._revision > route.revision {
-                return Err("The extension view revision is ahead of the current state.".to_owned());
-            }
-            if let crate::ViewOperation::Event { event } = &request.operation {
-                crate::authorize_view_event(&route.view, event)?;
-            }
             session.navigation.begin()?;
             (runtime, route)
         };

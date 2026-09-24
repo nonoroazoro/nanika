@@ -5,6 +5,12 @@ use tauri::Manager;
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
 mod commands;
+#[path = "ContextMenuRequest.rs"]
+mod context_menu_request;
+use context_menu_request::*;
+#[path = "MenuTarget.rs"]
+mod menu_target;
+use menu_target::*;
 #[path = "DesktopRuntime.rs"]
 mod desktop_runtime;
 #[path = "DesktopState.rs"]
@@ -142,6 +148,8 @@ pub fn run() -> Result<(), String> {
         .manage(DesktopState::new(instance, diagnostics)?)
         .invoke_handler(tauri::generate_handler![
             dismiss_launcher,
+            read_context_menu,
+            invoke_context_menu,
             acknowledge_search,
             close_session,
             invoke_candidate,

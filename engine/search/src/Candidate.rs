@@ -8,6 +8,7 @@ pub struct Candidate {
     title: String,
     subtitle: Option<String>,
     action_id: String,
+    actions: Vec<nanika_protocol::Action>,
     aliases: Vec<String>,
     icon_key: Option<String>,
     contribution_icon: Option<String>,
@@ -21,9 +22,11 @@ impl Candidate {
         entry_id: impl Into<String>,
         title: impl Into<String>,
         action_id: impl Into<String>,
+        actions: Vec<nanika_protocol::Action>,
         aliases: Vec<String>,
     ) -> Self {
         let title = title.into();
+        let action_id = action_id.into();
         let search_values = std::iter::once(title.as_str())
             .chain(aliases.iter().map(String::as_str))
             .map(normalize_query)
@@ -34,7 +37,8 @@ impl Candidate {
             extension_id: extension_id.into(),
             title,
             subtitle: None,
-            action_id: action_id.into(),
+            actions,
+            action_id,
             aliases,
             icon_key: None,
             contribution_icon: None,
@@ -83,6 +87,10 @@ impl Candidate {
 
     pub fn action_id(&self) -> &str {
         &self.action_id
+    }
+
+    pub fn actions(&self) -> &[nanika_protocol::Action] {
+        &self.actions
     }
 
     pub fn aliases(&self) -> &[String] {

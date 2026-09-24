@@ -1,8 +1,8 @@
-import type { DetailContent, ViewAction, ViewMetadata } from "./index";
+import type { Action, DetailContent, ViewMetadata } from "./index";
 export interface DetailView
 {
     title: string | null;
     content: DetailContent;
     metadata: ViewMetadata[];
-    actions: ViewAction[];
+    actions: Action[];
 }

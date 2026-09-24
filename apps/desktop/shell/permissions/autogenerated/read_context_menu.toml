@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-context-menu"
+description = "Enables the read_context_menu command without any pre-configured scope."
+commands.allow = ["read_context_menu"]
+
+[[permission]]
+identifier = "deny-read-context-menu"
+description = "Denies the read_context_menu command without any pre-configured scope."
+commands.deny = ["read_context_menu"]

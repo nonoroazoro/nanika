@@ -105,7 +105,7 @@ test("a coalesced selection does not release an accepted pending action", () =>
     const input = viewInputScheduler();
     input.update(_navigation(1));
     const selection = input.begin({ kind: "selectionChanged", item_id: "two" });
-    const action = input.begin({ kind: "actionInvoked", item_id: "two", action_id: "open" });
+    const action = input.begin({ kind: "actionInvoked", invocation: "default", item_id: "two", action_id: "open" });
     input.query("next");
     input.complete(selection, null);
     assert.equal(input.busy, true);
@@ -127,6 +127,47 @@ test("oversized input cannot be submitted and editing it resumes normal dispatch
     assert.equal(input.inputError, null);
     assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "valid" });
 });
+
+test("unsolicited host work blocks input until its completed Channel state", () =>
+{
+    const input = viewInputScheduler();
+    input.update(_navigation(1, "", 1, true));
+    assert.equal(input.busy, true);
+    input.query("later");
+    assert.equal(input.takeNext(), null);
+    input.update(_navigation(2));
+    assert.equal(input.busy, false);
+    assert.deepEqual(input.takeNext(), { kind: "searchChanged", text: "later" });
+});
+
+for (const first of ["rpc", "channel"])
+{
+    test(`selection then menu blocks duplicate activation until both completions (${first} first)`, () =>
+    {
+        const input = viewInputScheduler();
+        input.update(_navigation(1));
+        const selection = input.begin({ kind: "selectionChanged", item_id: "two" });
+        input.update(_navigation(2, "", 1, true));
+        // A selection's own busy publication must not disable rapid activation.
+        assert.equal(input.busy, false);
+        const action = input.begin({ kind: "actionInvoked", invocation: "default", item_id: "two", action_id: "copy" });
+        assert.equal(input.busy, true);
+        input.complete(selection, { viewRevision: 2, navigationRevision: 3 });
+        assert.equal(input.busy, true);
+        const rpc = () =>
+        {
+            input.complete(action, { viewRevision: 2, navigationRevision: 5 });
+        };
+        const channel = () =>
+        {
+            input.update(_navigation(5));
+        };
+        (first === "rpc" ? rpc : channel)();
+        assert.equal(input.busy, true);
+        (first === "rpc" ? channel : rpc)();
+        assert.equal(input.busy, false);
+    });
+}
 
 function _navigation(revision: number, text = "", routeId = 1, busy = false): NavigationSnapshot
 {

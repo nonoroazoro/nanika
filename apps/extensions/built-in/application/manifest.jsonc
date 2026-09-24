@@ -22,7 +22,8 @@
     "protocolVersion": 1
   },
   "permissions": [
-    "process.launch"
+    "process.launch",
+    "files.reveal"
   ],
   "contributes": {
     "configuration": {

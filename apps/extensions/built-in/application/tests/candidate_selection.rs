@@ -2,6 +2,32 @@ use crate::{ApplicationEntry, select_candidates};
 use nanika_search::{Candidate as SearchCandidate, CandidateKind, SearchEngine, UsageMap};
 
 #[test]
+fn location_actions_follow_the_application_kind_without_launching() {
+    let mut app = entry(0, "Example");
+    for kind in ["executable", "windows-shell-link", "macos-bundle"] {
+        app.launch_kind = kind.to_owned();
+        assert!(
+            app.actions()
+                .iter()
+                .any(|action| action.id == "application.reveal")
+        );
+        assert_eq!(
+            app.actions()
+                .iter()
+                .any(|action| action.id == "application.revealTarget"),
+            kind == "windows-shell-link"
+        );
+        assert!(matches!(app.host_request("application.reveal").unwrap(),
+            nanika_protocol::HostServiceRequest::RevealPath { path } if path == app.target_path));
+    }
+    app.launch_kind = "windows-packaged".to_owned();
+    assert_eq!(app.actions().len(), 1);
+    assert!(app.host_request("application.reveal").is_err());
+    assert!(app.host_request("application.revealTarget").is_err());
+    assert!(app.host_request("unknown").is_err());
+}
+
+#[test]
 fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
     let mut entries = (0..5_001)
         .map(|index| entry(index, &format!("Application {index:04}")))
@@ -87,6 +113,7 @@ fn romanized_aliases_work_with_the_existing_host_ranker() {
                     candidate.entry_id,
                     candidate.title,
                     candidate.action_id,
+                    candidate.actions,
                     candidate.aliases,
                 )
             })
@@ -125,6 +152,7 @@ fn localized_and_romanized_names_can_be_combined_in_one_query() {
                 candidate.entry_id,
                 candidate.title,
                 candidate.action_id,
+                candidate.actions,
                 candidate.aliases,
             )
         })
@@ -166,6 +194,7 @@ fn literal_mixed_name_keeps_its_exact_match() {
                 candidate.entry_id,
                 candidate.title,
                 candidate.action_id,
+                candidate.actions,
                 candidate.aliases,
             )
         })
@@ -190,6 +219,7 @@ fn literal_mixed_name_ranks_above_cross_name_matches() {
                 candidate.entry_id,
                 candidate.title,
                 candidate.action_id,
+                candidate.actions,
                 candidate.aliases,
             )
         })
@@ -220,6 +250,7 @@ fn mixed_query_preserves_exact_prefix_and_infix_order() {
                 candidate.entry_id,
                 candidate.title,
                 candidate.action_id,
+                candidate.actions,
                 candidate.aliases,
             )
         })

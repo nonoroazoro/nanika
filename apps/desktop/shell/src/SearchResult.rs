@@ -8,6 +8,7 @@ pub(crate) struct SearchResult {
     pub(crate) extension_id: String,
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
+    pub(crate) allow_default_execution: bool,
     pub(crate) title: String,
     pub(crate) subtitle: Option<String>,
     pub(crate) icon_url: Option<String>,
@@ -22,6 +23,10 @@ impl SearchResult {
             extension_id: candidate.extension_id().to_owned(),
             entry_id: candidate.entry_id().to_owned(),
             action_id: candidate.action_id().to_owned(),
+            allow_default_execution: candidate.actions().iter().any(|action| {
+                action.id == candidate.action_id()
+                    && action.allows_invocation(nanika_protocol::ActionInvocation::Default)
+            }),
             title: candidate.title().to_owned(),
             subtitle: candidate.subtitle().map(str::to_owned),
             icon_url: candidate.icon_key().map(|key| {

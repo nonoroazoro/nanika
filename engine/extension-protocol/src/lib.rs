@@ -2,6 +2,12 @@
 
 #![forbid(unsafe_code)]
 
+#[path = "Action.rs"]
+mod action;
+#[path = "ActionInvocation.rs"]
+mod action_invocation;
+#[path = "ActionStyle.rs"]
+mod action_style;
 #[path = "Candidate.rs"]
 mod candidate;
 #[path = "CandidateKind.rs"]
@@ -46,10 +52,6 @@ mod message;
 mod navigation_effect;
 #[path = "View.rs"]
 mod view;
-#[path = "ViewAction.rs"]
-mod view_action;
-#[path = "ViewActionStyle.rs"]
-mod view_action_style;
 #[path = "ViewEvent.rs"]
 mod view_event;
 #[path = "ViewFile.rs"]
@@ -64,6 +66,9 @@ pub use view_file::ViewFile;
 #[path = "ViewMetadata.rs"]
 mod view_metadata;
 
+pub use action::*;
+pub use action_invocation::*;
+pub use action_style::*;
 pub use candidate::*;
 pub use candidate_kind::*;
 pub use clipboard_content::*;
@@ -87,8 +92,6 @@ pub use list_view::*;
 pub use message::*;
 pub use navigation_effect::*;
 pub use view::*;
-pub use view_action::*;
-pub use view_action_style::*;
 pub use view_event::*;
 pub use view_filter::*;
 pub use view_filter_option::*;

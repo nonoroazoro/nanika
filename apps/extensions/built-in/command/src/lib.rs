@@ -21,6 +21,10 @@ pub fn command_candidate(query: &str) -> Option<(Candidate, String)> {
             title: format!("Run command: {command}"),
             subtitle: Some("Command".to_owned()),
             action_id: RUN_ACTION_ID.to_owned(),
+            actions: vec![nanika_protocol::Action::primary(
+                RUN_ACTION_ID.to_owned(),
+                "Run",
+            )],
             aliases: vec![query.to_owned()],
             icon: None,
             contribution_icon: None,

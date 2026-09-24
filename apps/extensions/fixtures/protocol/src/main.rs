@@ -376,12 +376,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
+    let mut action = nanika_protocol::Action::primary("fixture.run", "Run");
+    if matches!(title, "explicit-only" | "confirm-action") {
+        action.allow_default_execution = false;
+    }
+    if title == "confirm-action" {
+        action.style = nanika_protocol::ActionStyle::Destructive;
+        action.confirmation_title = Some("Run now?".to_owned());
+    }
     nanika_protocol::Candidate {
         kind: nanika_protocol::CandidateKind::Action,
         entry_id: entry_id.to_owned(),
         title: title.to_owned(),
         subtitle: Some("Fixture".to_owned()),
         action_id: "fixture.run".to_owned(),
+        actions: vec![action],
         aliases: vec!["fixture alias".to_owned()],
         icon: None,
         contribution_icon: None,

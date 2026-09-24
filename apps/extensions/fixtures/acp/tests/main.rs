@@ -10,9 +10,9 @@ use agent_client_protocol::schema::{
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, Error};
 use futures_lite::future;
-use nanika_config::{ConfigStore, ExtensionRegistryConfig};
+use nanika_config::ConfigStore;
 use nanika_extension_package::{
-    ExtensionContributions, ExtensionProtocol, install_package, resolve_active_extensions,
+    ExtensionContributions, ExtensionProtocol, install_package, resolve_installed_extensions,
 };
 use nanika_host::{
     ExtensionLimits, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchCoordinator,
@@ -159,8 +159,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
     install_package(&package, &paths, &store).expect("install ACP package");
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
-    let (mut active, errors) = resolve_active_extensions(&paths, &records, &registry);
+    let (mut active, errors) = resolve_installed_extensions(&paths, &records);
     assert!(errors.is_empty(), "resolution errors: {errors:?}");
     assert_eq!(active.len(), 1);
     let extension = active.pop().expect("active ACP extension");

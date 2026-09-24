@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::{DetailContent, DetailView, ImageSource, ListView, ViewAction, ViewActionStyle};
+use crate::{Action, ActionStyle, DetailContent, DetailView, ImageSource, ListView};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -161,17 +161,25 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
     validate_actions(&detail.actions)
 }
 
-fn validate_actions(actions: &[ViewAction]) -> Result<(), String> {
+pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
     if actions.len() > 16 {
         return Err("view exposes too many actions".to_owned());
     }
     let mut ids = HashSet::new();
     for action in actions {
+        if let Some(group) = &action.group {
+            validate_id("action group", group)?;
+        }
         validate_id("view action id", &action.id)?;
         validate_text("view action title", &action.title, 128, false)?;
         if let Some(title) = &action.confirmation_title {
+            if action.allow_default_execution {
+                return Err(
+                    "action requiring confirmation cannot allow default execution".to_owned(),
+                );
+            }
             validate_text("view action confirmation title", title, 128, false)?;
-            if action.style != ViewActionStyle::Destructive {
+            if action.style != ActionStyle::Destructive {
                 return Err("view action confirmation requires destructive style".to_owned());
             }
         }

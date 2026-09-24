@@ -66,6 +66,22 @@ impl ProcessLauncher {
         Ok(())
     }
 
+    pub fn reveal(
+        &self,
+        path: String,
+    ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
+        let target = std::path::Path::new(&path);
+        if !target.is_absolute() || path.len() > 32768 || path.contains('\0') {
+            return Err("invalid reveal path".to_owned());
+        }
+        let (response, result) = mpsc::sync_channel(1);
+        self.commands
+            .send(LauncherCommand::Reveal { path, response })
+            .map_err(|_| "process launcher is closed".to_owned())?;
+        self.wake()?;
+        Ok(result)
+    }
+
     fn stop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
         #[cfg(windows)]
