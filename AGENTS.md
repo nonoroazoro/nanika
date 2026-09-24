@@ -1,39 +1,33 @@
-# Nanika Project Instructions
+# Nanika
 
 ## Workflow
 
-- Treat the pre-release design as the only baseline. Make breaking changes directly; leave no compatibility paths, migrations, stale designs, or known technical debt.
-- Keep one root JavaScript package and `bun.lock`. Use the pinned Bun version and public registries; inspect lockfile download sources. Exclude employer identifiers, internal infrastructure references, and credentials from files, logs, and artifacts.
-- Bun is tooling only. Never ship its runtime, compile tooling into shipped executables, or invoke it from the installed app. Releases must run without Bun or Node; inspect packaged files and native dependencies after toolchain or packaging changes.
-- Prefer Rust and TypeScript tooling with suitable Bun APIs. Keep browser and tooling types separate. Use `just dev` and `just check` as repository entry points.
-- Preserve the `apps` / `engine` / `tooling` responsibility split. Do not add parallel top-level source trees. Temporary outputs belong under `target`; frontend output belongs in `apps/desktop/frontend/dist`.
-- Derive extension build and staging inputs from Tauri `bundle.externalBin`; do not maintain another executable list.
+- Make breaking pre-release changes directly; remove superseded code. No compatibility paths, migrations or automatic data resets.
+- Use direct file edits, not apply_patch. Keep changes unstaged unless asked.
+- Use just dev and just check. Keep one root package and bun.lock, the pinned Bun version and public registries. Keep credentials and private infrastructure out of code, logs and artifacts.
+- Preserve apps / engine / tooling ownership. Temporary output belongs in target; frontend output in apps/desktop/frontend/dist.
+- Bun is tooling only. Installed releases must need neither Bun nor Node. Derive sidecar build/staging from Tauri bundle.externalBin; inspect packaged files after toolchain or packaging changes.
 
-## Platform and failure semantics
+## Architecture
 
-- Support only Windows 10+ and macOS 13+; reject other platforms explicitly. Before platform changes, document the shared contract and both implementations. Keep native APIs, handles, paths, and conditionals inside adapters; exceptions require a review note with validation evidence.
-- `engine/foundation` owns identity, extension IDs, and diagnostic primitives. `engine/platform` owns native mechanisms, including process containment, file replacement, executable permissions, target selection, and diagnostic opening. Callers retain lifecycle and transaction policy; adapters must preserve product semantics.
-- Preserve pending work and concrete failure causes. No automatic timeouts, retries, restarts, truncation, retention, deletion, recovery, or fallback without an approved policy. Apply backpressure; coalesce only idempotent wakes or superseded queries whose latest value remains authoritative.
+- Support Windows 10+ and macOS 13+ only. Keep native mechanisms in their owning adapters, document the shared contract and both implementations, and reject other platforms explicitly.
+- Rust owns search, supervision, storage, configuration and platform services. Keep engine independent of Tauri; commands, channels, windows and capabilities belong in the desktop shell. Callers own lifecycle and transaction policy.
+- Extensions provide all domain capabilities. Built-in and external extensions share process, permission, configuration, view, lifecycle and failure contracts. Only host inventory establishes built-in identity; provenance grants no runtime shortcut.
+- One Svelte frontend renders bounded declarative extension data. No extension-supplied frontend code or DOM/WebView access; never render application or extension data with {@html}.
+- Route frontend Tauri access through the typed bridge. Preserve Isolation, explicit permissions, Rust validation and session-bound channels. Search invoke replies acknowledge submission; authoritative state arrives through the Channel. Queued delivery is not receipt.
+- Preserve accepted work, concrete failures and bounded backpressure. Coalesce only idempotent wakes or superseded queries/selections where the latest value remains authoritative; actions are barriers. No new automatic timeout, retry, restart, truncation, retention, deletion, recovery or fallback policy without approval.
+- Extension live enable/disable is deferred until the foundation is committed and implementation is separately authorized. Do not turn its proposal into runtime code prematurely.
 
-## Core, extensions, and IPC
+## UI
 
-- Rust owns search, supervision, storage, configuration, diagnostics, and platform services. Keep engine crates independent of Tauri; Tauri commands, channels, windows, lifecycle, capabilities, and protocols belong in the desktop shell.
-- Extensions are the only domain capability unit. Built-in and external extensions share all runtime contracts, including process boundaries, permissions, configuration, views, lifecycle, failure policy, and diagnostics. Built-in identity comes only from host-owned inventory verified by the signed release and grants no shortcut.
-- One Svelte frontend renders all application and extension surfaces. Extensions supply bounded data, declarative nodes, and typed actions, never injected HTML/CSS/JavaScript, components, drawing, DOM, WebView, or Tauri access. Never render application or extension data with `{@html}`. The shell owns unavoidable OS surfaces and pre-WebView recovery.
-- Use bounded serializable contracts, explicit command permissions, Rust request/scope validation, and session-bound channels. Frontend Tauri access goes through the typed bridge; expose no raw filesystem or process access.
-- Submit search through `invoke`; deliver state through one long-lived Channel per WebView session. Replies acknowledge submission without changing result lists. Preserve Isolation transport and bounded delivery; distinguish queued sends from acknowledged receipt.
+- Use Svelte 5 runes, Bits UI headless primitives, shared controls and plain CSS semantic tokens. Reserve $effect for external synchronization. Follow docs/design-system.md; use Fluent 2 as the design system, adapting for native conventions or concrete product needs. Do not adopt its component library/theme or raise OS/WebView requirements.
+- Keep native editing, selection and keyboard semantics. No focus rings, extra Actions button or unrequested shortcuts. Tauri owns launcher hiding; DOM activity owns visual work only. Settings has no custom window transition.
+- Motion must handle interruption and live reduced-motion preferences. Hidden UI must not poll or animate; keep blocking work off UI/event-loop threads. Add dependencies only for demonstrated requirements.
 
-## Frontend
+## Validation and docs
 
-- Use Svelte 5 runes and current event syntax. Reserve `$effect` for external synchronization. Use plain CSS, semantic tokens, and shared components.
-- Prefer native HTML editing/focus and established ARIA patterns. Motion must define timing, interruption, and reduced-motion behavior. Native window effects require measurement.
-- Add routers, state frameworks, UI/style libraries, simulated DOM, or animation libraries only for demonstrated requirements. Avoid experimental APIs, unstable Cargo features, broad permissions, and reference-product naming or comments.
-- Keep blocking work off event-loop and WebView threads. Hidden UI must not poll or animate. Measure latency, frame pacing, and resource use for 60 Hz and 120 Hz displays.
+- Run repository checks appropriate to the change. Preserve zero-extension, extension-equivalence, failure, protocol/storage and concurrency coverage. Keep frontend/tooling tests and types separate; validation dependencies stay development-only and CI warnings fail.
+- Validate affected Tauri flows on both platforms, including focus, input, DPI and rendered state. Measure performance changes under comparable workloads, including 60/120 Hz and hidden idle where relevant. Report unvalidated platforms; browser fixtures and cross-compilation do not prove native behavior.
+- Code and manifests define implementation. Update the existing documents, remove completed/history-only content, and keep optional candidates distinct from commitments. Original artwork belongs in docs/assets/icons; runtime and packaging exports stay with their consumers.
 
-## Validation
-
-- Preserve zero-extension host, built-in/external equivalence, extension failure, protocol/storage, and concurrency tests. Inventory checks must reject extension-supplied frontend code.
-- Keep Vitest projects for frontend and tooling, reusing frontend Vite configuration. Use `eslint-config-zoro` with Svelte support and dprint. Treat CI warnings as failures; validation dependencies remain development-only.
-- Validate actual Tauri UI on both platforms, including high DPI, accessibility, keyboard/pointer input, focus, and rendered state. Measure actual startup, extension execution, search, IPC, rendering, scrolling, and resource use. Unit tests and cross-compilation do not prove runtime or UI correctness; report unvalidated platforms explicitly.
-
-Code and manifests define implemented behavior. Open work: [stack](docs/plan/tech-stack.md), [tasks](docs/plan/tasks.md), [platform](docs/plan/platform-architecture.md), [UI](docs/plan/ui.md), [performance](docs/plan/performance.md), [release](docs/plan/release.md).
+References: [architecture](docs/platform-architecture.md), [extensions](docs/extension-lifecycle.md), [design system](docs/design-system.md), [unfinished candidates](docs/tasks.md).
