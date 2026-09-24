@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsSnapshot {
+    pub(crate) maximized: bool,
     pub(crate) version: &'static str,
     pub(crate) general: nanika_config::LauncherPreferences,
     pub(crate) extensions: Vec<ExtensionSettings>,
@@ -61,6 +62,7 @@ pub(crate) struct SettingsApplications {
 pub(crate) enum SettingsEvent {
     Application { update: SettingsApplicationUpdate },
     Closed,
+    WindowState { maximized: bool },
     ShortcutPressed,
 }
 

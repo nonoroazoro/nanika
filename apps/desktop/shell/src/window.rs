@@ -55,22 +55,17 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
         && let WindowEvent::CloseRequested { api, .. } = event
     {
         api.prevent_close();
-        window
-            .state::<crate::host_settings::HostSettings>()
-            .recording
-            .store(false, std::sync::atomic::Ordering::Release);
-        let state = window.state::<crate::settings::SettingsWindow>();
-        state
-            .requested
-            .store(false, std::sync::atomic::Ordering::Release);
-        state
-            .ready
-            .store(false, std::sync::atomic::Ordering::Release);
-        window.state::<crate::DesktopState>().settings_closed();
-        if let Err(error) = window.hide() {
-            tracing::error!(%error, "settings could not hide after close");
+        if let Err(error) = crate::settings::request_close(window) {
+            tracing::error!(%error, "settings could not close");
         }
     }
+    if window.label() == "settings"
+        && matches!(event, WindowEvent::Resized(_))
+        && let Err(error) = crate::settings::resized(window)
+    {
+        tracing::error!(%error, "settings window state could not update");
+    }
+
     if window.label() == "launcher"
         && matches!(event, WindowEvent::Focused(false))
         && window

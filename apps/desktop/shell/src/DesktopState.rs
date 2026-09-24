@@ -726,10 +726,16 @@ impl DesktopState {
         Ok(guard)
     }
 
+    pub(crate) fn subscribe_settings(&self, updates: tauri::ipc::Channel<crate::SettingsEvent>) {
+        self.settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .updates = Some(updates);
+    }
+
     pub(crate) fn read_settings(
         &self,
         general: nanika_config::LauncherPreferences,
-        updates: Option<tauri::ipc::Channel<crate::SettingsEvent>>,
     ) -> Result<crate::SettingsSnapshot, String> {
         let _operation = self.begin_operation()?;
         // Only persistence is serialized here. Discovery never holds this lock.
@@ -749,13 +755,10 @@ impl DesktopState {
             .into_iter()
             .map(|configuration| (configuration.extension_id.clone(), configuration))
             .collect::<std::collections::BTreeMap<_, _>>();
-        let mut applications = self
+        let applications = self
             .settings_applications
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if let Some(updates) = updates {
-            applications.updates = Some(updates);
-        }
         let extensions = runtime
             .extension_info()
             .iter()
@@ -772,6 +775,7 @@ impl DesktopState {
             })
             .collect();
         Ok(crate::SettingsSnapshot {
+            maximized: false,
             version: env!("CARGO_PKG_VERSION"),
             general,
             extensions,
@@ -851,23 +855,31 @@ impl DesktopState {
     }
 
     pub(crate) fn settings_closed(&self) {
-        self.send_settings_event(crate::SettingsEvent::Closed);
+        if let Err(error) = self.send_settings_event(crate::SettingsEvent::Closed) {
+            tracing::error!(%error, "settings close notification failed");
+        }
     }
 
     pub(crate) fn shortcut_recorded(&self) {
-        self.send_settings_event(crate::SettingsEvent::ShortcutPressed);
+        if let Err(error) = self.send_settings_event(crate::SettingsEvent::ShortcutPressed) {
+            tracing::error!(%error, "settings shortcut notification failed");
+        }
     }
 
-    fn send_settings_event(&self, event: crate::SettingsEvent) {
+    pub(crate) fn send_settings_event(&self, event: crate::SettingsEvent) -> Result<(), String> {
         let mut applications = self
             .settings_applications
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if let Some(channel) = &applications.updates
-            && channel.send(event).is_err()
-        {
+        let channel = applications
+            .updates
+            .as_ref()
+            .ok_or("Settings channel is unavailable.")?;
+        if let Err(error) = channel.send(event) {
             applications.updates = None;
+            return Err(error.to_string());
         }
+        Ok(())
     }
 
     pub(crate) fn shutdown(&self) {

@@ -1,25 +1,25 @@
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::Ordering;
 
 use tauri::Manager;
 
-#[derive(Default)]
-pub(crate) struct SettingsWindow {
-    creation: Mutex<()>,
-    pub(crate) directory_picker: Mutex<()>,
-    pub(crate) ready: AtomicBool,
-    pub(crate) requested: AtomicBool,
-}
+use crate::{SettingsEvent, SettingsWindow, SettingsWindowAction};
 
-// Embedded browser creation must not run in synchronous commands or window callbacks.
-// The mutex only protects creation on blocking workers, never the main thread.
+// WebView construction stays on blocking workers; presentation stays on the shell thread.
 pub(crate) fn show_settings(app: &tauri::AppHandle) -> Result<(), String> {
-    app.state::<SettingsWindow>()
-        .requested
-        .store(true, Ordering::Release);
-    prepare_settings(app)
+    prepare_settings(app)?;
+    let owner = app.clone();
+    app.run_on_main_thread(move || {
+        owner
+            .state::<SettingsWindow>()
+            .requested
+            .store(true, Ordering::Release);
+        if let Some(window) = owner.get_webview_window("settings")
+            && let Err(error) = _present(&window)
+        {
+            tracing::error!(%error, "settings could not open");
+        }
+    })
+    .map_err(|error| error.to_string())
 }
 
 pub(crate) fn prepare_settings(app: &tauri::AppHandle) -> Result<(), String> {
@@ -28,16 +28,7 @@ pub(crate) fn prepare_settings(app: &tauri::AppHandle) -> Result<(), String> {
         .creation
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    if let Some(window) = app.get_webview_window("settings") {
-        if state.ready.load(Ordering::Acquire) && state.requested.load(Ordering::Acquire) {
-            window.unminimize().map_err(|error| error.to_string())?;
-            window.show().map_err(|error| error.to_string())?;
-            window.set_focus().map_err(|error| error.to_string())?;
-        }
-    } else {
-        state.ready.store(false, Ordering::Release);
-        // Use the same prepared configuration as startup windows. In particular,
-        // The browser runtime rejects conflicting scrollbar options for a shared data directory.
+    if app.get_webview_window("settings").is_none() {
         let config = app
             .config()
             .app
@@ -51,4 +42,68 @@ pub(crate) fn prepare_settings(app: &tauri::AppHandle) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+pub(crate) fn ready(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .state::<SettingsWindow>()
+        .ready
+        .store(true, Ordering::Release);
+    _present(window)
+}
+
+pub(crate) fn request_close(window: &tauri::Window) -> Result<(), String> {
+    window
+        .state::<crate::host_settings::HostSettings>()
+        .recording
+        .store(false, Ordering::Release);
+    window.hide().map_err(|error| error.to_string())?;
+    let state = window.state::<SettingsWindow>();
+    state.ready.store(false, Ordering::Release);
+    state.requested.store(false, Ordering::Release);
+    window.state::<crate::DesktopState>().settings_closed();
+    Ok(())
+}
+
+pub(crate) fn action(
+    window: &tauri::WebviewWindow,
+    action: SettingsWindowAction,
+) -> Result<(), String> {
+    match action {
+        SettingsWindowAction::Drag => window.start_dragging().map_err(|error| error.to_string()),
+        SettingsWindowAction::Minimize => window.minimize().map_err(|error| error.to_string()),
+        SettingsWindowAction::ToggleMaximize => {
+            if window.is_maximized().map_err(|error| error.to_string())? {
+                window.unmaximize().map_err(|error| error.to_string())
+            } else {
+                window.maximize().map_err(|error| error.to_string())
+            }
+        }
+        SettingsWindowAction::Close => request_close(&window.as_ref().window()),
+    }
+}
+
+pub(crate) fn resized(window: &tauri::Window) -> Result<(), String> {
+    let maximized = window.is_maximized().map_err(|error| error.to_string())?;
+    if window
+        .state::<SettingsWindow>()
+        .maximized
+        .swap(maximized, Ordering::AcqRel)
+        != maximized
+    {
+        window
+            .state::<crate::DesktopState>()
+            .send_settings_event(SettingsEvent::WindowState { maximized })?;
+    }
+    Ok(())
+}
+
+fn _present(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let state = window.state::<SettingsWindow>();
+    if !state.ready.load(Ordering::Acquire) || !state.requested.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    window.unminimize().map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
 }

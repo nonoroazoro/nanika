@@ -12,6 +12,7 @@ const allowedCommands = new Set([
   'open_settings',
   'read_settings',
   'settings_ready',
+  'settings_window_action',
   'save_settings',
   'pick_settings_directory',
   'save_host_settings',

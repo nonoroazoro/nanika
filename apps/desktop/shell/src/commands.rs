@@ -153,27 +153,19 @@ pub(crate) async fn open_settings(window: tauri::WebviewWindow) -> Result<(), St
 }
 
 #[tauri::command]
-pub(crate) async fn settings_ready(window: tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn settings_ready(window: tauri::WebviewWindow) -> Result<bool, String> {
     authorize_settings(&window)?;
-    let app = window.app_handle().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let desktop = app.state::<DesktopState>();
-        let _operation = desktop.begin_operation()?;
-        app.state::<crate::settings::SettingsWindow>()
-            .ready
-            .store(true, std::sync::atomic::Ordering::Release);
-        if !app
-            .state::<crate::settings::SettingsWindow>()
-            .requested
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Ok(());
-        }
-        window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    crate::settings::ready(&window)?;
+    Ok(crate::adapters::CUSTOM_SETTINGS_CONTROLS)
+}
+
+#[tauri::command]
+pub(crate) fn settings_window_action(
+    window: tauri::WebviewWindow,
+    action: crate::SettingsWindowAction,
+) -> Result<(), String> {
+    authorize_settings(&window)?;
+    crate::settings::action(&window, action)
 }
 
 #[tauri::command]
@@ -182,11 +174,18 @@ pub(crate) async fn read_settings(
     updates: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<crate::SettingsSnapshot, String> {
     authorize_settings(&window)?;
-    let updates = updates.map(|id| id.channel_on(window.as_ref().clone()));
+    // Window presentation must remain available even when reading configuration fails.
+    if let Some(updates) = updates {
+        window
+            .state::<DesktopState>()
+            .subscribe_settings(updates.channel_on(window.as_ref().clone()));
+    }
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let general = app.state::<crate::host_settings::HostSettings>().current();
-        app.state::<DesktopState>().read_settings(general, updates)
+        let mut snapshot = app.state::<DesktopState>().read_settings(general)?;
+        snapshot.maximized = window.is_maximized().map_err(|error| error.to_string())?;
+        Ok(snapshot)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -233,14 +232,14 @@ pub(crate) async fn pick_settings_directory(
     tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_dialog::DialogExt;
         let app = window.app_handle();
-        let state = app.state::<crate::settings::SettingsWindow>();
+        let state = app.state::<crate::SettingsWindow>();
         let _picker = state
             .directory_picker
             .try_lock()
             .map_err(|_| "A folder picker is already open.".to_owned())?;
         let general = app.state::<crate::host_settings::HostSettings>().current();
         let desktop = app.state::<DesktopState>();
-        let settings = desktop.read_settings(general, None)?;
+        let settings = desktop.read_settings(general)?;
         let _operation = desktop.begin_operation()?;
         let property = settings
             .extensions

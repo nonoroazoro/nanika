@@ -2,6 +2,7 @@
 
 use tauri::Manager;
 
+mod adapters;
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
 mod commands;
@@ -56,6 +57,12 @@ use view_invalidation_delivery::*;
 #[path = "HostSettings.rs"]
 mod host_settings;
 mod settings;
+#[path = "SettingsWindow.rs"]
+mod settings_window;
+use settings_window::*;
+#[path = "SettingsWindowAction.rs"]
+mod settings_window_action;
+use settings_window_action::*;
 #[path = "SettingsSnapshot.rs"]
 mod settings_snapshot;
 mod tray;
@@ -122,19 +129,11 @@ pub fn run() -> Result<(), String> {
         paths.payload_dir().to_path_buf(),
     )?);
 
-    let context = tauri::tauri_build_context!();
-    #[cfg(target_os = "windows")]
-    let context = {
-        let mut context = context;
-        // WebViews sharing a data directory must use the same scrollbar style.
-        for window in &mut context.config_mut().app.windows {
-            window.scroll_bar_style = tauri::utils::config::ScrollBarStyle::FluentOverlay;
-        }
-        context
-    };
+    let mut context = tauri::tauri_build_context!();
+    adapters::configure_windows(context.config_mut());
 
     tauri::Builder::default()
-        .manage(settings::SettingsWindow::default())
+        .manage(SettingsWindow::default())
         .manage(host_settings)
         .manage(std::sync::Arc::clone(&icon_protocol))
         .register_asynchronous_uri_scheme_protocol(
@@ -160,6 +159,7 @@ pub fn run() -> Result<(), String> {
             open_settings,
             read_settings,
             settings_ready,
+            settings_window_action,
             save_settings,
             pick_settings_directory,
             save_host_settings,
@@ -222,10 +222,6 @@ pub fn run() -> Result<(), String> {
                 })?;
             app.state::<DesktopState>()
                 .set_instance_bridge(instance_bridge);
-            #[cfg(windows)]
-            if let Some(window) = app.get_webview_window("launcher") {
-                window.set_shadow(false)?;
-            }
             Ok(())
         })
         .build(context)

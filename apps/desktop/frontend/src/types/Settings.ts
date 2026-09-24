@@ -50,6 +50,7 @@ export interface ExtensionSettings
 
 export interface SettingsSnapshot
 {
+    maximized: boolean;
     version: string;
     general: HostPreferences;
     extensions: ExtensionSettings[];
