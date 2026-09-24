@@ -35,7 +35,6 @@ fn baseline_schema_is_the_only_initial_version() {
             "version",
             "install_path",
             "package_digest",
-            "state",
             "updated_at",
         ]
     );
@@ -87,7 +86,7 @@ fn baseline_schema_is_the_only_initial_version() {
 }
 
 #[test]
-fn external_installation_state_round_trips_without_affecting_builtins() {
+fn external_package_metadata_round_trips_without_affecting_builtins() {
     let database = std::env::temp_dir().join(format!(
         "nanika-storage-extension-state-{}.db",
         std::process::id()
@@ -101,7 +100,6 @@ fn external_installation_state_round_trips_without_affecting_builtins() {
         "1.2.3",
         std::path::Path::new("C:/nanika/extensions/com.example.extension/1.2.3"),
         "digest",
-        true,
         2,
     )
     .expect("external extension should install");
@@ -113,22 +111,6 @@ fn external_installation_state_round_trips_without_affecting_builtins() {
     assert_eq!(installed.kind, ExtensionKind::External);
     assert_eq!(installed.version.as_deref(), Some("1.2.3"));
     assert!(
-        host.set_external_extension_enabled("com.example.extension", false, 3)
-            .expect("extension should disable")
-    );
-    assert_eq!(
-        host.extension("com.example.extension")
-            .expect("extension should load")
-            .expect("extension should exist")
-            .state,
-        "disabled"
-    );
-    assert!(
-        !host
-            .set_external_extension_enabled("com.nanika.command", false, 4)
-            .expect("built-in must not mutate through external API")
-    );
-    assert!(
         host.remove_external_extension("com.example.extension")
             .expect("external extension should remove")
     );
@@ -138,6 +120,33 @@ fn external_installation_state_round_trips_without_affecting_builtins() {
             .is_some()
     );
     drop(host);
+    cleanup(&database);
+}
+
+#[test]
+fn obsolete_schema_is_rejected_without_rewriting_user_records() {
+    let database =
+        std::env::temp_dir().join(format!("nanika-storage-obsolete-{}.db", std::process::id()));
+    cleanup(&database);
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection.execute_batch("CREATE TABLE extensions (extension_id TEXT, state TEXT); INSERT INTO extensions VALUES ('com.example.saved', 'disabled');").unwrap();
+    let error = HostDatabase::open(&database)
+        .err()
+        .expect("obsolete schema must fail explicitly");
+    assert!(
+        error
+            .to_string()
+            .contains("unsupported pre-release host database schema")
+    );
+    let saved: String = connection
+        .query_row(
+            "SELECT state FROM extensions WHERE extension_id = 'com.example.saved'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(saved, "disabled");
+    drop(connection);
     cleanup(&database);
 }
 

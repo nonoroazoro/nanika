@@ -4,7 +4,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
-use nanika_extension_package::{ActiveExtension, ExtensionProtocol, resolve_active_extensions};
+use nanika_extension_package::{
+    ExtensionProtocol, InstalledExtension, resolve_installed_extensions,
+};
 use nanika_platform::companion_executable;
 use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
 use nanika_storage::{NanikaPaths, SearchStorageWorker};
@@ -72,12 +74,9 @@ impl RuntimeService {
         let configurations = ExtensionConfigurationRegistry::new(config_store);
 
         let current_executable = std::env::current_exe().map_err(|error| error.to_string())?;
-        let mut active_extensions = Vec::new();
+        let mut installed_extensions = Vec::new();
         for extension in inventory.extensions {
             let manifest = extension.manifest;
-            if !registry.is_enabled(&manifest.id, true) {
-                continue;
-            }
             let program = companion_executable(&current_executable, &extension.binary_name);
             if !program.is_file() {
                 diagnostics.push(format!(
@@ -96,20 +95,28 @@ impl RuntimeService {
                         )
                     })?;
             }
-            active_extensions.push(ActiveExtension::from_manifest(manifest, program));
+            installed_extensions.push(InstalledExtension::from_manifest(manifest, program));
         }
 
-        let (mut external, errors) =
-            resolve_active_extensions(paths, &storage_state.extensions, &registry);
+        let (mut external, errors) = resolve_installed_extensions(paths, &storage_state.extensions);
         diagnostics.extend(errors.into_iter().map(|error| error.message));
-        active_extensions.append(&mut external);
+        installed_extensions.append(&mut external);
         let mut extension_info = Vec::new();
-        for extension in active_extensions {
-            router.register_permissions(&extension.extension_id, extension.permissions);
-            let configuration = match configurations.register(
+        for extension in installed_extensions {
+            let enabled = registry.is_enabled(&extension.extension_id);
+            let configuration = configurations.register(
                 &extension.extension_id,
                 extension.contributes.configuration.as_ref(),
-            ) {
+            );
+            // Installed metadata remains available without a live worker or schema.
+            extension_info.push(crate::RuntimeExtensionInfo {
+                id: extension.extension_id.clone(),
+                name: extension.name,
+                icon: extension.icon,
+                enabled,
+                configuration_error: configuration.as_ref().err().cloned(),
+            });
+            let configuration = match configuration {
                 Ok(configuration) => configuration,
                 Err(error) => {
                     diagnostics.push(format!(
@@ -119,13 +126,10 @@ impl RuntimeService {
                     continue;
                 }
             };
-            // Settings must remain available when process startup fails so a
-            // saved directory configuration can be corrected without a live worker.
-            extension_info.push(crate::RuntimeExtensionInfo {
-                id: extension.extension_id.clone(),
-                name: extension.name,
-                icon: extension.icon,
-            });
+            if !enabled {
+                continue;
+            }
+            router.register_permissions(&extension.extension_id, extension.permissions);
             let runtime = if extension.activation
                 == nanika_extension_package::ExtensionActivation::OnDemand
             {

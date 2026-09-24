@@ -10,5 +10,4 @@ pub struct StoredExtension {
     pub version: Option<String>,
     pub install_path: Option<PathBuf>,
     pub package_digest: Option<String>,
-    pub state: String,
 }

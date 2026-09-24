@@ -10,6 +10,7 @@ publish.workspace = true
 nanika-protocol = { path = "../../../../engine/extension-protocol" }
 
 [dev-dependencies]
+nanika-config = { path = "../../../../engine/configuration" }
 criterion.workspace = true
 nanika-extension-package = { path = "../../../../engine/extension-management" }
 nanika-host = { path = "../../../../engine/runtime" }

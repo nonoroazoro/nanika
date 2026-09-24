@@ -245,7 +245,8 @@ pub(crate) async fn pick_settings_directory(
             .extensions
             .iter()
             .find(|extension| extension.info.id == extension_id)
-            .and_then(|extension| extension.configuration.contribution.properties.get(&key))
+            .and_then(|extension| extension.configuration.as_ref())
+            .and_then(|configuration| configuration.contribution.properties.get(&key))
             .filter(|property| property.schema.is_directory_list())
             .ok_or("This setting does not accept directories.")?;
         let Some(selected) = app

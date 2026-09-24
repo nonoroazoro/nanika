@@ -94,7 +94,7 @@ async function load(): Promise<void>
         maximized = snapshot.maximized;
         hostDraft = structuredClone(snapshot.general);
         drafts = Object.fromEntries(
-            snapshot.extensions.map(extension => [extension.id, structuredClone(extension.configuration.values)])
+            snapshot.extensions.map(extension => [extension.id, structuredClone(extension.configuration?.values ?? {})])
         );
         for (const extension of snapshot.extensions)
         {
@@ -154,9 +154,10 @@ function recordApplication(update: SettingsApplicationUpdate): void
 
 function isDirty(extension: ExtensionSettings): boolean
 {
-    return JSON.stringify(
-        normalizeSettings(extension.configuration.contribution.properties, drafts[extension.id] ?? {})
-    ) !== JSON.stringify(extension.configuration.values);
+    const configuration = extension.configuration;
+    return configuration !== null && JSON.stringify(
+                normalizeSettings(configuration.contribution.properties, drafts[extension.id] ?? {})
+            ) !== JSON.stringify(configuration.values);
 }
 
 function change(key: string, value: ConfigurationValue): void
@@ -178,7 +179,7 @@ function discard(): void
 async function save(event: SubmitEvent): Promise<void>
 {
     event.preventDefault();
-    if (saving || !selected || !dirty)
+    if (saving || !selected?.configuration || !dirty)
     {
         return;
     }
@@ -195,7 +196,7 @@ async function save(event: SubmitEvent): Promise<void>
             snapshot = {
                 ...snapshot,
                 extensions: snapshot.extensions.map(extension =>
-                    extension.id === id
+                    extension.id === id && extension.configuration
                         ? { ...extension, configuration: { ...extension.configuration, values: submitted } }
                         : extension
                 )
@@ -308,50 +309,57 @@ function _windowAction(action: SettingsWindowAction): void
                         <div class="extension-heading">
                             <span class="heading-icon"><ContributionIconTile kind={selected.icon} /></span><div>
                                 <h1>{selected.name}</h1>
+                                {#if !selected.enabled}<p>Disabled</p>{/if}
                             </div>
                         </div>
                     </header>
-                    {#key selected.id}
-                        <form onsubmit={save}>
-                            <fieldset disabled={saving} class="fields">
-                                {#each properties as [key, property] (key)}
-                                    <section
-                                        class="property"
-                                        class:directory={property.type === "array" && property.items?.format === "directory"}
-                                        class:scalar={property.type === "boolean" || property.type === "integer"}
-                                        aria-labelledby={`title-${key}`}
-                                    >
-                                        {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
-                                                <h2 id={`title-${key}`}>{property.title}</h2>
-                                                {#if property.description}<p>{property.description}</p>{/if}
-                                            </div>{/if}
-                                        <div class="property-control">
-                                            {#if property.type === "array" && property.items?.format === "directory"}
-                                                <DirectoryList
-                                                    paths={values[key] as string[]}
-                                                    maximum={property.maxItems ?? 0}
-                                                    label={property.title}
-                                                    titleId={`title-${key}`}
-                                                    description={property.description}
-                                                    onPick={() => settingsBridge.pickDirectory(selection, key)}
-                                                    onChange={paths => change(key, paths)}
-                                                />
-                                            {:else}
-                                                <SettingsValue
-                                                    schema={property}
-                                                    value={values[key]}
-                                                    label={property.title}
-                                                    id={`setting-${key}`}
-                                                    onChange={value => change(key, value)}
-                                                />
-                                            {/if}
-                                        </div>
-                                    </section>
-                                {/each}
-                            </fieldset>
-                            <SettingsActions {dirty} {saving} error={message?.text} onDiscard={discard} />
-                        </form>
-                    {/key}
+                    {#if selected.configurationError}
+                        <p role="alert">{selected.configurationError}</p>
+                    {:else if properties.length === 0}
+                        <p>No settings available for this extension.</p>
+                    {:else}
+                        {#key selected.id}
+                            <form onsubmit={save}>
+                                <fieldset disabled={saving} class="fields">
+                                    {#each properties as [key, property] (key)}
+                                        <section
+                                            class="property"
+                                            class:directory={property.type === "array" && property.items?.format === "directory"}
+                                            class:scalar={property.type === "boolean" || property.type === "integer"}
+                                            aria-labelledby={`title-${key}`}
+                                        >
+                                            {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
+                                                    <h2 id={`title-${key}`}>{property.title}</h2>
+                                                    {#if property.description}<p>{property.description}</p>{/if}
+                                                </div>{/if}
+                                            <div class="property-control">
+                                                {#if property.type === "array" && property.items?.format === "directory"}
+                                                    <DirectoryList
+                                                        paths={values[key] as string[]}
+                                                        maximum={property.maxItems ?? 0}
+                                                        label={property.title}
+                                                        titleId={`title-${key}`}
+                                                        description={property.description}
+                                                        onPick={() => settingsBridge.pickDirectory(selection, key)}
+                                                        onChange={paths => change(key, paths)}
+                                                    />
+                                                {:else}
+                                                    <SettingsValue
+                                                        schema={property}
+                                                        value={values[key]}
+                                                        label={property.title}
+                                                        id={`setting-${key}`}
+                                                        onChange={value => change(key, value)}
+                                                    />
+                                                {/if}
+                                            </div>
+                                        </section>
+                                    {/each}
+                                </fieldset>
+                                <SettingsActions {dirty} {saving} error={message?.text} onDiscard={discard} />
+                            </form>
+                        {/key}
+                    {/if}
                 </div>
             {/if}
         </section>

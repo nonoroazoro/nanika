@@ -11,8 +11,8 @@ use uuid::Uuid;
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    ActiveExtension, CommandContribution, ExtensionContributions, ExtensionManifest,
-    ExtensionPackageError, ExtensionProtocol, ExtensionResolutionError, ExtensionTarget,
+    CommandContribution, ExtensionContributions, ExtensionManifest, ExtensionPackageError,
+    ExtensionProtocol, ExtensionResolutionError, ExtensionTarget, InstalledExtension,
     PackageOperation, PackageTransaction, StagedPackage, StagingDirectory, ViewContribution,
 };
 
@@ -32,7 +32,7 @@ pub fn install_package(
     package_path: &Path,
     paths: &NanikaPaths,
     store: &ConfigStore,
-) -> Result<ActiveExtension, ExtensionPackageError> {
+) -> Result<InstalledExtension, ExtensionPackageError> {
     apply_package(package_path, paths, store, PackageOperation::Install)
 }
 
@@ -41,7 +41,7 @@ pub fn update_package(
     package_path: &Path,
     paths: &NanikaPaths,
     store: &ConfigStore,
-) -> Result<ActiveExtension, ExtensionPackageError> {
+) -> Result<InstalledExtension, ExtensionPackageError> {
     apply_package(package_path, paths, store, PackageOperation::Update)
 }
 
@@ -50,7 +50,7 @@ fn apply_package(
     paths: &NanikaPaths,
     store: &ConfigStore,
     operation: PackageOperation,
-) -> Result<ActiveExtension, ExtensionPackageError> {
+) -> Result<InstalledExtension, ExtensionPackageError> {
     validate_package_path(package_path)?;
     let extension_root = paths.app_data_root().join("extensions");
     fs::create_dir_all(&extension_root)?;
@@ -94,9 +94,7 @@ fn apply_package(
         ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
     let registry_existed = store.extensions_file().is_file();
     let original_registry = registry.clone();
-    let enabled = previous
-        .as_ref()
-        .is_none_or(|extension| registry.is_enabled(&manifest.id, extension.state == "enabled"));
+    let enabled = registry.is_enabled(&manifest.id);
 
     let extension_id_root = prepare_extension_root(&extension_root, &manifest.id)?;
     let version_root = extension_id_root.join(&manifest.version);
@@ -156,7 +154,6 @@ fn apply_package(
         &manifest.version,
         &version_root,
         &digest,
-        enabled,
         unix_timestamp(),
     ) {
         let config_rollback = restore_registry(store, &original_registry, registry_existed);
@@ -179,13 +176,14 @@ fn apply_package(
         PackageTransaction::clear(&extension_root)?;
     }
 
-    Ok(ActiveExtension::from_manifest(
+    Ok(InstalledExtension::from_manifest(
         manifest,
         version_root.join(entrypoint),
     ))
 }
 
-/// Update synchronized enablement and mirror external state in the host database.
+/// Persist enablement for any installed extension. The registry is the sole authority.
+/// Callers own host lifetime coordination; this operation does not stop a live process.
 pub fn set_extension_enabled(
     extension_id: &str,
     enabled: bool,
@@ -199,41 +197,13 @@ pub fn set_extension_enabled(
     }
     reject_incomplete_package_transaction(paths)?;
     let database = HostDatabase::open(paths.host_database())?;
-    let installed = database
+    database
         .extension(extension_id)?
         .ok_or_else(|| ExtensionPackageError::Manifest("extension is not installed".to_owned()))?;
-    if installed.kind != ExtensionKind::External {
-        return Err(ExtensionPackageError::Manifest(
-            "only external extensions can be changed by the package manager".to_owned(),
-        ));
-    }
     let mut registry =
         ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
-    let registry_existed = store.extensions_file().is_file();
-    let original_registry = registry.clone();
     registry.set_enabled(extension_id, enabled);
-    registry
-        .save(store)
-        .map_err(ExtensionPackageError::Config)?;
-    match database.set_external_extension_enabled(extension_id, enabled, unix_timestamp()) {
-        Ok(true) => {}
-        Ok(false) => {
-            restore_registry(store, &original_registry, registry_existed)
-                .map_err(ExtensionPackageError::Config)?;
-            return Err(ExtensionPackageError::Manifest(
-                "external extension state changed unexpectedly".to_owned(),
-            ));
-        }
-        Err(error) => {
-            restore_registry(store, &original_registry, registry_existed).map_err(|rollback| {
-                ExtensionPackageError::Config(format!(
-                    "extension storage failed: {error}; configuration rollback failed: {rollback}"
-                ))
-            })?;
-            return Err(error.into());
-        }
-    }
-    Ok(())
+    registry.save(store).map_err(ExtensionPackageError::Config)
 }
 
 /// Remove external executable versions while preserving extension configuration and data.
@@ -339,43 +309,38 @@ pub fn remove_extension(
 }
 
 /// Resolve installed external processes without allowing one broken package to block startup.
-pub fn resolve_active_extensions(
+pub fn resolve_installed_extensions(
     paths: &NanikaPaths,
     installed: &[StoredExtension],
-    registry: &ExtensionRegistryConfig,
-) -> (Vec<ActiveExtension>, Vec<ExtensionResolutionError>) {
-    let mut active = Vec::new();
+) -> (Vec<InstalledExtension>, Vec<ExtensionResolutionError>) {
+    let mut resolved = Vec::new();
     let mut errors = Vec::new();
     if let Err(error) = reject_incomplete_package_transaction(paths) {
         errors.push(ExtensionResolutionError::new(
             "package-transaction",
             error.to_string(),
         ));
-        return (active, errors);
+        return (resolved, errors);
     }
     for extension in installed
         .iter()
         .filter(|extension| extension.kind == ExtensionKind::External)
     {
-        let default_enabled = extension.state == "enabled";
-        if !registry.is_enabled(&extension.extension_id, default_enabled) {
-            continue;
-        }
-        match resolve_active_extension(paths, extension) {
-            Ok(extension) => active.push(extension),
+        match resolve_installed_extension(paths, extension) {
+            Ok(extension) => resolved.push(extension),
             Err(error) => errors.push(ExtensionResolutionError::new(
                 &extension.extension_id,
                 error.to_string(),
             )),
         }
     }
-    (active, errors)
+    (resolved, errors)
 }
 
-fn resolve_active_extension(
+fn resolve_installed_extension(
     paths: &NanikaPaths,
     installed: &StoredExtension,
-) -> Result<ActiveExtension, ExtensionPackageError> {
+) -> Result<InstalledExtension, ExtensionPackageError> {
     let install_path = installed.install_path.as_deref().ok_or_else(|| {
         ExtensionPackageError::Manifest("active install path is missing".to_owned())
     })?;
@@ -403,7 +368,7 @@ fn resolve_active_extension(
     }
     let program = fs::canonicalize(program)?;
     validate_managed_path(&canonical_install, &program)?;
-    Ok(ActiveExtension::from_manifest(manifest, program))
+    Ok(InstalledExtension::from_manifest(manifest, program))
 }
 
 fn validate_package_operation(

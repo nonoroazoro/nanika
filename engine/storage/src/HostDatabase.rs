@@ -16,11 +16,10 @@ CREATE TABLE IF NOT EXISTS extensions (
     version TEXT,
     install_path TEXT,
     package_digest TEXT,
-    state TEXT NOT NULL,
     updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
     CHECK (
-        (kind = 'built-in' AND version IS NULL AND install_path IS NULL AND package_digest IS NULL AND state = 'enabled')
-        OR (kind = 'external' AND version IS NOT NULL AND version <> '' AND install_path IS NOT NULL AND install_path <> '' AND package_digest IS NOT NULL AND package_digest <> '' AND state IN ('enabled', 'disabled'))
+        (kind = 'built-in' AND version IS NULL AND install_path IS NULL AND package_digest IS NULL)
+        OR (kind = 'external' AND version IS NOT NULL AND version <> '' AND install_path IS NOT NULL AND install_path <> '' AND package_digest IS NOT NULL AND package_digest <> '')
     )
 ) STRICT;
 CREATE TABLE IF NOT EXISTS input_history (
@@ -59,6 +58,26 @@ impl HostDatabase {
         connection.execute_batch(
             "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=100;",
         )?;
+        let columns = connection
+            .prepare("SELECT name FROM pragma_table_info('extensions') ORDER BY cid")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+        if !columns.is_empty()
+            && columns
+                != [
+                    "extension_id",
+                    "kind",
+                    "version",
+                    "install_path",
+                    "package_digest",
+                    "updated_at",
+                ]
+        {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "unsupported pre-release host database schema; existing data was not modified"
+                    .to_owned(),
+            ));
+        }
         connection.execute_batch(SCHEMA)?;
         Ok(Self { connection })
     }
@@ -99,7 +118,7 @@ impl HostDatabase {
 
     pub fn load_extensions_isolated(&self) -> SqlResult<StoredExtensionLoad> {
         let mut statement = self.connection.prepare(
-            "SELECT extension_id, kind, version, install_path, package_digest, state
+            "SELECT extension_id, kind, version, install_path, package_digest
              FROM extensions
              ORDER BY extension_id",
         )?;
@@ -138,7 +157,7 @@ impl HostDatabase {
         }
         self.connection
             .query_row(
-                "SELECT extension_id, kind, version, install_path, package_digest, state
+                "SELECT extension_id, kind, version, install_path, package_digest
                  FROM extensions WHERE extension_id = ?1",
                 params![extension_id],
                 stored_extension_from_row,
@@ -152,7 +171,6 @@ impl HostDatabase {
         version: &str,
         install_path: &Path,
         package_digest: &str,
-        enabled: bool,
         updated_at: u64,
     ) -> SqlResult<()> {
         if !is_valid_extension_id(extension_id) {
@@ -162,13 +180,12 @@ impl HostDatabase {
         }
         self.connection.execute(
             "INSERT INTO extensions (
-                extension_id, kind, version, install_path, package_digest, state, updated_at
-             ) VALUES (?1, 'external', ?2, ?3, ?4, ?5, ?6)
+                extension_id, kind, version, install_path, package_digest, updated_at
+             ) VALUES (?1, 'external', ?2, ?3, ?4, ?5)
              ON CONFLICT(extension_id) DO UPDATE SET
                 version = excluded.version,
                 install_path = excluded.install_path,
                 package_digest = excluded.package_digest,
-                state = excluded.state,
                 updated_at = excluded.updated_at
              WHERE extensions.kind = 'external'",
             params![
@@ -176,34 +193,10 @@ impl HostDatabase {
                 version,
                 install_path.to_string_lossy(),
                 package_digest,
-                if enabled { "enabled" } else { "disabled" },
                 i64::try_from(updated_at).unwrap_or(i64::MAX),
             ],
         )?;
         Ok(())
-    }
-
-    pub fn set_external_extension_enabled(
-        &self,
-        extension_id: &str,
-        enabled: bool,
-        updated_at: u64,
-    ) -> SqlResult<bool> {
-        if !is_valid_extension_id(extension_id) {
-            return Err(rusqlite::Error::InvalidParameterName(
-                "invalid extension id".to_owned(),
-            ));
-        }
-        let changed = self.connection.execute(
-            "UPDATE extensions SET state = ?2, updated_at = ?3
-             WHERE extension_id = ?1 AND kind = 'external'",
-            params![
-                extension_id,
-                if enabled { "enabled" } else { "disabled" },
-                i64::try_from(updated_at).unwrap_or(i64::MAX),
-            ],
-        )?;
-        Ok(changed == 1)
     }
 
     pub fn remove_external_extension(&self, extension_id: &str) -> SqlResult<bool> {
@@ -318,14 +311,13 @@ impl HostDatabase {
         }
         self.connection.execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, updated_at
-             ) VALUES (?1, 'built-in', 'enabled', ?2)
+                extension_id, kind, updated_at
+             ) VALUES (?1, 'built-in', ?2)
              ON CONFLICT(extension_id) DO UPDATE SET
                 kind = excluded.kind,
                 version = NULL,
                 install_path = NULL,
                 package_digest = NULL,
-                state = 'enabled',
                 updated_at = excluded.updated_at",
             params![extension_id, i64::try_from(updated_at).unwrap_or(i64::MAX),],
         )?;
@@ -349,7 +341,6 @@ fn stored_extension_from_row(row: &rusqlite::Row<'_>) -> SqlResult<StoredExtensi
         version: row.get(2)?,
         install_path: row.get::<_, Option<String>>(3)?.map(Into::into),
         package_digest: row.get(4)?,
-        state: row.get(5)?,
     })
 }
 
@@ -378,9 +369,6 @@ fn row_u64(row: &rusqlite::Row<'_>, index: usize) -> SqlResult<u64> {
 fn validate_stored_extension_metadata(extension: &StoredExtension) -> Result<(), &'static str> {
     if !is_valid_extension_id(&extension.extension_id) {
         return Err("invalid extension id");
-    }
-    if !matches!(extension.state.as_str(), "enabled" | "disabled") {
-        return Err("invalid extension state");
     }
     let package_fields = [
         extension.version.is_some(),

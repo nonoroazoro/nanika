@@ -40,12 +40,14 @@ export interface ExtensionSettings
     id: string;
     name: string;
     icon: ContributionIcon;
+    enabled: boolean;
+    configurationError: string | null;
     application: SettingsApplicationUpdate | null;
     configuration: {
         contribution: { properties: Record<string, ConfigurationProperty>; title: string; };
         extensionId: string;
         values: Record<string, ConfigurationValue>;
-    };
+    } | null;
 }
 
 export interface SettingsSnapshot

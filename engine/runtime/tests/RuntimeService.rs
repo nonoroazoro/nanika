@@ -817,3 +817,146 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
     ));
     fixture.stop(runtime);
 }
+
+#[test]
+fn installed_extensions_share_disablement_configuration_and_reenable_contracts() {
+    for external in [false, true] {
+        for configurable in [false, true] {
+            let mut fixture = Fixture::new();
+            fixture.manifests.truncate(1);
+            let id = if external {
+                "com.example.lifecycle"
+            } else {
+                HEALTHY
+            };
+            let mut manifest: serde_json::Value =
+                serde_json::from_str(&fixture.manifests[0]).unwrap();
+            manifest["id"] = serde_json::json!(id);
+            if !configurable {
+                manifest["contributes"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("configuration");
+            }
+            fixture.manifests[0] = manifest.to_string();
+            if external {
+                let installed = fixture
+                    .paths
+                    .app_data_root()
+                    .join("extensions")
+                    .join(id)
+                    .join("0.1.0");
+                let entrypoint =
+                    manifest["targets"][nanika_platform::target_triple()]["entrypoint"]
+                        .as_str()
+                        .unwrap();
+                let program = installed.join(entrypoint);
+                std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+                std::fs::copy(&fixture.binary, &program).unwrap();
+                std::fs::write(installed.join("manifest.jsonc"), manifest.to_string()).unwrap();
+                nanika_storage::HostDatabase::open(fixture.paths.host_database())
+                    .unwrap()
+                    .install_external_extension(id, "0.1.0", &installed, "fixture-digest", 1)
+                    .unwrap();
+                fixture.manifests.clear();
+            }
+            let store = nanika_config::ConfigStore::open(
+                fixture.paths.app_data_root(),
+                fixture.paths.config_root(),
+            )
+            .unwrap();
+            let mut registry = nanika_config::ExtensionRegistryConfig::default();
+            registry.set_enabled(id, false);
+            registry.save(&store).unwrap();
+            let initializing = format!("initialize-{id}");
+            fixture.block(&initializing);
+            let runtime = fixture.start();
+            assert_eq!(runtime.extension_info().len(), 1);
+            let info = &runtime.extension_info()[0];
+            assert_eq!(info.id, id);
+            assert!(!info.enabled);
+            assert!(info.configuration_error.is_none());
+            let generation = runtime.begin_query("fixture").unwrap();
+            wait_until(|| {
+                runtime
+                    .latest_snapshot()
+                    .is_some_and(|snapshot| snapshot.generation == generation)
+            });
+            assert!(runtime.latest_snapshot().unwrap().results.is_empty());
+            assert!(!fixture.entered(&initializing));
+            assert_eq!(
+                runtime.extension_configurations().len(),
+                usize::from(configurable)
+            );
+            if configurable {
+                let receipt = runtime
+                    .save_configuration(
+                        id,
+                        "disabled-settings",
+                        std::collections::BTreeMap::from([(
+                            "fixture.enabled".to_owned(),
+                            serde_json::json!(false),
+                        )]),
+                    )
+                    .unwrap();
+                assert!(matches!(
+                    receipt.wait(),
+                    nanika_host::ConfigurationSaveOutcome::SavedForNextLaunch
+                ));
+            }
+            fixture.stop(runtime);
+            let database =
+                nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
+            assert!(database.extension(id).unwrap().is_some());
+            drop(database);
+            // The public management operation must accept either provenance.
+            nanika_extension_package::set_extension_enabled(id, true, &fixture.paths, &store)
+                .unwrap();
+            assert!(
+                nanika_config::ExtensionRegistryConfig::load(&store)
+                    .unwrap()
+                    .is_enabled(id)
+            );
+            let runtime = fixture.start();
+            assert!(runtime.extension_info()[0].enabled);
+            let generation = runtime.begin_query("fixture").unwrap();
+            wait_until(|| has_result(&runtime, generation, id));
+            if configurable {
+                assert_eq!(
+                    runtime.extension_configurations()[0].values["fixture.enabled"],
+                    serde_json::json!(false)
+                );
+            }
+            fixture.stop(runtime);
+            nanika_extension_package::set_extension_enabled(id, false, &fixture.paths, &store)
+                .unwrap();
+            let runtime = fixture.start();
+            assert!(!runtime.extension_info()[0].enabled);
+            fixture.stop(runtime);
+            assert!(
+                !nanika_config::ExtensionRegistryConfig::load(&store)
+                    .unwrap()
+                    .is_enabled(id)
+            );
+        }
+    }
+}
+
+#[test]
+fn invalid_configuration_keeps_installed_metadata_visible() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let store = nanika_config::ConfigStore::open(
+        fixture.paths.app_data_root(),
+        fixture.paths.config_root(),
+    )
+    .unwrap();
+    let path = store.extension_configuration_file(HEALTHY);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, "{ malformed").unwrap();
+    let runtime = fixture.start();
+    assert_eq!(runtime.extension_info().len(), 1);
+    assert!(runtime.extension_info()[0].configuration_error.is_some());
+    assert!(runtime.extension_configurations().is_empty());
+    fixture.stop(runtime);
+}

@@ -2,8 +2,6 @@
 
 #![forbid(unsafe_code)]
 
-#[path = "ActiveExtension.rs"]
-mod active_extension;
 #[path = "CommandContribution.rs"]
 mod command_contribution;
 #[path = "ConfigurationContribution.rs"]
@@ -26,6 +24,8 @@ mod extension_protocol;
 mod extension_resolution_error;
 #[path = "ExtensionTarget.rs"]
 mod extension_target;
+#[path = "InstalledExtension.rs"]
+mod installed_extension;
 mod package;
 #[path = "PackageOperation.rs"]
 mod package_operation;
@@ -40,7 +40,6 @@ mod staging_directory;
 #[path = "ViewContribution.rs"]
 mod view_contribution;
 
-pub use active_extension::*;
 pub use command_contribution::*;
 pub use configuration_contribution::*;
 pub use configuration_property::*;
@@ -52,6 +51,7 @@ pub use extension_package_error::*;
 pub use extension_protocol::*;
 pub use extension_resolution_error::*;
 pub use extension_target::*;
+pub use installed_extension::*;
 pub use package::*;
 pub(crate) use package_operation::*;
 pub(crate) use package_transaction::*;

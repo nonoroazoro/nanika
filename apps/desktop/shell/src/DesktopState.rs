@@ -762,16 +762,10 @@ impl DesktopState {
         let extensions = runtime
             .extension_info()
             .iter()
-            .filter_map(|info| {
-                let configuration = configurations.remove(&info.id)?;
-                if configuration.contribution.properties.is_empty() {
-                    return None;
-                }
-                Some(crate::ExtensionSettings {
-                    configuration,
-                    info: info.clone(),
-                    application: applications.latest.get(&info.id).cloned(),
-                })
+            .map(|info| crate::ExtensionSettings {
+                configuration: configurations.remove(&info.id),
+                info: info.clone(),
+                application: applications.latest.get(&info.id).cloned(),
             })
             .collect();
         Ok(crate::SettingsSnapshot {

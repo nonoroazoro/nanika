@@ -98,11 +98,8 @@ impl ExtensionRegistryConfig {
         }
     }
 
-    pub fn is_enabled(&self, extension_id: &str, default: bool) -> bool {
-        self.extensions
-            .get(extension_id)
-            .copied()
-            .unwrap_or(default)
+    pub fn is_enabled(&self, extension_id: &str) -> bool {
+        self.extensions.get(extension_id).copied().unwrap_or(true)
     }
 
     pub fn set_enabled(&mut self, extension_id: impl Into<String>, enabled: bool) {

@@ -4,5 +4,7 @@
 pub struct RuntimeExtensionInfo {
     pub id: String,
     pub name: String,
+    pub enabled: bool,
+    pub configuration_error: Option<String>,
     pub icon: nanika_extension_package::ContributionIcon,
 }

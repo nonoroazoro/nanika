@@ -49,6 +49,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
                     "Tool",
                     "open",
                     Vec::new(),
+                    Vec::new(),
                 ),
                 Candidate::new(
                     CandidateKind::Action,
@@ -56,6 +57,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
                     "b",
                     "Tool",
                     "open",
+                    Vec::new(),
                     Vec::new(),
                 ),
             ],
@@ -168,24 +170,24 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, updated_at
-             ) VALUES ('com.example.invalid', 'corrupt', 'enabled', 1)",
+                extension_id, kind, updated_at
+             ) VALUES ('com.example.invalid', 'corrupt', 1)",
             [],
         )
         .expect("invalid fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, updated_at
-             ) VALUES ('com.example.invalid-state', 'external', 'corrupt', 1)",
+                extension_id, kind, updated_at
+             ) VALUES ('com.example.incomplete-package', 'external', 1)",
             [],
         )
-        .expect("invalid state fixture should be inserted");
+        .expect("incomplete package fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, state, updated_at
-             ) VALUES ('../escape', 'external', 'enabled', 1)",
+                extension_id, kind, updated_at
+             ) VALUES ('../escape', 'external', 1)",
             [],
         )
         .expect("invalid id fixture should be inserted");
@@ -206,7 +208,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
         state
             .extension_errors
             .iter()
-            .any(|error| error.contains("com.example.invalid-state"))
+            .any(|error| error.contains("com.example.incomplete-package"))
     );
     assert!(
         state

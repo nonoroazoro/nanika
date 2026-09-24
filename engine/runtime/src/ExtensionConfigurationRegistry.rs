@@ -14,7 +14,7 @@ struct RegisteredConfiguration {
     values: BTreeMap<String, Value>,
 }
 
-/// Host-owned configuration schema and persisted values for active extensions.
+/// Host-owned configuration schema and persisted values for installed extensions.
 pub(crate) struct ExtensionConfigurationRegistry {
     store: ConfigStore,
     registered: Mutex<HashMap<String, RegisteredConfiguration>>,

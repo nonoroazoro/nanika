@@ -3,7 +3,7 @@ use std::io::Write;
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
     CommandContribution, ExtensionContributions, ExtensionProtocol, ViewContribution,
-    install_package, remove_extension, resolve_active_extensions, set_extension_enabled,
+    install_package, remove_extension, resolve_installed_extensions, set_extension_enabled,
     update_package, validate_extension_contributions,
 };
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
@@ -34,17 +34,20 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
 
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
-    let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
+    let (active, errors) = resolve_installed_extensions(&paths, &records);
     assert!(errors.is_empty());
     assert_eq!(active.len(), 1);
 
     set_extension_enabled("com.example.extension", false, &paths, &store)
         .expect("disable extension");
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
-    let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
+    let (active, errors) = resolve_installed_extensions(&paths, &records);
     assert!(errors.is_empty());
-    assert!(active.is_empty());
+    assert_eq!(active.len(), 1, "disabled extensions remain discoverable");
+    assert!(
+        !ExtensionRegistryConfig::load(&store)
+            .unwrap()
+            .is_enabled("com.example.extension")
+    );
 
     drop(database);
     remove_extension("com.example.extension", &paths, &store).expect("remove extension");
@@ -77,11 +80,9 @@ fn resolution_error_preserves_safe_extension_context() {
                 .join("extensions/com.example.missing/1.0.0"),
         ),
         package_digest: None,
-        state: "enabled".to_owned(),
     };
 
-    let (active, errors) =
-        resolve_active_extensions(&paths, &[extension], &ExtensionRegistryConfig::default());
+    let (active, errors) = resolve_installed_extensions(&paths, &[extension]);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);
@@ -567,8 +568,12 @@ fn enablement_rejects_unknown_extensions_without_changing_config() {
         .expect_err("unknown extension should fail");
 
     assert!(error.to_string().contains("not installed"));
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
-    assert!(registry.extensions.is_empty());
+    assert!(
+        ExtensionRegistryConfig::load(&store)
+            .unwrap()
+            .extensions
+            .is_empty()
+    );
     cleanup(&root);
 }
 
@@ -596,18 +601,10 @@ fn same_version_update_repairs_content_and_preserves_disablement() {
         b"fixture"
     );
     let database = HostDatabase::open(paths.host_database()).expect("database");
-    assert_eq!(
-        database
-            .extension("com.example.extension")
-            .expect("extension lookup")
-            .expect("extension record")
-            .state,
-        "disabled"
-    );
     assert!(
         !ExtensionRegistryConfig::load(&store)
             .expect("registry")
-            .is_enabled("com.example.extension", true)
+            .is_enabled("com.example.extension")
     );
     drop(database);
     cleanup(&root);
@@ -762,9 +759,8 @@ fn interrupted_same_version_replacement_fails_without_mutation() {
     )
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
 
-    let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
+    let (active, errors) = resolve_installed_extensions(&paths, &records);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);
@@ -817,9 +813,8 @@ fn interrupted_removal_fails_without_mutation() {
     )
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
-    let registry = ExtensionRegistryConfig::load(&store).expect("registry");
 
-    let (active, errors) = resolve_active_extensions(&paths, &records, &registry);
+    let (active, errors) = resolve_installed_extensions(&paths, &records);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);

@@ -2597,6 +2597,7 @@ name = "nanika-extension-fixture"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "nanika-config",
  "nanika-extension-package",
  "nanika-host",
  "nanika-platform",
