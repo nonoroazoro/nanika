@@ -37,7 +37,7 @@ impl ExtensionRegistryConfig {
         Ok(config)
     }
 
-    pub fn save(&self, store: &ConfigStore) -> Result<(), String> {
+    pub(crate) fn _save(&self, store: &ConfigStore) -> Result<(), String> {
         self.validate()?;
         let path = store.extensions_file();
         let current = match std::fs::metadata(&path) {
@@ -102,11 +102,11 @@ impl ExtensionRegistryConfig {
         self.extensions.get(extension_id).copied().unwrap_or(true)
     }
 
-    pub fn set_enabled(&mut self, extension_id: impl Into<String>, enabled: bool) {
+    pub(crate) fn set_enabled(&mut self, extension_id: impl Into<String>, enabled: bool) {
         self.extensions.insert(extension_id.into(), enabled);
     }
 
-    pub fn remove(&mut self, extension_id: &str) {
+    pub(crate) fn remove(&mut self, extension_id: &str) {
         self.extensions.remove(extension_id);
     }
 

@@ -843,9 +843,10 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
                 fixture.paths.config_root(),
             )
             .unwrap();
-            let mut registry = nanika_config::ExtensionRegistryConfig::default();
+            let mut registry = nanika_config::ExtensionRegistryTransaction::begin(&store).unwrap();
             registry.set_enabled(id, false);
-            registry.save(&store).unwrap();
+            registry.save().unwrap();
+            drop(registry);
             let initializing = format!("initialize-{id}");
             fixture.block(&initializing);
             let runtime = fixture.start();

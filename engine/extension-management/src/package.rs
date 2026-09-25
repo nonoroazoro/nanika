@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
-use nanika_config::{ConfigStore, ExtensionRegistryConfig};
+use nanika_config::{ConfigStore, ExtensionRegistryTransaction};
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use semver::{Version, VersionReq};
 use uuid::Uuid;
@@ -91,9 +91,7 @@ fn apply_package(
     }
     validate_package_operation(operation, &manifest.version, previous.as_ref())?;
     let mut registry =
-        ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
-    let registry_existed = store.extensions_file().is_file();
-    let original_registry = registry.clone();
+        ExtensionRegistryTransaction::begin(store).map_err(ExtensionPackageError::Config)?;
     let enabled = registry.is_enabled(&manifest.id);
 
     let extension_id_root = prepare_extension_root(&extension_root, &manifest.id)?;
@@ -142,7 +140,7 @@ fn apply_package(
     stage.commit();
 
     registry.set_enabled(&manifest.id, enabled);
-    if let Err(error) = registry.save(store) {
+    if let Err(error) = registry.save() {
         rollback_version(&version_root, replaced_root.as_deref())?;
         if replacement_transaction.is_some() {
             PackageTransaction::clear(&extension_root)?;
@@ -156,7 +154,7 @@ fn apply_package(
         &digest,
         unix_timestamp(),
     ) {
-        let config_rollback = restore_registry(store, &original_registry, registry_existed);
+        let config_rollback = registry.rollback();
         let artifact_rollback = rollback_version(&version_root, replaced_root.as_deref());
         if let Err(rollback) = config_rollback {
             return Err(ExtensionPackageError::Config(format!(
@@ -201,9 +199,9 @@ pub fn set_extension_enabled(
         .extension(extension_id)?
         .ok_or_else(|| ExtensionPackageError::Manifest("extension is not installed".to_owned()))?;
     let mut registry =
-        ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
+        ExtensionRegistryTransaction::begin(store).map_err(ExtensionPackageError::Config)?;
     registry.set_enabled(extension_id, enabled);
-    registry.save(store).map_err(ExtensionPackageError::Config)
+    registry.save().map_err(ExtensionPackageError::Config)
 }
 
 /// Remove external executable versions while preserving extension configuration and data.
@@ -228,9 +226,7 @@ pub fn remove_extension(
         ));
     }
     let mut registry =
-        ExtensionRegistryConfig::load(store).map_err(ExtensionPackageError::Config)?;
-    let registry_existed = store.extensions_file().is_file();
-    let original_registry = registry.clone();
+        ExtensionRegistryTransaction::begin(store).map_err(ExtensionPackageError::Config)?;
     let extensions_root = paths.app_data_root().join("extensions");
     let extension_root = extensions_root.join(extension_id);
     validate_managed_path(&extensions_root, &extension_root)?;
@@ -257,7 +253,7 @@ pub fn remove_extension(
         removal_transaction = Some(transaction);
     }
     registry.remove(extension_id);
-    if let Err(error) = registry.save(store) {
+    if let Err(error) = registry.save() {
         if removed_root.exists() {
             fs::rename(&removed_root, &extension_root).map_err(|rollback| {
                 ExtensionPackageError::Config(format!(
@@ -272,7 +268,7 @@ pub fn remove_extension(
     }
     let database_result = database.remove_external_extension(extension_id);
     if !matches!(database_result, Ok(true)) {
-        let config_rollback = restore_registry(store, &original_registry, registry_existed);
+        let config_rollback = registry.rollback();
         let artifact_rollback = if removed_root.exists() {
             fs::rename(&removed_root, &extension_root)
         } else {
@@ -938,22 +934,6 @@ fn rollback_version(version_root: &Path, replaced_root: Option<&Path>) -> std::i
         fs::rename(replaced, version_root)?;
     }
     Ok(())
-}
-
-fn restore_registry(
-    store: &ConfigStore,
-    registry: &ExtensionRegistryConfig,
-    existed: bool,
-) -> Result<(), String> {
-    if existed {
-        registry.save(store)
-    } else {
-        match fs::remove_file(store.extensions_file()) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.to_string()),
-        }
-    }
 }
 
 fn unix_timestamp() -> u64 {

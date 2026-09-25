@@ -179,3 +179,7 @@ fn validate_bootstrap(config: &BootstrapConfig) -> Result<(), ConfigError> {
     }
     Ok(())
 }
+
+#[path = "ExtensionRegistryTransaction.rs"]
+mod extension_registry_transaction;
+pub use extension_registry_transaction::*;
