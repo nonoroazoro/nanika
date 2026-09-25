@@ -174,26 +174,29 @@ impl ClipboardMonitor {
             .map_err(|_| "clipboard capture owner is closed".to_owned())
     }
 
-    pub fn shutdown(mut self) {
-        self.stop();
+    pub fn shutdown(mut self) -> Result<(), String> {
+        self._stop()
     }
 
-    fn stop(&mut self) {
+    fn _stop(&mut self) -> Result<(), String> {
         if self.thread.is_none() {
-            return;
+            return Ok(());
         }
         self.shutdown.take();
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {
-            eprintln!("clipboard watcher thread panicked");
+            return Err("clipboard watcher thread panicked".to_owned());
         }
+        Ok(())
     }
 }
 
 impl Drop for ClipboardMonitor {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self._stop() {
+            eprintln!("{error}");
+        }
     }
 }
 

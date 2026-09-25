@@ -3,5 +3,5 @@
   "identifier": "settings",
   "description": "Settings can read validated extension configuration and submit bounded configuration values.",
   "windows": ["settings"],
-  "permissions": ["allow-read-settings", "allow-acknowledge-settings-progress", "allow-save-settings", "allow-pick-settings-directory", "allow-settings-ready", "allow-settings-window-action", "allow-save-host-settings", "allow-set-shortcut-recording", "allow-read-startup", "allow-set-startup"]
+  "permissions": ["allow-read-settings", "allow-acknowledge-settings-delivery", "allow-save-settings", "allow-set-extension-enabled", "allow-pick-settings-directory", "allow-settings-ready", "allow-settings-window-action", "allow-save-host-settings", "allow-set-shortcut-recording", "allow-read-startup", "allow-set-startup"]
 }

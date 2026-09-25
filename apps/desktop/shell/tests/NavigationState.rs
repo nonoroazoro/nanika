@@ -87,6 +87,7 @@ fn text_view(value: &str) -> View {
 fn completed_view_is_presented_even_when_execution_recording_failed() {
     let mut navigation = crate::NavigationState::default();
     let completion = nanika_host::RuntimeInvocationCompletion {
+        instance_id: 1,
         outcome: nanika_host::ExtensionInvocationOutcome::Completed {
             effect: nanika_protocol::NavigationEffect::Push {
                 view_id: "created-view".to_owned(),
@@ -98,7 +99,7 @@ fn completed_view_is_presented_even_when_execution_recording_failed() {
         recording_error: Some("could not record completed action: disk full".to_owned()),
     };
     let error = crate::apply_invocation_completion(completion, |effect| {
-        navigation.apply("test.extension", 1, effect)
+        navigation.apply("test.extension", 1, 1, effect)
     })
     .unwrap_err();
     assert_eq!(navigation.stack.last().unwrap().view_id, "created-view");
@@ -109,6 +110,7 @@ fn completed_view_is_presented_even_when_execution_recording_failed() {
 fn recording_failure_does_not_skip_retired_view_cleanup_or_hide_its_error() {
     let mut cleanup_attempted = false;
     let completion = nanika_host::RuntimeInvocationCompletion {
+        instance_id: 1,
         outcome: nanika_host::ExtensionInvocationOutcome::Completed {
             effect: nanika_protocol::NavigationEffect::Push {
                 view_id: "retired-view".to_owned(),
@@ -141,6 +143,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
             .apply(
                 "test.extension",
                 1,
+                1,
                 nanika_protocol::NavigationEffect::Push {
                     view_id: format!("view-{index}"),
                     revision: 1,
@@ -155,6 +158,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
             .apply(
                 "test.extension",
                 1,
+                1,
                 nanika_protocol::NavigationEffect::Push {
                     view_id: "overflow".to_owned(),
                     revision: 1,
@@ -167,11 +171,17 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
     assert_eq!(navigation.stack.len(), crate::MAX_NAVIGATION_DEPTH);
     assert_eq!(navigation.stack.last().unwrap().route_id, previous);
     navigation
-        .apply("test.extension", 1, nanika_protocol::NavigationEffect::Pop)
+        .apply(
+            "test.extension",
+            1,
+            1,
+            nanika_protocol::NavigationEffect::Pop,
+        )
         .unwrap();
     navigation
         .apply(
             "test.extension",
+            1,
             1,
             nanika_protocol::NavigationEffect::Push {
                 view_id: "replacement".to_owned(),
@@ -189,6 +199,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
         .apply(
             "old.extension",
             1,
+            1,
             nanika_protocol::NavigationEffect::Push {
                 view_id: "view".to_owned(),
                 revision: 1,
@@ -201,6 +212,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
     new.navigation
         .apply(
             "new.extension",
+            1,
             1,
             nanika_protocol::NavigationEffect::Push {
                 view_id: "view".to_owned(),
@@ -330,11 +342,17 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
     );
     request.revision = 1;
     navigation
-        .apply("test.extension", 1, nanika_protocol::NavigationEffect::Pop)
+        .apply(
+            "test.extension",
+            1,
+            1,
+            nanika_protocol::NavigationEffect::Pop,
+        )
         .unwrap();
     navigation
         .apply(
             "test.extension",
+            1,
             1,
             nanika_protocol::NavigationEffect::Push {
                 view_id: "replacement".to_owned(),
@@ -351,6 +369,7 @@ fn _input_navigation() -> crate::NavigationState {
     navigation
         .apply(
             "test.extension",
+            1,
             1,
             nanika_protocol::NavigationEffect::Push {
                 view_id: "clipboard".to_owned(),

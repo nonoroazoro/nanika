@@ -192,14 +192,14 @@ pub(crate) async fn read_settings(
 }
 
 #[tauri::command]
-pub(crate) fn acknowledge_settings_progress(
+pub(crate) fn acknowledge_settings_delivery(
     window: tauri::WebviewWindow,
     delivery_id: u64,
 ) -> Result<(), String> {
     authorize_settings(&window)?;
     window
         .state::<DesktopState>()
-        .acknowledge_settings_progress(delivery_id);
+        .acknowledge_settings_delivery(delivery_id);
     Ok(())
 }
 
@@ -374,6 +374,22 @@ pub(crate) async fn set_startup(
         let _operation = desktop.begin_operation()?;
         app.state::<crate::host_settings::HostSettings>()
             .startup(Some(enabled))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn set_extension_enabled(
+    window: tauri::WebviewWindow,
+    extension_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    authorize_settings(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<DesktopState>()
+            .set_extension_enabled(&extension_id, enabled)
     })
     .await
     .map_err(|error| error.to_string())?

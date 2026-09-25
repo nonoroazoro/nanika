@@ -178,6 +178,7 @@ function _navigation(revision: number, text = "", routeId = 1, busy = false): Na
         dismissCount: 0,
         current: {
             routeId,
+            instanceId: 1,
             extensionId: "nanika.test",
             generation: 1,
             viewId: "results",

@@ -13,6 +13,7 @@ function _completed(): SettingsSaveResult
 {
     return {
         status: "completed",
+        revision: 1,
         values: { enabled: true },
         saved: { enabled: true },
         effective: { enabled: true },

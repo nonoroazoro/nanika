@@ -24,7 +24,7 @@ runtime evidence separately from compilation.
 
 Extensions are the only domain capability unit. Built-in provenance grants no
 runtime exception. See [extension lifecycle](extension-lifecycle.md) for current
-registration and the deferred live-lifecycle proposal.
+registration, live enablement and graceful process retirement.
 
 ## IPC and execution authority
 
@@ -57,7 +57,7 @@ See [design system](design-system.md) for activation and confirmation UX.
 
 Settings submits one property key and value. Rust validates visibility and schema,
 merges the value with the authoritative configuration, and reserves one
-operation per extension until all stages settle. This is the extension's atomic
+configuration or lifecycle operation per extension until all stages settle. This is the extension's atomic
 configuration domain; unrelated extensions remain independent. Frontend state
 admits one edit per field and serializes distinct fields within that domain,
 without disabling or replacing the page. Dropping a receipt or hiding Settings
@@ -103,9 +103,13 @@ work units. A null total means indeterminate. The host validates progress and ro
 it to the same operation on the Settings Channel; terminal state cannot regress to
 progress. The shell permits one unacknowledged progress delivery per Settings
 Channel and retains only the latest pending progress per installed extension,
-serving extensions in arrival order. `acknowledge_settings_progress` releases that
+serving extensions in arrival order. `acknowledge_settings_delivery` releases that
 slot only for its delivery ID; IDs are not reused when the WebView subscribes again.
-Terminal results bypass progress backpressure and remove obsolete pending progress.
+Lifecycle observations have a separate single in-flight slot and retain only the
+latest authoritative snapshot. Both streams use `acknowledge_settings_delivery`
+and a common receipt sequence, so neither stale receipts nor a slow WebView can
+release another session or accumulate lifecycle snapshots. Terminal results bypass
+progress backpressure and remove obsolete pending progress.
 Channel sends happen outside the shared state lock. There is no timer or retry in
 this delivery contract. Reporting 100 percent is not completion. Application discovery reports
 source work and final index reconciliation. Other extensions can use the same

@@ -95,6 +95,7 @@ impl NavigationState {
     pub(crate) fn apply(
         &mut self,
         extension_id: &str,
+        instance_id: u64,
         generation: u64,
         effect: NavigationEffect,
     ) -> Result<(), String> {
@@ -128,6 +129,7 @@ impl NavigationState {
                 self.stack.push(ExtensionViewSnapshot {
                     route_id: self.next_route_id,
                     extension_id: extension_id.to_owned(),
+                    instance_id,
                     generation,
                     view_id,
                     revision,

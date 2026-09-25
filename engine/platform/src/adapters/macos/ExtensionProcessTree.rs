@@ -14,6 +14,17 @@ impl ExtensionProcessTree {
         Ok(Self)
     }
 
+    /// Signal zero checks group existence without changing a descendant's state.
+    pub fn is_empty(&self, process_id: u32) -> io::Result<bool> {
+        let process_id = rustix::process::Pid::from_raw(process_id.cast_signed())
+            .ok_or_else(|| io::Error::other("invalid extension process group"))?;
+        match rustix::process::test_kill_process_group(process_id) {
+            Ok(()) => Ok(false),
+            Err(rustix::io::Errno::SRCH) => Ok(true),
+            Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error())),
+        }
+    }
+
     /// Terminate the child's process group, accepting only an already absent group.
     pub fn terminate(&self, process_id: u32) -> io::Result<()> {
         if let Some(process_id) = rustix::process::Pid::from_raw(process_id.cast_signed()) {

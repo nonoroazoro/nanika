@@ -19,7 +19,7 @@ fn _update(extension: &str, request_id: u64, completed: u32) -> SettingsApplicat
 fn _receipt(event: &SettingsEvent) -> u64 {
     match event {
         SettingsEvent::Application {
-            progress_delivery_id: Some(id),
+            delivery_id: Some(id),
             ..
         } => *id,
         _ => panic!("expected a progress receipt"),
@@ -68,7 +68,7 @@ fn terminal_bypasses_progress_receipt_and_removes_obsolete_pending_progress() {
     assert!(matches!(
         event,
         SettingsEvent::Application {
-            progress_delivery_id: None,
+            delivery_id: None,
             update: SettingsApplicationUpdate {
                 result: SettingsSaveResult::Failed { .. },
                 ..
@@ -131,7 +131,7 @@ fn late_submission_cannot_erase_progress_and_transport_can_acknowledge_without_l
             panic!("JSON")
         };
         let event: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let id = event["progressDeliveryId"].as_u64().unwrap();
+        let id = event["deliveryId"].as_u64().unwrap();
         let mut state = observer
             .try_lock()
             .expect("delivery must release shared state");
@@ -155,4 +155,52 @@ fn late_submission_cannot_erase_progress_and_transport_can_acknowledge_without_l
             .record(_update("test.extension", 1, 2))
             .is_some()
     );
+}
+
+#[test]
+fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
+    let mut state = SettingsApplications::default();
+    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.lifecycle_revision = 1;
+    let (
+        _,
+        SettingsEvent::Lifecycle {
+            delivery_id: first, ..
+        },
+    ) = state.next_lifecycle().unwrap()
+    else {
+        panic!("lifecycle");
+    };
+    for revision in 2..=100_000 {
+        state.lifecycle_revision = revision;
+        assert!(state.next_lifecycle().is_none());
+    }
+    let (
+        _,
+        SettingsEvent::Lifecycle {
+            delivery_id: second,
+            revision,
+            ..
+        },
+    ) = state.acknowledge(first).unwrap()
+    else {
+        panic!("lifecycle");
+    };
+    assert_eq!(revision, 100_000);
+    assert!(state.acknowledge(first).is_none());
+    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    let (
+        _,
+        SettingsEvent::Lifecycle {
+            delivery_id: current,
+            ..
+        },
+    ) = state.next_lifecycle().unwrap()
+    else {
+        panic!("lifecycle");
+    };
+    state.lifecycle_revision += 1;
+    assert!(state.acknowledge(second).is_none());
+    assert!(state.next_lifecycle().is_none());
+    assert!(state.acknowledge(current).is_some());
 }

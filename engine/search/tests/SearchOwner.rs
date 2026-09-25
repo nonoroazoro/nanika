@@ -254,3 +254,38 @@ fn owner_waits_for_the_expected_extension_identities() {
     }
     owner.shutdown();
 }
+
+#[test]
+fn concurrent_query_admission_cannot_publish_an_older_generation_last() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let handle = owner.handle();
+    let concurrent = handle.clone();
+    let (entered, waiting) = std::sync::mpsc::sync_channel(1);
+    let (release, released) = std::sync::mpsc::sync_channel(1);
+    let thread = std::thread::spawn(move || {
+        concurrent
+            .begin_query_with_expected_extensions(
+                "later",
+                std::iter::from_fn(move || {
+                    entered.send(()).unwrap();
+                    released.recv().unwrap();
+                    None
+                }),
+            )
+            .unwrap()
+    });
+    waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+    let first = handle.begin_query("first").unwrap();
+    release.send(()).unwrap();
+    let last = thread.join().unwrap();
+    assert!(last > first);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !handle
+        .latest_snapshot()
+        .is_some_and(|snapshot| snapshot.generation == last)
+    {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    owner.shutdown();
+}

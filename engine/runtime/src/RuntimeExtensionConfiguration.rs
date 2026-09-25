@@ -6,6 +6,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeExtensionConfiguration {
+    pub revision: u64,
     pub extension_id: String,
     pub contribution: ConfigurationContribution,
     pub values: BTreeMap<String, Value>,

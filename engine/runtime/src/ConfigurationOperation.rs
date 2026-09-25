@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 /// Owns the reservation across persistence, application, and final reconciliation.
 pub(crate) struct ConfigurationOperation {
+    pub(crate) _reservation: crate::ExtensionOperationReservation,
     pub(crate) registry: Arc<ExtensionConfigurationRegistry>,
     pub(crate) extension_id: String,
     pub(crate) key: String,
@@ -65,11 +66,5 @@ impl ConfigurationOperation {
                 }
             }
         }
-    }
-}
-
-impl Drop for ConfigurationOperation {
-    fn drop(&mut self) {
-        self.registry.release(&self.extension_id);
     }
 }

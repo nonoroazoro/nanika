@@ -8,9 +8,7 @@ Design references: [extensions](extension-lifecycle.md),
 
 ## Product and architecture candidates
 
-- Live extension enable/disable with graceful shutdown, instance-scoped cleanup
-  and Settings controls, following the extension lifecycle proposal. Deferred
-  until the foundation is committed and implementation is separately authorized.
+- Live extension install/uninstall after package commit and graceful retirement.
 - Session-bound frontend delivery for streaming output, diagnostics and runtime
   state where a product surface needs them.
 - Additional automated boundary checks for domain code outside extensions,
@@ -25,6 +23,10 @@ Design references: [extensions](extension-lifecycle.md),
 - Optional native window effects, subject to measured benefit and a legible CSS baseline.
 
 ## Validation and measurement gaps
+
+- Native live-extension acceptance on macOS, plus focus, input, mixed-DPI and
+  rendered Settings state on both platforms. Measure withdrawal, process exit and
+  reactivation separately from unrelated UI latency at 60/120 Hz and hidden idle.
 
 - Actual macOS 13 WKWebView acceptance, including native focus, menus, Settings,
   Finder reveal and extension interaction. Existing Windows checks do not cover it.

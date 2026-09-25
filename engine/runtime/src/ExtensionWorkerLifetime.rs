@@ -13,7 +13,14 @@ impl Drop for ExtensionWorkerLifetime {
         let (invocations, view_events, configurations, refreshes) = {
             let (lock, changed) = &*self.state;
             let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            if state.stop_result.is_none() {
+                let error = "Extension worker exited without a stop result.".to_owned();
+                state.lifecycle = crate::RuntimeExtensionState::Failed;
+                state.lifecycle_error = Some(error.clone());
+                state.stop_result = Some(Err(error));
+            }
             state.closed = true;
+            state.finished = true;
             let pending = (
                 state.invocations.drain(..).collect::<Vec<_>>(),
                 state.view_events.drain(..).collect::<Vec<_>>(),

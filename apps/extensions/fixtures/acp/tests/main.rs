@@ -48,9 +48,7 @@ fn acp_session_receives_nanika_configuration_metadata() {
         std::fs::read(&marker).expect("configuration marker"),
         b"configured"
     );
-    runtime
-        .shutdown("shutdown-configuration")
-        .expect("shutdown ACP runtime");
+    runtime.shutdown().expect("shutdown ACP runtime");
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -70,7 +68,7 @@ fn coordinator_shutdown_interrupts_acp_initialization() {
     )
     .unwrap();
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::new();
+    let coordinator = ExtensionSearchCoordinator::new();
     coordinator
         .register(
             "com.example.acp-dummy",
@@ -230,9 +228,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
             .as_str(),
         "Hello World"
     );
-    runtime
-        .shutdown("shutdown-dummy")
-        .expect("shutdown ACP runtime");
+    runtime.shutdown().expect("shutdown ACP runtime");
 
     drop(database);
     cleanup(&root);
@@ -273,7 +269,7 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
     let invocation_started = root.join("invocation-started");
     let argument = format!("--append-start-marker={}", starts.display());
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner");
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "com.example.acp-dummy",
@@ -285,6 +281,7 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
     coordinator
         .invoke(
             "com.example.acp-dummy",
+            coordinator.instance_id("com.example.acp-dummy").unwrap(),
             1,
             "prompt",
             "prompt",
@@ -400,4 +397,93 @@ fn cleanup(path: &Path) {
     if path.exists() {
         std::fs::remove_dir_all(path).expect("cleanup");
     }
+}
+
+#[test]
+fn graceful_stop_waits_for_eof_cleanup_and_preserves_cleanup_failures() {
+    for fail in [false, true] {
+        let root = temporary_root(if fail {
+            "cleanup-failure"
+        } else {
+            "cleanup-success"
+        });
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join("cleanup");
+        let mut arguments = vec![format!("--cleanup={}", marker.display()).into()];
+        if fail {
+            arguments.push("--fail-cleanup".into());
+        }
+        let mut runtime = ExtensionRuntime::spawn_with(
+            "com.example.acp-dummy",
+            ExtensionProtocol::Acp {
+                protocol_version: 1,
+            },
+            dummy_executable(),
+            arguments,
+            ExtensionLimits::default(),
+        )
+        .unwrap();
+        runtime.initialize("init-cleanup").unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            sender.send(runtime.shutdown()).unwrap();
+        });
+        let deadline = Instant::now() + TEST_TIMEOUT;
+        while !marker.with_extension("entered").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "stdin EOF must reach ACP cleanup"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            receiver.try_recv().is_err(),
+            "EOF is not cleanup completion"
+        );
+        std::fs::write(marker.with_extension("release"), b"release").unwrap();
+        let result = receiver.recv_timeout(TEST_TIMEOUT).unwrap();
+        if fail {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("ACP fixture durable cleanup failed")
+            );
+        } else {
+            result.unwrap();
+            assert!(marker.with_extension("completed").exists());
+        }
+        thread.join().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn graceful_stop_waits_for_descendants_without_killing_them() {
+    let root = temporary_root("graceful-descendants");
+    std::fs::create_dir_all(&root).unwrap();
+    let started = root.join("started");
+    let descendant = root.join("descendant");
+    let mut runtime = ExtensionRuntime::spawn_with(
+        "com.example.acp-dummy",
+        ExtensionProtocol::Acp {
+            protocol_version: 1,
+        },
+        dummy_executable(),
+        [format!(
+            "--spawn-child-at-start={}|{}",
+            started.display(),
+            descendant.display()
+        )
+        .into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    runtime.initialize("init-descendant").unwrap();
+    runtime.shutdown().unwrap();
+    assert!(
+        descendant.exists(),
+        "graceful stop must preserve descendant completion"
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

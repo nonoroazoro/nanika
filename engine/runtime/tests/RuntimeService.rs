@@ -101,7 +101,7 @@ impl Fixture {
             .exists()
     }
 
-    fn start(&self) -> RuntimeService {
+    fn start(&self) -> std::sync::Arc<RuntimeService> {
         let paths = self.paths.clone();
         let manifests = self.manifests.clone();
         let (sender, receiver) = mpsc::channel();
@@ -119,9 +119,10 @@ impl Fixture {
             .expect("runtime starts")
     }
 
-    fn stop(&self, runtime: RuntimeService) {
+    fn stop(&self, runtime: std::sync::Arc<RuntimeService>) {
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::spawn(move || {
+            runtime.shutdown();
             drop(runtime);
             let _ = sender.send(());
         });
@@ -342,7 +343,7 @@ fn queries_continue_while_configuration_application_is_pending() {
 #[test]
 fn settings_save_returns_before_application_and_keeps_configuration_readable() {
     let fixture = Fixture::new();
-    let runtime = std::sync::Arc::new(fixture.start());
+    let runtime = fixture.start();
     let generation = runtime.begin_query("ready").unwrap();
     wait_until(|| has_result(&runtime, generation, HEALTHY));
     fixture.block("settings-save");
@@ -405,6 +406,13 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
             .as_ref()
             .is_some_and(|error| error.contains("fixture could not apply configuration"))
     );
+    let info = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == HEALTHY)
+        .unwrap();
+    assert_eq!(info.state, nanika_host::RuntimeExtensionState::Ready);
+    assert!(info.lifecycle_error.is_none());
     let invalid = runtime.save_configuration(
         HEALTHY,
         "settings-invalid",
@@ -439,7 +447,7 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
 #[test]
 fn shutdown_completes_a_waiting_settings_save() {
     let fixture = Fixture::new();
-    let runtime = std::sync::Arc::new(fixture.start());
+    let runtime = fixture.start();
     let generation = runtime.begin_query("ready").unwrap();
     wait_until(|| has_result(&runtime, generation, HEALTHY));
     fixture.block("settings-pending");
@@ -514,10 +522,29 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
                 .unwrap();
             assert!(!fixture.entered(&initializing));
         }
-        println!(
-            "activation={activation}, initialized_before_invoke={}",
-            usize::from(fixture.entered(&initializing))
-        );
+        let old_instance = runtime.instance_id(HEALTHY).unwrap();
+        runtime
+            .set_extension_enabled(HEALTHY, false)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap();
+        assert!(!has_result(&runtime, generation, HEALTHY));
+        runtime
+            .set_extension_enabled(HEALTHY, true)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        assert_ne!(runtime.instance_id(HEALTHY), Some(old_instance));
+        if activation == "onDemand" {
+            assert!(!fixture.entered(&initializing));
+            assert_eq!(
+                runtime.extension_info()[0].state,
+                nanika_host::RuntimeExtensionState::Dormant
+            );
+        }
         let completion = runtime
             .invoke_recorded(
                 &runtime.latest_snapshot().unwrap(),
@@ -535,7 +562,6 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
         assert!(completion.recording_error.is_none());
         assert!(fixture.entered(&initializing));
         // Explicit shutdown must work while another owner still holds the runtime.
-        let runtime = std::sync::Arc::new(runtime);
         let other_owner = std::sync::Arc::clone(&runtime);
         runtime.shutdown();
         assert!(
@@ -566,7 +592,7 @@ fn explicit_shutdown_interrupts_initialization_with_a_retained_runtime_owner() {
     let fixture = Fixture::new();
     let operation = format!("initialize-{DELAYED}");
     fixture.block(&operation);
-    let runtime = std::sync::Arc::new(fixture.start());
+    let runtime = fixture.start();
     wait_until(|| fixture.entered(&operation));
     let owner = std::sync::Arc::clone(&runtime);
     let (sent, received) = mpsc::channel();
@@ -635,14 +661,26 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
         panic!("recording failure must preserve the created view");
     };
     runtime
-        .close_view(HEALTHY, generation, &view_id, revision)
+        .close_view(
+            HEALTHY,
+            runtime.instance_id(HEALTHY).unwrap(),
+            generation,
+            &view_id,
+            revision,
+        )
         .unwrap()
         .recv_timeout(WAIT)
         .unwrap()
         .unwrap();
     assert!(
         runtime
-            .close_view(HEALTHY, generation, &view_id, revision)
+            .close_view(
+                HEALTHY,
+                runtime.instance_id(HEALTHY).unwrap(),
+                generation,
+                &view_id,
+                revision
+            )
             .unwrap()
             .recv_timeout(WAIT)
             .unwrap()
@@ -909,7 +947,32 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
                 .unwrap();
             let runtime = fixture.start();
             assert!(!runtime.extension_info()[0].enabled);
-            fixture.stop(runtime);
+            let mut previous = None;
+            for _ in 0..2 {
+                runtime
+                    .set_extension_enabled(id, true)
+                    .unwrap()
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .unwrap();
+                let generation = runtime.begin_query("fixture").unwrap();
+                wait_until(|| has_result(&runtime, generation, id));
+                let identity = runtime.instance_id(id).unwrap();
+                assert_ne!(Some(identity), previous);
+                previous = Some(identity);
+                runtime
+                    .set_extension_enabled(id, false)
+                    .unwrap()
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .unwrap();
+                assert!(!has_result(&runtime, generation, id));
+                assert!(runtime.instance_id(id).is_none());
+                assert!(runtime.extension_info()[0].lifecycle_error.is_none());
+            }
+            runtime.shutdown();
+            runtime.shutdown();
+            drop(runtime);
             assert!(
                 !nanika_config::ExtensionRegistryConfig::load(&store)
                     .unwrap()
@@ -930,12 +993,29 @@ fn invalid_configuration_keeps_installed_metadata_visible() {
     .unwrap();
     let path = store.extension_configuration_file(HEALTHY);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, "{ malformed").unwrap();
+    std::fs::write(&path, "{ malformed").unwrap();
     let runtime = fixture.start();
     assert_eq!(runtime.extension_info().len(), 1);
     assert!(runtime.extension_info()[0].configuration_error.is_some());
     assert!(runtime.extension_configurations().is_empty());
-    fixture.stop(runtime);
+    std::fs::write(
+        &path,
+        r#"{"formatVersion":1,"values":{"fixture.enabled":false}}"#,
+    )
+    .unwrap();
+    runtime
+        .set_extension_enabled(HEALTHY, true)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
+    assert!(runtime.extension_info()[0].configuration_error.is_none());
+    assert_eq!(
+        runtime.extension_configurations()[0].values["fixture.enabled"],
+        false
+    );
+    runtime.shutdown();
 }
 
 #[test]
@@ -1095,4 +1175,426 @@ fn large_configuration_is_applied_persisted_and_reloaded_for_both_policies() {
         assert_eq!(outcome.saved["fixture.enabled"], false);
         fixture.stop(runtime);
     }
+}
+
+#[test]
+fn live_disable_waits_for_cleanup_without_blocking_other_extensions_and_reenable_has_new_identity()
+{
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY) && has_result(&runtime, generation, DELAYED)
+    });
+    let previous = runtime.instance_id(HEALTHY).unwrap();
+    let old_snapshot = runtime.latest_snapshot().unwrap();
+    let cleanup = format!("cleanup-{HEALTHY}");
+    fixture.block(&cleanup);
+    let stopped = runtime.set_extension_enabled(HEALTHY, false).unwrap();
+    wait_until(|| fixture.entered(&cleanup));
+    assert!(stopped.try_recv().is_err());
+    assert!(runtime.set_extension_enabled(HEALTHY, true).is_err());
+    assert_eq!(runtime.instance_id(HEALTHY), None);
+    let info = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == HEALTHY)
+        .unwrap();
+    assert!(!info.enabled);
+    assert!(info.pending);
+    assert_eq!(info.state, nanika_host::RuntimeExtensionState::Stopping);
+    let generation = runtime.begin_query("still usable").unwrap();
+    wait_until(|| has_result(&runtime, generation, DELAYED));
+    assert!(!has_result(&runtime, generation, HEALTHY));
+    fixture.release(&cleanup);
+    stopped.recv_timeout(WAIT).unwrap().unwrap();
+    assert!(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("{cleanup}.completed"))
+            .is_file()
+    );
+    runtime
+        .set_extension_enabled(HEALTHY, true)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert_ne!(runtime.instance_id(HEALTHY).unwrap(), previous);
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    assert!(!std::sync::Arc::ptr_eq(
+        &old_snapshot,
+        &runtime.latest_snapshot().unwrap()
+    ));
+    assert!(
+        runtime
+            .close_view(HEALTHY, previous, generation, "reused-view", 1)
+            .is_err()
+    );
+    runtime.shutdown();
+}
+
+#[test]
+fn lifecycle_and_configuration_share_admission_until_after_apply_persistence_finishes() {
+    let mut fixture = Fixture::new();
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["contributes"]["configuration"]["properties"]["fixture.enabled"]["persistence"] =
+        "afterApply".into();
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    fixture.block("lifecycle-settings");
+    let saved = runtime
+        .save_configuration(
+            HEALTHY,
+            "lifecycle-settings",
+            "fixture.enabled".into(),
+            false.into(),
+            std::sync::Arc::new(|_| {}),
+        )
+        .unwrap();
+    wait_until(|| fixture.entered("lifecycle-settings"));
+    assert!(runtime.set_extension_enabled(HEALTHY, false).is_err());
+    fixture.release("lifecycle-settings");
+    assert!(saved.wait().unwrap().error.is_none());
+    runtime
+        .set_extension_enabled(HEALTHY, false)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert!(
+        runtime
+            .extension_configurations()
+            .iter()
+            .find(|config| config.extension_id == HEALTHY)
+            .unwrap()
+            .effective
+            .is_none()
+    );
+    runtime
+        .set_extension_enabled(HEALTHY, true)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    let configured: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            fixture
+                .paths
+                .config_root()
+                .join("extensions")
+                .join(HEALTHY)
+                .join("settings.jsonc"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(configured["values"]["fixture.enabled"], false);
+    runtime.shutdown();
+}
+
+#[test]
+fn failed_registry_persistence_keeps_live_instance_and_failed_cleanup_remains_visible() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let registry = fixture.paths.config_root().join("extensions.jsonc");
+    std::fs::create_dir(&registry).unwrap();
+    assert!(
+        runtime
+            .set_extension_enabled(HEALTHY, false)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+    assert!(
+        runtime
+            .extension_info()
+            .iter()
+            .find(|info| info.id == HEALTHY)
+            .unwrap()
+            .enabled
+    );
+    std::fs::remove_dir(&registry).unwrap();
+    std::fs::write(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("fail-cleanup-{HEALTHY}")),
+        b"fail",
+    )
+    .unwrap();
+    assert!(
+        runtime
+            .set_extension_enabled(HEALTHY, false)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .is_err()
+    );
+    let info = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == HEALTHY)
+        .unwrap();
+    assert!(!info.enabled);
+    assert_eq!(info.state, nanika_host::RuntimeExtensionState::Failed);
+    assert!(info.lifecycle_error.is_some());
+    assert!(
+        runtime
+            .set_extension_enabled(HEALTHY, true)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .is_err()
+    );
+    runtime.shutdown();
+}
+
+#[test]
+fn disable_during_initialization_withdraws_and_never_publishes_the_retired_instance() {
+    let fixture = Fixture::new();
+    let initializing = format!("initialize-{DELAYED}");
+    fixture.block(&initializing);
+    let runtime = fixture.start();
+    wait_until(|| fixture.entered(&initializing));
+    let stopped = runtime.set_extension_enabled(DELAYED, false).unwrap();
+    wait_until(|| runtime.instance_id(DELAYED).is_none());
+    for _ in 0..10 {
+        let generation = runtime.begin_query("fixture").unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        assert!(!has_result(&runtime, generation, DELAYED));
+    }
+    assert!(stopped.try_recv().is_err());
+    fixture.release(&initializing);
+    stopped.recv_timeout(WAIT).unwrap().unwrap();
+    assert!(
+        !runtime
+            .latest_snapshot()
+            .unwrap()
+            .results
+            .iter()
+            .any(|entry| entry.candidate.extension_id() == DELAYED)
+    );
+    runtime.shutdown();
+}
+
+#[test]
+fn disable_preserves_active_action_outcome_and_cancels_only_queued_actions() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY) && has_result(&runtime, generation, DELAYED)
+    });
+    let invoking = format!("invoke-{HEALTHY}-1");
+    fixture.block(&invoking);
+    let snapshot = runtime.latest_snapshot().unwrap();
+    let invoke = || {
+        runtime
+            .invoke(
+                &snapshot,
+                HEALTHY,
+                "fixture.entry",
+                "fixture.run",
+                "fixture",
+                nanika_protocol::ActionInvocation::Default,
+            )
+            .unwrap()
+    };
+    let active = invoke();
+    wait_until(|| fixture.entered(&invoking));
+    let queued = invoke();
+    let stopped = runtime.set_extension_enabled(HEALTHY, false).unwrap();
+    assert!(matches!(
+        queued.recv_timeout(WAIT).unwrap().unwrap(),
+        nanika_host::ExtensionInvocationOutcome::Cancelled
+    ));
+    assert!(active.try_recv().is_err());
+    assert!(stopped.try_recv().is_err());
+    let next = runtime.begin_query("other").unwrap();
+    wait_until(|| has_result(&runtime, next, DELAYED));
+    fixture.release(&invoking);
+    assert!(matches!(
+        active.recv_timeout(WAIT).unwrap().unwrap(),
+        nanika_host::ExtensionInvocationOutcome::Completed { .. }
+    ));
+    stopped.recv_timeout(WAIT).unwrap().unwrap();
+    runtime.shutdown();
+}
+
+#[test]
+fn application_shutdown_interrupts_uncooperative_graceful_stop_and_closes_admission() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let cleanup = format!("cleanup-{HEALTHY}");
+    fixture.block(&cleanup);
+    let stopped = runtime.set_extension_enabled(HEALTHY, false).unwrap();
+    wait_until(|| fixture.entered(&cleanup));
+    runtime.request_shutdown();
+    assert!(runtime.set_extension_enabled(HEALTHY, true).is_err());
+    assert!(stopped.recv_timeout(WAIT).unwrap().is_err());
+    runtime.shutdown();
+}
+
+#[test]
+fn repeated_exit_stops_after_one_restart_and_reports_both_failures() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let runtime = fixture.start();
+    wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
+    runtime.begin_query("fixture.exit").unwrap();
+    wait_until(|| {
+        let info = &runtime.extension_info()[0];
+        !info.pending
+            && info
+                .lifecycle_error
+                .as_deref()
+                .is_some_and(|error| error.contains("failed again after one automatic restart"))
+    });
+    assert_eq!(
+        runtime.extension_info()[0].state,
+        nanika_host::RuntimeExtensionState::Failed
+    );
+    assert!(
+        runtime.extension_info()[0].enabled,
+        "a crash does not rewrite durable intent"
+    );
+    assert_eq!(runtime.instance_id(HEALTHY), None);
+    assert_eq!(
+        std::fs::read_to_string(
+            fixture
+                .paths
+                .app_data_root()
+                .join(format!("initialize-{HEALTHY}.starts"))
+        )
+        .unwrap()
+        .lines()
+        .count(),
+        2
+    );
+    runtime.begin_query("normal").unwrap();
+    runtime
+        .set_extension_enabled(HEALTHY, false)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    runtime
+        .set_extension_enabled(HEALTHY, true)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
+    fixture.stop(runtime);
+}
+
+#[test]
+fn crash_restarts_with_new_authority_saved_configuration_and_current_query() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let runtime = fixture.start();
+    wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
+    let old = runtime.instance_id(HEALTHY).unwrap();
+    let initial = runtime.extension_configurations()[0].revision;
+    let outcome = runtime
+        .save_configuration(
+            HEALTHY,
+            "saved-before-crash",
+            "fixture.enabled".into(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+    assert!(outcome.error.is_none());
+    assert!(outcome.revision > initial);
+    assert_eq!(
+        runtime.extension_configurations()[0].revision,
+        outcome.revision
+    );
+    let generation = runtime.begin_query("fixture.exit-once").unwrap();
+    wait_until(|| {
+        runtime.instance_id(HEALTHY).is_some_and(|id| id != old)
+            && runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready
+            && has_result(&runtime, generation, HEALTHY)
+    });
+    assert!(
+        runtime
+            .with_extension_instance(HEALTHY, old, || ())
+            .is_none()
+    );
+    assert!(runtime.extension_info()[0].lifecycle_error.is_none());
+    assert!(runtime.extension_configurations()[0].revision > outcome.revision);
+    let starts = std::fs::read_to_string(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("initialize-{HEALTHY}.starts")),
+    )
+    .unwrap();
+    assert_eq!(starts.lines().count(), 2);
+    assert!(starts.lines().last().unwrap().contains("false"));
+    fixture.stop(runtime);
+}
+
+#[test]
+fn initialization_failure_retries_once_without_blocking_other_extensions() {
+    let fixture = Fixture::new();
+    std::fs::write(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("fail-initialize-{DELAYED}")),
+        b"fail",
+    )
+    .unwrap();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("healthy").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    wait_until(|| {
+        runtime.extension_info().iter().any(|info| {
+            info.id == DELAYED
+                && !info.pending
+                && info
+                    .lifecycle_error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("failed again after one automatic restart"))
+        })
+    });
+    assert!(
+        runtime
+            .extension_info()
+            .iter()
+            .find(|info| info.id == DELAYED)
+            .unwrap()
+            .lifecycle_error
+            .as_deref()
+            .unwrap()
+            .contains("fixture initialization failed")
+    );
+    assert_eq!(
+        std::fs::read_to_string(
+            fixture
+                .paths
+                .app_data_root()
+                .join(format!("initialize-{DELAYED}.starts"))
+        )
+        .unwrap()
+        .lines()
+        .count(),
+        2
+    );
+    fixture.stop(runtime);
 }

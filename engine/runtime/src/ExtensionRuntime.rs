@@ -25,6 +25,13 @@ impl From<ExtensionProcess> for ExtensionRuntime {
 }
 
 impl ExtensionRuntime {
+    pub(crate) fn observe_exit(&self, observer: Arc<dyn Fn(String) + Send + Sync>) {
+        match self {
+            Self::Nanika(process) => process.observe_exit(observer),
+            Self::Acp(process) => process.observe_exit(observer),
+        }
+    }
+
     pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
         match self {
             Self::Nanika(process) => process.set_shutdown_signal(signal),
@@ -321,6 +328,17 @@ impl ExtensionRuntime {
         }
     }
 
+    /// Read after cleanup has drained diagnostic output.
+    pub(crate) fn failure_details(&self) -> Option<String> {
+        match self {
+            Self::Nanika(process) => {
+                let stderr = process.stderr_tail();
+                (!stderr.trim().is_empty()).then(|| format!("stderr: {stderr}"))
+            }
+            Self::Acp(process) => process.last_error(),
+        }
+    }
+
     pub fn terminate(&mut self) -> io::Result<()> {
         match self {
             Self::Nanika(process) => process.terminate(),
@@ -328,9 +346,9 @@ impl ExtensionRuntime {
         }
     }
 
-    pub fn shutdown(self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
+    pub fn shutdown(&mut self) -> Result<(), SupervisorError> {
         match self {
-            Self::Nanika(process) => process.shutdown(request_id),
+            Self::Nanika(process) => process.shutdown(),
             Self::Acp(process) => process.shutdown(),
         }
     }

@@ -120,13 +120,13 @@ impl FileIconWorker {
             .cloned()
     }
 
-    pub fn shutdown(mut self) {
-        self.stop();
+    pub fn shutdown(mut self) -> Result<(), String> {
+        self._stop()
     }
 
-    fn stop(&mut self) {
+    fn _stop(&mut self) -> Result<(), String> {
         let Some(thread) = self.thread.take() else {
-            return;
+            return Ok(());
         };
         let (lock, ready) = &*self.state;
         lock.lock()
@@ -134,8 +134,9 @@ impl FileIconWorker {
             .shutdown = true;
         ready.notify_one();
         if thread.join().is_err() {
-            eprintln!("clipboard file icon worker panicked");
+            return Err("clipboard file icon worker panicked".to_owned());
         }
+        Ok(())
     }
 }
 
@@ -155,7 +156,9 @@ fn publish_resolution(
 
 impl Drop for FileIconWorker {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self._stop() {
+            eprintln!("{error}");
+        }
     }
 }
 

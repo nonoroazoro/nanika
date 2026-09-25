@@ -103,10 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
-            Message::Shutdown { request_id } => {
-                write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
-                break;
-            }
             message => write_error(
                 &mut output,
                 request_id(&message),
@@ -203,9 +199,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ConfigurationProgress { request_id, .. }
         | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
-        | Message::HostResponse { request_id, .. }
-        | Message::Shutdown { request_id }
-        | Message::ShutdownAck { request_id } => Some(request_id.clone()),
+        | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CandidatesChanged
         | Message::ViewInvalidated { .. }

@@ -158,10 +158,11 @@ pub fn run() -> Result<(), String> {
             view_event,
             open_settings,
             read_settings,
-            acknowledge_settings_progress,
+            acknowledge_settings_delivery,
             settings_ready,
             settings_window_action,
             save_settings,
+            set_extension_enabled,
             pick_settings_directory,
             save_host_settings,
             set_shortcut_recording,
@@ -273,3 +274,7 @@ mod settings_applications_tests;
 #[cfg(test)]
 #[path = "../tests/SettingsSnapshot.rs"]
 mod settings_snapshot_tests;
+
+#[path = "ExtensionLifecycle.rs"]
+mod extension_lifecycle;
+use extension_lifecycle::ExtensionLifecycle;

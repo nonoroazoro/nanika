@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationSaveOutcome {
+    pub revision: u64,
     pub values: BTreeMap<String, Value>,
     pub saved: BTreeMap<String, Value>,
     pub effective: Option<BTreeMap<String, Value>>,

@@ -210,29 +210,53 @@ impl DiscoveryWorker {
         }
     }
 
-    pub fn shutdown(mut self) {
-        self.stop();
-    }
-
-    fn stop(&mut self) {
-        if self.thread.is_none() {
-            return;
-        }
+    pub fn shutdown(mut self, events: mpsc::Receiver<RuntimeEvent>) -> Result<(), String> {
         self.cancel(u64::MAX);
-        if self.commands.send(DiscoveryCommand::Shutdown).is_err() {
-            eprintln!("application discovery worker closed before shutdown was requested");
+        let _ = self.commands.send(DiscoveryCommand::Shutdown);
+        // Keep consuming the bounded event queue while the owner drains. Joining
+        // first can deadlock on a final progress or database failure publication.
+        let mut failure = None;
+        while let Ok(event) = events.recv() {
+            if let RuntimeEvent::ScanFinished {
+                result: Err(error), ..
+            } = event
+            {
+                failure.get_or_insert(error);
+            }
         }
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {
-            eprintln!("application discovery worker panicked");
+            return Err("application discovery worker panicked".to_owned());
         }
+        failure.map_or(Ok(()), Err)
+    }
+
+    fn _stop(&mut self) -> Result<(), String> {
+        if self.thread.is_none() {
+            return Ok(());
+        }
+        self.cancel(u64::MAX);
+        let sent = self.commands.send(DiscoveryCommand::Shutdown).is_ok();
+        if let Some(thread) = self.thread.take()
+            && thread.join().is_err()
+        {
+            return Err("application discovery worker panicked".to_owned());
+        }
+        if !sent {
+            return Err(
+                "application discovery worker closed before shutdown was requested".to_owned(),
+            );
+        }
+        Ok(())
     }
 }
 
 impl Drop for DiscoveryWorker {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self._stop() {
+            eprintln!("{error}");
+        }
     }
 }
 

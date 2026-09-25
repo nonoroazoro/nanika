@@ -3,6 +3,10 @@ use crate::{Candidate, UsageKey};
 #[derive(Debug)]
 pub(crate) enum SearchCommand {
     WakeQuery,
+    RemoveExtension {
+        extension_id: String,
+        completion: std::sync::mpsc::SyncSender<()>,
+    },
     RegisterStaticCatalog {
         extension_id: String,
         candidates: Vec<Candidate>,

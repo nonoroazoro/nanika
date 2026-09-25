@@ -37,6 +37,12 @@
   --border-danger: rgba(170, 76, 68, 0.42);
   --border-danger-hover: rgba(160, 66, 58, 0.62);
 
+  --status-dot-size: 0.5rem;
+  --status-available: #107c10;
+  --status-inactive: #616161;
+  --status-failed: #d13438;
+  --settings-description-size: 0.75rem;
+  --settings-description-line-height: 1rem;
   --font-control: 0.75rem;
   --control-height: 2rem;
   --control-radius: 0.375rem;
@@ -65,6 +71,9 @@
     --accent-foreground: #111827;
     --text-danger: #e5a39c;
     --text-success: #78d9a5;
+    --status-available: #9fd89f;
+    --status-inactive: #adadad;
+    --status-failed: #e37d80;
     --text-primary: #f4f4f5;
     --text-secondary: #a9abb3;
     --text-tertiary: #9599a2;

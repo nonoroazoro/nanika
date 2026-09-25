@@ -149,17 +149,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     };
     // The rejected update retains the previous configured directory; refresh sees new files there.
     assert_eq!(entries.len(), 2);
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    assert!(matches!(
-        read_extension_frame(&mut output).expect("shutdown response"),
-        Some(Message::ShutdownAck { .. })
-    ));
+    drop(input);
     assert!(child.wait().expect("child should exit").success());
     let _ = std::fs::remove_dir_all(root);
 }

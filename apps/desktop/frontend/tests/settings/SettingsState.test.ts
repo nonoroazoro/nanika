@@ -330,3 +330,22 @@ test("canonical equality does not suppress an explicit retry after failed applic
     await state.change("limit", "51");
     assert.equal(writes, 2);
 });
+
+test("lifecycle observations follow accepted writes and preserve uncommitted drafts", async () =>
+{
+    const gate = _gate<SettingsWriteResult<{ enabled: boolean; title: string; }>>();
+    const initial = { enabled: false, title: "Saved" };
+    const state = new SettingsState(_result(initial), async () => gate.promise);
+    const writing = state.change("enabled", true);
+    state.edit("title", "Draft");
+    let latest = { ..._result(initial), effective: null } as SettingsWriteResult<typeof initial>;
+    state.observe(() => latest);
+    latest = { ..._result({ enabled: true, title: "Saved" }), effective: null };
+    state.observe(() => latest);
+    gate.resolve(_result({ enabled: true, title: "Saved" }));
+    await writing;
+    await Promise.resolve();
+    assert.equal(state.effective, null);
+    assert.equal(state.saved.enabled, true);
+    assert.equal(state.values.title, "Draft");
+});

@@ -31,20 +31,23 @@ impl SearchHandle {
         if query.chars().count() > MAX_QUERY_CHARS {
             return Err(SearchQueueError::QueryTooLong);
         }
+        let expected_extensions = expected_extensions.into_iter().collect();
+        // Assign generations in the same critical section that publishes the latest query.
+        let mut pending = self
+            .pending_query
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let generation = self
             .next_generation
             .fetch_add(1, Ordering::Relaxed)
             .wrapping_add(1)
             .max(1);
-        let expected_extensions = expected_extensions.into_iter().collect();
-        *self
-            .pending_query
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(PendingSearchQuery {
+        *pending = Some(PendingSearchQuery {
             generation,
             query,
             expected_extensions,
         });
+        drop(pending);
         match self.commands.try_send(SearchCommand::WakeQuery) {
             Ok(()) | Err(TrySendError::Full(_)) => Ok(generation),
             Err(TrySendError::Disconnected(_)) => Err(SearchQueueError::Closed),
@@ -74,6 +77,18 @@ impl SearchHandle {
             extension_id: extension_id.into(),
             candidates,
         })
+    }
+
+    pub fn remove_extension(
+        &self,
+        extension_id: impl Into<String>,
+    ) -> Result<(), SearchQueueError> {
+        let (completion, receipt) = std::sync::mpsc::sync_channel(1);
+        self.send(SearchCommand::RemoveExtension {
+            extension_id: extension_id.into(),
+            completion,
+        })?;
+        receipt.recv().map_err(|_| SearchQueueError::Closed)
     }
 
     pub fn apply_persisted_execution(

@@ -76,6 +76,35 @@ runtime dependency; move or rename exports only together with their consumers.
   focus movement in compound fields does not submit an intermediate value.
   Navigation and native hiding retain accepted work. No Save/Discard footer or
   saving/success notification is shown.
+- Extension enablement occupies a separate first settings group, followed by the
+  extension's domain configuration. Both use the same row and control treatment.
+  Group spacing expresses the different responsibilities, following Fluent's
+  [spacing and proximity guidance](https://fluent2.microsoft.design/layout).
+  This grouping is a Nanika product decision, not a Fluent-specific extension pattern.
+- Extension lifecycle status pairs a fixed 8px dot with visible text at a 6px gap, following
+  Fluent [Badge](https://fluent2.microsoft.design/components/web/react/core/badge/usage)
+  guidance. Green means available (running or ready on demand), gray means disabled
+  or transitioning, and red means failed. Text preserves the exact state, so color
+  is never the only cue. The 8px diameter, 6px gap and assignment of lifecycle
+  states to three colors are Nanika choices. Values were verified against
+  `microsoft/fluentui` commit `d27922755b`:
+  [Badge sizes and ghost colors](https://github.com/microsoft/fluentui/blob/d27922755b/packages/react-components/react-badge/library/src/components/Badge/useBadgeStyles.styles.ts),
+  [light palette](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/lightColorPalette.ts),
+  [dark palette](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/darkColorPalette.ts),
+  and [global colors](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/global/colors.ts).
+  `--status-available` maps to `colorPaletteGreenForeground3` (#107c10 / #9fd89f),
+  `--status-failed` to `colorPaletteRedForeground3` (#d13438 / #e37d80), and
+  `--status-inactive` to `colorNeutralForeground3` (#616161 / #adadad), with light
+  then dark values. The transparent border preserves the dot in forced colors.
+  The dot plus separate caption is Nanika's composition, not the React component.
+  Keep stable status static: a running extension is not a loading operation.
+  Only color changes use the shared short control transition, respecting hidden
+  activity and reduced motion. Do not fade status text or continuously pulse dots.
+  Following [Wait UX](https://fluent2.microsoft.design/wait-ux), a transition label
+  replaces the last settled label only after one second. Completion and failure
+  appear immediately and cancel the pending label; runtime state is not delayed.
+  A newly opened page without a previous settled state shows the current state.
+  The existing field progress indicator supplies feedback for longer operations.
 - Pending feedback appears after one second below the affected control, with
   stable geometry. Unknown progress uses a small indeterminate bar; real
   completed/total work units use a determinate bar. Progress never unlocks input;

@@ -11,6 +11,9 @@ use nanika_protocol::{
     HostServiceResponse, Message, PROTOCOL_NAME, read_host_frame, write_extension_frame,
 };
 
+#[path = "DiscoveryRuntime.rs"]
+mod discovery_runtime;
+
 #[path = "PendingInvocation.rs"]
 mod pending_invocation;
 
@@ -79,6 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&entries),
         event_sender.clone(),
     )?;
+    let discovery = discovery_runtime::DiscoveryRuntime::new(events, worker);
     write_extension_frame(
         &mut output,
         &Message::Initialized {
@@ -91,7 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut configuration_requests = HashMap::<String, PendingConfiguration>::new();
     let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
     let mut latest_generation = 1_u64;
-    while let Ok(event) = events.recv() {
+    while let Ok(event) = discovery.receive() {
         match event {
             RuntimeEvent::Protocol(message) => match message {
                 Message::Query {
@@ -105,13 +109,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Message::PrepareEntries {
                     generation,
                     entry_ids,
-                } => worker.prepare_entries(generation, entry_ids),
+                } => discovery.worker.prepare_entries(generation, entry_ids),
                 Message::Refresh {
                     request_id,
                     generation,
                 } => {
                     latest_generation = latest_generation.max(generation);
-                    if let Err(message) = worker.refresh(Some(request_id.clone()), generation) {
+                    if let Err(message) = discovery
+                        .worker
+                        .refresh(Some(request_id.clone()), generation)
+                    {
                         write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
                     } else {
                         refresh_requests.insert(request_id, generation);
@@ -122,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     generation,
                 } => {
                     if refresh_requests.get(&request_id) == Some(&generation) {
-                        worker.cancel(generation);
+                        discovery.worker.cancel(generation);
                     }
                 }
                 Message::Invoke {
@@ -179,7 +186,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             std::mem::replace(&mut *current, updated)
                         };
                         latest_generation = latest_generation.saturating_add(1);
-                        match worker.refresh(Some(request_id.clone()), latest_generation) {
+                        match discovery
+                            .worker
+                            .refresh(Some(request_id.clone()), latest_generation)
+                        {
                             Ok(()) => {
                                 configuration_requests.insert(
                                     request_id,
@@ -244,10 +254,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(pending) = pending_invocations.remove(&service_request_id) {
                         write_error(&mut output, Some(pending.request_id), &code, &message)?;
                     }
-                }
-                Message::Shutdown { request_id } => {
-                    write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
-                    break;
                 }
                 message => write_error(
                     &mut output,
@@ -385,7 +391,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    worker.shutdown();
+    discovery.shutdown().map_err(std::io::Error::other)?;
     Ok(())
 }
 
@@ -471,9 +477,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ConfigurationProgress { request_id, .. }
         | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
-        | Message::HostResponse { request_id, .. }
-        | Message::Shutdown { request_id }
-        | Message::ShutdownAck { request_id } => Some(request_id.clone()),
+        | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Initialized { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CandidatesChanged

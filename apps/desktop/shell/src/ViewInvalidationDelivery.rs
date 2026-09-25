@@ -59,7 +59,8 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
                     .filter(|session| session.id == session_id)
                     .and_then(|session| session.navigation.stack.last())
                     .filter(|route| {
-                        route.extension_id == invalidation.extension_id
+                        route.instance_id == invalidation.instance_id
+                            && route.extension_id == invalidation.extension_id
                             && route.view_id == invalidation.view_id
                     })
                     .cloned()
@@ -71,6 +72,7 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
         let result = runtime
             .view_event(
                 &route.extension_id,
+                route.instance_id,
                 route.generation,
                 &route.view_id,
                 route.revision,
@@ -102,7 +104,9 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
             continue;
         };
         let mut state = shared.lock().unwrap_or_else(|error| error.into_inner());
-        apply_completion(&mut state, session_id, &route, completion.revision, view);
+        runtime.with_extension_instance(&route.extension_id, route.instance_id, || {
+            apply_completion(&mut state, session_id, &route, completion.revision, view);
+        });
     }
 }
 
@@ -119,7 +123,8 @@ pub(crate) fn apply_completion(
         .filter(|session| session.id == session_id)
         .and_then(|session| session.navigation.stack.last_mut())
         .filter(|current| {
-            current.route_id == route.route_id
+            current.instance_id == route.instance_id
+                && current.route_id == route.route_id
                 && current.revision == route.revision
                 && current.extension_id == route.extension_id
                 && current.view_id == route.view_id

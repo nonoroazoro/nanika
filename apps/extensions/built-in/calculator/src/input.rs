@@ -51,14 +51,9 @@ pub(crate) fn spawn() -> std::io::Result<mpsc::Receiver<Result<ProtocolInput, Fr
                     }
                     active = Some((request_id.clone(), *generation, Arc::clone(&cancelled)));
                 }
-                let shutdown = matches!(message, Message::Shutdown { .. });
-                if shutdown && let Some((_, _, cancelled)) = &active {
-                    cancelled.store(true, Ordering::Release);
-                }
                 if sender
                     .send(Ok(ProtocolInput { message, cancelled }))
                     .is_err()
-                    || shutdown
                 {
                     break;
                 }

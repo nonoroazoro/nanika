@@ -54,6 +54,24 @@ fn main() {
         eprintln!("ACP dummy extension failed: {error}");
         std::process::exit(1);
     }
+    if let Some(marker) = arguments
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--cleanup="))
+    {
+        let marker = std::path::Path::new(marker);
+        std::fs::write(marker.with_extension("entered"), b"cleanup").unwrap();
+        while !marker.with_extension("release").exists() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if arguments
+            .iter()
+            .any(|argument| argument == "--fail-cleanup")
+        {
+            eprintln!("ACP fixture durable cleanup failed");
+            std::process::exit(3);
+        }
+        std::fs::write(marker.with_extension("completed"), b"durable").unwrap();
+    }
 }
 
 async fn run() -> Result<()> {

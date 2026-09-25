@@ -51,15 +51,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut deferred_configuration = None;
     let mut pending_invoke = None;
     let mut previous_result = None;
+    let mut initialized_id = None;
     let mut open_views = std::collections::HashSet::new();
     let mut input = stdin().lock();
     let mut output = stdout().lock();
 
     while let Some(message) = read_host_frame(&mut input)? {
         match message {
-            Message::Initialize { request_id, .. } => {
+            Message::Initialize {
+                request_id,
+                configuration,
+                ..
+            } => {
+                initialized_id = request_id.strip_prefix("initialize-").map(str::to_owned);
                 if let Some(root) = data_root(&arguments) {
                     std::fs::write(root.join(format!("{request_id}.entered")), b"initializing")?;
+                    use std::io::Write;
+                    let mut starts = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(root.join(format!("{request_id}.starts")))?;
+                    writeln!(starts, "{configuration:?}")?;
+                    if root.join(format!("fail-{request_id}")).exists() {
+                        return Err(std::io::Error::other("fixture initialization failed").into());
+                    }
                 }
                 wait_for_release(&arguments, &request_id)?;
                 write_extension_frame(
@@ -79,10 +94,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     )?;
                 }
-            }
-            Message::Shutdown { request_id } => {
-                write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
-                return Ok(());
             }
             Message::Query {
                 request_id,
@@ -135,6 +146,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )],
                     },
                 )?;
+                let exit_once = query == "fixture.exit-once"
+                    && data_root(&arguments).is_some_and(|root| {
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(root.join(format!(
+                                "exited-{}",
+                                initialized_id.as_deref().unwrap_or("unknown")
+                            )))
+                            .is_ok()
+                    });
+                if query == "fixture.exit" || exit_once {
+                    return Ok(());
+                }
             }
             Message::Invoke {
                 request_id,
@@ -142,6 +167,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 entry_id,
                 action_id,
             } => {
+                wait_for_release(&arguments, &request_id)?;
                 if let Some(marker) = &cancellation_invoke {
                     std::fs::write(marker, request_id.as_bytes())?;
                     if let Some(previous) = &previous_result {
@@ -370,7 +396,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::HostRequest { .. }
             | Message::HostResponse { .. }
             | Message::Initialized { .. }
-            | Message::ShutdownAck { .. }
             | Message::ConfigurationProgress { .. }
             | Message::ConfigurationApplied { .. }
             | Message::Error { .. } => write_extension_frame(
@@ -388,6 +413,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let _ = io::Write::flush(&mut output);
+    if let (Some(root), Some(id)) = (data_root(&arguments), initialized_id) {
+        let cleanup = format!("cleanup-{id}");
+        std::fs::write(root.join(format!("{cleanup}.entered")), b"draining")?;
+        wait_for_release(&arguments, &cleanup)?;
+        if root.join(format!("fail-{cleanup}")).exists() {
+            return Err(std::io::Error::other("fixture cleanup persistence failed").into());
+        }
+        std::fs::write(root.join(format!("{cleanup}.completed")), b"durable")?;
+    }
     Ok(())
 }
 

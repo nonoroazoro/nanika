@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsSnapshot {
+    pub(crate) lifecycle_revision: u64,
     pub(crate) maximized: bool,
     pub(crate) version: &'static str,
     pub(crate) general: nanika_config::LauncherPreferences,
@@ -53,10 +54,16 @@ pub(crate) struct SettingsApplicationUpdate {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum SettingsEvent {
+    Lifecycle {
+        #[serde(rename = "deliveryId")]
+        delivery_id: u64,
+        revision: u64,
+        extensions: Vec<crate::ExtensionLifecycle>,
+    },
     Application {
         update: SettingsApplicationUpdate,
-        #[serde(rename = "progressDeliveryId", skip_serializing_if = "Option::is_none")]
-        progress_delivery_id: Option<u64>,
+        #[serde(rename = "deliveryId", skip_serializing_if = "Option::is_none")]
+        delivery_id: Option<u64>,
     },
     Closed,
     WindowState {

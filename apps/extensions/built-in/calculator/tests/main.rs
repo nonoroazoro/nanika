@@ -83,17 +83,7 @@ fn calculator_process_contributes_and_copies_through_the_host() {
         read_extension_frame(&mut output).expect("action result"),
         Some(Message::Result { .. })
     ));
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    assert!(matches!(
-        read_extension_frame(&mut output).expect("shutdown response"),
-        Some(Message::ShutdownAck { .. })
-    ));
+    drop(input);
     assert!(child.wait().expect("child should exit").success());
 }
 

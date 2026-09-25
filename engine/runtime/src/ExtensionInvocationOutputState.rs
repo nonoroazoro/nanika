@@ -12,19 +12,19 @@ pub(crate) struct ExtensionInvocationOutputState {
 impl ExtensionInvocationOutputState {
     pub(crate) fn append(
         &mut self,
+        instance_id: u64,
         invocation_id: u64,
         extension_id: &str,
         generation: u64,
         chunk: &str,
     ) -> bool {
-        if let Some(output) = self
-            .pending
-            .back_mut()
-            .filter(|output| output.invocation_id == invocation_id)
-        {
+        if let Some(output) = self.pending.back_mut().filter(|output| {
+            output.invocation_id == invocation_id && output.instance_id == instance_id
+        }) {
             output.text.push_str(chunk);
         } else {
             self.pending.push_back(ExtensionInvocationOutput {
+                instance_id,
                 invocation_id,
                 extension_id: extension_id.to_owned(),
                 generation,

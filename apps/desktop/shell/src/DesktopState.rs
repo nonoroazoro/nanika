@@ -12,7 +12,7 @@ pub(crate) struct DesktopState {
     next_session_id: AtomicU64,
     next_settings_request: AtomicU64,
     settings_operation_lock: Mutex<()>,
-    settings_applications: Mutex<crate::SettingsApplications>,
+    settings_applications: Arc<Mutex<crate::SettingsApplications>>,
     stopping: AtomicBool,
     operations: RwLock<()>,
     initializer: Mutex<Option<JoinHandle<()>>>,
@@ -166,9 +166,13 @@ impl DesktopState {
         let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
         let (wakes, receiver) = mpsc::sync_channel(1);
         let worker_state = Arc::clone(&shared);
+        let settings_applications = Arc::new(Mutex::new(crate::SettingsApplications::default()));
+        let delivery_settings = Arc::clone(&settings_applications);
         let dispatcher = std::thread::Builder::new()
             .name("nanika-search-delivery".to_owned())
-            .spawn(move || crate::search_delivery::run_delivery(&worker_state, receiver))
+            .spawn(move || {
+                crate::search_delivery::run_delivery(&worker_state, receiver, &delivery_settings)
+            })
             .map_err(|error| error.to_string())?;
         let (view_invalidation_wakes, view_invalidation_receiver) = mpsc::sync_channel(1);
         let invalidation_state = Arc::clone(&shared);
@@ -187,7 +191,7 @@ impl DesktopState {
             next_session_id: AtomicU64::new(1),
             next_settings_request: AtomicU64::new(1),
             settings_operation_lock: Mutex::new(()),
-            settings_applications: Mutex::new(crate::SettingsApplications::default()),
+            settings_applications,
             stopping: AtomicBool::new(false),
             operations: RwLock::new(()),
             initializer: Mutex::new(None),
@@ -403,11 +407,12 @@ impl DesktopState {
                 &query,
                 invocation,
             )?;
+            let instance_id = completion.instance_id;
             apply_invocation_completion(completion, |effect| {
-                self.apply_navigation(
+                self._apply_navigation(
                     request.session_id,
                     &runtime,
-                    &request.extension_id,
+                    (&request.extension_id, instance_id),
                     generation,
                     effect,
                     false,
@@ -465,6 +470,7 @@ impl DesktopState {
             let completion = if let crate::ViewOperation::Event { event } = request.operation {
                 runtime.view_event(
                     &route.extension_id,
+                    route.instance_id,
                     route.generation,
                     &route.view_id,
                     route.revision,
@@ -473,6 +479,7 @@ impl DesktopState {
             } else {
                 runtime.close_view(
                     &route.extension_id,
+                    route.instance_id,
                     route.generation,
                     &route.view_id,
                     route.revision,
@@ -499,13 +506,15 @@ impl DesktopState {
                     .stack
                     .last_mut()
                     .ok_or("No extension view is open.")?;
-                current.view = Arc::new(view);
-                current.revision = completion.revision;
+                runtime.with_extension_instance(&route.extension_id, route.instance_id, || {
+                    current.view = Arc::new(view);
+                    current.revision = completion.revision;
+                });
             }
-            self.apply_navigation(
+            self._apply_navigation(
                 request.session_id,
                 &runtime,
-                &route.extension_id,
+                (&route.extension_id, route.instance_id),
                 route.generation,
                 completion.effect,
                 closing,
@@ -525,15 +534,19 @@ impl DesktopState {
         })
     }
 
-    fn apply_navigation(
+    fn _apply_navigation(
         &self,
         session_id: u64,
         runtime: &nanika_host::RuntimeService,
-        extension_id: &str,
+        origin: (&str, u64),
         generation: u64,
         effect: nanika_protocol::NavigationEffect,
         already_closed: bool,
     ) -> Result<(), String> {
+        let (extension_id, instance_id) = origin;
+        if runtime.instance_id(extension_id) != Some(instance_id) {
+            return Ok(());
+        }
         let routes = {
             let state = self
                 .shared
@@ -561,7 +574,14 @@ impl DesktopState {
                     view_id, revision, ..
                 } = effect
                 {
-                    close_runtime_view(runtime, extension_id, generation, &view_id, revision)?;
+                    close_runtime_view(
+                        runtime,
+                        extension_id,
+                        instance_id,
+                        generation,
+                        &view_id,
+                        revision,
+                    )?;
                 }
                 return Ok(());
             }
@@ -570,6 +590,7 @@ impl DesktopState {
             close_runtime_view(
                 runtime,
                 &route.extension_id,
+                route.instance_id,
                 route.generation,
                 &route.view_id,
                 route.revision,
@@ -603,7 +624,13 @@ impl DesktopState {
             .as_mut()
             .filter(|session| session.id == session_id)
         {
-            session.navigation.apply(extension_id, generation, effect)
+            runtime
+                .with_extension_instance(extension_id, instance_id, || {
+                    session
+                        .navigation
+                        .apply(extension_id, instance_id, generation, effect)
+                })
+                .unwrap_or(Ok(()))
         } else {
             Ok(())
         };
@@ -611,17 +638,23 @@ impl DesktopState {
         if (retired || result.is_err())
             && let Some((view_id, revision)) = cleanup
         {
-            close_runtime_view(runtime, extension_id, generation, &view_id, revision).map_err(
-                |error| {
-                    format!(
-                        "{} Cleanup failed: {error}",
-                        result
-                            .as_ref()
-                            .err()
-                            .map_or("The originating window session has closed.", String::as_str)
-                    )
-                },
-            )?;
+            close_runtime_view(
+                runtime,
+                extension_id,
+                instance_id,
+                generation,
+                &view_id,
+                revision,
+            )
+            .map_err(|error| {
+                format!(
+                    "{} Cleanup failed: {error}",
+                    result
+                        .as_ref()
+                        .err()
+                        .map_or("The originating window session has closed.", String::as_str)
+                )
+            })?;
         }
         result
     }
@@ -646,7 +679,7 @@ impl DesktopState {
 
     pub(crate) fn install_runtime(
         &self,
-        runtime: nanika_host::RuntimeService,
+        runtime: Arc<nanika_host::RuntimeService>,
     ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
         let wakes = self.wakes.clone();
@@ -673,7 +706,7 @@ impl DesktopState {
         if let Some(session) = &mut state.session {
             session.generation = runtime.begin_query(session.query.clone())?;
         }
-        state.runtime = Some(Arc::new(runtime));
+        state.runtime = Some(runtime);
         drop(state);
         self.wake();
         Ok(())
@@ -746,30 +779,49 @@ impl DesktopState {
             .runtime
             .clone()
             .ok_or("Nanika is still starting. Try loading Settings again.")?;
-        let mut configurations = runtime
-            .extension_configurations()
-            .into_iter()
-            .map(|configuration| (configuration.extension_id.clone(), configuration))
-            .collect::<std::collections::BTreeMap<_, _>>();
-        let applications = self
+        let mut applications = self
             .settings_applications
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let extensions = runtime
-            .extension_info()
+        applications.refresh_lifecycle(&runtime);
+        let extensions = applications
+            .lifecycle
             .iter()
-            .map(|info| crate::ExtensionSettings {
-                configuration: configurations.remove(&info.id),
-                info: info.clone(),
-                application: applications.latest.get(&info.id).cloned(),
+            .map(|entry| crate::ExtensionSettings {
+                configuration: entry.configuration.clone(),
+                info: entry.info.clone(),
+                application: applications.latest.get(&entry.info.id).cloned(),
             })
             .collect();
         Ok(crate::SettingsSnapshot {
+            lifecycle_revision: applications.lifecycle_revision,
             maximized: false,
             version: env!("CARGO_PKG_VERSION"),
             general,
             extensions,
         })
+    }
+
+    pub(crate) fn set_extension_enabled(
+        &self,
+        extension_id: &str,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
+        if !nanika_foundation::is_valid_extension_id(extension_id) {
+            return Err("Invalid extension identity.".into());
+        }
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone()
+            .ok_or("Nanika is still starting.")?;
+        let receipt = runtime.set_extension_enabled(extension_id, enabled)?;
+        receipt
+            .recv()
+            .map_err(|_| "Extension lifecycle closed without a result.".to_owned())?
     }
 
     pub(crate) fn save_settings(
@@ -825,7 +877,7 @@ impl DesktopState {
         self._deliver_settings(delivery);
     }
 
-    pub(crate) fn acknowledge_settings_progress(&self, delivery_id: u64) {
+    pub(crate) fn acknowledge_settings_delivery(&self, delivery_id: u64) {
         let delivery = self
             .settings_applications
             .lock()
@@ -988,12 +1040,16 @@ pub(crate) fn apply_invocation_completion(
 fn close_runtime_view(
     runtime: &nanika_host::RuntimeService,
     extension_id: &str,
+    instance_id: u64,
     generation: u64,
     view_id: &str,
     revision: u64,
 ) -> Result<(), String> {
+    if runtime.instance_id(extension_id) != Some(instance_id) {
+        return Ok(());
+    }
     runtime
-        .close_view(extension_id, generation, view_id, revision)?
+        .close_view(extension_id, instance_id, generation, view_id, revision)?
         .recv()
         .map_err(|_| "Extension closed without acknowledging view closure.".to_owned())??;
     Ok(())
@@ -1011,6 +1067,7 @@ fn retire_views(runtime: Option<Arc<nanika_host::RuntimeService>>, session: Opti
             if let Err(error) = close_runtime_view(
                 &runtime,
                 &route.extension_id,
+                route.instance_id,
                 route.generation,
                 &route.view_id,
                 route.revision,

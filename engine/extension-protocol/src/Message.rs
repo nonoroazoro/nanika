@@ -108,12 +108,6 @@ pub enum Message {
         generation: u64,
         response: HostServiceResponse,
     },
-    Shutdown {
-        request_id: String,
-    },
-    ShutdownAck {
-        request_id: String,
-    },
     Error {
         request_id: Option<String>,
         code: String,

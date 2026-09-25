@@ -100,23 +100,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 ..
-            } => match worker.last_error() {
-                Some(message) => send_error(
-                    &output,
-                    Some(request_id),
-                    "clipboard_worker_failed",
-                    &message,
-                )?,
-                None => send_frame(
-                    &output,
-                    &Message::Snapshot {
-                        request_id,
-                        generation,
-                        complete: true,
-                        entries: Vec::new(),
-                    },
-                )?,
-            },
+            } => send_frame(
+                &output,
+                &Message::Snapshot {
+                    request_id,
+                    generation,
+                    complete: true,
+                    entries: Vec::new(),
+                },
+            )?,
             Message::Invoke {
                 request_id,
                 generation,
@@ -212,11 +204,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &message,
                 )?,
             },
-            Message::Shutdown { request_id } => {
-                notifications_enabled.store(false, Ordering::Release);
-                send_frame(&output, &Message::ShutdownAck { request_id })?;
-                break;
-            }
             message => send_error(
                 &output,
                 request_id(&message),
@@ -225,9 +212,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
         }
     }
-    monitor.shutdown();
-    icon_worker.shutdown();
-    worker.shutdown();
+    notifications_enabled.store(false, Ordering::Release);
+    let errors = [
+        monitor.shutdown(),
+        icon_worker.shutdown(),
+        worker.shutdown(),
+    ]
+    .into_iter()
+    .filter_map(Result::err)
+    .collect::<Vec<_>>();
+    if !errors.is_empty() {
+        return Err(std::io::Error::other(errors.join("; ")).into());
+    }
     Ok(())
 }
 
@@ -500,9 +496,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ConfigurationProgress { request_id, .. }
         | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
-        | Message::HostResponse { request_id, .. }
-        | Message::Shutdown { request_id }
-        | Message::ShutdownAck { request_id } => Some(request_id.clone()),
+        | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CandidatesChanged
         | Message::ViewInvalidated { .. }

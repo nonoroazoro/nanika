@@ -1,6 +1,6 @@
 import type { ContributionIcon } from "./ContributionIcon";
 import type { OperationProgress } from "./OperationProgress";
-import type { SettingsWriteResult } from "../settings/SettingsWriteResult";
+import type { ConfigurationWriteResult } from "../settings/ConfigurationWriteResult";
 
 export type ConfigurationValue =
     | {
@@ -44,12 +44,17 @@ export interface ExtensionSettings
     name: string;
     icon: ContributionIcon;
     enabled: boolean;
+    pending: boolean;
+    state: "disabled" | "dormant" | "failed" | "ready" | "starting" | "stopping";
+    instanceId: number | null;
+    lifecycleError: string | null;
     configurationError: string | null;
     application: SettingsApplicationUpdate | null;
     configuration: {
         contribution: { properties: Record<string, ConfigurationProperty>; title: string; };
         effective: Record<string, ConfigurationValue> | null;
         extensionId: string;
+        revision: number;
         saved: Record<string, ConfigurationValue>;
         values: Record<string, ConfigurationValue>;
     } | null;
@@ -57,6 +62,7 @@ export interface ExtensionSettings
 
 export interface SettingsSnapshot
 {
+    lifecycleRevision: number;
     maximized: boolean;
     version: string;
     general: HostPreferences;
@@ -76,7 +82,7 @@ export type StartupStatus = "disabled" | "enabled" | "needsRepair" | "notFound" 
 export type SettingsSaveResult =
     | { error: string; status: "failed"; }
     | { progress: OperationProgress | null; status: "running"; }
-    | ({ status: "completed"; } & SettingsWriteResult<Record<string, ConfigurationValue>>);
+    | ({ status: "completed"; } & ConfigurationWriteResult);
 
 export interface SettingsApplicationUpdate
 {

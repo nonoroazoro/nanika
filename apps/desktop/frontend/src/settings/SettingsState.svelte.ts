@@ -29,6 +29,7 @@ export class SettingsState<T extends object>
     private readonly _drafts = new SvelteSet<keyof T>();
     private readonly _failed = new SvelteSet<keyof T>();
     private _confirmed: T;
+    private _observation: (() => SettingsWriteResult<T>) | undefined;
     private _refreshing: Promise<void> | undefined;
 
     constructor(
@@ -152,6 +153,28 @@ export class SettingsState<T extends object>
             this._refreshing = undefined;
         });
         return this._refreshing;
+    }
+
+    /**
+     * Applies the latest authoritative observation after accepted edits settle.
+     * The reader is evaluated at delivery so coalesced lifecycle updates stay current.
+     */
+    observe(read: () => SettingsWriteResult<T>): void
+    {
+        const queued = this._observation !== undefined;
+        this._observation = read;
+        if (!queued)
+        {
+            this._pending = this._pending.then(() =>
+            {
+                const latest = this._observation;
+                this._observation = undefined;
+                if (latest)
+                {
+                    this._reconcile(latest());
+                }
+            });
+        }
     }
 
     private async _run(key: keyof T, write: () => Promise<SettingsWriteResult<T>>): Promise<void>

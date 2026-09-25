@@ -42,14 +42,15 @@ pub(crate) async fn drain_stderr(
     mut stderr: ChildStderr,
     tail: Arc<Mutex<VecDeque<u8>>>,
     extension_id: String,
-) {
+) -> io::Result<()> {
     let mut chunk = [0_u8; 4_096];
     loop {
         let read = match stderr.read(&mut chunk).await {
-            Ok(0) => return,
+            Ok(0) => return Ok(()),
             Err(error) => {
-                tracing::error!(%extension_id, %error, "could not read ACP extension stderr");
-                return;
+                return Err(io::Error::other(format!(
+                    "could not read ACP extension stderr: {error}"
+                )));
             }
             Ok(read) => read,
         };

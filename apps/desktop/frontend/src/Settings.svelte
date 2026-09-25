@@ -1,4 +1,7 @@
 <script lang="ts">
+import Switch from "./components/Switch.svelte";
+import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
+import { SvelteMap } from "svelte/reactivity";
 import Button from "./components/Button.svelte";
 import { onMount, tick } from "svelte";
 
@@ -8,21 +11,17 @@ import DirectoryList from "./settings/DirectoryList.svelte";
 import GeneralSettings from "./settings/GeneralSettings.svelte";
 import SettingsToast from "./settings/SettingsToast.svelte";
 import SettingsField from "./settings/SettingsField.svelte";
+import ExtensionStatus from "./settings/ExtensionStatus.svelte";
 import { SettingsApplications } from "./settings/SettingsApplications";
 import { SettingsState } from "./settings/SettingsState.svelte";
 import { StartupSettings } from "./settings/StartupSettings.svelte";
 import { uiActivity } from "./ui/activity";
-import { prepareSetting } from "./settings/validation";
+import { ExtensionSettingsState } from "./settings/ExtensionSettingsState.svelte";
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
 import type { SettingsWindowAction } from "./types/SettingsWindowAction";
 import { orderedProperties } from "./settings/properties";
 import ContributionIconTile from "./components/ContributionIconTile.svelte";
-import type {
-    ConfigurationValue,
-    HostPreferences,
-    SettingsApplicationUpdate,
-    SettingsSnapshot
-} from "./types/Settings";
+import type { ExtensionSettings, HostPreferences, SettingsApplicationUpdate, SettingsSnapshot } from "./types/Settings";
 
 let notification = $state<string | null>(null);
 let customControls = $state(false);
@@ -31,11 +30,14 @@ let windowError = $state<string | null>(null);
 let snapshot = $state.raw<SettingsSnapshot | null>(null);
 let host = $state.raw<SettingsState<HostPreferences> | null>(null);
 const startup = new StartupSettings(settingsBridge.readStartup, settingsBridge.setStartup, _notify);
-let states = $state.raw<Record<string, SettingsState<Record<string, ConfigurationValue>>>>({});
+let states = $state.raw<Record<string, ExtensionSettingsState>>({});
 let selection = $state("general");
 let loading = $state(true);
 let loadError = $state(false);
 const applications = new SettingsApplications();
+const toggling = new SvelteMap<string, number>();
+let lifecycleRevision = 0;
+let lifecycle: ExtensionLifecycle[] = [];
 const extensions = $derived(snapshot?.extensions ?? []);
 const selected = $derived(extensions.find(extension => extension.id === selection) ?? null);
 const properties = $derived(orderedProperties(selected?.configuration?.contribution.properties ?? {}));
@@ -86,8 +88,23 @@ async function _load(): Promise<void>
             {
                 maximized = next;
             },
-            error => console.error("Settings progress receipt failed", error)
+            error => console.error("Settings progress receipt failed", error),
+            _lifecycle
         );
+        if (lifecycleRevision > snapshot.lifecycleRevision)
+        {
+            const updates = new Map(lifecycle.map(extension => [extension.id, extension]));
+            snapshot = {
+                ...snapshot,
+                lifecycleRevision,
+                extensions: snapshot.extensions.map(extension => ({ ...extension, ...updates.get(extension.id) }))
+            };
+        }
+        else
+        {
+            lifecycleRevision = snapshot.lifecycleRevision;
+            lifecycle = snapshot.extensions;
+        }
         maximized = snapshot.maximized;
         host = new SettingsState(
             { values: snapshot.general, saved: snapshot.general, effective: snapshot.general, error: null },
@@ -104,43 +121,10 @@ async function _load(): Promise<void>
                 applications.record(extension.application);
             }
         }
-        states = Object.fromEntries(snapshot.extensions.flatMap(extension =>
-        {
-            const configuration = extension.configuration;
-            if (!configuration)
-            {
-                return [];
-            }
-            const schemas = configuration.contribution.properties;
-            const application = applications.current(extension.id);
-            return [[
-                extension.id,
-                new SettingsState(
-                    application?.result.status === "completed"
-                        ? application.result
-                        : { ...configuration, error: null },
-                    async (key, value) =>
-                    {
-                        const update = await settingsBridge.save(extension.id, key, value);
-                        return await applications.completion(update);
-                    },
-                    (key, draft) => prepareSetting(schemas, key, draft),
-                    _notify
-                )
-            ]];
-        }));
+        states = {};
         for (const extension of snapshot.extensions)
         {
-            const application = applications.current(extension.id);
-            const state = states[extension.id];
-            if (state && application?.result.status === "running")
-            {
-                if (application.result.progress)
-                {
-                    state.progress.set(application.key, application.result.progress);
-                }
-                state.resume(application.key, applications.completion(application));
-            }
+            _observeConfiguration(extension);
         }
     }
     catch (error)
@@ -175,6 +159,91 @@ function _application(update: SettingsApplicationUpdate): void
         {
             state.progress.set(update.key, update.result.progress);
         }
+    }
+}
+
+function _lifecycle(revision: number, updates: ExtensionLifecycle[]): void
+{
+    if (revision <= lifecycleRevision)
+    {
+        return;
+    }
+    lifecycleRevision = revision;
+    lifecycle = updates;
+    _mergeLifecycle();
+}
+
+function _mergeLifecycle(): void
+{
+    if (!snapshot)
+    {
+        return;
+    }
+    const updates = new Map(lifecycle.map(extension => [extension.id, extension]));
+    for (const extension of lifecycle)
+    {
+        _observeConfiguration(extension);
+    }
+    snapshot = {
+        ...snapshot,
+        lifecycleRevision,
+        extensions: snapshot.extensions.map(extension => ({
+            ...extension,
+            ...updates.get(extension.id)
+        }))
+    };
+}
+
+function _observeConfiguration(extension: Pick<ExtensionSettings, "id" | "configuration">): void
+{
+    const configuration = extension.configuration;
+    if (!configuration)
+    {
+        return;
+    }
+    const existing = states[extension.id];
+    if (existing)
+    {
+        existing.observeConfiguration(configuration);
+        return;
+    }
+    const application = applications.current(extension.id);
+    const previous = application?.result;
+    const state = new ExtensionSettingsState(
+        configuration,
+        previous && previous.status !== "running" ? previous.error : null,
+        async (key, value) => applications.completion(await settingsBridge.save(extension.id, key, value)),
+        _notify
+    );
+    if (application?.result.status === "running")
+    {
+        if (application.result.progress)
+        {
+            state.progress.set(application.key, application.result.progress);
+        }
+        state.resumeConfiguration(application.key, applications.completion(application));
+    }
+    else if (application?.result.status === "completed")
+    {
+        state.observeConfiguration({ ...configuration, ...application.result });
+    }
+    states = { ...states, [extension.id]: state };
+}
+
+async function _setEnabled(id: string, enabled: boolean): Promise<void>
+{
+    toggling.set(id, Date.now());
+    try
+    {
+        await settingsBridge.setEnabled(id, enabled);
+    }
+    catch (error)
+    {
+        _notify(String(error));
+    }
+    finally
+    {
+        toggling.delete(id);
     }
 }
 
@@ -284,23 +353,46 @@ function _windowAction(action: SettingsWindowAction): void
                         <div class="extension-heading">
                             <span class="heading-icon"><ContributionIconTile kind={selected.icon} /></span><div>
                                 <h1>{selected.name}</h1>
-                                {#if !selected.enabled}<p>Disabled</p>{/if}
+                                {#key selected.id}<ExtensionStatus lifecycleState={selected.state} />{/key}
                             </div>
                         </div>
                     </header>
-                    {#if selected.configurationError}
-                        <p role="alert">{selected.configurationError}</p>
-                    {:else if properties.length === 0}
-                        <p>No settings available for this extension.</p>
-                    {:else}
-                        {#key selected.id}
-                            <form
-                                onsubmit={event =>
-                                {
-                                    event.preventDefault();
-                                    selectedState?.commitEdits();
-                                }}
-                            >
+                    {#if selected.lifecycleError}<p role="alert">{selected.lifecycleError}</p>{/if}
+                    {#key selected.id}
+                        <form
+                            onsubmit={event =>
+                            {
+                                event.preventDefault();
+                                selectedState?.commitEdits();
+                            }}
+                        >
+                            <div class="fields">
+                                <section class="property scalar" aria-labelledby="extension-enabled-title">
+                                    <div class="property-copy">
+                                        <h2 id="extension-enabled-title">Enable extension</h2>
+                                    </div>
+                                    <div class="property-control">
+                                        <SettingsField
+                                            busy={selected.pending || toggling.has(selected.id)}
+                                            label={`Enable ${selected.name}`}
+                                            startedAt={toggling.get(selected.id)}
+                                        >
+                                            <Switch
+                                                checked={selected.enabled}
+                                                label={`Enable ${selected.name}`}
+                                                onChange={enabled =>
+                                                {
+                                                    if (selected)
+                                                    {
+                                                        void _setEnabled(selected.id, enabled);
+                                                    }
+                                                }}
+                                            />
+                                        </SettingsField>
+                                    </div>
+                                </section>
+                            </div>
+                            {#if !selected.configurationError && properties.length > 0}
                                 <div class="fields">
                                     {#each properties as [key, property] (key)}
                                         <section
@@ -355,9 +447,10 @@ function _windowAction(action: SettingsWindowAction): void
                                         </section>
                                     {/each}
                                 </div>
-                            </form>
-                        {/key}
-                    {/if}
+                            {/if}
+                            {#if selected.configurationError}<p role="alert">{selected.configurationError}</p>{/if}
+                        </form>
+                    {/key}
                 </div>
             {/if}
         </section>

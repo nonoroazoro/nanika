@@ -190,17 +190,6 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             ..
         }) if request_id == "invoke-application-invalid" && code == "invalid_host_response"
     ));
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown-application".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    assert!(matches!(
-        read_response(&mut output, "shutdown response"),
-        Some(Message::ShutdownAck { .. })
-    ));
     drop(input);
     assert!(child.wait().expect("child should exit").success());
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -273,21 +262,6 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
             .iter()
             .any(|entry| entry.title == "Nanika Sample")
     );
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown-application-failure".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    loop {
-        if matches!(
-            read_response(&mut output, "shutdown response"),
-            Some(Message::ShutdownAck { .. })
-        ) {
-            break;
-        }
-    }
     drop(input);
     assert!(child.wait().expect("child should exit").success());
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -357,17 +331,6 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     assert!(updated.iter().any(|entry| entry.title == "Nanika Sample"));
     prepare_entries(&mut input, 2, &updated);
 
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown-configuration".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    assert!(matches!(
-        read_response(&mut output, "shutdown response"),
-        Some(Message::ShutdownAck { .. })
-    ));
     drop(input);
     assert!(child.wait().expect("child should exit").success());
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -618,17 +581,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
             .iter()
             .any(|entry| entry.title == "Nanika Sample")
     );
-    write_host_frame(
-        &mut input,
-        &Message::Shutdown {
-            request_id: "shutdown-partial".to_owned(),
-        },
-    )
-    .unwrap();
-    assert!(matches!(
-        read_response(&mut output, "shutdown"),
-        Some(Message::ShutdownAck { .. })
-    ));
+    drop(input);
     assert!(child.wait().unwrap().success());
     let mut log = String::new();
     std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut log).unwrap();
@@ -680,4 +633,45 @@ fn _read_configuration(
             response => panic!("unexpected configuration response: {response:?}"),
         }
     }
+}
+
+#[test]
+fn graceful_discovery_shutdown_drains_a_full_event_queue() {
+    use std::sync::{Arc, RwLock, mpsc};
+    let root = test_root("cleanup-event-queue");
+    let applications = root.join("applications");
+    std::fs::create_dir_all(&applications).unwrap();
+    create_application_fixture(&applications);
+    let config = nanika_extension_application::ApplicationConfig::from_configuration(
+        &application_configuration(&applications),
+    )
+    .unwrap();
+    let (sender, events) = mpsc::sync_channel(1);
+    // Deterministically occupy the only slot before the producer starts.
+    sender
+        .send(nanika_extension_application::RuntimeEvent::CandidatesChanged)
+        .unwrap();
+    let worker = nanika_extension_application::DiscoveryWorker::spawn(
+        root.join("application.db"),
+        root.join("icons"),
+        Arc::new(RwLock::new(config)),
+        Arc::new(RwLock::new(Vec::new())),
+        sender,
+    )
+    .unwrap();
+    for generation in 2..6 {
+        worker
+            .refresh(Some(format!("scan-{generation}")), generation)
+            .unwrap();
+    }
+    let (done, result) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        done.send(worker.shutdown(events)).unwrap();
+    });
+    result
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("cleanup must drain bounded events before joining")
+        .unwrap();
+    thread.join().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

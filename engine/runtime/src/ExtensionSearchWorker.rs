@@ -1,5 +1,5 @@
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
@@ -8,9 +8,9 @@ use nanika_search::SearchHandle;
 
 use crate::{
     DiagnosticCode, ExtensionConfigurationUpdate, ExtensionInterruption, ExtensionInvocation,
-    ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionInvocationOutputState,
-    ExtensionNotifier, ExtensionRefresh, ExtensionRuntime, ExtensionRuntimeInvocation,
-    ExtensionSearchQuery, ExtensionSearchState, ExtensionSearchWorkerContext, ExtensionViewRequest,
+    ExtensionInvocationOutcome, ExtensionInvocationOutputState, ExtensionNotifier,
+    ExtensionRefresh, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery,
+    ExtensionSearchState, ExtensionSearchWorkerContext, ExtensionViewRequest,
     ExtensionViewRequestKind, ExtensionWork, HostDiagnostic, RuntimeViewCompletion,
     SupervisorError, publish_extension_snapshot,
 };
@@ -18,13 +18,13 @@ use crate::{
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
+    pub(crate) instance: Arc<crate::ExtensionInstance>,
+    search: SearchHandle,
     static_catalog: bool,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
-    invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
     live_configuration: bool,
     root_search: bool,
-    query_ready: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -38,40 +38,72 @@ impl ExtensionSearchWorker {
         context: ExtensionSearchWorkerContext,
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
+        let instance = Arc::new(crate::ExtensionInstance::new());
+        let worker_instance = Arc::clone(&instance);
+        let factory_instance = Arc::clone(&instance);
+        let retained_search = search.clone();
         let worker_extension_id = extension_id.clone();
         let contributions = Arc::new(contributions);
         let worker_contributions = Arc::clone(&contributions);
         let deferred = source.is_deferred();
         let live_configuration = source.supports_live_configuration();
         let static_catalog = contributions.root_search.is_none();
-        if static_catalog {
-            search
-                .register_static_catalog(
-                    &extension_id,
-                    crate::search_candidates(
-                        &extension_id,
-                        contribution_candidates(&contributions),
-                    ),
-                )
-                .map_err(io::Error::other)?;
-        }
         let root_search = contributions.root_search.is_some();
         let notifier = Arc::clone(&context.notifier);
         let view_invalidations = Arc::clone(&context.view_invalidations);
-        let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
+        let state = Arc::new((
+            Mutex::new(ExtensionSearchState {
+                lifecycle: if deferred {
+                    crate::RuntimeExtensionState::Dormant
+                } else {
+                    crate::RuntimeExtensionState::Starting
+                },
+                ..Default::default()
+            }),
+            Condvar::new(),
+        ));
         let worker_state = Arc::clone(&state);
         let factory_extension_id = extension_id.clone();
         let factory_state = Arc::clone(&state);
         let factory_notifier = Arc::clone(&notifier);
         let factory = move |configuration: nanika_protocol::ExtensionConfiguration| {
+            factory_state
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .lifecycle = crate::RuntimeExtensionState::Starting;
+            notify(&factory_notifier);
             let mut runtime = source
-                .start()
+                .start(configuration.clone())
                 .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
             let extension_id = factory_extension_id;
             let state = factory_state;
             let notifier = factory_notifier;
+            let exit_state = Arc::clone(&state);
+            let exit_notifier = Arc::clone(&notifier);
+            runtime.observe_exit(Arc::new(move |error| {
+                let mut state = exit_state
+                    .0
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                // An explicit stop owns its outcome; an idle disconnect is a lifecycle failure.
+                if state.closed || state.shutdown.load(Ordering::Acquire) {
+                    return;
+                }
+                state.lifecycle = crate::RuntimeExtensionState::Failed;
+                state.lifecycle_error = Some(error);
+                drop(state);
+                exit_state.1.notify_all();
+                notify(&exit_notifier);
+            }));
             if let Some(host_services) = context.host_services {
-                runtime.set_host_services(extension_id.clone(), host_services);
+                runtime.set_host_services(
+                    extension_id.clone(),
+                    Arc::new(crate::InstanceHostServices {
+                        instance: Arc::clone(&factory_instance),
+                        services: host_services,
+                    }),
+                );
             }
             runtime.set_shutdown_signal(Arc::clone(
                 &state
@@ -86,7 +118,10 @@ impl ExtensionSearchWorker {
                     let (lock, ready) = &*changed;
                     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
                     // Coalesce invalidations into one current query. User actions retain priority.
-                    if !state.shutdown.load(Ordering::Acquire) && state.query.is_none() {
+                    if !state.closed
+                        && !state.shutdown.load(Ordering::Acquire)
+                        && state.query.is_none()
+                    {
                         state.query = state.latest_query.clone();
                         ready.notify_one();
                     }
@@ -95,22 +130,36 @@ impl ExtensionSearchWorker {
             let invalidation_extension_id = extension_id.clone();
             let invalidation_queue = Arc::clone(&view_invalidations);
             let invalidation_notifier = Arc::clone(&notifier);
+            let invalidation_instance = Arc::clone(&factory_instance);
             runtime.set_view_invalidation_notifier(Arc::new(move |view_id| {
-                queue_view_invalidation(&invalidation_queue, &invalidation_extension_id, view_id);
-                notify(&invalidation_notifier);
+                invalidation_instance.with_active(|| {
+                    queue_view_invalidation(
+                        &invalidation_queue,
+                        &invalidation_extension_id,
+                        invalidation_instance.id,
+                        view_id,
+                    );
+                    notify(&invalidation_notifier);
+                });
             }));
-            runtime.initialize_with_configuration(
-                format!("initialize-{extension_id}"),
-                configuration,
-            )?;
+            runtime
+                .initialize_with_configuration(format!("initialize-{extension_id}"), configuration)
+                .map_err(|error| match runtime.failure_details() {
+                    Some(detail) => {
+                        SupervisorError::UnexpectedMessage(format!("{error}; {detail}"))
+                    }
+                    None => error,
+                })?;
+            let mut state = state.0.lock().unwrap_or_else(|error| error.into_inner());
+            if !state.closed && state.lifecycle == crate::RuntimeExtensionState::Starting {
+                state.lifecycle = crate::RuntimeExtensionState::Ready;
+            }
             Ok(runtime)
         };
         let last_error = Arc::new(Mutex::new(None));
         let worker_error = Arc::clone(&last_error);
-        let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
-        let worker_invocation_output = Arc::clone(&invocation_output);
-        let query_ready = Arc::new(AtomicBool::new(false));
-        let worker_query_ready = Arc::clone(&query_ready);
+        // Accepted output belongs to the coordinator and survives worker retirement.
+        let worker_invocation_output = Arc::clone(&context.invocation_output);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
@@ -123,11 +172,12 @@ impl ExtensionSearchWorker {
                 let mut configuration = configuration;
                 let mut activation_error = None;
                 if !deferred && let Err(error) = activate_runtime(&mut runtime, &mut factory, &configuration, &mut activation_error) {
+                    set_lifecycle_failure(&worker_state, error.to_string());
                     set_error(&worker_error, Some(extension_failure(&worker_extension_id, "initialize extension", "The extension could not start.", error)));
+                    worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).stop_result = Some(Ok(()));
                     notify(&notifier);
                     return;
                 }
-                worker_query_ready.store(true, Ordering::Release);
                 notify(&notifier);
                 loop {
                     let work = next_work(&worker_state);
@@ -168,6 +218,7 @@ impl ExtensionSearchWorker {
                                 }
                                 _ => {}
                             }
+                            set_lifecycle_failure(&worker_state, error.to_string());
                             set_error(&worker_error, Some(extension_failure(&worker_extension_id, "activate extension", "The extension could not start.", error)));
                             notify(&notifier);
                             continue;
@@ -183,17 +234,18 @@ impl ExtensionSearchWorker {
                                 &search,
                                 &worker_state,
                                 &worker_contributions,
+                                &worker_instance,
                             );
                             match result {
                                 Ok(completed) => Ok(completed),
                                 Err(query_error) => {
                                     // Complete the barrier slot on failure so the launcher cannot remain pending.
-                                    match publish_extension_snapshot(
+                                    match worker_instance.with_active(|| publish_extension_snapshot(
                                         &search,
                                         &worker_extension_id,
                                         generation,
                                         contribution_candidates(&worker_contributions),
-                                    ) {
+                                    )).unwrap_or(Ok(())) {
                                         Ok(()) => Err(query_error),
                                         Err(publish_error) => {
                                             Err(SupervisorError::UnexpectedMessage(format!(
@@ -213,7 +265,7 @@ impl ExtensionSearchWorker {
                         ExtensionWork::Invoke(invocation) => {
                             let result = run_invocation(
                                 runtime,
-                                &worker_extension_id,
+                                (&worker_extension_id, worker_instance.id),
                                 &invocation,
                                 &worker_state,
                                 &worker_invocation_output,
@@ -289,28 +341,94 @@ impl ExtensionSearchWorker {
                     }
                     notify(&notifier);
                 }
-                if let Some(runtime) = runtime.as_mut() && let Err(error) = runtime.terminate() {
-                    HostDiagnostic::from_error(
-                        DiagnosticCode::ExtensionUnavailable,
-                        "terminate extension",
-                        "An extension process could not be terminated cleanly.",
-                        error,
-                    )
-                    .with_safe_context(&worker_extension_id)
-                    .record_warning();
+                if let Some(runtime) = runtime.as_mut() {
+                    let force = worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).shutdown.load(Ordering::Acquire);
+                    let result = if force { runtime.terminate().map_err(|error| error.to_string()) }
+                        else { runtime.shutdown().map_err(|error| error.to_string()) };
+                    let failed = result.is_err();
+                    let detail = runtime.failure_details();
+                    let mut state = worker_state.0.lock().unwrap_or_else(|error| error.into_inner());
+                    if let Err(error) = &result {
+                        state.lifecycle = crate::RuntimeExtensionState::Failed;
+                        state.lifecycle_error = Some(error.clone());
+                    }
+                    if let Some(detail) = detail
+                        && let Some(error) = &mut state.lifecycle_error
+                        && !error.contains(&detail) {
+                        error.push_str("; ");
+                        error.push_str(&detail);
+                    }
+                    state.stop_result = Some(result);
+                    worker_state.1.notify_all();
+                    // A failed graceful stop retains its process and containment until explicit app termination.
+                    while failed && !state.shutdown.load(Ordering::Acquire) {
+                        state = worker_state.1.wait(state).unwrap_or_else(|error| error.into_inner());
+                    }
+                } else {
+                    worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).stop_result = Some(Ok(()));
+                    worker_state.1.notify_all();
                 }
             })?;
-        Ok(Self {
+        let worker = Self {
             extension_id,
+            instance,
+            search: retained_search,
             static_catalog,
             state,
             last_error,
-            invocation_output,
             live_configuration,
             root_search: contributions.root_search.is_some(),
-            query_ready,
             thread: Mutex::new(Some(thread)),
-        })
+        };
+        if static_catalog {
+            worker
+                .search
+                .register_static_catalog(
+                    &worker.extension_id,
+                    crate::search_candidates(
+                        &worker.extension_id,
+                        contribution_candidates(&contributions),
+                    ),
+                )
+                .map_err(io::Error::other)?;
+        }
+        Ok(worker)
+    }
+
+    pub(crate) fn lifecycle(&self) -> (crate::RuntimeExtensionState, Option<String>) {
+        let state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        (state.lifecycle, state.lifecycle_error.clone())
+    }
+
+    pub(crate) fn retire(&self) -> Result<(), String> {
+        self._retire(None)
+    }
+
+    pub(crate) fn retire_after_failure(&self, error: &str) -> Result<(), String> {
+        self._retire(Some(error))
+    }
+
+    pub(crate) fn wait_stopped(&self) -> Result<(), String> {
+        let (lock, changed) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        loop {
+            if let Some(result) = &state.stop_result {
+                return result.clone();
+            }
+            if state.finished {
+                return Err(state
+                    .lifecycle_error
+                    .clone()
+                    .unwrap_or_else(|| "Extension worker exited without a stop result.".into()));
+            }
+            state = changed
+                .wait(state)
+                .unwrap_or_else(|error| error.into_inner());
+        }
     }
 
     pub fn query(&self, generation: u64, query: impl Into<String>) {
@@ -323,6 +441,14 @@ impl ExtensionSearchWorker {
             generation,
             query: query.into(),
         };
+        if state.closed
+            || state
+                .latest_query
+                .as_ref()
+                .is_some_and(|current| current.generation > generation)
+        {
+            return;
+        }
         state.latest_query = Some(query.clone());
         state.query = Some(query);
         ready.notify_one();
@@ -407,14 +533,14 @@ impl ExtensionSearchWorker {
     }
 
     pub(crate) fn is_query_ready(&self) -> bool {
-        self.static_catalog
-            || (self.query_ready.load(Ordering::Acquire)
-                && self
-                    .thread
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .as_ref()
-                    .is_some_and(|thread| !thread.is_finished()))
+        let state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        !state.closed
+            && state.lifecycle != crate::RuntimeExtensionState::Failed
+            && (self.static_catalog || state.lifecycle == crate::RuntimeExtensionState::Ready)
     }
 
     pub fn last_error(&self) -> Option<HostDiagnostic> {
@@ -426,14 +552,6 @@ impl ExtensionSearchWorker {
 
     pub(crate) fn supports_live_configuration(&self) -> bool {
         self.live_configuration
-    }
-
-    pub(crate) fn take_invocation_outputs(&self) -> Vec<ExtensionInvocationOutput> {
-        self.invocation_output
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take_changed()
-            .unwrap_or_default()
     }
 
     fn stop(&mut self) {
@@ -464,11 +582,47 @@ impl ExtensionSearchWorker {
             );
         }
     }
+    fn _retire(&self, failure: Option<&str>) -> Result<(), String> {
+        let (lock, changed) = &*self.state;
+        let (invocations, views, refreshes) = {
+            let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            state.closed = true;
+            state.lifecycle = crate::RuntimeExtensionState::Stopping;
+            state.query = None;
+            state.entry_preparation = None;
+            (
+                state.invocations.drain(..).collect::<Vec<_>>(),
+                state.view_events.drain(..).collect::<Vec<_>>(),
+                state.refreshes.drain(..).collect::<Vec<_>>(),
+            )
+        };
+        changed.notify_all();
+        for invocation in invocations {
+            let _ = invocation.response.send(match failure {
+                Some(error) => Err(format!(
+                    "Extension failed before the action started: {error}"
+                )),
+                None => Ok(ExtensionInvocationOutcome::Cancelled),
+            });
+        }
+        for view in views {
+            let _ = view.completion.send(Err(failure
+                .unwrap_or("Extension disabled before the view request started.")
+                .into()));
+        }
+        for refresh in refreshes {
+            let _ = refresh.completion.send(Err(failure
+                .unwrap_or("Extension disabled before refresh started.")
+                .into()));
+        }
+        self.instance.retire(&self.search, &self.extension_id)
+    }
 }
 
 pub(crate) fn queue_view_invalidation(
     pending: &Mutex<std::collections::HashMap<String, crate::RuntimeViewInvalidation>>,
     extension_id: &str,
+    instance_id: u64,
     view_id: String,
 ) {
     // One worker owns one visible route; replacing its pending signal bounds the queue.
@@ -478,6 +632,7 @@ pub(crate) fn queue_view_invalidation(
         .insert(
             extension_id.to_owned(),
             crate::RuntimeViewInvalidation {
+                instance_id,
                 extension_id: extension_id.to_owned(),
                 view_id,
             },
@@ -649,13 +804,22 @@ fn run_query(
     search: &SearchHandle,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     contributions: &ExtensionContributions,
+    instance: &crate::ExtensionInstance,
 ) -> Result<bool, SupervisorError> {
     runtime.ensure_running()?;
     if contributions.root_search.is_none() {
-        return publish_contributions(search, extension_id, query.generation, contributions);
+        return instance
+            .with_active(|| {
+                publish_contributions(search, extension_id, query.generation, contributions)
+            })
+            .unwrap_or(Ok(false));
     }
     if !contributions.commands.is_empty() || !contributions.views.is_empty() {
-        publish_contributions(search, extension_id, query.generation, contributions)?;
+        instance
+            .with_active(|| {
+                publish_contributions(search, extension_id, query.generation, contributions)
+            })
+            .unwrap_or(Ok(false))?;
     }
     runtime.query_incremental(
         format!("search-{extension_id}-{}", query.generation),
@@ -663,13 +827,18 @@ fn run_query(
         query.query.clone(),
         |mut entries| {
             entries.extend(contribution_candidates(contributions));
-            publish_extension_snapshot(search, extension_id, query.generation, entries)
+            instance
+                .with_active(|| {
+                    publish_extension_snapshot(search, extension_id, query.generation, entries)
+                })
+                .unwrap_or(Ok(()))
                 .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
         },
         || {
             let (lock, _) = &**state;
             let state = lock.lock().unwrap_or_else(|error| error.into_inner());
             state.shutdown.load(Ordering::Acquire)
+                || state.closed
                 || state.query.is_some()
                 || (!state.configuration_pending && !state.refreshes.is_empty())
                 || !state.invocations.is_empty()
@@ -769,12 +938,13 @@ fn protocol_contribution_icon(
 
 fn run_invocation(
     runtime: &mut ExtensionRuntime,
-    extension_id: &str,
+    origin: (&str, u64),
     invocation: &ExtensionInvocation,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     invocation_output: &Arc<Mutex<ExtensionInvocationOutputState>>,
     notifier: &ExtensionNotifier,
 ) -> Result<ExtensionInvocationOutcome, SupervisorError> {
+    let (extension_id, instance_id) = origin;
     {
         let mut pending = state.0.lock().unwrap_or_else(|error| error.into_inner());
         if pending
@@ -796,6 +966,7 @@ fn run_invocation(
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .append(
+                instance_id,
                 output_invocation_id,
                 &output_extension_id,
                 output_generation,
@@ -884,6 +1055,14 @@ fn wait_for_capacity<'a>(
 ) -> Result<MutexGuard<'a, ExtensionSearchState>, SupervisorError> {
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     loop {
+        if state.lifecycle == crate::RuntimeExtensionState::Failed {
+            return Err(SupervisorError::UnexpectedMessage(
+                state
+                    .lifecycle_error
+                    .clone()
+                    .unwrap_or_else(|| "Extension worker failed.".into()),
+            ));
+        }
         if state.closed || state.shutdown.load(Ordering::Acquire) {
             return Err(SupervisorError::ChannelClosed);
         }
@@ -923,4 +1102,10 @@ where
         }
     }
     Ok(runtime.as_mut().expect("activated runtime"))
+}
+
+fn set_lifecycle_failure(state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>, error: String) {
+    let mut state = state.0.lock().unwrap_or_else(|error| error.into_inner());
+    state.lifecycle = crate::RuntimeExtensionState::Failed;
+    state.lifecycle_error = Some(error);
 }

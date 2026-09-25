@@ -22,9 +22,7 @@ fn extension_activation_benchmark(criterion: &mut Criterion) {
                     .initialize("benchmark-initialize")
                     .expect("fixture should initialize");
                 elapsed += started.elapsed();
-                extension
-                    .shutdown("benchmark-shutdown")
-                    .expect("fixture should stop");
+                extension.shutdown().expect("fixture should stop");
             }
             elapsed
         });
@@ -39,9 +37,7 @@ fn extension_activation_benchmark(criterion: &mut Criterion) {
                     .initialize("benchmark-initialize")
                     .expect("fixture should initialize");
                 let started = Instant::now();
-                extension
-                    .shutdown("benchmark-shutdown")
-                    .expect("fixture should stop");
+                extension.shutdown().expect("fixture should stop");
                 elapsed += started.elapsed();
             }
             elapsed
@@ -54,9 +50,7 @@ fn extension_activation_benchmark(criterion: &mut Criterion) {
             extension
                 .initialize("benchmark-initialize")
                 .expect("fixture should initialize");
-            extension
-                .shutdown("benchmark-shutdown")
-                .expect("fixture should stop");
+            extension.shutdown().expect("fixture should stop");
         });
     });
     group.finish();

@@ -20,7 +20,13 @@ fn one_unacknowledged_message_coalesces_updates_and_surfaces_startup_failure() {
     }));
     let (wakes, receiver) = mpsc::sync_channel(1);
     let worker = Arc::clone(&shared);
-    let thread = std::thread::spawn(move || run_delivery(&worker, receiver));
+    let thread = std::thread::spawn(move || {
+        run_delivery(
+            &worker,
+            receiver,
+            &Mutex::new(crate::SettingsApplications::default()),
+        )
+    });
     wakes.send(SearchDelivery::Wake).unwrap();
     let first = received.recv_timeout(Duration::from_secs(1)).unwrap();
     assert!(first.contains("\"phase\":\"searching\""));
@@ -61,7 +67,13 @@ fn channel_callback_can_acknowledge_without_the_shared_state_lock() {
     shared.lock().unwrap().session = Some(SearchSession::new(1, channel));
     let (wakes, receiver) = mpsc::sync_channel(1);
     let worker = Arc::clone(&shared);
-    let thread = std::thread::spawn(move || run_delivery(&worker, receiver));
+    let thread = std::thread::spawn(move || {
+        run_delivery(
+            &worker,
+            receiver,
+            &Mutex::new(crate::SettingsApplications::default()),
+        )
+    });
     wakes.send(SearchDelivery::Wake).unwrap();
     received.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(
@@ -95,6 +107,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         })
         .collect();
     let route = crate::ExtensionViewSnapshot {
+        instance_id: 1,
         route_id: 1,
         extension_id: "test.extension".to_owned(),
         generation: 1,
@@ -167,7 +180,7 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
     ));
     let paths =
         nanika_storage::NanikaPaths::from_roots(&root, root.join("cache"), root.join("config"));
-    let runtime = Arc::new(nanika_host::RuntimeService::start(&paths, &[]).unwrap());
+    let runtime = nanika_host::RuntimeService::start(&paths, &[]).unwrap();
     let (wakes, receiver) = mpsc::sync_channel(1);
     let runtime_wakes = wakes.clone();
     runtime.set_notifier(Arc::new(move || {
@@ -195,6 +208,7 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
         crate::search_delivery::run_delivery_with_preparation(
             &worker,
             receiver,
+            &Mutex::new(crate::SettingsApplications::default()),
             move |_, snapshot| {
                 prepared.send(snapshot.generation).unwrap();
                 // Reproduce the real worker's completion notification, including
@@ -272,6 +286,7 @@ fn refresh_requires_the_current_root_session_and_excludes_pending_operations() {
     assert_eq!(session.query, "keep this query");
     session.navigation.finish(Ok(()));
     session.navigation.stack.push(crate::ExtensionViewSnapshot {
+        instance_id: 1,
         route_id: 1,
         extension_id: "test.extension".to_owned(),
         generation: 1,

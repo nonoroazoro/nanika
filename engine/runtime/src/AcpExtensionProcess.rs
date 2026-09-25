@@ -32,6 +32,7 @@ use crate::{
 const ACP_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub struct AcpExtensionProcess {
+    connection_exit: Arc<crate::ExtensionConnectionExit>,
     extension_id: String,
     initialized: bool,
     shutdown_requested: Arc<AtomicBool>,
@@ -107,20 +108,30 @@ impl AcpExtensionProcess {
         let thread_command = command.clone();
         let thread_working_directory = working_directory.clone();
         let thread_extension_id = extension_id.clone();
+        let connection_exit = Arc::new(crate::ExtensionConnectionExit::default());
+        let thread_exit = Arc::clone(&connection_exit);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-acp-extension-{extension_id}"))
             .spawn(move || {
-                let result = async_io::block_on(run_connection(AcpConnectionContext {
-                    extension_id: thread_extension_id,
-                    command: thread_command,
-                    arguments,
-                    working_directory: thread_working_directory,
-                    configuration,
-                    commands: command_receiver,
-                    shutdown: shutdown_receiver,
-                    ready: ready_sender,
-                    ready_reported,
-                }));
+                let result = async_io::block_on(run_connection(
+                    AcpConnectionContext {
+                        extension_id: thread_extension_id,
+                        command: thread_command,
+                        arguments,
+                        working_directory: thread_working_directory,
+                        configuration,
+                        commands: command_receiver,
+                        shutdown: shutdown_receiver,
+                        ready: ready_sender,
+                        ready_reported,
+                    },
+                    Arc::clone(&thread_error),
+                ));
+                let exit_error = result
+                    .as_ref()
+                    .err()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "ACP connection closed.".to_owned());
                 if let Err(error) = result {
                     if !thread_ready_reported.swap(true, Ordering::AcqRel) {
                         let _ = fallback_ready_sender.try_send(Err(error.to_string()));
@@ -129,8 +140,10 @@ impl AcpExtensionProcess {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner()) = Some(error.to_string());
                 }
+                thread_exit.finish(exit_error);
             })?;
         Ok(Self {
+            connection_exit,
             extension_id,
             initialized: false,
             shutdown_requested: Arc::new(AtomicBool::new(false)),
@@ -140,6 +153,10 @@ impl AcpExtensionProcess {
             thread: Some(thread),
             last_error,
         })
+    }
+
+    pub(crate) fn observe_exit(&self, observer: Arc<dyn Fn(String) + Send + Sync>) {
+        self.connection_exit.observe(observer);
     }
 
     pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
@@ -274,7 +291,7 @@ impl AcpExtensionProcess {
         Ok(())
     }
 
-    pub fn shutdown(mut self) -> Result<(), SupervisorError> {
+    pub fn shutdown(&mut self) -> Result<(), SupervisorError> {
         let (response_sender, response) = mpsc::sync_channel(1);
         if let Some(commands) = &self.commands {
             commands
@@ -282,16 +299,42 @@ impl AcpExtensionProcess {
                     response: response_sender,
                 })
                 .map_err(|_| SupervisorError::ChannelClosed)?;
-            match response.recv() {
-                Ok(()) => {}
-                Err(_) => {
-                    let _ = self.terminate();
-                    return Err(SupervisorError::ChannelClosed);
-                }
-            }
+            response
+                .recv()
+                .map_err(|_| SupervisorError::ChannelClosed)?;
         }
-        self.terminate()?;
-        Ok(())
+        if let Some(thread) = self.thread.take() {
+            while !thread.is_finished() {
+                if self.shutdown_requested.load(Ordering::Acquire) {
+                    if let Some(shutdown) = &self.shutdown {
+                        let _ = shutdown.try_send(());
+                        shutdown.close();
+                    }
+                    break;
+                }
+                if let Some(error) = self.last_error() {
+                    // Keep process ownership after failed cleanup until explicit termination.
+                    self.thread = Some(thread);
+                    return Err(SupervisorError::UnexpectedMessage(error));
+                }
+                std::thread::sleep(ACP_POLL_INTERVAL);
+            }
+            thread
+                .join()
+                .map_err(|_| io::Error::other("ACP extension thread panicked"))?;
+        }
+        self.commands.take();
+        self.shutdown.take();
+        self.initialized = false;
+        match self
+            .last_error
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+        {
+            Some(error) => Err(SupervisorError::UnexpectedMessage(error)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -301,7 +344,10 @@ impl Drop for AcpExtensionProcess {
     }
 }
 
-async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol::Result<()> {
+async fn run_connection(
+    context: AcpConnectionContext,
+    failures: Arc<Mutex<Option<String>>>,
+) -> agent_client_protocol::Result<()> {
     let mut command = std::process::Command::new(context.command.program);
     command.args(context.arguments);
     configure_extension_command(&mut command);
@@ -332,9 +378,12 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
         ));
     };
     let shutdown = context.shutdown.clone();
+    let force_exit = context.shutdown.clone();
     let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));
     let drain_tail = Arc::clone(&stderr_tail);
     let stderr_extension_id = context.extension_id.clone();
+    let graceful = Arc::new(AtomicBool::new(false));
+    let connection_graceful = Arc::clone(&graceful);
     let connection = Client.builder().name("nanika").connect_with(
         Lines::new(outgoing_lines(stdin), incoming_lines(stdout)),
         |connection: ConnectionTo<Agent>| async move {
@@ -407,6 +456,7 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
                         let _ = response.send(result.map_err(|error| error.to_string()));
                     }
                     Ok(AcpExtensionCommand::Shutdown { response }) => {
+                        connection_graceful.store(true, Ordering::Release);
                         let _ = response.send(());
                         return Ok(());
                     }
@@ -421,28 +471,90 @@ async fn run_connection(context: AcpConnectionContext) -> agent_client_protocol:
             "ACP extension shutting down",
         ))
     });
-    let result = future::race(result, async move {
-        drain_stderr(stderr, drain_tail, stderr_extension_id).await;
-        future::pending::<agent_client_protocol::Result<()>>().await
-    })
-    .await;
-    let cleanup = terminate_child(&mut child, &process_tree).await;
-    match (result, cleanup) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) => {
-            let stderr = bounded_tail_string(&stderr_tail);
-            if stderr.is_empty() {
-                Err(error)
-            } else {
-                Err(agent_client_protocol::util::internal_error(format!(
-                    "{error}; stderr: {stderr}"
-                )))
+    let lifecycle = async {
+        let result = result.await;
+        let cleanup = if graceful.load(Ordering::Acquire) {
+            // Ending the connection drops stdin. ACP has no process ShutdownAck.
+            // Application termination remains a distinct, explicit force signal.
+            let mut containment_empty = false;
+            let waiting = future::race(
+                async {
+                    let status = child.status().await?;
+                    while !process_tree.is_empty(child.id())? {
+                        async_io::Timer::after(ACP_POLL_INTERVAL).await;
+                    }
+                    containment_empty = true;
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(io::Error::other(format!(
+                            "ACP extension exited with {status}"
+                        )))
+                    }
+                },
+                async {
+                    let _ = force_exit.recv().await;
+                    Err(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "ACP graceful stop interrupted by application shutdown",
+                    ))
+                },
+            )
+            .await;
+            if waiting
+                .as_ref()
+                .is_err_and(|error| error.kind() == io::ErrorKind::Interrupted)
+            {
+                let _ = terminate_child(&mut child, &process_tree).await;
             }
+            if let Err(error) = &waiting
+                && error.kind() != io::ErrorKind::Interrupted
+                && !containment_empty
+            {
+                *failures.lock().unwrap_or_else(|error| error.into_inner()) = Some(format!(
+                    "{error}; stderr: {}",
+                    bounded_tail_string(&stderr_tail)
+                ));
+                // Native observation can fail while descendants are still alive.
+                // Report the failure but retain containment until an explicit force signal.
+                let _ = force_exit.recv().await;
+                let _ = terminate_child(&mut child, &process_tree).await;
+            }
+            waiting
+        } else {
+            terminate_child(&mut child, &process_tree).await
+        };
+        match (result, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (_, Err(error)) => Err(agent_client_protocol::util::internal_error(
+                error.to_string(),
+            )),
         }
-        (_, Err(error)) => Err(agent_client_protocol::util::internal_error(format!(
-            "failed to terminate ACP extension: {error}"
-        ))),
-    }
+    };
+    // Drain through EOF even after the process reports its exit status, so cleanup
+    // diagnostics cannot be lost to scheduling between the two pipes.
+    let (result, stderr_result) = future::zip(
+        lifecycle,
+        drain_stderr(stderr, drain_tail, stderr_extension_id),
+    )
+    .await;
+    let result = match (result, stderr_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(agent_client_protocol::util::internal_error(
+            error.to_string(),
+        )),
+        (Err(error), Err(stderr_error)) => Err(agent_client_protocol::util::internal_error(
+            format!("{error}; {stderr_error}"),
+        )),
+    };
+    result.map_err(|error| {
+        agent_client_protocol::util::internal_error(format!(
+            "{error}; stderr: {}",
+            bounded_tail_string(&stderr_tail)
+        ))
+    })
 }
 
 fn bounded_tail_string(tail: &Mutex<VecDeque<u8>>) -> String {

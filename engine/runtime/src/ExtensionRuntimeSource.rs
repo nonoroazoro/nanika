@@ -1,27 +1,44 @@
 use crate::ExtensionRuntime;
+use nanika_extension_package::ExtensionActivation;
+use nanika_protocol::ExtensionConfiguration;
 
-/// A dormant process has no pipes, readers or native process tree until activation.
+/// Process ownership is transferred to the worker, including creation and initialization.
 pub enum ExtensionRuntimeSource {
     Started(Box<ExtensionRuntime>),
-    OnDemand(Box<dyn FnOnce() -> std::io::Result<ExtensionRuntime> + Send>),
+    Factory {
+        activation: ExtensionActivation,
+        live_configuration: bool,
+        start: Box<dyn FnOnce(ExtensionConfiguration) -> std::io::Result<ExtensionRuntime> + Send>,
+    },
 }
 
 impl ExtensionRuntimeSource {
     pub(crate) fn is_deferred(&self) -> bool {
-        matches!(self, Self::OnDemand(_))
+        matches!(
+            self,
+            Self::Factory {
+                activation: ExtensionActivation::OnDemand,
+                ..
+            }
+        )
     }
 
     pub(crate) fn supports_live_configuration(&self) -> bool {
         match self {
             Self::Started(runtime) => runtime.supports_live_configuration(),
-            Self::OnDemand(_) => true,
+            Self::Factory {
+                live_configuration, ..
+            } => *live_configuration,
         }
     }
 
-    pub(crate) fn start(self) -> std::io::Result<ExtensionRuntime> {
+    pub(crate) fn start(
+        self,
+        configuration: ExtensionConfiguration,
+    ) -> std::io::Result<ExtensionRuntime> {
         match self {
             Self::Started(runtime) => Ok(*runtime),
-            Self::OnDemand(start) => start(),
+            Self::Factory { start, .. } => start(configuration),
         }
     }
 }

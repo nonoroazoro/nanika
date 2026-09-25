@@ -25,10 +25,12 @@ type ReceivePoll = Option<Option<Message>>;
 type ViewInvalidationNotifier = Arc<Mutex<Option<Arc<dyn Fn(String) + Send + Sync>>>>;
 
 pub struct ExtensionProcess {
+    connection_exit: Arc<crate::ExtensionConnectionExit>,
     candidate_changes: ExtensionNotifier,
     view_invalidations: ViewInvalidationNotifier,
     configuration_reply: Arc<crate::ConfigurationReply>,
     initialized: bool,
+    clean_exit: bool,
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
     process_tree: ExtensionProcessTree,
@@ -36,7 +38,7 @@ pub struct ExtensionProcess {
     output: Option<Receiver<Result<Option<Message>, FrameError>>>,
     stderr_tail: Arc<Mutex<VecDeque<u8>>>,
     reader_thread: Option<JoinHandle<()>>,
-    stderr_thread: Option<JoinHandle<()>>,
+    stderr_thread: Option<JoinHandle<io::Result<()>>>,
     extension_id: Option<String>,
     host_services: Option<Arc<dyn HostServiceHandler>>,
 }
@@ -78,20 +80,20 @@ impl ExtensionProcess {
         let process_tree = match ExtensionProcessTree::attach_std(&child) {
             Ok(process_tree) => process_tree,
             Err(error) => {
-                cleanup_failed_spawn(&mut child);
+                cleanup_failed_spawn(&mut child, None);
                 return Err(error);
             }
         };
         let Some(input) = child.stdin.take() else {
-            cleanup_failed_spawn(&mut child);
+            cleanup_failed_spawn(&mut child, Some(&process_tree));
             return Err(io::Error::other("extension stdin was not piped"));
         };
         let Some(output) = child.stdout.take() else {
-            cleanup_failed_spawn(&mut child);
+            cleanup_failed_spawn(&mut child, Some(&process_tree));
             return Err(io::Error::other("extension stdout was not piped"));
         };
         let Some(stderr) = child.stderr.take() else {
-            cleanup_failed_spawn(&mut child);
+            cleanup_failed_spawn(&mut child, Some(&process_tree));
             return Err(io::Error::other("extension stderr was not piped"));
         };
 
@@ -101,6 +103,8 @@ impl ExtensionProcess {
         let invalidations = Arc::clone(&view_invalidations);
         let configuration_reply = Arc::new(crate::ConfigurationReply::default());
         let reader_configuration = Arc::clone(&configuration_reply);
+        let connection_exit = Arc::new(crate::ExtensionConnectionExit::default());
+        let reader_exit = Arc::clone(&connection_exit);
         let reader_thread = match std::thread::Builder::new()
             .name("nanika-extension-protocol".to_owned())
             .spawn(move || {
@@ -131,7 +135,12 @@ impl ExtensionProcess {
                         continue;
                     }
                     let finished = !matches!(frame, Ok(Some(_)));
+                    let failure = match &frame {
+                        Err(error) => error.to_string(),
+                        _ => "Extension protocol output closed.".to_owned(),
+                    };
                     if sender.send(frame).is_err() || finished {
+                        reader_exit.finish(failure);
                         break;
                     }
                 }
@@ -139,7 +148,7 @@ impl ExtensionProcess {
             }) {
             Ok(thread) => thread,
             Err(error) => {
-                cleanup_failed_spawn(&mut child);
+                cleanup_failed_spawn(&mut child, Some(&process_tree));
                 return Err(error);
             }
         };
@@ -155,17 +164,19 @@ impl ExtensionProcess {
             Ok(thread) => thread,
             Err(error) => {
                 drop(receiver);
-                cleanup_failed_spawn(&mut child);
+                cleanup_failed_spawn(&mut child, Some(&process_tree));
                 let _ = reader_thread.join();
                 return Err(error);
             }
         };
 
         Ok(Self {
+            connection_exit,
             candidate_changes,
             view_invalidations,
             configuration_reply,
             initialized: false,
+            clean_exit: false,
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
             process_tree,
@@ -177,6 +188,10 @@ impl ExtensionProcess {
             extension_id: None,
             host_services: None,
         })
+    }
+
+    pub(crate) fn observe_exit(&self, observer: Arc<dyn Fn(String) + Send + Sync>) {
+        self.connection_exit.observe(observer);
     }
 
     pub(crate) fn set_candidate_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
@@ -822,38 +837,72 @@ impl ExtensionProcess {
         {
             first_error = Some(error);
         }
-        self.join_threads();
+        if let Err(error) = self.join_threads() {
+            first_error.get_or_insert(error);
+        }
         first_error.map_or(Ok(()), Err)
     }
 
-    pub fn shutdown(mut self, request_id: impl Into<String>) -> Result<(), SupervisorError> {
-        let request_id = request_id.into();
-        self.send(&Message::Shutdown {
-            request_id: request_id.clone(),
-        })?;
+    /// Close host input only after accepted operations have settled. EOF asks the
+    /// extension to drain its durable work; only a successful exit completes stop.
+    pub fn shutdown(&mut self) -> Result<(), SupervisorError> {
+        self.input.take();
+        let mut failure = None;
         loop {
             match self.receive()? {
-                Some(Message::ShutdownAck {
-                    request_id: response_id,
-                }) if response_id == request_id => break,
-                Some(_) => continue,
-                None => return Err(SupervisorError::ChannelClosed),
+                Some(Message::Error { code, message, .. }) => {
+                    failure
+                        .get_or_insert(format!("extension cleanup failed with {code}: {message}"));
+                }
+                Some(_) => {}
+                None => break,
             }
         }
-        self.child.wait()?;
-        self.input.take();
+        let status = loop {
+            self.check_shutdown()?;
+            if let Some(status) = self.child.try_wait()? {
+                break status;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        while !self.process_tree.is_empty(self.child.id())? {
+            self.check_shutdown()?;
+            std::thread::sleep(Duration::from_millis(25));
+        }
         self.output.take();
-        self.join_threads();
-        Ok(())
+        self.join_threads()?;
+        self.clean_exit = status.success();
+        if !status.success() {
+            failure.get_or_insert(format!(
+                "extension exited with {status}; stderr: {}",
+                self.stderr_tail()
+            ));
+        }
+        match failure {
+            Some(error) => Err(SupervisorError::UnexpectedMessage(error)),
+            None => Ok(()),
+        }
     }
 
-    fn join_threads(&mut self) {
-        if let Some(thread) = self.reader_thread.take() {
-            let _ = thread.join();
+    fn join_threads(&mut self) -> io::Result<()> {
+        let mut failure = None;
+        if let Some(thread) = self.reader_thread.take()
+            && thread.join().is_err()
+        {
+            failure = Some(io::Error::other("extension protocol reader panicked"));
         }
         if let Some(thread) = self.stderr_thread.take() {
-            let _ = thread.join();
+            match thread.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    failure.get_or_insert(error);
+                }
+                Err(_) => {
+                    failure.get_or_insert(io::Error::other("extension stderr reader panicked"));
+                }
+            }
         }
+        failure.map_or(Ok(()), Err)
     }
 
     fn ensure_initialized(&self) -> Result<(), SupervisorError> {
@@ -951,7 +1000,9 @@ impl ExtensionProcess {
 
 impl Drop for ExtensionProcess {
     fn drop(&mut self) {
-        let _ = self.terminate();
+        if !self.clean_exit {
+            let _ = self.terminate();
+        }
     }
 }
 
@@ -960,14 +1011,15 @@ fn drain_stderr(
     output: &Arc<Mutex<VecDeque<u8>>>,
     byte_limit: usize,
     source: &str,
-) {
+) -> io::Result<()> {
     let mut chunk = [0; 4096];
     loop {
         let read = match stderr.read(&mut chunk) {
-            Ok(0) => break,
+            Ok(0) => return Ok(()),
             Err(error) => {
-                tracing::error!(extension_process = source, %error, "could not read extension stderr");
-                break;
+                return Err(io::Error::other(format!(
+                    "could not read extension stderr: {error}"
+                )));
             }
             Ok(read) => read,
         };
@@ -987,7 +1039,12 @@ fn drain_stderr(
     }
 }
 
-fn cleanup_failed_spawn(child: &mut Child) {
+fn cleanup_failed_spawn(child: &mut Child, process_tree: Option<&ExtensionProcessTree>) {
+    if let Some(tree) = process_tree
+        && let Err(error) = tree.terminate(child.id())
+    {
+        tracing::error!(%error, "could not terminate extension containment after spawn failure");
+    }
     let _ = child.kill();
     let _ = child.wait();
 }

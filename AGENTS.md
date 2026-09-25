@@ -16,7 +16,7 @@
 - One Svelte frontend renders bounded declarative extension data. No extension-supplied frontend code or DOM/WebView access; never render application or extension data with {@html}.
 - Route frontend Tauri access through the typed bridge. Preserve Isolation, explicit permissions, Rust validation and session-bound channels. Search invoke replies acknowledge submission; authoritative state arrives through the Channel. Queued delivery is not receipt.
 - Preserve accepted work, concrete failures and bounded backpressure. Coalesce only idempotent wakes or superseded queries/selections where the latest value remains authoritative; actions are barriers. No new automatic timeout, retry, restart, truncation, retention, deletion, recovery or fallback policy without approval.
-- Extension live enable/disable is deferred until the foundation is committed and implementation is separately authorized. Do not turn its proposal into runtime code prematurely.
+- Preserve the live extension lifecycle contract in docs/extension-lifecycle.md: shared configuration/lifecycle admission, instance-scoped authority, EOF cleanup and explicit stop outcomes.
 
 ## UI
 

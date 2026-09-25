@@ -16,9 +16,9 @@ use crate::{
 fn view_invalidations_keep_only_the_latest_identity_per_extension() {
     let pending = Mutex::new(std::collections::HashMap::new());
 
-    queue_view_invalidation(&pending, "extension.one", "view.old".to_owned());
-    queue_view_invalidation(&pending, "extension.one", "view.current".to_owned());
-    queue_view_invalidation(&pending, "extension.two", "view.other".to_owned());
+    queue_view_invalidation(&pending, "extension.one", 1, "view.old".to_owned());
+    queue_view_invalidation(&pending, "extension.one", 1, "view.current".to_owned());
+    queue_view_invalidation(&pending, "extension.two", 1, "view.other".to_owned());
 
     let pending = pending.lock().unwrap();
     assert_eq!(pending.len(), 2);
@@ -27,19 +27,23 @@ fn view_invalidations_keep_only_the_latest_identity_per_extension() {
 }
 
 #[test]
-fn activation_failure_is_terminal_and_static_catalog_remains_discoverable() {
+fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner() {
     let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
     let search = owner.handle();
     let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let starts = Arc::clone(&attempts);
-    let mut coordinator = crate::ExtensionSearchCoordinator::new();
+    let coordinator = crate::ExtensionSearchCoordinator::new();
     coordinator
         .register_source(
             "test.extension",
-            crate::ExtensionRuntimeSource::OnDemand(Box::new(move || {
-                starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                Err(std::io::Error::other("fixture activation failure"))
-            })),
+            crate::ExtensionRuntimeSource::Factory {
+                activation: nanika_extension_package::ExtensionActivation::OnDemand,
+                live_configuration: true,
+                start: Box::new(move |_| {
+                    starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Err(std::io::Error::other("fixture activation failure"))
+                }),
+            },
             search.clone(),
             ExtensionContributions {
                 commands: vec![CommandContribution {
@@ -61,16 +65,24 @@ fn activation_failure_is_terminal_and_static_catalog_remains_discoverable() {
         .unwrap();
     assert_eq!(coordinator.ready_extension_ids(), ["test.extension"]);
     for _ in 0..2 {
-        let error = coordinator
-            .invoke("test.extension", 1, "test.command", "command.execute", "")
-            .unwrap()
-            .recv_timeout(Duration::from_secs(2))
-            .unwrap()
-            .unwrap_err();
+        let error = match coordinator.invoke(
+            "test.extension",
+            coordinator.instance_id("test.extension").unwrap(),
+            1,
+            "test.command",
+            "command.execute",
+            "",
+        ) {
+            Ok(receipt) => receipt
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .unwrap_err(),
+            Err(error) => error.to_string(),
+        };
         assert!(error.contains("fixture activation failure"));
     }
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert_eq!(coordinator.ready_extension_ids(), ["test.extension"]);
+    assert!(coordinator.ready_extension_ids().is_empty());
     coordinator.shutdown();
     owner.shutdown();
 }
@@ -202,4 +214,98 @@ fn worker_exit_completes_every_queued_refresh_with_an_error() {
             .unwrap_err();
         assert!(error.contains("closed before refreshing"));
     }
+}
+
+#[test]
+fn worker_panic_is_a_failed_stop() {
+    let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
+    let coordinator = crate::ExtensionSearchCoordinator::new();
+    coordinator
+        .register_source(
+            "test.panic",
+            crate::ExtensionRuntimeSource::Factory {
+                activation: nanika_extension_package::ExtensionActivation::Startup,
+                live_configuration: true,
+                start: Box::new(|_| panic!("fixture factory panic")),
+            },
+            owner.handle(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+    let worker = coordinator.worker("test.panic").unwrap();
+    assert!(
+        worker
+            .wait_stopped()
+            .unwrap_err()
+            .contains("without a stop result")
+    );
+    assert_eq!(worker.lifecycle().0, crate::RuntimeExtensionState::Failed);
+    coordinator.shutdown();
+    owner.shutdown();
+}
+
+#[test]
+fn dormant_factory_receives_the_last_accepted_configuration() {
+    let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
+    let coordinator = crate::ExtensionSearchCoordinator::new();
+    let (observed, received) = mpsc::sync_channel(1);
+    coordinator
+        .register_source(
+            "test.configuration",
+            crate::ExtensionRuntimeSource::Factory {
+                activation: nanika_extension_package::ExtensionActivation::OnDemand,
+                live_configuration: true,
+                start: Box::new(move |configuration| {
+                    observed.send(configuration).unwrap();
+                    Err(std::io::Error::other("fixture activation failure"))
+                }),
+            },
+            owner.handle(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+    let configuration = nanika_protocol::ExtensionConfiguration::new(
+        [("value".into(), serde_json::json!(42))]
+            .into_iter()
+            .collect(),
+    );
+    let (completion, applied) = mpsc::sync_channel(1);
+    assert!(
+        coordinator
+            .apply_configuration(
+                "test.configuration",
+                "configuration",
+                configuration.clone(),
+                false,
+                Arc::new(|_| {}),
+                completion
+            )
+            .unwrap()
+    );
+    assert!(matches!(
+        applied
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap(),
+        crate::ConfigurationApplication::Deferred
+    ));
+    assert!(received.try_recv().is_err());
+    let instance = coordinator.instance_id("test.configuration").unwrap();
+    let result = coordinator
+        .invoke("test.configuration", instance, 1, "entry", "action", "")
+        .unwrap();
+    assert!(
+        result
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(
+        received.recv_timeout(Duration::from_secs(2)).unwrap(),
+        configuration
+    );
+    coordinator.shutdown();
+    owner.shutdown();
 }

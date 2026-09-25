@@ -56,6 +56,26 @@ impl SearchOwner {
                     }
                     match command {
                         SearchCommand::WakeQuery => {}
+                        SearchCommand::RemoveExtension {
+                            extension_id,
+                            completion,
+                        } => {
+                            static_catalog.remove(&extension_id);
+                            extension_results.remove(&extension_id);
+                            expected_extensions.remove(&extension_id);
+                            if generation != 0 {
+                                publish_current(
+                                    &mut engine,
+                                    generation,
+                                    &query,
+                                    &extension_results,
+                                    &initial_usage,
+                                    &owner_latest,
+                                    &owner_notifier,
+                                );
+                            }
+                            let _ = completion.send(());
+                        }
                         SearchCommand::RegisterStaticCatalog {
                             extension_id,
                             mut candidates,

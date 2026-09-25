@@ -1,5 +1,5 @@
-import type { SettingsWriteResult } from "./SettingsWriteResult";
-import type { ConfigurationValue, SettingsApplicationUpdate } from "../types/Settings";
+import type { ConfigurationWriteResult } from "./ConfigurationWriteResult";
+import type { SettingsApplicationUpdate } from "../types/Settings";
 
 /**
  * Correlates submission with terminal Channel events, including completion before
@@ -44,7 +44,7 @@ export class SettingsApplications
 
     async completion(
         update: SettingsApplicationUpdate
-    ): Promise<SettingsWriteResult<Record<string, ConfigurationValue>>>
+    ): Promise<ConfigurationWriteResult>
     {
         this.record(update);
         const current = this._latest.get(update.extensionId);

@@ -13,8 +13,12 @@ pub(crate) enum SearchDelivery {
 
 /// The sole Channel writer. Core callbacks only wake it, so transport never blocks
 /// a search or extension owner. The next update waits for the WebView acknowledgement.
-pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<SearchDelivery>) {
-    run_delivery_with_preparation(shared, wakes, |runtime, snapshot| {
+pub(crate) fn run_delivery(
+    shared: &Mutex<DesktopRuntime>,
+    wakes: Receiver<SearchDelivery>,
+    settings: &Mutex<crate::SettingsApplications>,
+) {
+    run_delivery_with_preparation(shared, wakes, settings, |runtime, snapshot| {
         runtime.prepare_visible_entries(snapshot, VISIBLE_ENTRY_PREPARATION_LIMIT);
     });
 }
@@ -22,13 +26,52 @@ pub(crate) fn run_delivery(shared: &Mutex<DesktopRuntime>, wakes: Receiver<Searc
 pub(crate) fn run_delivery_with_preparation(
     shared: &Mutex<DesktopRuntime>,
     wakes: Receiver<SearchDelivery>,
+    settings: &Mutex<crate::SettingsApplications>,
     prepare: impl Fn(&nanika_host::RuntimeService, &nanika_search::SearchSnapshot),
 ) {
     while let Ok(event) = wakes.recv() {
         if matches!(event, SearchDelivery::Shutdown) {
             break;
         }
+        let runtime = shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone();
+        let lifecycle = runtime.as_ref().and_then(|runtime| {
+            let mut settings = settings.lock().unwrap_or_else(|error| error.into_inner());
+            settings.refresh_lifecycle(runtime);
+            settings.next_lifecycle()
+        });
+        if let Some((channel, event)) = lifecycle
+            && let Err(error) = channel.send(event)
+        {
+            settings
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .disconnect(channel.id());
+            tracing::error!(%error, "settings lifecycle delivery failed");
+        }
         let mut state = shared.lock().unwrap_or_else(|error| error.into_inner());
+        let active = state
+            .runtime
+            .as_ref()
+            .map(|runtime| runtime.extension_info());
+        if let (Some(infos), Some(session)) = (active, state.session.as_mut()) {
+            let previous = session.navigation.stack.len();
+            session.navigation.stack.retain(|route| {
+                infos.iter().any(|info| {
+                    info.id == route.extension_id
+                        && info.enabled
+                        && info.instance_id == Some(route.instance_id)
+                })
+            });
+            // Other extensions still own their views. Removing a lower route must
+            // not silently discard an active extension's resources above it.
+            if session.navigation.stack.len() != previous {
+                session.navigation.revision += 1;
+            }
+        }
         let DesktopRuntime {
             runtime,
             session,

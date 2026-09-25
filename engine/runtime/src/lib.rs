@@ -235,3 +235,27 @@ pub(crate) use configuration_application::*;
 #[path = "ConfigurationProgressHandler.rs"]
 mod configuration_progress_handler;
 pub use configuration_progress_handler::*;
+
+#[path = "ExtensionOperationGate.rs"]
+mod extension_operation_gate;
+pub(crate) use extension_operation_gate::*;
+
+#[path = "ExtensionOperationReservation.rs"]
+mod extension_operation_reservation;
+pub(crate) use extension_operation_reservation::*;
+
+#[path = "ExtensionInstance.rs"]
+mod extension_instance;
+pub(crate) use extension_instance::*;
+
+#[path = "InstanceHostServices.rs"]
+mod instance_host_services;
+pub(crate) use instance_host_services::*;
+
+#[path = "RuntimeExtensionState.rs"]
+mod runtime_extension_state;
+pub use runtime_extension_state::*;
+
+#[path = "ExtensionConnectionExit.rs"]
+mod extension_connection_exit;
+pub(crate) use extension_connection_exit::ExtensionConnectionExit;

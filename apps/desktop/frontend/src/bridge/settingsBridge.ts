@@ -1,6 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { SettingsWriteResult } from "../settings/SettingsWriteResult";
+import type { ExtensionLifecycle } from "../types/ExtensionLifecycle";
 import type {
     ConfigurationValue,
     HostPreferences,
@@ -20,7 +21,8 @@ export const settingsBridge = {
         onUpdate: (update: SettingsApplicationUpdate) => void,
         onClose: () => void,
         onWindowState: (maximized: boolean) => void,
-        onError: (error: unknown) => void
+        onError: (error: unknown) => void,
+        onLifecycle: (revision: number, extensions: ExtensionLifecycle[]) => void
     ): Promise<SettingsSnapshot> =>
     {
         const subscribe = updates === undefined;
@@ -39,15 +41,17 @@ export const settingsBridge = {
             {
                 onShortcut?.();
             }
+            else if (event.type === "lifecycle")
+            {
+                onLifecycle(event.revision, event.extensions);
+            }
             else
             {
                 onUpdate(event.update);
-                if (event.progressDeliveryId !== undefined)
-                {
-                    void invoke("acknowledge_settings_progress", { deliveryId: event.progressDeliveryId }).catch(
-                        onError
-                    );
-                }
+            }
+            if ("deliveryId" in event && event.deliveryId !== undefined)
+            {
+                void invoke("acknowledge_settings_delivery", { deliveryId: event.deliveryId }).catch(onError);
             }
         };
         // Rust registers before loading configuration; retain the channel even if loading fails.
@@ -73,6 +77,8 @@ export const settingsBridge = {
     },
     readStartup: async (): Promise<StartupStatus> => invoke("read_startup"),
     setStartup: async (enabled: boolean): Promise<StartupStatus> => invoke("set_startup", { enabled }),
+    setEnabled: async (extensionId: string, enabled: boolean): Promise<void> =>
+        invoke("set_extension_enabled", { extensionId, enabled }),
     save: async (extensionId: string, key: string, value: ConfigurationValue): Promise<SettingsApplicationUpdate> =>
         invoke("save_settings", { request: { extensionId, key, value } }),
     pickDirectory: async (extensionId: string, key: string): Promise<string | null> =>

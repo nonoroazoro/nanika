@@ -44,7 +44,7 @@ fn command_process_contributes_and_requests_an_explicit_shell_launch() {
     )
     .expect("invoke should write");
     complete_host_request(&mut input, &mut output, HostServiceResponse::Launched);
-    shutdown(&mut child, &mut input, &mut output);
+    shutdown(&mut child, input, &mut output);
 }
 
 fn initialize(input: &mut impl std::io::Write, output: &mut impl std::io::Read) {
@@ -95,19 +95,13 @@ fn complete_host_request(
 
 fn shutdown(
     child: &mut std::process::Child,
-    input: &mut impl std::io::Write,
+    input: impl std::io::Write,
     output: &mut impl std::io::Read,
 ) {
-    write_host_frame(
-        input,
-        &Message::Shutdown {
-            request_id: "shutdown".to_owned(),
-        },
-    )
-    .expect("shutdown should write");
-    assert!(matches!(
-        read_extension_frame(output).expect("shutdown response"),
-        Some(Message::ShutdownAck { .. })
-    ));
+    drop(input);
+    while read_extension_frame(output)
+        .expect("cleanup output")
+        .is_some()
+    {}
     assert!(child.wait().expect("child should exit").success());
 }

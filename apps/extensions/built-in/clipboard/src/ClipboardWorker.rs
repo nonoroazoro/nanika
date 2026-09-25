@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 
 use clipboard_rs::ClipboardContext;
@@ -10,7 +10,6 @@ use crate::{ClipboardCommand, ClipboardConfig, ClipboardDatabase, ClipboardEntry
 /// Single owner for clipboard capture and database writes.
 pub struct ClipboardWorker {
     commands: SyncSender<ClipboardCommand>,
-    last_error: Arc<Mutex<Option<String>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -18,110 +17,19 @@ impl ClipboardWorker {
     pub fn spawn(
         database_path: PathBuf,
         payload_root: PathBuf,
-        mut config: ClipboardConfig,
+        config: ClipboardConfig,
         entries: Arc<RwLock<Vec<ClipboardEntry>>>,
         invalidated: Arc<dyn Fn() + Send + Sync>,
     ) -> Result<Self, String> {
         let context = ClipboardContext::new().map_err(|error| error.to_string())?;
-        let (commands, receiver) = mpsc::sync_channel(8);
-        let (ready, initialized) = mpsc::sync_channel(1);
-        let last_error = Arc::new(Mutex::new(None));
-        let worker_error = Arc::clone(&last_error);
-        let thread = std::thread::Builder::new()
-            .name("nanika-clipboard-owner".to_owned())
-            .spawn(move || {
-                let database = match ClipboardDatabase::open(database_path) {
-                    Ok(database) => database,
-                    Err(error) => {
-                        let _ = ready.send(Err(error));
-                        return;
-                    }
-                };
-                let initial = database
-                    .apply_retention(unix_timestamp_millis(), &config)
-                    .and_then(|retained| reconcile_payloads(&payload_root, &retained))
-                    .and_then(|()| database.load());
-                let Ok(initial) = initial else {
-                    let _ = ready.send(initial);
-                    return;
-                };
-                *entries.write().unwrap_or_else(|error| error.into_inner()) = initial;
-                if ready.send(Ok(Vec::new())).is_err() {
-                    return;
-                }
-                while let Ok(command) = receiver.recv() {
-                    match command {
-                        ClipboardCommand::Capture => {
-                            let result = capture(&context, &payload_root, unix_timestamp_millis())
-                                .and_then(|entry| {
-                                    let changed = entry.is_some();
-                                    if let Some(entry) = entry {
-                                        let retained = database.upsert_with_retention(
-                                            &entry,
-                                            unix_timestamp_millis(),
-                                            &config,
-                                        )?;
-                                        reconcile_payloads(&payload_root, &retained)?;
-                                        let loaded = database.load()?;
-                                        *entries
-                                            .write()
-                                            .unwrap_or_else(|error| error.into_inner()) = loaded;
-                                    }
-                                    Ok(changed)
-                                });
-                            *worker_error
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
-                            if result.as_ref().is_ok_and(|changed| *changed) {
-                                invalidated();
-                            }
-                        }
-                        ClipboardCommand::Clear { entry_ids, response } => {
-                            let result = clear_entries(&database, &payload_root, &entries, &entry_ids);
-                            *worker_error
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
-                            if response.send(result).is_err() {
-                                eprintln!(
-                                    "clipboard clear requester closed before receiving result"
-                                );
-                            }
-                        }
-                        ClipboardCommand::ApplyRetention {
-                            config: updated,
-                            response,
-                        } => {
-                            let result = database
-                                .apply_retention(unix_timestamp_millis(), &updated)
-                                .and_then(|retained| reconcile_payloads(&payload_root, &retained))
-                                .and_then(|()| database.load())
-                                .map(|loaded| {
-                                    config = updated;
-                                    *entries.write().unwrap_or_else(|error| error.into_inner()) =
-                                        loaded;
-                                });
-                            *worker_error
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner()) = result.clone().err();
-                            if response.send(result).is_err() {
-                                eprintln!(
-                                    "clipboard configuration requester closed before receiving result"
-                                );
-                            }
-                        }
-                        ClipboardCommand::Shutdown => break,
-                    }
-                }
-            })
-            .map_err(|error| error.to_string())?;
-        initialized
-            .recv()
-            .map_err(|_| "clipboard owner closed during initialization".to_owned())??;
-        Ok(Self {
-            commands,
-            last_error,
-            thread: Some(thread),
-        })
+        Self::_spawn(
+            database_path,
+            payload_root,
+            config,
+            entries,
+            invalidated,
+            move |root| capture(&context, root, unix_timestamp_millis()),
+        )
     }
 
     pub(crate) fn command_sender(&self) -> SyncSender<ClipboardCommand> {
@@ -151,29 +59,127 @@ impl ClipboardWorker {
         })?
     }
 
-    pub fn last_error(&self) -> Option<String> {
-        self.last_error
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .clone()
+    pub fn shutdown(mut self) -> Result<(), String> {
+        self._stop()
     }
 
-    pub fn shutdown(mut self) {
-        self.stop();
+    fn _spawn(
+        database_path: PathBuf,
+        payload_root: PathBuf,
+        mut config: ClipboardConfig,
+        entries: Arc<RwLock<Vec<ClipboardEntry>>>,
+        invalidated: Arc<dyn Fn() + Send + Sync>,
+        mut capture: impl FnMut(&std::path::Path) -> Result<Option<ClipboardEntry>, String>
+        + Send
+        + 'static,
+    ) -> Result<Self, String> {
+        let (commands, receiver) = mpsc::sync_channel(8);
+        let (ready, initialized) = mpsc::sync_channel(1);
+        let thread = std::thread::Builder::new()
+            .name("nanika-clipboard-owner".to_owned())
+            .spawn(move || {
+                let database = match ClipboardDatabase::open(database_path) {
+                    Ok(database) => database,
+                    Err(error) => {
+                        let _ = ready.send(Err(error));
+                        return;
+                    }
+                };
+                let initial = database
+                    .apply_retention(unix_timestamp_millis(), &config)
+                    .and_then(|retained| reconcile_payloads(&payload_root, &retained))
+                    .and_then(|()| database.load());
+                let Ok(initial) = initial else {
+                    let _ = ready.send(initial);
+                    return;
+                };
+                *entries.write().unwrap_or_else(|error| error.into_inner()) = initial;
+                if ready.send(Ok(Vec::new())).is_err() {
+                    return;
+                }
+                while let Ok(command) = receiver.recv() {
+                    match command {
+                        ClipboardCommand::Capture => {
+                            let result = capture(&payload_root)
+                                .and_then(|entry| {
+                                    let changed = entry.is_some();
+                                    if let Some(entry) = entry {
+                                        let retained = database.upsert_with_retention(
+                                            &entry,
+                                            unix_timestamp_millis(),
+                                            &config,
+                                        )?;
+                                        reconcile_payloads(&payload_root, &retained)?;
+                                        let loaded = database.load()?;
+                                        *entries
+                                            .write()
+                                            .unwrap_or_else(|error| error.into_inner()) = loaded;
+                                    }
+                                    Ok(changed)
+                                });
+                            if let Err(error) = &result {
+                                eprintln!("clipboard capture failed: {error}");
+                            }
+                            if result.as_ref().is_ok_and(|changed| *changed) {
+                                invalidated();
+                            }
+                        }
+                        ClipboardCommand::Clear { entry_ids, response } => {
+                            let result = clear_entries(&database, &payload_root, &entries, &entry_ids);
+                            if response.send(result).is_err() {
+                                eprintln!(
+                                    "clipboard clear requester closed before receiving result"
+                                );
+                            }
+                        }
+                        ClipboardCommand::ApplyRetention {
+                            config: updated,
+                            response,
+                        } => {
+                            let result = database
+                                .apply_retention(unix_timestamp_millis(), &updated)
+                                .and_then(|retained| reconcile_payloads(&payload_root, &retained))
+                                .and_then(|()| database.load())
+                                .map(|loaded| {
+                                    config = updated;
+                                    *entries.write().unwrap_or_else(|error| error.into_inner()) =
+                                        loaded;
+                                });
+                            if response.send(result).is_err() {
+                                eprintln!(
+                                    "clipboard configuration requester closed before receiving result"
+                                );
+                            }
+                        }
+                        ClipboardCommand::Shutdown => break,
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        initialized
+            .recv()
+            .map_err(|_| "clipboard owner closed during initialization".to_owned())??;
+        Ok(Self {
+            commands,
+            thread: Some(thread),
+        })
     }
 
-    fn stop(&mut self) {
+    fn _stop(&mut self) -> Result<(), String> {
         if self.thread.is_none() {
-            return;
+            return Ok(());
         }
-        if self.commands.send(ClipboardCommand::Shutdown).is_err() {
-            eprintln!("clipboard worker closed before shutdown was requested");
-        }
+        let sent = self.commands.send(ClipboardCommand::Shutdown).is_ok();
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {
-            eprintln!("clipboard worker panicked");
+            return Err("clipboard worker panicked".to_owned());
         }
+        if !sent {
+            return Err("clipboard worker closed before shutdown was requested".to_owned());
+        }
+        // Capture and command errors do not describe owner cleanup.
+        Ok(())
     }
 }
 
@@ -226,7 +232,9 @@ fn is_generated_payload(path: &std::path::Path) -> bool {
 
 impl Drop for ClipboardWorker {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self._stop() {
+            eprintln!("{error}");
+        }
     }
 }
 

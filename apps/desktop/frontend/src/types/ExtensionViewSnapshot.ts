@@ -3,6 +3,7 @@ export interface ExtensionViewSnapshot
 {
     routeId: number;
     extensionId: string;
+    instanceId: number;
     generation: number;
     viewId: string;
     revision: number;

@@ -32,9 +32,7 @@ fn fixture_completes_handshake_and_shutdown() {
     extension
         .initialize("initialize-1")
         .expect("fixture should initialize");
-    extension
-        .shutdown("shutdown-1")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 #[test]
@@ -47,9 +45,7 @@ fn fixture_acknowledges_configuration_through_the_supervised_protocol() {
     extension
         .apply_configuration("apply-configuration", Default::default())
         .expect("fixture configuration should apply");
-    extension
-        .shutdown("shutdown-configuration")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 #[test]
@@ -92,9 +88,7 @@ fn fixture_contributes_a_generation_tagged_search_snapshot() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].title, "calculator");
     assert_eq!(entries[0].aliases, ["fixture alias"]);
-    extension
-        .shutdown("shutdown-query")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 #[test]
@@ -106,9 +100,7 @@ fn fixture_completes_a_generation_tagged_invocation() {
     extension
         .invoke("invoke-1", 7, "fixture.entry", "fixture.run")
         .expect("fixture action should complete");
-    extension
-        .shutdown("shutdown-invoke")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 #[test]
@@ -121,7 +113,7 @@ fn extension_invocation_uses_the_common_host_service_boundary() {
     )
     .expect("fixture should spawn");
     let services = Arc::new(TestHostServices::new());
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator.set_host_services(services.clone());
     coordinator
         .register(
@@ -134,6 +126,7 @@ fn extension_invocation_uses_the_common_host_service_boundary() {
     coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             1,
             "fixture.entry",
             "fixture.run",
@@ -159,9 +152,7 @@ fn fixture_completes_a_generation_tagged_refresh() {
     extension
         .refresh("refresh-1", 9)
         .expect("fixture refresh should complete");
-    extension
-        .shutdown("shutdown-refresh")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 #[test]
@@ -176,7 +167,7 @@ fn coordinator_dispatches_refresh_off_the_caller_thread() {
         ExtensionLimits::default(),
     )
     .expect("fixture should spawn");
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "fixture.extension",
@@ -237,9 +228,7 @@ fn extension_snapshot_reaches_the_shared_search_owner() {
         assert!(Instant::now() < deadline, "search snapshot should arrive");
         std::thread::yield_now();
     }
-    extension
-        .shutdown("shutdown-search-owner")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
     owner.shutdown();
 }
 
@@ -256,7 +245,7 @@ fn queued_refreshes_wait_for_their_own_completion() {
         ExtensionLimits::default(),
     )
     .unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "fixture.extension",
@@ -294,7 +283,7 @@ fn root_refresh_isolates_failures_and_skips_static_contributors() {
     let refreshed = root.join("healthy");
     let skipped = root.join("static");
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .refresh_root_search(1)
         .expect("zero-extension host refresh succeeds");
@@ -341,7 +330,7 @@ fn extension_search_worker_dispatches_off_the_caller_thread() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
     let extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "fixture.extension",
@@ -389,7 +378,7 @@ fn extension_worker_publishes_incremental_snapshots() {
     extension
         .initialize("initialize-incremental-query")
         .expect("fixture should initialize");
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "fixture.extension",
@@ -438,7 +427,7 @@ fn coordinator_shutdown_cancels_a_running_action() {
     extension
         .initialize("initialize-action-cancellation")
         .expect("fixture should initialize");
-    let mut coordinator = ExtensionSearchCoordinator::default();
+    let coordinator = ExtensionSearchCoordinator::default();
     coordinator
         .register(
             "fixture.extension",
@@ -450,6 +439,7 @@ fn coordinator_shutdown_cancels_a_running_action() {
     coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             1,
             "fixture.entry",
             "fixture.run",
@@ -488,9 +478,7 @@ fn stderr_is_drained_into_a_bounded_tail() {
     let stderr = extension.stderr_tail();
     assert!(!stderr.is_empty());
     assert!(stderr.len() <= 128);
-    extension
-        .shutdown("shutdown-stderr")
-        .expect("fixture should shut down");
+    extension.shutdown().expect("fixture should shut down");
 }
 
 fn fixture_contributions() -> ExtensionContributions {
@@ -536,7 +524,7 @@ fn superseded_query_error_is_drained_before_the_current_query() {
         ExtensionLimits::default(),
     )
     .unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::new();
+    let coordinator = ExtensionSearchCoordinator::new();
     coordinator
         .register(
             "fixture.extension",
@@ -577,7 +565,7 @@ fn cancellation_uses_the_actual_terminal_result_and_unique_invocation_ids() {
         ExtensionLimits::default(),
     )
     .unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::new();
+    let coordinator = ExtensionSearchCoordinator::new();
     coordinator
         .register(
             "fixture.extension",
@@ -589,6 +577,7 @@ fn cancellation_uses_the_actual_terminal_result_and_unique_invocation_ids() {
     let first = coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             7,
             "fixture.entry",
             "fixture.run",
@@ -604,6 +593,7 @@ fn cancellation_uses_the_actual_terminal_result_and_unique_invocation_ids() {
     let second = coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             7,
             "fixture.entry",
             "fixture.run",
@@ -652,7 +642,7 @@ fn accepted_host_service_result_survives_action_cancellation() {
         ExtensionLimits::default(),
     )
     .unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::new();
+    let coordinator = ExtensionSearchCoordinator::new();
     coordinator.set_host_services(services.clone());
     coordinator
         .register(
@@ -665,6 +655,7 @@ fn accepted_host_service_result_survives_action_cancellation() {
     let invocation = coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             1,
             "fixture.entry",
             "fixture.run",
@@ -705,7 +696,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
         ExtensionLimits::default(),
     )
     .unwrap();
-    let mut coordinator = ExtensionSearchCoordinator::new();
+    let coordinator = ExtensionSearchCoordinator::new();
     coordinator
         .register(
             "fixture.extension",
@@ -717,6 +708,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
     let first = coordinator
         .invoke(
             "fixture.extension",
+            coordinator.instance_id("fixture.extension").unwrap(),
             1,
             "fixture.entry",
             "fixture.run",
@@ -731,6 +723,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
             coordinator
                 .invoke(
                     "fixture.extension",
+                    coordinator.instance_id("fixture.extension").unwrap(),
                     1,
                     "fixture.entry",
                     "fixture.run",
@@ -751,6 +744,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
         admitted
             .send(submitting.invoke(
                 "fixture.extension",
+                submitting.instance_id("fixture.extension").unwrap(),
                 1,
                 "fixture.entry",
                 "fixture.run",
