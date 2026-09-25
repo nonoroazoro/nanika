@@ -8,6 +8,7 @@ test("explicit field order is independent of serialized property insertion order
 {
     const boolean: ConfigurationProperty = {
         type: "boolean",
+        persistence: "beforeApply",
         title: "Enabled",
         description: null,
         default: true,

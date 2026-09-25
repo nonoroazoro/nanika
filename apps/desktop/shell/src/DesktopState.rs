@@ -726,7 +726,7 @@ impl DesktopState {
         self.settings_applications
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .updates = Some(updates);
+            .subscribe(updates);
     }
 
     pub(crate) fn read_settings(
@@ -775,6 +775,7 @@ impl DesktopState {
     pub(crate) fn save_settings(
         &self,
         request: crate::SaveSettingsRequest,
+        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static,
     ) -> Result<
         (
             crate::SettingsApplicationUpdate,
@@ -796,52 +797,41 @@ impl DesktopState {
             .clone()
             .ok_or("Nanika is still starting.")?;
         let id = self.next_settings_request.fetch_add(1, Ordering::Relaxed);
+        let extension_id = request.extension_id.clone();
+        let key = request.key.clone();
         let receipt = runtime.save_configuration(
             &request.extension_id,
             format!("settings-{id}"),
-            request.values,
+            request.key.clone(),
+            request.value,
+            Arc::new(move |value| progress(id, &extension_id, &key, value)),
         )?;
-        let result = match &receipt {
-            nanika_host::ConfigurationSaveReceipt::Complete(outcome) => outcome.clone().into(),
-            nanika_host::ConfigurationSaveReceipt::Pending(_) => crate::SettingsSaveResult {
-                status: crate::SettingsSaveStatus::Applying,
-                error: None,
-            },
-        };
         let update = crate::SettingsApplicationUpdate {
             request_id: id,
             extension_id: request.extension_id,
-            result,
+            key: request.key,
+            result: crate::SettingsSaveResult::Running { progress: None },
         };
         self.publish_settings_application(update.clone());
         Ok((update, receipt))
     }
 
     pub(crate) fn publish_settings_application(&self, update: crate::SettingsApplicationUpdate) {
-        let mut applications = self
+        let delivery = self
             .settings_applications
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if applications
-            .latest
-            .get(&update.extension_id)
-            .is_some_and(|current| current.request_id > update.request_id)
-        {
-            return;
-        }
-        applications
-            .latest
-            .insert(update.extension_id.clone(), update.clone());
-        if let Some(channel) = &applications.updates {
-            // A closed Settings window does not cancel a saved configuration.
-            // The latest result remains available to the next window session.
-            if channel
-                .send(crate::SettingsEvent::Application { update })
-                .is_err()
-            {
-                applications.updates = None;
-            }
-        }
+            .unwrap_or_else(|error| error.into_inner())
+            .record(update);
+        self._deliver_settings(delivery);
+    }
+
+    pub(crate) fn acknowledge_settings_progress(&self, delivery_id: u64) {
+        let delivery = self
+            .settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .acknowledge(delivery_id);
+        self._deliver_settings(delivery);
     }
 
     pub(crate) fn settings_closed(&self) {
@@ -951,6 +941,24 @@ impl DesktopState {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
+    }
+
+    fn _deliver_settings(
+        &self,
+        delivery: Option<(
+            tauri::ipc::Channel<crate::SettingsEvent>,
+            crate::SettingsEvent,
+        )>,
+    ) {
+        if let Some((channel, event)) = delivery
+            && let Err(error) = channel.send(event)
+        {
+            tracing::error!(%error, "settings Channel send failed");
+            self.settings_applications
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .disconnect(channel.id());
+        }
     }
 }
 

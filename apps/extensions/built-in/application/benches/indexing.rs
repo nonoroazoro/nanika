@@ -25,7 +25,7 @@ fn indexing(criterion: &mut Criterion) {
     };
     let cancellation = AtomicU64::new(0);
     let (_, entries) = index
-        .scan(&config, 1, &cancellation)
+        .scan(&config, 1, &cancellation, |_| {})
         .expect("warm scan should complete");
 
     criterion.bench_function("application_index_cold_validation_500", |bencher| {
@@ -37,7 +37,7 @@ fn indexing(criterion: &mut Criterion) {
             },
             |mut cold_index| {
                 cold_index
-                    .scan(&config, 2, &cancellation)
+                    .scan(&config, 2, &cancellation, |_| {})
                     .expect("cold validation scan should complete")
             },
             BatchSize::SmallInput,
@@ -48,7 +48,7 @@ fn indexing(criterion: &mut Criterion) {
     criterion.bench_function("application_index_500", |bencher| {
         bencher.iter(|| {
             let result = index
-                .scan(&config, generation, &cancellation)
+                .scan(&config, generation, &cancellation, |_| {})
                 .expect("scan should complete");
             generation = generation.saturating_add(1);
             result

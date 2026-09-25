@@ -18,10 +18,8 @@ mod configuration_save_outcome;
 #[path = "ConfigurationSaveReceipt.rs"]
 mod configuration_save_receipt;
 pub(crate) use configuration_reply::{ConfigurationCompletion, ConfigurationReply};
-pub use configuration_save_receipt::ConfigurationSaveReceipt;
-#[path = "ConfigurationUpdateDisposition.rs"]
-mod configuration_update_disposition;
 pub use configuration_save_outcome::ConfigurationSaveOutcome;
+pub use configuration_save_receipt::ConfigurationSaveReceipt;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
@@ -30,8 +28,6 @@ mod diagnostics;
 mod extension_command;
 #[path = "ExtensionConfigurationRegistry.rs"]
 mod extension_configuration_registry;
-#[path = "ExtensionConfigurationResult.rs"]
-mod extension_configuration_result;
 #[path = "ExtensionConfigurationUpdate.rs"]
 mod extension_configuration_update;
 #[path = "ExtensionInterruption.rs"]
@@ -81,8 +77,6 @@ mod host_diagnostic;
 mod host_service_handler;
 #[path = "HostServiceRouter.rs"]
 mod host_service_router;
-#[path = "RuntimeConfigurationUpdate.rs"]
-mod runtime_configuration_update;
 #[path = "RuntimeExtensionConfiguration.rs"]
 mod runtime_extension_configuration;
 #[path = "RuntimeExtensionInfo.rs"]
@@ -108,12 +102,10 @@ pub use acp_extension_process::*;
 pub(crate) use acp_transport::*;
 pub use built_in_extension::*;
 pub use built_in_extension_inventory::*;
-pub use configuration_update_disposition::*;
 pub(crate) use diagnostic_source::*;
 pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_configuration_registry::*;
-pub(crate) use extension_configuration_result::*;
 pub(crate) use extension_configuration_update::*;
 pub(crate) use extension_interruption::*;
 pub(crate) use extension_invocation::*;
@@ -137,7 +129,6 @@ pub(crate) use extension_work::*;
 pub use host_diagnostic::*;
 pub use host_service_handler::*;
 pub(crate) use host_service_router::*;
-pub use runtime_configuration_update::*;
 pub use runtime_extension_configuration::*;
 pub use runtime_extension_info::*;
 pub use runtime_invocation_completion::*;
@@ -233,3 +224,14 @@ mod host_diagnostic_tests;
 #[path = "ExtensionWorkerLifetime.rs"]
 mod extension_worker_lifetime;
 use extension_worker_lifetime::ExtensionWorkerLifetime;
+
+#[path = "ConfigurationOperation.rs"]
+mod configuration_operation;
+pub(crate) use configuration_operation::*;
+#[path = "ConfigurationApplication.rs"]
+mod configuration_application;
+pub(crate) use configuration_application::*;
+
+#[path = "ConfigurationProgressHandler.rs"]
+mod configuration_progress_handler;
+pub use configuration_progress_handler::*;

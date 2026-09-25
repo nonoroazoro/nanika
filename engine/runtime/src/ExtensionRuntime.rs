@@ -142,11 +142,12 @@ impl ExtensionRuntime {
         &mut self,
         request_id: String,
         configuration: ExtensionConfiguration,
+        progress: crate::ConfigurationProgressHandler,
         completion: crate::ConfigurationCompletion,
     ) {
         match self {
             Self::Nanika(process) => {
-                process.start_configuration_update(request_id, configuration, completion)
+                process.start_configuration_update(request_id, configuration, progress, completion)
             }
             Self::Acp(_) => completion(Err(SupervisorError::UnexpectedMessage(
                 "ACP does not support live configuration updates".to_owned(),

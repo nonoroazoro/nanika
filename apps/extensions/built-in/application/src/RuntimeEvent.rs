@@ -8,6 +8,10 @@ pub enum RuntimeEvent {
     CandidatesChanged,
     ProtocolClosed,
     ProtocolError(String),
+    ScanProgress {
+        request_id: String,
+        progress: nanika_protocol::OperationProgress,
+    },
     ScanFinished {
         request_id: Option<String>,
         response_generation: u64,

@@ -23,7 +23,7 @@ test("integer drafts retain invalid input without clamping or coercing it to zer
     }
 });
 
-test("valid integer drafts normalize only at the persistence boundary", () =>
+test("valid integer drafts normalize at the commit boundary", () =>
 {
     for (const value of ["1", "50", "5000"])
     {

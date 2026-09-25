@@ -89,6 +89,10 @@ pub enum Message {
         request_id: String,
         configuration: ExtensionConfiguration,
     },
+    ConfigurationProgress {
+        request_id: String,
+        progress: crate::OperationProgress,
+    },
     ConfigurationApplied {
         request_id: String,
     },

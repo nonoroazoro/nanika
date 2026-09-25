@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -12,20 +11,18 @@ use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMa
 use nanika_storage::{NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    BuiltInExtensionInventory, ConfigurationUpdateDisposition, ExtensionConfigurationRegistry,
-    ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler,
-    HostServiceRouter, RuntimeConfigurationUpdate, RuntimeOutputUpdate, RuntimeUpdateBatch,
-    RuntimeViewCompletion,
+    BuiltInExtensionInventory, ExtensionConfigurationRegistry, ExtensionInvocationOutcome,
+    ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter,
+    RuntimeOutputUpdate, RuntimeUpdateBatch, RuntimeViewCompletion,
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
 pub struct RuntimeService {
     search_owner: Mutex<Option<SearchOwner>>,
     search: SearchHandle,
-    extensions: ExtensionSearchCoordinator,
+    extensions: Arc<ExtensionSearchCoordinator>,
     extension_info: Vec<crate::RuntimeExtensionInfo>,
-    configurations: ExtensionConfigurationRegistry,
-    configuration_updates: Mutex<()>,
+    configurations: Arc<ExtensionConfigurationRegistry>,
     storage: Option<SearchStorageWorker>,
     startup_diagnostics: Vec<String>,
 }
@@ -71,7 +68,7 @@ impl RuntimeService {
         let router = Arc::new(router);
         let mut extensions = ExtensionSearchCoordinator::new();
         extensions.set_host_services(Arc::clone(&router) as Arc<dyn HostServiceHandler>);
-        let configurations = ExtensionConfigurationRegistry::new(config_store);
+        let configurations = Arc::new(ExtensionConfigurationRegistry::new(config_store));
 
         let current_executable = std::env::current_exe().map_err(|error| error.to_string())?;
         let mut installed_extensions = Vec::new();
@@ -176,10 +173,9 @@ impl RuntimeService {
         Ok(Self {
             search_owner: Mutex::new(Some(owner)),
             search,
-            extensions,
+            extensions: Arc::new(extensions),
             extension_info,
             configurations,
-            configuration_updates: Mutex::new(()),
             storage,
             startup_diagnostics: diagnostics,
         })
@@ -344,6 +340,7 @@ impl RuntimeService {
     }
 
     pub fn request_shutdown(&self) {
+        self.configurations.close();
         self.extensions.request_shutdown();
     }
 
@@ -353,7 +350,9 @@ impl RuntimeService {
             .search_owner
             .lock()
             .unwrap_or_else(|error| error.into_inner());
+        self.configurations.close();
         self.extensions.shutdown();
+        self.configurations.wait_idle();
         if let Some(storage) = &self.storage {
             storage.shutdown();
         }
@@ -413,59 +412,45 @@ impl RuntimeService {
             .map_err(|error| error.to_string())
     }
 
-    pub fn update_configuration(
-        &self,
-        extension_id: &str,
-        request_id: impl Into<String>,
-        values: BTreeMap<String, serde_json::Value>,
-    ) -> Result<ConfigurationUpdateDisposition, String> {
-        let _update = self
-            .configuration_updates
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let configuration = self.configurations.update(extension_id, values)?;
-        if self
-            .extensions
-            .apply_configuration(extension_id, request_id, configuration, None)
-            .map_err(|error| error.to_string())?
-        {
-            Ok(ConfigurationUpdateDisposition::LiveApplyQueued)
-        } else {
-            Ok(ConfigurationUpdateDisposition::SavedForNextLaunch)
-        }
-    }
-
-    /// Persist and queue without waiting for discovery or other extension application work.
-    /// Persistence and enqueue order agree even when multiple callers save concurrently.
+    /// Admit one property operation per extension. The runtime owns its completion,
+    /// including persistence after application when required by the property contract.
     pub fn save_configuration(
         &self,
         extension_id: &str,
         request_id: impl Into<String>,
-        values: BTreeMap<String, serde_json::Value>,
+        key: String,
+        value: serde_json::Value,
+        progress: crate::ConfigurationProgressHandler,
     ) -> Result<crate::ConfigurationSaveReceipt, String> {
+        let operation = self.configurations.prepare(extension_id, key, value)?;
+        let extensions = Arc::clone(&self.extensions);
+        let extension_id = extension_id.to_owned();
+        let request_id = request_id.into();
         let (completion, received) = std::sync::mpsc::sync_channel(1);
-        let queued = {
-            let _update = self
-                .configuration_updates
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            let configuration = self.configurations.update(extension_id, values)?;
-            self.extensions.apply_configuration(
-                extension_id,
-                request_id,
-                configuration,
-                Some(completion),
-            )
-        };
-        Ok(match queued {
-            Ok(false) => crate::ConfigurationSaveReceipt::Complete(
-                crate::ConfigurationSaveOutcome::SavedForNextLaunch,
-            ),
-            Err(error) => crate::ConfigurationSaveReceipt::Complete(
-                crate::ConfigurationSaveOutcome::ApplyFailed(error.to_string()),
-            ),
-            Ok(true) => crate::ConfigurationSaveReceipt::Pending(received),
-        })
+        std::thread::Builder::new()
+            .name("configuration-operation".to_owned())
+            .spawn(move || {
+                let outcome = operation.run(|configuration, require_live| {
+                    let (applied, application) = std::sync::mpsc::sync_channel(1);
+                    match extensions.apply_configuration(
+                        &extension_id,
+                        request_id,
+                        configuration,
+                        require_live,
+                        progress,
+                        applied,
+                    ) {
+                        Ok(true) => application.recv().map_err(|_| {
+                            "Extension closed without a configuration result.".to_owned()
+                        })?,
+                        Ok(false) => Ok(crate::ConfigurationApplication::Deferred),
+                        Err(error) => Err(error.to_string()),
+                    }
+                });
+                let _ = completion.send(outcome);
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(crate::ConfigurationSaveReceipt(received))
     }
 
     pub fn take_updates(&self) -> RuntimeUpdateBatch {
@@ -480,20 +465,7 @@ impl RuntimeService {
                 text: update.text,
             })
             .collect();
-        let configurations = self
-            .extensions
-            .take_configurations()
-            .into_iter()
-            .map(|update| RuntimeConfigurationUpdate {
-                extension_id: update.extension_id,
-                request_id: update.request_id,
-                result: update.result,
-            })
-            .collect();
-        RuntimeUpdateBatch {
-            outputs,
-            configurations,
-        }
+        RuntimeUpdateBatch { outputs }
     }
 }
 

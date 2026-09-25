@@ -31,7 +31,7 @@
           "allowUnlimited": true,
           "title": "Maximum history entries",
           "description": "Maximum number of clipboard history entries retained locally.",
-          "default": 50,
+          "persistence": "beforeApply", "default": 50,
           "minimum": 1,
           "maximum": 5000,
           "multipleOf": 1
@@ -41,7 +41,7 @@
           "allowUnlimited": true,
           "title": "Maximum age in days",
           "description": "Maximum age of clipboard history retained locally.",
-          "default": 7,
+          "persistence": "beforeApply", "default": 7,
           "minimum": 1,
           "maximum": 3650,
           "multipleOf": 1

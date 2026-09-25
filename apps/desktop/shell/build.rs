@@ -14,6 +14,7 @@ fn main() {
         "view_event",
         "open_settings",
         "read_settings",
+        "acknowledge_settings_progress",
         "settings_ready",
         "settings_window_action",
         "save_settings",

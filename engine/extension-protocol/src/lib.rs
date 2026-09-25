@@ -97,3 +97,7 @@ pub use view_filter::*;
 pub use view_filter_option::*;
 pub use view_item_icon::*;
 pub use view_metadata::*;
+
+#[path = "OperationProgress.rs"]
+mod operation_progress;
+pub use operation_progress::*;

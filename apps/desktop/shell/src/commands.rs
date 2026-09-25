@@ -192,6 +192,18 @@ pub(crate) async fn read_settings(
 }
 
 #[tauri::command]
+pub(crate) fn acknowledge_settings_progress(
+    window: tauri::WebviewWindow,
+    delivery_id: u64,
+) -> Result<(), String> {
+    authorize_settings(&window)?;
+    window
+        .state::<DesktopState>()
+        .acknowledge_settings_progress(delivery_id);
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) async fn save_settings(
     window: tauri::WebviewWindow,
     request: crate::SaveSettingsRequest,
@@ -201,21 +213,39 @@ pub(crate) async fn save_settings(
     let app = window.app_handle().clone();
     let owner = app.clone();
     let (update, receipt) = tauri::async_runtime::spawn_blocking(move || {
-        owner.state::<DesktopState>().save_settings(request)
+        let progress_owner = owner.clone();
+        owner.state::<DesktopState>().save_settings(
+            request,
+            move |request_id, extension_id, key, progress| {
+                progress_owner
+                    .state::<DesktopState>()
+                    .publish_settings_application(crate::SettingsApplicationUpdate {
+                        request_id,
+                        extension_id: extension_id.to_owned(),
+                        key: key.to_owned(),
+                        result: crate::SettingsSaveResult::Running {
+                            progress: Some(progress),
+                        },
+                    });
+            },
+        )
     })
     .await
     .map_err(|error| error.to_string())??;
-    if matches!(receipt, nanika_host::ConfigurationSaveReceipt::Pending(_)) {
-        let mut completion = update.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            completion.result = receipt.wait().into();
-            if let Some(error) = &completion.result.error {
-                tracing::error!(extension_id = completion.extension_id, %error, "saved settings could not be applied");
-            }
-            app.state::<DesktopState>()
-                .publish_settings_application(completion);
-        });
-    }
+    let mut completion = update.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = receipt.wait();
+        let error = match &result {
+            Ok(outcome) => outcome.error.as_ref(),
+            Err(error) => Some(error),
+        };
+        if let Some(error) = error {
+            tracing::error!(extension_id = completion.extension_id, %error, "settings operation failed");
+        }
+        completion.result = result.into();
+        app.state::<DesktopState>()
+            .publish_settings_application(completion);
+    });
     Ok(update)
 }
 
@@ -285,15 +315,15 @@ fn authorize_settings(window: &tauri::WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn save_host_settings(
     window: tauri::WebviewWindow,
-    preferences: nanika_config::LauncherPreferences,
-) -> Result<nanika_config::LauncherPreferences, String> {
+    request: crate::HostSettingsChange,
+) -> Result<crate::SettingsWriteResult<nanika_config::LauncherPreferences>, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let desktop = app.state::<DesktopState>();
         let _operation = desktop.begin_operation()?;
         app.state::<crate::host_settings::HostSettings>()
-            .save(&app, preferences)
+            .save(&app, request)
     })
     .await
     .map_err(|error| error.to_string())?

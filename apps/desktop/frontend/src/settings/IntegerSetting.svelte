@@ -5,12 +5,13 @@ import { integerError } from "./integerValue";
 import { emptyValue } from "./values";
 import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
 
-const { schema, value, label, id, onChange }: {
+const { schema, value, label, id, onChange, onCommit }: {
     schema: ConfigurationSchema;
     value: ConfigurationValue | undefined;
     label: string;
     id: string;
     onChange: (value: ConfigurationValue) => void;
+    onCommit: () => void;
 } = $props();
 let input = $state<HTMLInputElement>();
 let previousLimit = $state<ConfigurationValue | undefined>();
@@ -66,6 +67,7 @@ $effect(() =>
                     previousLimit = value;
                     onChange(null);
                 }
+                onCommit();
             }}
         >
             <svg

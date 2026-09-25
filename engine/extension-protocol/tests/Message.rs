@@ -442,3 +442,51 @@ fn native_view_icons_are_opaque_and_validated() {
     };
     assert!(view.validate().is_err());
 }
+
+#[test]
+fn configuration_progress_requires_real_bounded_work_units() {
+    use nanika_protocol::OperationProgress;
+    for progress in [
+        OperationProgress {
+            label: "Scanning".into(),
+            completed: 1,
+            total: Some(2),
+        },
+        OperationProgress {
+            label: "Connecting".into(),
+            completed: 0,
+            total: None,
+        },
+    ] {
+        assert!(progress.validate().is_ok());
+    }
+    for progress in [
+        OperationProgress {
+            label: "".into(),
+            completed: 0,
+            total: None,
+        },
+        OperationProgress {
+            label: "x".repeat(129),
+            completed: 0,
+            total: None,
+        },
+        OperationProgress {
+            label: "Scanning".into(),
+            completed: 3,
+            total: Some(2),
+        },
+        OperationProgress {
+            label: "Scanning".into(),
+            completed: 0,
+            total: Some(0),
+        },
+        OperationProgress {
+            label: "Connecting".into(),
+            completed: 1,
+            total: None,
+        },
+    ] {
+        assert!(progress.validate().is_err());
+    }
+}

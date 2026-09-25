@@ -339,11 +339,9 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         },
     )
     .expect("configuration change should write");
-    assert!(matches!(
-        read_response(&mut output, "configuration response"),
-        Some(Message::ConfigurationApplied { request_id })
-            if request_id == "change-configuration"
-    ));
+    let progress = _read_configuration(&mut output, "change-configuration");
+    assert!(progress.iter().any(|value| value.total.is_none()));
+    assert!(progress.iter().any(|value| value.total.is_some()));
 
     write_frame(
         &mut input,
@@ -592,9 +590,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         },
     )
     .unwrap();
-    assert!(
-        matches!(read_response(&mut output, "configuration"), Some(Message::ConfigurationApplied { request_id }) if request_id == "configure-partial")
-    );
+    _read_configuration(&mut output, "configure-partial");
     write_frame(
         &mut input,
         &Message::Refresh {
@@ -653,4 +649,34 @@ fn _broken_application(root: &Path) -> PathBuf {
     std::fs::create_dir_all(bundle.join("Contents")).unwrap();
     std::fs::write(bundle.join("Contents/Info.plist"), "invalid plist").unwrap();
     bundle
+}
+
+fn _read_configuration(
+    output: &mut impl std::io::Read,
+    expected: &str,
+) -> Vec<nanika_protocol::OperationProgress> {
+    let mut updates: Vec<nanika_protocol::OperationProgress> = Vec::new();
+    loop {
+        match read_response(output, "configuration response") {
+            Some(Message::ConfigurationProgress {
+                request_id,
+                progress,
+            }) => {
+                assert_eq!(request_id, expected);
+                progress.validate().unwrap();
+                if let Some(previous) = updates.last() {
+                    assert!(progress.completed >= previous.completed);
+                    if previous.total.is_some() {
+                        assert_eq!(progress.total, previous.total);
+                    }
+                }
+                updates.push(progress);
+            }
+            Some(Message::ConfigurationApplied { request_id }) => {
+                assert_eq!(request_id, expected);
+                return updates;
+            }
+            response => panic!("unexpected configuration response: {response:?}"),
+        }
+    }
 }

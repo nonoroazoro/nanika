@@ -254,6 +254,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "the application extension received an unsupported message",
                 )?,
             },
+            RuntimeEvent::ScanProgress {
+                request_id,
+                progress,
+            } => {
+                if configuration_requests.contains_key(&request_id) {
+                    write_frame(
+                        &mut output,
+                        &Message::ConfigurationProgress {
+                            request_id,
+                            progress,
+                        },
+                    )?;
+                }
+            }
             RuntimeEvent::CandidatesChanged => {
                 write_frame(&mut output, &Message::CandidatesChanged)?;
             }
@@ -449,6 +463,7 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
         | Message::ConfigurationChanged { request_id, .. }
+        | Message::ConfigurationProgress { request_id, .. }
         | Message::ConfigurationApplied { request_id }
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. }

@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -8,12 +7,12 @@ use nanika_extension_package::ExtensionContributions;
 use nanika_search::SearchHandle;
 
 use crate::{
-    DiagnosticCode, ExtensionConfigurationResult, ExtensionConfigurationUpdate,
-    ExtensionInterruption, ExtensionInvocation, ExtensionInvocationOutcome,
-    ExtensionInvocationOutput, ExtensionInvocationOutputState, ExtensionNotifier, ExtensionRefresh,
-    ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery, ExtensionSearchState,
-    ExtensionSearchWorkerContext, ExtensionViewRequest, ExtensionViewRequestKind, ExtensionWork,
-    HostDiagnostic, RuntimeViewCompletion, SupervisorError, publish_extension_snapshot,
+    DiagnosticCode, ExtensionConfigurationUpdate, ExtensionInterruption, ExtensionInvocation,
+    ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionInvocationOutputState,
+    ExtensionNotifier, ExtensionRefresh, ExtensionRuntime, ExtensionRuntimeInvocation,
+    ExtensionSearchQuery, ExtensionSearchState, ExtensionSearchWorkerContext, ExtensionViewRequest,
+    ExtensionViewRequestKind, ExtensionWork, HostDiagnostic, RuntimeViewCompletion,
+    SupervisorError, publish_extension_snapshot,
 };
 
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
@@ -23,7 +22,6 @@ pub(crate) struct ExtensionSearchWorker {
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     invocation_output: Arc<Mutex<ExtensionInvocationOutputState>>,
-    configuration_results: Arc<Mutex<VecDeque<ExtensionConfigurationResult>>>,
     live_configuration: bool,
     root_search: bool,
     query_ready: Arc<AtomicBool>,
@@ -111,17 +109,13 @@ impl ExtensionSearchWorker {
         let worker_error = Arc::clone(&last_error);
         let invocation_output = Arc::new(Mutex::new(ExtensionInvocationOutputState::default()));
         let worker_invocation_output = Arc::clone(&invocation_output);
-        let configuration_results = Arc::new(Mutex::new(VecDeque::new()));
-        let worker_configuration_results = Arc::clone(&configuration_results);
         let query_ready = Arc::new(AtomicBool::new(false));
         let worker_query_ready = Arc::clone(&query_ready);
         let thread = std::thread::Builder::new()
             .name(format!("nanika-search-extension-{extension_id}"))
             .spawn(move || {
                 let _lifetime = crate::ExtensionWorkerLifetime {
-                    extension_id: worker_extension_id.clone(),
                     state: Arc::clone(&worker_state),
-                    configuration_results: Arc::clone(&worker_configuration_results),
                     notifier: Arc::clone(&notifier),
                 };
                 let mut runtime = None;
@@ -144,9 +138,9 @@ impl ExtensionSearchWorker {
                     if runtime.is_none() {
                         match work {
                             ExtensionWork::PrepareEntries { .. } => continue,
-                            ExtensionWork::ApplyConfiguration(update) => {
+                            ExtensionWork::ApplyConfiguration(update) if !update.require_live => {
                                 configuration = update.configuration.clone();
-                                update.complete(&worker_extension_id, &worker_configuration_results, Ok(()));
+                                update.complete(Ok(crate::ConfigurationApplication::Deferred));
                                 worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).configuration_pending = false;
                                 notify(&notifier);
                                 continue;
@@ -169,7 +163,7 @@ impl ExtensionSearchWorker {
                                 ExtensionWork::ViewEvent(request) => { let _ = request.completion.send(Err(message)); }
                                 ExtensionWork::Refresh(refresh) => { let _ = refresh.completion.send(Err(message)); }
                                 ExtensionWork::ApplyConfiguration(update) => {
-                                    update.complete(&worker_extension_id, &worker_configuration_results, Err(message));
+                                    update.complete(Err(message));
                                     worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).configuration_pending = false;
                                 }
                                 _ => {}
@@ -276,7 +270,7 @@ impl ExtensionSearchWorker {
                         }
                         ExtensionWork::ApplyConfiguration(update) => {
                             run_configuration_update(runtime, update, &worker_extension_id,
-                                &worker_state, &worker_configuration_results, &worker_error, &notifier);
+                                &worker_state, &worker_error, &notifier);
                             Ok(false)
                         }
                     };
@@ -312,7 +306,6 @@ impl ExtensionSearchWorker {
             state,
             last_error,
             invocation_output,
-            configuration_results,
             live_configuration,
             root_search: contributions.root_search.is_some(),
             query_ready,
@@ -390,7 +383,9 @@ impl ExtensionSearchWorker {
         &self,
         request_id: String,
         configuration: nanika_protocol::ExtensionConfiguration,
-        completion: Option<std::sync::mpsc::SyncSender<Result<(), String>>>,
+        require_live: bool,
+        progress: crate::ConfigurationProgressHandler,
+        completion: std::sync::mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>,
     ) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
         let mut state = wait_for_capacity(lock, ready)?;
@@ -399,6 +394,8 @@ impl ExtensionSearchWorker {
             .push_back(ExtensionConfigurationUpdate {
                 request_id,
                 configuration,
+                require_live,
+                progress,
                 completion,
             });
         ready.notify_one();
@@ -429,14 +426,6 @@ impl ExtensionSearchWorker {
 
     pub(crate) fn supports_live_configuration(&self) -> bool {
         self.live_configuration
-    }
-
-    pub(crate) fn take_configurations(&self) -> Vec<ExtensionConfigurationResult> {
-        self.configuration_results
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .drain(..)
-            .collect()
     }
 
     pub(crate) fn take_invocation_outputs(&self) -> Vec<ExtensionInvocationOutput> {
@@ -595,20 +584,22 @@ fn run_configuration_update(
     update: ExtensionConfigurationUpdate,
     extension_id: &str,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-    results: &Arc<Mutex<VecDeque<ExtensionConfigurationResult>>>,
     error: &Arc<Mutex<Option<HostDiagnostic>>>,
     notifier: &ExtensionNotifier,
 ) {
     let state = Arc::clone(state);
-    let results = Arc::clone(results);
     let error = Arc::clone(error);
     let notifier = Arc::clone(notifier);
     let extension_id = extension_id.to_owned();
     runtime.start_configuration_update(
         update.request_id.clone(),
         update.configuration.clone(),
+        Arc::clone(&update.progress),
         Box::new(move |result| {
-            let completion = result.as_ref().map_err(ToString::to_string).copied();
+            let completion = result
+                .as_ref()
+                .map_err(ToString::to_string)
+                .map(|_| crate::ConfigurationApplication::Applied);
             match result {
                 Ok(()) => set_error(&error, None),
                 Err(cause) => set_error(
@@ -616,12 +607,12 @@ fn run_configuration_update(
                     Some(extension_failure(
                         &extension_id,
                         "apply configuration",
-                        "Saved settings could not be applied.",
+                        "Settings could not be applied.",
                         cause,
                     )),
                 ),
             }
-            update.complete(&extension_id, &results, completion);
+            update.complete(completion);
             state
                 .0
                 .lock()

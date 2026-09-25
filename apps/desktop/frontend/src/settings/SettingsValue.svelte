@@ -8,12 +8,13 @@ import { emptyValue, fieldTitle } from "./values";
 import { stringError } from "./stringValue";
 import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
 
-const { schema, value, label, id, onChange }: {
+const { schema, value, label, id, onChange, onCommit }: {
     schema: ConfigurationSchema;
     value: ConfigurationValue | undefined;
     label: string;
     id: string;
     onChange: (value: ConfigurationValue) => void;
+    onCommit: () => void;
 } = $props();
 const array = $derived(Array.isArray(value) ? value : []);
 const object = $derived(value && typeof value === "object" && !Array.isArray(value) ? value : {});
@@ -21,12 +22,17 @@ let visibleCount = $state(20);
 let stringInput = $state<HTMLInputElement>();
 const currentStringError = $derived(schema.type === "string" ? stringError(schema, value) : null);
 $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
+function _change(next: ConfigurationValue): void
+{
+    onChange(next);
+    onCommit();
+}
 </script>
 
 {#if schema.type === "boolean"}
-    <Switch {id} {label} checked={value === true} {onChange} />
+    <Switch {id} {label} checked={value === true} onChange={_change} />
 {:else if schema.type === "integer"}
-    <IntegerSetting {id} {schema} {value} {label} {onChange} />
+    <IntegerSetting {id} {schema} {value} {label} {onChange} {onCommit} />
 {:else if schema.type === "string"}
     <Input
         bind:ref={stringInput}
@@ -37,6 +43,7 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
         maxlength={schema.maxLength ?? 4096}
         value={typeof value === "string" ? value : ""}
         oninput={event => onChange(event.currentTarget.value)}
+        aria-invalid={currentStringError !== null ? true : undefined}
     />
 {:else if schema.type === "array" && schema.items}
     <div class="array" role="group" aria-label={label}>
@@ -48,13 +55,14 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                         value={item}
                         label={`${label}, entry ${index + 1}`}
                         id={`${id}-${index}`}
+                        {onCommit}
                         onChange={next => onChange(array.map((current, position) => position === index ? next : current))}
                     />
                 </div>
                 <Button
                     class="remove"
                     aria-label={`Remove ${label} entry ${index + 1}`}
-                    onclick={() => onChange(array.filter((_, position) => position !== index))}
+                    onclick={() => _change(array.filter((_, position) => position !== index))}
                 >
                     Remove
                 </Button>
@@ -67,7 +75,7 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                 {
                     if (schema.items)
                     {
-                        onChange([...array, emptyValue(schema.items)]);
+                        _change([...array, emptyValue(schema.items)]);
                         visibleCount = array.length + 1;
                     }
                 }}
@@ -94,7 +102,7 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                     {#if !schema.required.includes(key)}
                         <div class="optional">
                             <span>Include</span><Switch
-                                checked={key in object}
+                                checked={Object.hasOwn(object, key)}
                                 label={`Include ${fieldTitle(key)}`}
                                 onChange={checked =>
                                 {
@@ -107,18 +115,19 @@ $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
                                     {
                                         delete next[key];
                                     }
-                                    onChange(next);
+                                    _change(next);
                                 }}
                             />
                         </div>
                     {/if}
                 </div>
-                {#if key in object || schema.required.includes(key)}
+                {#if Object.hasOwn(object, key) || schema.required.includes(key)}
                     <SettingsValue
                         schema={child}
                         value={object[key]}
                         label={`${label}, ${fieldTitle(key)}`}
                         id={`${id}-${key}`}
+                        {onCommit}
                         onChange={next => onChange({ ...object, [key]: next })}
                     />
                 {/if}

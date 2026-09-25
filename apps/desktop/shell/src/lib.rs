@@ -158,6 +158,7 @@ pub fn run() -> Result<(), String> {
             view_event,
             open_settings,
             read_settings,
+            acknowledge_settings_progress,
             settings_ready,
             settings_window_action,
             save_settings,
@@ -254,3 +255,17 @@ pub fn run() -> Result<(), String> {
         });
     Ok(())
 }
+
+#[path = "SettingsWriteResult.rs"]
+mod settings_write_result;
+pub(crate) use settings_write_result::*;
+#[path = "HostSettingsChange.rs"]
+mod host_settings_change;
+pub(crate) use host_settings_change::*;
+
+#[path = "SettingsApplications.rs"]
+mod settings_applications;
+pub(crate) use settings_applications::*;
+#[cfg(test)]
+#[path = "../tests/SettingsApplications.rs"]
+mod settings_applications_tests;

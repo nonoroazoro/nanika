@@ -247,7 +247,19 @@ fn run_scan(
         .read()
         .unwrap_or_else(|error| error.into_inner())
         .clone();
-    let result = index.scan(&config, generation, services.cancelled_through);
+    let result = index.scan(
+        &config,
+        generation,
+        services.cancelled_through,
+        |progress| {
+            if let Some(request_id) = &request_id {
+                let _ = services.events.send(RuntimeEvent::ScanProgress {
+                    request_id: request_id.clone(),
+                    progress,
+                });
+            }
+        },
+    );
     match result {
         Ok((report, discovered)) => {
             replace_entries(services.entries, discovered);

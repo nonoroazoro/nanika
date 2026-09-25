@@ -192,9 +192,7 @@ fn worker_exit_completes_every_queued_refresh_with_an_error() {
         completions.push(receiver);
     }
     drop(crate::ExtensionWorkerLifetime {
-        extension_id: "test.extension".to_owned(),
         state,
-        configuration_results: Arc::new(Mutex::new(Default::default())),
         notifier: Arc::new(Mutex::new(None)),
     });
     for completion in completions {

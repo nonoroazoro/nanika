@@ -96,7 +96,7 @@ fn manifest_rejects_integer_constraints_outside_the_frontend_safe_range() {
                     "test.limit": {
                         "type": "integer",
                         "title": "Limit",
-                        "default": 1,
+                        "persistence": "beforeApply", "default": 1,
                         "minimum": 1,
                         "maximum": 9007199254740991_i64,
                         "multipleOf": 1

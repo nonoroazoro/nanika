@@ -1,4 +1,6 @@
 import type { ContributionIcon } from "./ContributionIcon";
+import type { OperationProgress } from "./OperationProgress";
+import type { SettingsWriteResult } from "../settings/SettingsWriteResult";
 
 export type ConfigurationValue =
     | {
@@ -29,6 +31,7 @@ export interface ConfigurationSchema
 export interface ConfigurationProperty extends ConfigurationSchema
 {
     title: string;
+    persistence: "afterApply" | "beforeApply";
     description: string | null;
     default: ConfigurationValue;
     platforms?: Array<"macos" | "windows">;
@@ -45,7 +48,9 @@ export interface ExtensionSettings
     application: SettingsApplicationUpdate | null;
     configuration: {
         contribution: { properties: Record<string, ConfigurationProperty>; title: string; };
+        effective: Record<string, ConfigurationValue> | null;
         extensionId: string;
+        saved: Record<string, ConfigurationValue>;
         values: Record<string, ConfigurationValue>;
     } | null;
 }
@@ -68,15 +73,15 @@ export interface HostPreferences
 
 export type StartupStatus = "disabled" | "enabled" | "needsRepair" | "notFound" | "requiresApproval";
 
-export interface SettingsSaveResult
-{
-    status: "applied" | "applyFailed" | "applying" | "nextLaunch";
-    error: string | null;
-}
+export type SettingsSaveResult =
+    | { error: string; status: "failed"; }
+    | { progress: OperationProgress | null; status: "running"; }
+    | ({ status: "completed"; } & SettingsWriteResult<Record<string, ConfigurationValue>>);
 
 export interface SettingsApplicationUpdate
 {
     requestId: number;
     extensionId: string;
+    key: string;
     result: SettingsSaveResult;
 }

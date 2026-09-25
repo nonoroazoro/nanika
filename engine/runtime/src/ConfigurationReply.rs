@@ -12,12 +12,23 @@ pub(crate) type ConfigurationCompletion = Box<dyn FnOnce(Result<(), SupervisorEr
 /// One in-flight configuration reply, dispatched independently of search responses.
 #[derive(Default)]
 pub(crate) struct ConfigurationReply {
-    pending: Mutex<Option<(String, ConfigurationCompletion)>>,
+    pending: Mutex<
+        Option<(
+            String,
+            crate::ConfigurationProgressHandler,
+            ConfigurationCompletion,
+        )>,
+    >,
     closed: AtomicBool,
 }
 
 impl ConfigurationReply {
-    pub(crate) fn register(&self, id: String, completion: ConfigurationCompletion) -> bool {
+    pub(crate) fn register(
+        &self,
+        id: String,
+        progress: crate::ConfigurationProgressHandler,
+        completion: ConfigurationCompletion,
+    ) -> bool {
         let mut pending = self
             .pending
             .lock()
@@ -45,7 +56,7 @@ impl ConfigurationReply {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
-        if let Some((_, completion)) = pending {
+        if let Some((_, _, completion)) = pending {
             completion(Err(error));
         }
     }
@@ -58,9 +69,27 @@ impl ConfigurationReply {
             .pending
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let Some((id, _)) = pending.as_ref() else {
-            return false;
+        let Some((id, progress_handler, _)) = pending.as_ref() else {
+            return matches!(frame, Ok(Some(Message::ConfigurationProgress { .. })));
         };
+        if let Ok(Some(Message::ConfigurationProgress {
+            request_id,
+            progress,
+        })) = frame
+        {
+            if request_id != id {
+                return true;
+            }
+            // Reject invalid progress but retain the lock until terminal acknowledgement.
+            if let Err(error) = progress.validate() {
+                tracing::warn!(%error, "invalid configuration progress");
+                return true;
+            }
+            let handler = std::sync::Arc::clone(progress_handler);
+            drop(pending);
+            handler(progress.clone());
+            return true;
+        }
         let (result, consumed) = match frame {
             Ok(Some(Message::ConfigurationApplied { request_id })) if request_id == id => {
                 (Ok(()), true)
@@ -84,7 +113,7 @@ impl ConfigurationReply {
             ),
             _ => return false,
         };
-        let (_, completion) = pending.take().expect("pending configuration reply");
+        let (_, _, completion) = pending.take().expect("pending configuration reply");
         drop(pending);
         completion(result);
         consumed

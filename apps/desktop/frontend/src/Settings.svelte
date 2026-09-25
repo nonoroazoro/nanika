@@ -6,55 +6,63 @@ import { settingsBridge } from "./bridge/settingsBridge";
 import SettingsValue from "./settings/SettingsValue.svelte";
 import DirectoryList from "./settings/DirectoryList.svelte";
 import GeneralSettings from "./settings/GeneralSettings.svelte";
-import SettingsActions from "./settings/SettingsActions.svelte";
+import SettingsToast from "./settings/SettingsToast.svelte";
+import SettingsField from "./settings/SettingsField.svelte";
+import { SettingsApplications } from "./settings/SettingsApplications";
+import { SettingsState } from "./settings/SettingsState.svelte";
+import { StartupSettings } from "./settings/StartupSettings.svelte";
+import { uiActivity } from "./ui/activity";
+import { prepareSetting } from "./settings/validation";
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
 import type { SettingsWindowAction } from "./types/SettingsWindowAction";
-import { normalizeSettings } from "./settings/integerValue";
 import { orderedProperties } from "./settings/properties";
 import ContributionIconTile from "./components/ContributionIconTile.svelte";
 import type {
     ConfigurationValue,
-    ExtensionSettings,
     HostPreferences,
     SettingsApplicationUpdate,
     SettingsSnapshot
 } from "./types/Settings";
 
+let notification = $state<string | null>(null);
 let customControls = $state(false);
 let maximized = $state(false);
 let windowError = $state<string | null>(null);
 let snapshot = $state.raw<SettingsSnapshot | null>(null);
-let hostDraft = $state.raw<HostPreferences | null>(null);
-let drafts = $state.raw<Record<string, Record<string, ConfigurationValue>>>({});
-let messages = $state.raw<Record<string, { text: string; failed: boolean; }>>({});
+let host = $state.raw<SettingsState<HostPreferences> | null>(null);
+const startup = new StartupSettings(settingsBridge.readStartup, settingsBridge.setStartup, _notify);
+let states = $state.raw<Record<string, SettingsState<Record<string, ConfigurationValue>>>>({});
 let selection = $state("general");
 let loading = $state(true);
 let loadError = $state(false);
-let saving = $state(false);
-const applicationResults: Record<string, SettingsApplicationUpdate> = {};
+const applications = new SettingsApplications();
 const extensions = $derived(snapshot?.extensions ?? []);
 const selected = $derived(extensions.find(extension => extension.id === selection) ?? null);
 const properties = $derived(orderedProperties(selected?.configuration?.contribution.properties ?? {}));
-const values = $derived(drafts[selection] ?? {});
-const dirty = $derived(selected !== null && isDirty(selected));
-const message = $derived(messages[selection]);
-const hostDirty = $derived(snapshot !== null && JSON.stringify(hostDraft) !== JSON.stringify(snapshot.general));
+const selectedState = $derived(states[selection]);
+const values = $derived(selectedState?.values ?? {});
 
 onMount(() =>
 {
-    prepare();
+    _prepare();
+    void _loadStartup();
+    let active = false;
+    return uiActivity.subscribe(activity =>
+    {
+        const next = activity.visible && activity.focused;
+        if (next && !active)
+        {
+            void _loadStartup();
+        }
+        active = next;
+    });
 });
 
-function prepare(): void
+function _prepare(): void
 {
     windowError = null;
     selection = "general";
-    messages = {};
-    for (const id of Object.keys(applicationResults))
-    {
-        delete applicationResults[id];
-    }
-    void load().then(async () =>
+    void _load().then(async () =>
     {
         await tick();
         customControls = await settingsBridge.ready();
@@ -65,50 +73,75 @@ function prepare(): void
     });
 }
 
-async function load(): Promise<void>
+async function _load(): Promise<void>
 {
     loading = true;
     loadError = false;
-    const buffered: SettingsApplicationUpdate[] = [];
-    let receiving = false;
     try
     {
         snapshot = await settingsBridge.read(
-            update =>
-            {
-                if (receiving)
-                {
-                    recordApplication(update);
-                }
-                else
-                {
-                    buffered.push(update);
-                }
-            },
-            prepare,
+            _application,
+            _closed,
             next =>
             {
                 maximized = next;
-            }
+            },
+            error => console.error("Settings progress receipt failed", error)
         );
         maximized = snapshot.maximized;
-        hostDraft = structuredClone(snapshot.general);
-        drafts = Object.fromEntries(
-            snapshot.extensions.map(extension => [extension.id, structuredClone(extension.configuration?.values ?? {})])
+        host = new SettingsState(
+            { values: snapshot.general, saved: snapshot.general, effective: snapshot.general, error: null },
+            settingsBridge.saveHost,
+            undefined,
+            _notify
         );
+        // Snapshot replies and Channel updates share the same ordering rules.
+        // A delayed progress message must not replace a terminal result during loading.
         for (const extension of snapshot.extensions)
         {
             if (extension.application)
             {
-                recordApplication(extension.application);
+                applications.record(extension.application);
             }
         }
-        // Channel messages can arrive before the initial command reply.
-        for (const update of buffered)
+        states = Object.fromEntries(snapshot.extensions.flatMap(extension =>
         {
-            recordApplication(update);
+            const configuration = extension.configuration;
+            if (!configuration)
+            {
+                return [];
+            }
+            const schemas = configuration.contribution.properties;
+            const application = applications.current(extension.id);
+            return [[
+                extension.id,
+                new SettingsState(
+                    application?.result.status === "completed"
+                        ? application.result
+                        : { ...configuration, error: null },
+                    async (key, value) =>
+                    {
+                        const update = await settingsBridge.save(extension.id, key, value);
+                        return await applications.completion(update);
+                    },
+                    (key, draft) => prepareSetting(schemas, key, draft),
+                    _notify
+                )
+            ]];
+        }));
+        for (const extension of snapshot.extensions)
+        {
+            const application = applications.current(extension.id);
+            const state = states[extension.id];
+            if (state && application?.result.status === "running")
+            {
+                if (application.result.progress)
+                {
+                    state.progress.set(application.key, application.result.progress);
+                }
+                state.resume(application.key, applications.completion(application));
+            }
         }
-        receiving = true;
     }
     catch (error)
     {
@@ -121,102 +154,47 @@ async function load(): Promise<void>
     }
 }
 
-function recordApplication(update: SettingsApplicationUpdate): void
+async function _loadStartup(): Promise<void>
 {
-    const current = applicationResults[update.extensionId];
-    if (
-        current && (current.requestId > update.requestId
-            || (current.requestId === update.requestId && current.result.status !== "applying"))
-    )
-    {
-        return;
-    }
-    applicationResults[update.extensionId] = update;
-    const { result } = update;
-    if (result.status === "applyFailed")
-    {
-        console.error(`Settings for ${update.extensionId} could not be applied`, result.error);
-        messages = {
-            ...messages,
-            [update.extensionId]: {
-                text: "Changes were saved but could not be applied.",
-                failed: true
-            }
-        };
-    }
-    else
-    {
-        const next = { ...messages };
-        delete next[update.extensionId];
-        messages = next;
-    }
-}
-
-function isDirty(extension: ExtensionSettings): boolean
-{
-    const configuration = extension.configuration;
-    return configuration !== null && JSON.stringify(
-                normalizeSettings(configuration.contribution.properties, drafts[extension.id] ?? {})
-            ) !== JSON.stringify(configuration.values);
-}
-
-function change(key: string, value: ConfigurationValue): void
-{
-    drafts = { ...drafts, [selection]: { ...values, [key]: value } };
-    const next = { ...messages };
-    delete next[selection];
-    messages = next;
-}
-
-function discard(): void
-{
-    drafts = { ...drafts, [selection]: structuredClone(selected?.configuration?.values ?? {}) };
-    const next = { ...messages };
-    delete next[selection];
-    messages = next;
-}
-
-async function save(event: SubmitEvent): Promise<void>
-{
-    event.preventDefault();
-    if (saving || !selected?.configuration || !dirty)
-    {
-        return;
-    }
-    const id = selected.id;
-    const submitted = normalizeSettings(selected.configuration.contribution.properties, structuredClone(values));
-    saving = true;
     try
     {
-        const update = await settingsBridge.save(id, submitted);
-        // Application can fail after persistence. Keep the saved baseline honest,
-        // preserve the concrete error, and never resubmit automatically.
-        if (snapshot)
-        {
-            snapshot = {
-                ...snapshot,
-                extensions: snapshot.extensions.map(extension =>
-                    extension.id === id && extension.configuration
-                        ? { ...extension, configuration: { ...extension.configuration, values: submitted } }
-                        : extension
-                )
-            };
-        }
-        recordApplication(update);
+        await startup.refresh();
     }
     catch (error)
     {
-        console.error(`Settings for ${id} could not be saved`, error);
-        messages = {
-            ...messages,
-            [id]: { text: "Changes could not be saved. Try again.", failed: true }
-        };
-    }
-    finally
-    {
-        saving = false;
+        console.error("Startup settings could not load", error);
     }
 }
+
+function _application(update: SettingsApplicationUpdate): void
+{
+    if (applications.record(update) && update.result.status === "running" && update.result.progress)
+    {
+        const state = states[update.extensionId];
+        if (state)
+        {
+            state.progress.set(update.key, update.result.progress);
+        }
+    }
+}
+
+function _notify(error: string): void
+{
+    notification = error;
+}
+
+function _closed(): void
+{
+    // Retain pending writes and failed edits across native closes; reloading can overwrite them.
+    selectedState?.commitEdits();
+    selection = "general";
+    void tick().then(() => settingsBridge.ready()).catch(error =>
+    {
+        console.error("Settings could not finish closing", error);
+        windowError = String(error);
+    });
+}
+
 function _windowAction(action: SettingsWindowAction): void
 {
     void settingsBridge.windowAction(action).catch(error =>
@@ -227,6 +205,13 @@ function _windowAction(action: SettingsWindowAction): void
 </script>
 
 <div class="settings-window" class:maximized>
+    <SettingsToast
+        message={notification}
+        onDismiss={() =>
+        {
+            notification = null;
+        }}
+    />
     {#if customControls}<SettingsTitleBar {maximized} onAction={_windowAction} />{/if}
     {#if windowError}<div class="window-error" role="alert">{windowError}</div>{/if}
     <main class="settings">
@@ -237,7 +222,9 @@ function _windowAction(action: SettingsWindowAction): void
                     aria-current={selection === "general" ? "page" : undefined}
                     onclick={() =>
                     {
+                        selectedState?.commitEdits();
                         selection = "general";
+                        void _loadStartup();
                     }}
                 >
                     <span class="nav-icon" aria-hidden="true"><svg
@@ -251,7 +238,6 @@ function _windowAction(action: SettingsWindowAction): void
                             <rect x="3" y="4" width="18" height="16" rx="3" />
                             <path d="M3 10h18M9 10v10" />
                         </svg></span>General
-                    {#if hostDirty}<span class="unsaved-dot" aria-label="Unsaved changes"></span>{/if}
                 </Button>
                 <h2>Extensions</h2>
                 {#each extensions as extension (extension.id)}
@@ -260,12 +246,12 @@ function _windowAction(action: SettingsWindowAction): void
                         aria-current={selection === extension.id ? "page" : undefined}
                         onclick={() =>
                         {
+                            selectedState?.commitEdits();
                             selection = extension.id;
                         }}
                     >
                         <span class="nav-icon" aria-hidden="true"><ContributionIconTile kind={extension.icon} /></span>
                         <span class="nav-title">{extension.name}</span>
-                        {#if isDirty(extension)}<span class="unsaved-dot" aria-label="Unsaved changes"></span>{/if}
                     </Button>
                 {/each}
             </nav>
@@ -280,28 +266,17 @@ function _windowAction(action: SettingsWindowAction): void
                     <Button
                         onclick={() =>
                         {
-                            void load();
+                            void _load();
                         }}
                     >
                         Try again
                     </Button>
                 </div>
-            {:else if selection === "general" && snapshot && hostDraft}
+            {:else if selection === "general" && host}
                 <GeneralSettings
-                    preferences={snapshot.general}
-                    draft={hostDraft}
-                    onChange={value =>
-                    {
-                        hostDraft = value;
-                    }}
-                    onSaved={value =>
-                    {
-                        if (snapshot)
-                        {
-                            snapshot = { ...snapshot, general: value };
-                            hostDraft = structuredClone(value);
-                        }
-                    }}
+                    settings={host}
+                    startup={startup.status === null ? null : startup.settings}
+                    startupStatus={startup.status}
                 />
             {:else if selected}
                 <div class="extension-page">
@@ -319,8 +294,14 @@ function _windowAction(action: SettingsWindowAction): void
                         <p>No settings available for this extension.</p>
                     {:else}
                         {#key selected.id}
-                            <form onsubmit={save}>
-                                <fieldset disabled={saving} class="fields">
+                            <form
+                                onsubmit={event =>
+                                {
+                                    event.preventDefault();
+                                    selectedState?.commitEdits();
+                                }}
+                            >
+                                <div class="fields">
                                     {#each properties as [key, property] (key)}
                                         <section
                                             class="property"
@@ -333,30 +314,47 @@ function _windowAction(action: SettingsWindowAction): void
                                                     {#if property.description}<p>{property.description}</p>{/if}
                                                 </div>{/if}
                                             <div class="property-control">
-                                                {#if property.type === "array" && property.items?.format === "directory"}
-                                                    <DirectoryList
-                                                        paths={values[key] as string[]}
-                                                        maximum={property.maxItems ?? 0}
-                                                        label={property.title}
-                                                        titleId={`title-${key}`}
-                                                        description={property.description}
-                                                        onPick={() => settingsBridge.pickDirectory(selection, key)}
-                                                        onChange={paths => change(key, paths)}
-                                                    />
-                                                {:else}
-                                                    <SettingsValue
-                                                        schema={property}
-                                                        value={values[key]}
-                                                        label={property.title}
-                                                        id={`setting-${key}`}
-                                                        onChange={value => change(key, value)}
-                                                    />
-                                                {/if}
+                                                <SettingsField
+                                                    busy={selectedState?.phase.get(key) !== undefined}
+                                                    label={property.title}
+                                                    startedAt={selectedState?.startedAt.get(key)}
+                                                    progress={selectedState?.progress.get(key)}
+                                                    onCommit={() =>
+                                                    {
+                                                        void selectedState?.commit(key);
+                                                    }}
+                                                >
+                                                    {#if property.type === "array" && property.items?.format === "directory"}
+                                                        <DirectoryList
+                                                            paths={values[key] as string[]}
+                                                            maximum={property.maxItems ?? 0}
+                                                            label={property.title}
+                                                            titleId={`title-${key}`}
+                                                            description={property.description}
+                                                            onPick={() => settingsBridge.pickDirectory(selection, key)}
+                                                            onChange={paths =>
+                                                            {
+                                                                void selectedState?.change(key, paths);
+                                                            }}
+                                                        />
+                                                    {:else}
+                                                        <SettingsValue
+                                                            schema={property}
+                                                            value={values[key]}
+                                                            label={property.title}
+                                                            id={`setting-${key}`}
+                                                            onChange={value => selectedState?.edit(key, value)}
+                                                            onCommit={() =>
+                                                            {
+                                                                void selectedState?.commit(key);
+                                                            }}
+                                                        />
+                                                    {/if}
+                                                </SettingsField>
                                             </div>
                                         </section>
                                     {/each}
-                                </fieldset>
-                                <SettingsActions {dirty} {saving} error={message?.text} onDiscard={discard} />
+                                </div>
                             </form>
                         {/key}
                     {/if}
@@ -367,7 +365,7 @@ function _windowAction(action: SettingsWindowAction): void
 </div>
 
 <style>
-.settings-window { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
+.settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
 .settings-window.maximized { border: 0; border-radius: 0; }
 .window-error { padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
 
@@ -381,7 +379,6 @@ nav :global(button.active) { background: var(--surface-selected); font-weight: 6
 .nav-icon { --icon-size: 22px; display: grid; width: 20px; height: 20px; flex-shrink: 0; place-items: center; color: var(--text-secondary); }
 .nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 nav h2 { display: flex; justify-content: space-between; margin: 22px 10px 6px; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
-.unsaved-dot { width: 5px; height: 5px; flex-shrink: 0; margin-left: auto; border-radius: 50%; background: var(--text-secondary); }
 .sidebar-footer { padding: 8px 10px; color: var(--text-tertiary); font-size: 11px; }
 .content { min-width: 0; min-height: 0; overflow-y: auto; }
 .extension-page { max-width: 52rem; margin: 0 auto; padding: 24px 28px 0; }

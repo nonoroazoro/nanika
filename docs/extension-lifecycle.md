@@ -32,7 +32,9 @@ into Settings entries. Installed metadata is not a claim of runtime readiness.
 The worker collection is fixed after startup. Settings has no extension enable
 Switch or live start/stop API. Saving an enabled extension's configuration is a
 separate supported operation; persistence and runtime application have distinct
-outcomes. Disabled settings are loaded on the next enabled startup.
+outcomes. `beforeApply` values can be saved while disabled for the next enabled
+startup; `afterApply` requires live confirmation and cannot save while disabled.
+See the [Settings operation contract](platform-architecture.md#settings-operations).
 
 Source: [runtime registration](../engine/runtime/src/RuntimeService.rs),
 [enablement authority](../engine/configuration/src/ExtensionRegistryConfig.rs),

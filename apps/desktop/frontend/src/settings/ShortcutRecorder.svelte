@@ -5,11 +5,10 @@ import { settingsBridge } from "../bridge/settingsBridge";
 import ShortcutKeys from "../components/ShortcutKeys.svelte";
 import { shortcutFromKey, shortcutKeys, shortcutModifiers } from "./shortcut";
 
-const { value, registeredValue, onChange, onRecording }: {
+const { value, registeredValue, onChange }: {
     value: string;
     registeredValue: string;
     onChange: (value: string) => void;
-    onRecording: (recording: boolean) => void;
 } = $props();
 let recording = $state(false);
 let preview = $state<string[]>([]);
@@ -40,14 +39,12 @@ function setRecording(enabled: boolean): void
     recording = enabled;
     preview = [];
     error = null;
-    onRecording(enabled);
     pending = pending.then(async () =>
     {
         const accepted = await settingsBridge.recordShortcut(enabled && active && recording);
         if (active && request === session)
         {
             recording = accepted;
-            onRecording(accepted);
         }
     }).catch(cause =>
     {
@@ -55,7 +52,6 @@ function setRecording(enabled: boolean): void
         {
             console.error("Shortcut recording could not be updated", cause);
             recording = false;
-            onRecording(false);
             error = "Shortcut recording is unavailable. Try again.";
         }
         else

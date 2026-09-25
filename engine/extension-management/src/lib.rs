@@ -62,3 +62,7 @@ pub use view_contribution::*;
 #[path = "ExtensionActivation.rs"]
 mod extension_activation;
 pub use extension_activation::*;
+
+#[path = "ConfigurationPersistence.rs"]
+mod configuration_persistence;
+pub use configuration_persistence::*;

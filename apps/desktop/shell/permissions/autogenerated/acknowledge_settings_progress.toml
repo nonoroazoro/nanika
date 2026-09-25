@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-acknowledge-settings-progress"
+description = "Enables the acknowledge_settings_progress command without any pre-configured scope."
+commands.allow = ["acknowledge_settings_progress"]
+
+[[permission]]
+identifier = "deny-acknowledge-settings-progress"
+description = "Denies the acknowledge_settings_progress command without any pre-configured scope."
+commands.deny = ["acknowledge_settings_progress"]

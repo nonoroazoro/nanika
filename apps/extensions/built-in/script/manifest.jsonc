@@ -32,7 +32,7 @@
           "type": "array",
           "title": "Folders",
           "description": "Find PowerShell, Python, JavaScript, and shell scripts in these folders.",
-          "default": [],
+          "persistence": "beforeApply", "default": [],
           "maxItems": 256,
           "items": {
             "type": "string",

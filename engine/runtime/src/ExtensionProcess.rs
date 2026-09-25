@@ -364,6 +364,7 @@ impl ExtensionProcess {
         &mut self,
         request_id: String,
         configuration: ExtensionConfiguration,
+        progress: crate::ConfigurationProgressHandler,
         completion: crate::ConfigurationCompletion,
     ) {
         if let Err(error) = self.ensure_initialized() {
@@ -372,7 +373,7 @@ impl ExtensionProcess {
         }
         if !self
             .configuration_reply
-            .register(request_id.clone(), completion)
+            .register(request_id.clone(), progress, completion)
         {
             return;
         }

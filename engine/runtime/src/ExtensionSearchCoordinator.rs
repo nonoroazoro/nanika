@@ -7,10 +7,10 @@ use nanika_extension_package::ExtensionContributions;
 use nanika_search::SearchHandle;
 
 use crate::{
-    ExtensionConfigurationResult, ExtensionInvocation, ExtensionInvocationOutcome,
-    ExtensionInvocationOutput, ExtensionNotifier, ExtensionRuntime, ExtensionSearchWorker,
-    ExtensionSearchWorkerContext, ExtensionViewRequest, ExtensionViewRequestKind,
-    HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation, SupervisorError,
+    ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
+    ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionViewRequest,
+    ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation,
+    SupervisorError,
 };
 
 /// Collection of fixed extension workers queried by one host generation.
@@ -340,13 +340,6 @@ impl ExtensionSearchCoordinator {
         Ok(receiver)
     }
 
-    pub(crate) fn take_configurations(&self) -> Vec<ExtensionConfigurationResult> {
-        self.workers
-            .iter()
-            .flat_map(ExtensionSearchWorker::take_configurations)
-            .collect()
-    }
-
     pub(crate) fn take_invocation_outputs(&self) -> Vec<ExtensionInvocationOutput> {
         self.workers
             .iter()
@@ -359,7 +352,9 @@ impl ExtensionSearchCoordinator {
         extension_id: &str,
         request_id: impl Into<String>,
         configuration: nanika_protocol::ExtensionConfiguration,
-        completion: Option<mpsc::SyncSender<Result<(), String>>>,
+        require_live: bool,
+        progress: crate::ConfigurationProgressHandler,
+        completion: mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>,
     ) -> Result<bool, SupervisorError> {
         let Some(worker) = self
             .workers
@@ -371,9 +366,14 @@ impl ExtensionSearchCoordinator {
         if !worker.supports_live_configuration() {
             return Ok(false);
         }
-        match worker.apply_configuration(request_id.into(), configuration, completion) {
+        match worker.apply_configuration(
+            request_id.into(),
+            configuration,
+            require_live,
+            progress,
+            completion,
+        ) {
             Ok(()) => Ok(true),
-            Err(SupervisorError::ChannelClosed) => Ok(false),
             Err(error) => Err(error),
         }
     }

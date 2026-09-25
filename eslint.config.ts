@@ -39,7 +39,7 @@ export default [
         }
     },
     {
-        files: ["apps/desktop/frontend/**/*.svelte"],
+        files: ["apps/desktop/frontend/**/*.svelte", "apps/desktop/frontend/**/*.svelte.ts"],
         languageOptions: {
             parserOptions: {
                 parser: typescriptParser

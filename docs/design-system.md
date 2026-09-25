@@ -65,11 +65,24 @@ runtime dependency; move or rename exports only together with their consumers.
 - Switch hover affects the track or thumb, with no surrounding button fill.
   Decorative parts do not intercept pointer input. A Switch marked busy blocks
   repeat activation while retaining cursor, opacity and hover treatment and
-  exposing aria-busy. Form-level Save currently disables the whole fieldset.
-- General and extension configuration currently use drafts and Save. Launch at
-  login applies directly. [Fluent Switch guidance](https://fluent2.microsoft.design/components/web/react/core/switch/usage)
-  specifies immediate application. Aligning Settings with that convention remains
-  unfinished; the design direction does not mean persistence has already changed.
+  exposing aria-busy. Settings locks only the field with an accepted operation.
+- General and extension settings apply immediately, following
+  [Fluent Switch guidance](https://fluent2.microsoft.design/components/web/react/core/switch/usage).
+  Text and number edits commit when focus leaves the complete setting field or
+  native form submission occurs; selection controls commit on activation. Internal
+  focus movement in compound fields does not submit an intermediate value.
+  Navigation and native hiding retain accepted work. No Save/Discard footer or
+  saving/success notification is shown.
+- Pending feedback appears after one second below the affected control, with
+  stable geometry. Unknown progress uses a small indeterminate bar; real
+  completed/total work units use a determinate bar. Progress never unlocks input;
+  only the terminal result does. Hidden UI stops animation and reduced motion
+  uses a static indicator. Follow Fluent's
+  [progress information hierarchy](https://fluent2.microsoft.design/components/web/react/core/progressbar/usage),
+  not its animation implementation. Motion and compact positioning are Nanika adaptations.
+- Settings failures appear in a compact top notification with explicit dismissal.
+  There is no field-level retry button or persistent error paragraph. The original
+  cause remains in diagnostics; saved and effective values are reconciled separately.
 
 ## Motion
 

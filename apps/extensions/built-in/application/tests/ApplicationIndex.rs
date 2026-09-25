@@ -199,7 +199,7 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
         let (report, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0))
+            .scan(&config, 1, &AtomicU64::new(0), |_| {})
             .expect("scan should complete");
         assert!(report.complete);
         assert_eq!(entries.len(), 1);
@@ -234,7 +234,7 @@ mod windows {
         };
         assert!(
             index
-                .scan(&config, 1, &AtomicU64::new(0))
+                .scan(&config, 1, &AtomicU64::new(0), |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -243,7 +243,7 @@ mod windows {
         create_executable(&valid.join("Current.exe"));
         std::fs::write(broken.join("AppxManifest.xml"), "invalid manifest").unwrap();
         config.roots.pop();
-        let (report, entries) = index.scan(&config, 2, &AtomicU64::new(0)).unwrap();
+        let (report, entries) = index.scan(&config, 2, &AtomicU64::new(0), |_| {}).unwrap();
         assert!(!report.complete);
         assert_eq!(report.warnings, 1);
         assert!(entries.iter().any(|entry| entry.display_name == "Current"));
@@ -269,12 +269,12 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
         index
-            .scan(&config, 1, &AtomicU64::new(0))
+            .scan(&config, 1, &AtomicU64::new(0), |_| {})
             .expect("first scan should complete");
         std::fs::remove_file(applications.join("First.exe"))
             .expect("test executable should remove");
         let (report, entries) = index
-            .scan(&config, 2, &AtomicU64::new(2))
+            .scan(&config, 2, &AtomicU64::new(2), |_| {})
             .expect("cancelled scan should commit its state");
         assert!(report.cancelled);
         assert_eq!(entries.len(), 1);
@@ -302,13 +302,13 @@ mod windows {
             exclusions: platform::standard_roots().unwrap(),
             enabled_builtin_roots: Default::default(),
         };
-        let (report, initial) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
+        let (report, initial) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(initial.len(), 3);
         std::fs::remove_file(shortcut).unwrap();
         std::fs::remove_file(removed.join("Deleted.exe")).unwrap();
         std::fs::remove_dir(&removed).unwrap();
-        let (report, remaining) = index.scan(&config, 2, &AtomicU64::new(0)).unwrap();
+        let (report, remaining) = index.scan(&config, 2, &AtomicU64::new(0), |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(report.warnings, 0);
         assert_eq!(remaining.len(), 1);
@@ -340,7 +340,7 @@ mod windows {
                 .collect(),
         };
         let (report, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0))
+            .scan(&config, 1, &AtomicU64::new(0), |_| {})
             .expect("standard application scan should complete");
         assert!(!report.cancelled);
         assert!(!entries.is_empty());
@@ -359,12 +359,16 @@ mod windows {
         let mut disabled = config.clone();
         disabled.enabled_builtin_roots.clear();
         disabled.roots = vec![PathBuf::from(&retained.target_path)];
-        let (report, remaining) = index.scan(&disabled, 2, &AtomicU64::new(0)).unwrap();
+        let (report, remaining) = index
+            .scan(&disabled, 2, &AtomicU64::new(0), |_| {})
+            .unwrap();
         assert!(report.complete);
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].entry_id, retained.entry_id);
         disabled.roots.clear();
-        let (report, empty) = index.scan(&disabled, 3, &AtomicU64::new(0)).unwrap();
+        let (report, empty) = index
+            .scan(&disabled, 3, &AtomicU64::new(0), |_| {})
+            .unwrap();
         assert!(report.complete);
         assert!(empty.is_empty());
         drop(index);
@@ -409,7 +413,7 @@ mod windows {
         };
 
         let (_, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0))
+            .scan(&config, 1, &AtomicU64::new(0), |_| {})
             .expect("application scan should complete");
 
         assert_eq!(entries.len(), 1);
@@ -479,7 +483,7 @@ mod windows {
             ApplicationDatabase::open(root.join("application.db")).unwrap(),
             IconCache::new(root.join("icons")),
         );
-        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
+        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].display_name, "Preferred Tool");
@@ -510,7 +514,7 @@ mod windows {
         );
         assert!(
             index
-                .scan(&config, 1, &AtomicU64::new(0))
+                .scan(&config, 1, &AtomicU64::new(0), |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -560,7 +564,7 @@ mod windows {
             ApplicationDatabase::open(&database_path).unwrap(),
             IconCache::new(root.join("icons")),
         );
-        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0)).unwrap();
+        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(report.warnings, 0);
         assert_eq!(entries.len(), 1);
@@ -574,7 +578,7 @@ mod windows {
             .unwrap();
         assert!(
             index
-                .scan(&config, 2, &AtomicU64::new(0))
+                .scan(&config, 2, &AtomicU64::new(0), |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -715,7 +719,7 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
 
-        assert!(index.scan(&config, 1, &AtomicU64::new(0)).is_err());
+        assert!(index.scan(&config, 1, &AtomicU64::new(0), |_| {}).is_err());
         let status = observer
             .query_row("SELECT status FROM scan_state WHERE id = 1", [], |row| {
                 row.get::<_, String>(0)

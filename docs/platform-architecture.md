@@ -53,6 +53,61 @@ timeouts, recovery or whole-app restarts.
 
 See [design system](design-system.md) for activation and confirmation UX.
 
+## Settings operations
+
+Settings submits one property key and value. Rust validates visibility and schema,
+merges the value with the authoritative configuration, and reserves one
+operation per extension until all stages settle. This is the extension's atomic
+configuration domain; unrelated extensions remain independent. Frontend state
+admits one edit per field and serializes distinct fields within that domain,
+without disabling or replacing the page. Dropping a receipt or hiding Settings
+does not cancel accepted work. Shutdown interrupts extension work and waits for
+configuration transactions to settle. Field metadata uses reactive maps, so all
+schema-valid keys remain addressable. Failed validation retains the user's draft
+without retrying on navigation. Commit preparation validates the complete property
+and converts its draft to schema-defined values before no-op detection or admission.
+The writer receives that same prepared value. No-op detection compares durable and
+authoritative presentation values and retains unresolved application failures.
+
+Every configuration property explicitly declares `persistence`:
+
+- `beforeApply`: persist desired configuration, then apply it. Application failure
+  retains the durable intent. An inactive extension receives it on activation.
+- `afterApply`: require live application confirmation, then persist. A failed or
+  unavailable extension cannot save the requested value. If application succeeds
+  and persistence fails, report effective new values and saved old values without
+  inventing rollback. An on-demand extension is activated to obtain confirmation.
+
+The completed result contains `values` for presentation, `saved`, nullable
+`effective`, and a concrete error. `effective: null` means unconfirmed, not reverted.
+`ConfigurationApplied` confirms the entire requested snapshot after domain work
+finishes; submission, queueing, progress and dormant initialization data are not
+application confirmation. Host preferences and native startup adapters use the
+same frontend lifecycle. Windows startup remains owned by its native startup
+service and macOS by its native login-item service; OS state is queried after a
+failed operation rather than persisting an assumed toggle value. Returning to the
+active Settings window or General page reads native startup state again. Reads
+and writes share the same serial domain; stale reads never replace queued edits.
+
+`ConfigurationProgress` carries the request ID, a bounded label and completed/total
+work units. A null total means indeterminate. The host validates progress and routes
+it to the same operation on the Settings Channel; terminal state cannot regress to
+progress. The shell permits one unacknowledged progress delivery per Settings
+Channel and retains only the latest pending progress per installed extension,
+serving extensions in arrival order. `acknowledge_settings_progress` releases that
+slot only for its delivery ID; IDs are not reused when the WebView subscribes again.
+Terminal results bypass progress backpressure and remove obsolete pending progress.
+Channel sends happen outside the shared state lock. There is no timer or retry in
+this delivery contract. Reporting 100 percent is not completion. Application discovery reports
+source work and final index reconciliation. Other extensions can use the same
+protocol without supplying frontend code. Settings uses a one-shot presentation
+delay, no progress polling, fake percentages, automatic retries or operation timeout.
+
+Requested, durable and effective state are separate, consistent with the
+[Windows Radio completion contract](https://learn.microsoft.com/en-us/uwp/api/windows.devices.radios.radio.setstateasync)
+and [GTK requested/backend state](https://docs.gtk.org/gtk4/class.Switch.html).
+These references guide state semantics, not dependencies or native animation.
+
 ## Build and development
 
 Use the root package, pinned Bun and one bun.lock. Bun is tooling only; installed
@@ -124,7 +179,7 @@ controls visual work and menu dismissal only. In-WebView context menus create no
 native window and do not require a second launcher focus manager.
 
 The shell presents Settings after its retained WebView is ready. Closing hides the
-native window and resets Settings state for the next opening. There is no custom
+native window and resets navigation while retaining field edits and operations. There is no custom
 opening/closing transition or animation acknowledgement. Windows uses undecorated,
 transparent surfaces and custom Settings controls; native shadows are disabled so
 CSS corners stay transparent. macOS Settings retains the native titlebar, traffic

@@ -277,7 +277,7 @@ fn manifest_preserves_valid_configuration_contributions() {
                     "example.enabled": {
                         "type": "boolean",
                         "title": "Enabled",
-                        "default": true
+                        "persistence": "beforeApply", "default": true
                     }
                 }
             }
@@ -323,7 +323,7 @@ fn manifest_rejects_configuration_defaults_outside_the_declared_schema() {
                     "example.count": {
                         "type": "integer",
                         "title": "Count",
-                        "default": 0,
+                        "persistence": "beforeApply", "default": 0,
                         "minimum": 1,
                         "maximum": 10,
                         "multipleOf": 1

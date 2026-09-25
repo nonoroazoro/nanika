@@ -1,13 +1,10 @@
-use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
 
-use crate::{ExtensionConfigurationResult, ExtensionNotifier, ExtensionSearchState};
+use crate::{ExtensionNotifier, ExtensionSearchState};
 
 /// Wake admission waiters even when initialization fails or the worker panics.
 pub(crate) struct ExtensionWorkerLifetime {
-    pub(crate) extension_id: String,
     pub(crate) state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-    pub(crate) configuration_results: Arc<Mutex<VecDeque<ExtensionConfigurationResult>>>,
     pub(crate) notifier: ExtensionNotifier,
 }
 
@@ -42,11 +39,9 @@ impl Drop for ExtensionWorkerLifetime {
             ));
         }
         for update in configurations {
-            update.complete(
-                &self.extension_id,
-                &self.configuration_results,
-                Err("extension worker closed before applying the configuration".to_owned()),
-            );
+            update.complete(Err(
+                "extension worker closed before applying the configuration".to_owned(),
+            ));
         }
         let notify = self
             .notifier

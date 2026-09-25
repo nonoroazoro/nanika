@@ -60,7 +60,7 @@ impl Fixture {
                             "fixture.enabled": {
                                 "type": "boolean",
                                 "title": "Enabled",
-                                "default": true
+                                "persistence": "beforeApply", "default": true
                             }
                         }
                     }
@@ -267,13 +267,12 @@ fn shutdown_interrupts_a_pending_configuration_update() {
     wait_until(|| has_result(&runtime, generation, DELAYED));
     fixture.block("update-configuration");
     runtime
-        .update_configuration(
+        .save_configuration(
             DELAYED,
             "update-configuration",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         )
         .unwrap();
     wait_until(|| fixture.entered("update-configuration"));
@@ -286,33 +285,19 @@ fn live_configuration_updates_report_the_correlated_acknowledgement() {
     let runtime = fixture.start();
     let generation = runtime.begin_query("ready").unwrap();
     wait_until(|| has_result(&runtime, generation, HEALTHY));
-    let disposition = runtime
-        .update_configuration(
+    let receipt = runtime
+        .save_configuration(
             HEALTHY,
             "update-configuration-success",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         )
         .unwrap();
-    assert_eq!(
-        disposition,
-        nanika_host::ConfigurationUpdateDisposition::LiveApplyQueued
-    );
-
-    let mut acknowledgement = None;
-    wait_until(|| {
-        acknowledgement = runtime
-            .take_updates()
-            .configurations
-            .into_iter()
-            .find(|update| update.request_id == "update-configuration-success");
-        acknowledgement.is_some()
-    });
-    let acknowledgement = acknowledgement.expect("configuration acknowledgement");
-    assert_eq!(acknowledgement.extension_id, HEALTHY);
-    assert_eq!(acknowledgement.result, Ok(()));
+    let outcome = receipt.wait().unwrap();
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.saved["fixture.enabled"], false);
+    assert_eq!(outcome.effective.unwrap()["fixture.enabled"], false);
     fixture.stop(runtime);
 }
 
@@ -341,20 +326,16 @@ fn queries_continue_while_configuration_application_is_pending() {
         .save_configuration(
             HEALTHY,
             "deferred-settings",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         )
         .unwrap();
     wait_until(|| fixture.entered("deferred-settings"));
     // The fixture withholds ConfigurationApplied until it can service the next query.
     let generation = runtime.begin_query("after save").unwrap();
     wait_until(|| has_result(&runtime, generation, HEALTHY));
-    assert_eq!(
-        receipt.wait(),
-        nanika_host::ConfigurationSaveOutcome::Applied
-    );
+    assert!(receipt.wait().unwrap().error.is_none());
     fixture.stop(runtime);
 }
 
@@ -371,19 +352,15 @@ fn settings_save_returns_before_application_and_keeps_configuration_readable() {
         sent.send(owner.save_configuration(
             HEALTHY,
             "settings-save",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         ))
         .unwrap();
     });
     wait_until(|| fixture.entered("settings-save"));
     let receipt = received.recv_timeout(WAIT).unwrap().unwrap();
-    assert!(matches!(
-        receipt,
-        nanika_host::ConfigurationSaveReceipt::Pending(_)
-    ));
+
     thread.join().unwrap();
     assert_eq!(
         runtime
@@ -395,14 +372,8 @@ fn settings_save_returns_before_application_and_keeps_configuration_readable() {
         false
     );
     fixture.release("settings-save");
-    assert_eq!(
-        receipt.wait(),
-        nanika_host::ConfigurationSaveOutcome::Applied
-    );
-    assert!(
-        runtime.take_updates().configurations.is_empty(),
-        "a save has exactly one completion consumer"
-    );
+    assert!(receipt.wait().unwrap().error.is_none());
+
     runtime.shutdown();
 }
 
@@ -421,23 +392,25 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
         .save_configuration(
             HEALTHY,
             "settings-rejected",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         )
         .unwrap()
-        .wait();
+        .wait()
+        .unwrap();
     assert!(
-        matches!(outcome, nanika_host::ConfigurationSaveOutcome::ApplyFailed(error) if error.contains("fixture could not apply configuration"))
+        outcome
+            .error
+            .as_ref()
+            .is_some_and(|error| error.contains("fixture could not apply configuration"))
     );
     let invalid = runtime.save_configuration(
         HEALTHY,
         "settings-invalid",
-        std::collections::BTreeMap::from([(
-            "fixture.enabled".to_owned(),
-            serde_json::json!("invalid"),
-        )]),
+        "fixture.enabled".to_owned(),
+        serde_json::json!("invalid"),
+        std::sync::Arc::new(|_| {}),
     );
     assert!(invalid.is_err());
     assert_eq!(
@@ -476,19 +449,24 @@ fn shutdown_completes_a_waiting_settings_save() {
         sent.send(owner.save_configuration(
             HEALTHY,
             "settings-pending",
-            std::collections::BTreeMap::from([(
-                "fixture.enabled".to_owned(),
-                serde_json::json!(false),
-            )]),
+            "fixture.enabled".to_owned(),
+            serde_json::json!(false),
+            std::sync::Arc::new(|_| {}),
         ))
         .unwrap();
     });
     wait_until(|| fixture.entered("settings-pending"));
     runtime.shutdown();
-    assert!(matches!(
-        received.recv_timeout(WAIT).unwrap().unwrap().wait(),
-        nanika_host::ConfigurationSaveOutcome::ApplyFailed(_)
-    ));
+    assert!(
+        received
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap()
+            .wait()
+            .unwrap()
+            .error
+            .is_some()
+    );
     thread.join().unwrap();
 }
 
@@ -524,16 +502,16 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
             // A configuration acknowledgement fences the dormant worker after its
             // preparation hint, proving neither event started the process.
             runtime
-                .update_configuration(
+                .save_configuration(
                     HEALTHY,
                     "dormant-config",
-                    std::collections::BTreeMap::from([(
-                        "fixture.enabled".to_owned(),
-                        serde_json::json!(false),
-                    )]),
+                    "fixture.enabled".to_owned(),
+                    serde_json::json!(false),
+                    std::sync::Arc::new(|_| {}),
                 )
+                .unwrap()
+                .wait()
                 .unwrap();
-            wait_until(|| !runtime.take_updates().configurations.is_empty());
             assert!(!fixture.entered(&initializing));
         }
         println!(
@@ -893,16 +871,14 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
                     .save_configuration(
                         id,
                         "disabled-settings",
-                        std::collections::BTreeMap::from([(
-                            "fixture.enabled".to_owned(),
-                            serde_json::json!(false),
-                        )]),
+                        "fixture.enabled".to_owned(),
+                        serde_json::json!(false),
+                        std::sync::Arc::new(|_| {}),
                     )
                     .unwrap();
-                assert!(matches!(
-                    receipt.wait(),
-                    nanika_host::ConfigurationSaveOutcome::SavedForNextLaunch
-                ));
+                let outcome = receipt.wait().unwrap();
+                assert!(outcome.error.is_none());
+                assert!(outcome.effective.is_none());
             }
             fixture.stop(runtime);
             let database =
@@ -958,5 +934,100 @@ fn invalid_configuration_keeps_installed_metadata_visible() {
     assert_eq!(runtime.extension_info().len(), 1);
     assert!(runtime.extension_info()[0].configuration_error.is_some());
     assert!(runtime.extension_configurations().is_empty());
+    fixture.stop(runtime);
+}
+
+#[test]
+fn apply_first_preserves_saved_value_until_ack_and_survives_dropped_receipt() {
+    let mut fixture = Fixture::new();
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["contributes"]["configuration"]["properties"]["fixture.enabled"]["persistence"] =
+        "afterApply".into();
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    fixture.block("apply-first");
+    let receipt = runtime
+        .save_configuration(
+            HEALTHY,
+            "apply-first",
+            "fixture.enabled".into(),
+            false.into(),
+            std::sync::Arc::new(|_| {}),
+        )
+        .unwrap();
+    wait_until(|| fixture.entered("apply-first"));
+    assert!(
+        runtime
+            .save_configuration(
+                HEALTHY,
+                "duplicate",
+                "fixture.enabled".into(),
+                true.into(),
+                std::sync::Arc::new(|_| {})
+            )
+            .is_err()
+    );
+    assert_eq!(
+        runtime
+            .extension_configurations()
+            .into_iter()
+            .find(|entry| entry.extension_id == HEALTHY)
+            .unwrap()
+            .saved["fixture.enabled"],
+        true
+    );
+    drop(receipt);
+    fixture.release("apply-first");
+    wait_until(|| {
+        runtime
+            .extension_configurations()
+            .into_iter()
+            .find(|entry| entry.extension_id == HEALTHY)
+            .unwrap()
+            .saved["fixture.enabled"]
+            == false
+    });
+    fixture.stop(runtime);
+}
+
+#[test]
+fn progress_does_not_complete_an_operation_even_at_one_hundred_percent() {
+    let fixture = Fixture::new();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    fixture.block("progress-settings");
+    let (sent, received) = mpsc::channel();
+    let receipt = runtime
+        .save_configuration(
+            HEALTHY,
+            "progress-settings",
+            "fixture.enabled".into(),
+            false.into(),
+            std::sync::Arc::new(move |progress| {
+                sent.send(progress).unwrap();
+            }),
+        )
+        .unwrap();
+    for expected in [0, 1, 2] {
+        let progress = received.recv_timeout(WAIT).unwrap();
+        assert_eq!(progress.completed, expected);
+        assert_eq!(progress.total, Some(2));
+    }
+    assert!(
+        runtime
+            .save_configuration(
+                HEALTHY,
+                "duplicate",
+                "fixture.enabled".into(),
+                true.into(),
+                std::sync::Arc::new(|_| {})
+            )
+            .is_err()
+    );
+    fixture.release("progress-settings");
+    assert!(receipt.wait().unwrap().error.is_none());
     fixture.stop(runtime);
 }

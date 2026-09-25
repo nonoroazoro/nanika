@@ -320,6 +320,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
             Message::ConfigurationChanged { request_id, .. } => {
+                if request_id == "progress-settings" {
+                    for completed in [0, 1, 2] {
+                        write_frame(
+                            &mut output,
+                            &Message::ConfigurationProgress {
+                                request_id: request_id.clone(),
+                                progress: nanika_protocol::OperationProgress {
+                                    label: "Applying fixture settings".to_owned(),
+                                    completed,
+                                    total: Some(2),
+                                },
+                            },
+                        )?;
+                    }
+                }
                 if request_id == "deferred-settings" {
                     if let Some(root) = data_root(&arguments) {
                         std::fs::write(root.join("deferred-settings.entered"), b"pending")?;
@@ -356,6 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::HostResponse { .. }
             | Message::Initialized { .. }
             | Message::ShutdownAck { .. }
+            | Message::ConfigurationProgress { .. }
             | Message::ConfigurationApplied { .. }
             | Message::Error { .. } => write_frame(
                 &mut output,

@@ -53,6 +53,7 @@
   --motion-enter-name: surface-enter;
   --motion-exit-name: surface-exit;
   --motion-loading: status-bar-shimmer 1600ms ease-in-out infinite;
+  --motion-progress-duration: 1600ms;
   --accent-hover: #1e55ce;
   --surface-accent: #e9eefb;
   --shadow-window: 0 24px 64px rgba(0, 0, 0, 0.24);

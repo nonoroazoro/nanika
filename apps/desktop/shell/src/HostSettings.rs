@@ -44,58 +44,36 @@ impl HostSettings {
     pub(crate) fn save(
         &self,
         app: &tauri::AppHandle,
-        updated: LauncherPreferences,
-    ) -> Result<LauncherPreferences, String> {
-        updated.validate()?;
-        let next = parse(&updated.launcher_shortcut)?;
+        request: crate::HostSettingsChange,
+    ) -> Result<crate::SettingsWriteResult<LauncherPreferences>, String> {
         let mut current = self
             .preferences
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let previous = parse(&current.launcher_shortcut)?;
-        let shortcut_changed = next != previous;
-        // Reserve the new chord before removing the old one. A conflict leaves
-        // the launcher reachable through its existing shortcut.
-        if shortcut_changed {
-            register(app, &updated.launcher_shortcut)?;
+            .try_lock()
+            .map_err(|_| "A host settings operation is already pending.".to_owned())?;
+        let mut updated = current.clone();
+        match request {
+            crate::HostSettingsChange::LauncherShortcut(value) => updated.launcher_shortcut = value,
+            crate::HostSettingsChange::Theme(value) => updated.theme = value,
+            crate::HostSettingsChange::HideOnBlur(value) => updated.hide_on_blur = value,
         }
-        if let Err(error) = updated.save(&self.store) {
-            if !shortcut_changed {
-                return Err(error);
-            }
-            return match app.global_shortcut().unregister(next) {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(format!(
-                    "{error}; releasing the new shortcut also failed: {cleanup}"
-                )),
-            };
-        }
-        if shortcut_changed && let Err(error) = app.global_shortcut().unregister(previous) {
-            let rollback = current.save(&self.store);
-            let cleanup = app.global_shortcut().unregister(next);
-            let mut message = format!("The previous shortcut could not be released: {error}");
-            if let Err(error) = rollback {
-                message.push_str(&format!("; restoring preferences also failed: {error}"));
-            }
-            if let Err(error) = cleanup {
-                message.push_str(&format!(
-                    "; releasing the new shortcut also failed: {error}"
-                ));
-            }
-            return Err(message);
-        }
-        app.set_theme(native_theme(updated.theme));
-        self.hide_on_blur
-            .store(updated.hide_on_blur, Ordering::Release);
-        *current = updated.clone();
-        Ok(updated)
+        let result = self._save(app, updated, &mut current);
+        let saved =
+            LauncherPreferences::load(&self.store, crate::DEFAULT_HOTKEY).map_err(|error| {
+                format!("Could not confirm saved preferences: {error}; operation: {result:?}")
+            })?;
+        Ok(crate::SettingsWriteResult {
+            values: current.clone(),
+            saved,
+            effective: result.as_ref().ok().cloned(),
+            error: result.err(),
+        })
     }
 
     pub(crate) fn startup(&self, enabled: Option<bool>) -> Result<&'static str, String> {
         let startup = self
             .startup
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+            .try_lock()
+            .map_err(|_| "A startup operation is already pending.".to_owned())?;
         let startup = startup
             .as_ref()
             .ok_or_else(|| "Startup service is shutting down.".to_owned())?;
@@ -126,6 +104,54 @@ impl HostSettings {
         {
             startup.shutdown();
         }
+    }
+    fn _save(
+        &self,
+        app: &tauri::AppHandle,
+        updated: LauncherPreferences,
+        current: &mut LauncherPreferences,
+    ) -> Result<LauncherPreferences, String> {
+        updated.validate()?;
+        let next = parse(&updated.launcher_shortcut)?;
+        let previous = parse(&current.launcher_shortcut)?;
+        let shortcut_changed = next != previous;
+        // Reserve the new chord first so conflicts leave the existing shortcut usable.
+        if shortcut_changed {
+            register(app, &updated.launcher_shortcut)?;
+        }
+        if let Err(error) = updated.save(&self.store) {
+            if !shortcut_changed {
+                return Err(error);
+            }
+            return match app.global_shortcut().unregister(next) {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(format!(
+                    "{error}; releasing the new shortcut also failed: {cleanup}"
+                )),
+            };
+        }
+        if shortcut_changed && let Err(error) = app.global_shortcut().unregister(previous) {
+            let rollback = current.save(&self.store);
+            let cleanup = app.global_shortcut().unregister(next);
+            let mut message = format!("The previous shortcut could not be released: {error}");
+            if let Err(error) = rollback {
+                message.push_str(&format!("; restoring preferences also failed: {error}"));
+            }
+            if let Err(error) = cleanup {
+                message.push_str(&format!(
+                    "; releasing the new shortcut also failed: {error}"
+                ));
+            }
+            return Err(message);
+        }
+        // Unrelated preference writes must not repaint every native window.
+        if updated.theme != current.theme {
+            app.set_theme(native_theme(updated.theme));
+        }
+        self.hide_on_blur
+            .store(updated.hide_on_blur, Ordering::Release);
+        *current = updated.clone();
+        Ok(updated)
     }
 }
 

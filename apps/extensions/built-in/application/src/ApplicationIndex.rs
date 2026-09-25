@@ -62,7 +62,13 @@ impl ApplicationIndex {
         config: &ApplicationConfig,
         generation: u64,
         cancelled_through: &AtomicU64,
+        mut progress: impl FnMut(nanika_protocol::OperationProgress),
     ) -> Result<(ScanReport, Vec<ApplicationEntry>), ApplicationError> {
+        progress(nanika_protocol::OperationProgress {
+            label: "Finding application sources".to_owned(),
+            completed: 0,
+            total: None,
+        });
         self.database.begin_scan(generation)?;
         self.discovery_state.begin_scan();
         let standard_roots = match platform::configured_roots(&config.enabled_builtin_roots) {
@@ -105,7 +111,15 @@ impl ApplicationIndex {
             coverage.failed(path);
         }
         let mut entries = HashMap::<String, ApplicationEntry>::new();
-        for (root, priority) in &roots {
+        let total = u32::try_from(roots.len())
+            .unwrap_or(u32::MAX - 1)
+            .saturating_add(1);
+        for (index, (root, priority)) in roots.iter().enumerate() {
+            progress(nanika_protocol::OperationProgress {
+                label: "Scanning application sources".to_owned(),
+                completed: index as u32,
+                total: Some(total),
+            });
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
@@ -197,6 +211,11 @@ impl ApplicationIndex {
             }
         }
 
+        progress(nanika_protocol::OperationProgress {
+            label: "Updating application index".to_owned(),
+            completed: total - 1,
+            total: Some(total),
+        });
         let was_cancelled = is_cancelled(cancelled_through, generation);
         complete &= !was_cancelled;
         let mut entries = entries.into_values().collect::<Vec<_>>();
