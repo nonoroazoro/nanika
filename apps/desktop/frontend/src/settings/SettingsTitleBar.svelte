@@ -48,7 +48,8 @@ function _drag(event: MouseEvent): void
 .drag-region { display: flex; min-width: 0; flex: 1; align-items: center; padding-left: var(--space-5); cursor: default; }
 .drag-region span { pointer-events: none; font-size: var(--font-control); font-weight: 600; }
 .window-controls { display: flex; height: 100%; }
-.window-controls :global(button) { width: 2.75rem; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); }
+/* Adjacent caption buttons switch highlight immediately, without overlapping fade tails. */
+.window-controls :global(button) { width: 2.75rem; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); transition: none; }
 .window-controls :global(button:hover:not(:disabled)) { background: var(--surface-hovered); color: var(--text-primary); }
 .window-controls :global(.close-window:hover:not(:disabled)) { background: var(--surface-danger-hover); color: var(--text-danger); }
 svg { width: 0.875rem; height: 0.875rem; fill: none; stroke: currentColor; stroke-width: 1.2; }

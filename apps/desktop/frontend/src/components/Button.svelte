@@ -21,5 +21,5 @@ let { ref = $bindable(), type = "button", variant = "ghost", class: className, c
 
 <style>
 :global(.ui-button[data-variant="danger"]) { color: var(--text-danger); border-color: var(--border-danger); }
-:global(.ui-button[data-variant="danger"]:hover:not(:disabled)) { border-color: var(--border-danger-hover); background: var(--surface-danger-hover); }
+:global(.ui-button[data-variant="danger"]:hover:not(:disabled, [aria-disabled="true"])) { border-color: var(--border-danger-hover); background: var(--surface-danger-hover); }
 </style>

@@ -142,13 +142,16 @@ button {
   transition: background-color var(--motion-control) var(--motion-ease), border-color var(--motion-control) var(--motion-ease), color var(--motion-control) var(--motion-ease);
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled, [aria-disabled="true"]) {
   border-color: transparent;
   background: var(--surface-hovered);
 }
 
-button:disabled {
+button:is(:disabled, [aria-disabled="true"]) {
   cursor: default;
+}
+
+button:disabled {
   opacity: 0.5;
 }
 
@@ -199,12 +202,12 @@ button:focus-visible {
   font-size: var(--font-control);
 }
 .control-field { width: 100%; }
-.control-button:hover:not(:disabled), .control-button[aria-expanded="true"] {
+.control-button:hover:not(:disabled, [aria-disabled="true"]), .control-button[aria-expanded="true"] {
   border-color: var(--border-window);
   background: var(--surface-raised);
 }
 .control-button.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-foreground); }
-.control-button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.control-button.primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 .popup-surface {
   z-index: 10;
@@ -238,7 +241,7 @@ button:focus-visible {
   cursor: default;
   overflow-wrap: anywhere;
 }
-.popup-item[role="menuitem"]:not([data-disabled]) { cursor: pointer; }
+.popup-item:is([role="menuitem"], [role="option"]):not([data-disabled]) { cursor: pointer; }
 .popup-item[data-highlighted] { background: var(--surface-selected); }
 .popup-item[data-disabled] { color: var(--text-tertiary); }
 .popup-item[data-destructive]:not([data-disabled]) { color: var(--text-danger); }

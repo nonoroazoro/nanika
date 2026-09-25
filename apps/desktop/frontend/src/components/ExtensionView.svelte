@@ -566,9 +566,7 @@ small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: v
 .load-more-sentinel { height: 1px; pointer-events: none; }
 .filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); white-space: nowrap; }
 .filter :global(button) { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
-/* aria-disabled preserves filter focus while its guarded event waits for the extension. */
-.filter :global(button[aria-disabled='true']) { cursor: default; }
-.filter :global(button:hover) { border-color: transparent; background: var(--surface-hovered); }
+.filter :global(button:hover:not(:disabled, [aria-disabled="true"])) { border-color: transparent; background: var(--surface-hovered); }
 .filter :global(button[aria-pressed='true']) { background: var(--surface-selected); }
 .filter :global(button[aria-pressed='true']:hover) { background: var(--surface-selected); }
 .error { padding: var(--space-2) var(--space-5); font-size: var(--font-meta); }

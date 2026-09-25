@@ -58,6 +58,9 @@ runtime dependency; move or rename exports only together with their consumers.
   legible states without relying on optional native effects.
 - Menus and Select share surface, spacing, selection and separator treatment.
   Long labels retain accessible names and do not overlap shortcut hints.
+- Action buttons and enabled popup options use a pointer cursor. Disabled controls
+  use the default cursor; editable text and collection rows retain native semantics.
+  Both native disabled and aria-disabled suppress actionable hover feedback.
 - Preserve semantic roles, keyboard operation, caret and fill feedback. Do not add
   focus rings or focus-only borders. Keep structural, validation and recording borders.
 - Labels are not text-selectable. Inputs, textareas and explicitly copyable content,
@@ -96,6 +99,7 @@ values. The stylesheet is authoritative; audit provenance before broader adoptio
 
 | Interaction                  | Current timing                    | Behavior                                                   |
 | ---------------------------- | --------------------------------- | ---------------------------------------------------------- |
+| Windows caption buttons      | Immediate                         | Adjacent highlights switch without overlapping fades      |
 | General control feedback     | 100ms, cubic-bezier(0.2, 0, 0, 1) | Short color feedback                                       |
 | Switch position and color    | 180ms, ease-out                   | Fast start, gentle stop; reverse from the current position |
 | Popup entry                  | 140ms, cubic-bezier(0.2, 0, 0, 1) | Opacity and up to 2px translation                          |
