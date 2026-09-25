@@ -2,7 +2,7 @@
 
 ## Workflow
 
-- Make breaking pre-release changes directly; remove superseded code. No compatibility paths, migrations or automatic data resets.
+- Before 1.0, replace designs directly and keep all Nanika-owned internal versions, including protocol and schema versions at their initial values. Remove superseded code; do not introduce version upgrades, compatibility paths, migrations or automatic data resets.
 - Use direct file edits, not apply_patch. Keep changes unstaged unless asked.
 - Use just dev and just check. Keep one root package and bun.lock, the pinned Bun version and public registries. Keep credentials and private infrastructure out of code, logs and artifacts.
 - Preserve apps / engine / tooling ownership. Temporary output belongs in target; frontend output in apps/desktop/frontend/dist.
@@ -26,6 +26,7 @@
 
 ## Validation and docs
 
+- Before taking control of the desktop or changing foreground focus for testing, notify the user and give them time to stop their current input. Announce when desktop control is released. Interactive testing is allowed; advance notice does not require separate approval.
 - Run repository checks appropriate to the change. Preserve zero-extension, extension-equivalence, failure, protocol/storage and concurrency coverage. Keep frontend/tooling tests and types separate; validation dependencies stay development-only and CI warnings fail.
 - Validate affected Tauri flows on both platforms, including focus, input, DPI and rendered state. Measure performance changes under comparable workloads, including 60/120 Hz and hidden idle where relevant. Report unvalidated platforms; browser fixtures and cross-compilation do not prove native behavior.
 - Code and manifests define implementation. Update the existing documents, remove completed/history-only content, and keep optional candidates distinct from commitments. Original artwork belongs in docs/assets/icons; runtime and packaging exports stay with their consumers.

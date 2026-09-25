@@ -9,7 +9,7 @@
         "dev:computer-use": "bun tooling/build/run.ts computer-use",
         "frontend:dev": "bun node_modules/vite/bin/vite.js --config apps/desktop/frontend/vite.config.ts",
         "frontend:build": "bun node_modules/vite/bin/vite.js build --config apps/desktop/frontend/vite.config.ts",
-        "frontend:check": "bun node_modules/svelte-check/bin/svelte-check --workspace apps/desktop/frontend --tsconfig ./tsconfig.json && bun node_modules/typescript/bin/tsc --project apps/desktop/frontend/tests/tsconfig.json",
+        "frontend:check": "bun node_modules/svelte-check/bin/svelte-check --workspace apps/desktop/frontend --tsconfig ./tsconfig.json --fail-on-warnings && bun node_modules/typescript/bin/tsc --project apps/desktop/frontend/tests/tsconfig.json",
         "tooling:check": "bun node_modules/typescript/bin/tsc --project tsconfig.json",
         "test": "bun tooling/quality/test.ts",
         "lint": "bun node_modules/eslint/bin/eslint.js apps/desktop/frontend tooling *.config.ts --max-warnings 0",
