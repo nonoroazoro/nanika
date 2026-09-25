@@ -5,7 +5,6 @@ use std::thread::JoinHandle;
 
 const MAX_PENDING_PATHS: usize = 512;
 
-/// Background owner for native file-icon acquisition.
 pub struct FileIconWorker {
     state: Arc<(Mutex<State>, Condvar)>,
     thread: Option<JoinHandle<()>>,
@@ -73,8 +72,7 @@ impl FileIconWorker {
                     state.known.remove(&path);
                     publish_resolution(&mut state, path, reference);
                     drop(state);
-                    // A failed path also advances progressive scheduling without being
-                    // retried on every resulting view refresh.
+                    // Settle failed paths so view refreshes neither retry them nor stall scheduling.
                     invalidated();
                 }
             })
@@ -108,8 +106,7 @@ impl FileIconWorker {
         scheduled
     }
 
-    /// Outer None means pending; Some(None) is a completed failure. Consumers
-    /// can settle a preview group without waiting forever on unavailable files.
+    /// `None` is pending; `Some(None)` is a settled failure that must not block previews.
     pub fn resolution(
         &self,
         path: &std::path::Path,

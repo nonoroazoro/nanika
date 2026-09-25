@@ -12,9 +12,8 @@ pub(crate) struct ClipboardCaptureGate {
     state: ClipboardCaptureGateState,
 }
 
-// Native change delivery can race the host response and one write can expose
-// intermediate revisions. Keep the gate armed until the exact completed write
-// revision is observed; only a later revision is external capture work.
+// Native events can precede the response or expose intermediate revisions.
+// Keep the gate armed through the completed write revision; only later revisions are external.
 #[derive(Default)]
 enum ClipboardCaptureGateState {
     #[default]

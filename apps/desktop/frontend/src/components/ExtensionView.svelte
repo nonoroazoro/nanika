@@ -89,8 +89,7 @@ $effect(() =>
 
 $effect(() =>
 {
-    // Reconcile against the completed request's revision, not an earlier response
-    // arriving while the user has already moved to a later item.
+    // Reconcile only the completed request revision; earlier responses may describe an old selection.
     if (
         selection && ((selection.revision !== null && snapshot.revision >= selection.revision)
             || !items.some(item => item.id === selection?.id))
@@ -119,8 +118,7 @@ $effect(() =>
     const item = list?.selected_item_id ?? null;
     if (detailPane && item !== previousDetailItem)
     {
-        // A new record starts at its preview; updates to the same record retain
-        // the user's scroll position, including late thumbnail completion.
+        // Reset scroll only for a new record, preserving it through late thumbnail updates.
         detailPane.scrollTop = 0;
         previousDetailItem = item;
     }
@@ -184,7 +182,6 @@ $effect(() =>
         }
     }, {
         root,
-        // Prefetch the next page before reaching the last row.
         rootMargin: "0px 0px 160px 0px"
     });
     observer.observe(target);

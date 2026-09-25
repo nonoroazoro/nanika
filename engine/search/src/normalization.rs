@@ -1,4 +1,3 @@
-/// Normalize text for lexical search matching.
 pub fn normalize_query(value: &str) -> String {
     let mut normalized = String::with_capacity(value.len());
     let mut pending_space = false;

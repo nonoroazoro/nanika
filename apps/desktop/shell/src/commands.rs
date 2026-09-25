@@ -307,8 +307,7 @@ pub(crate) fn set_shortcut_recording(
     authorize_settings(&window)?;
     let desktop = window.state::<DesktopState>();
     let _operation = desktop.begin_operation()?;
-    // Focus can leave between the pointer event and this command. That ends
-    // the recording session normally; it is not a settings failure.
+    // Focus loss after the pointer event ends recording normally.
     let recording = recording
         && window.is_visible().map_err(|error| error.to_string())?
         && window.is_focused().map_err(|error| error.to_string())?;

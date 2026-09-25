@@ -126,8 +126,7 @@ fn write(
 fn write_png(context: &ClipboardContext, bytes: Vec<u8>) -> ClipboardResult<()> {
     #[cfg(target_os = "windows")]
     {
-        // Preserve the captured PNG bytes. Decoding, re-encoding PNG, and then
-        // converting to a bitmap made large-image copy operations unnecessarily slow.
+        // Preserve PNG bytes to avoid re-encoding large images before bitmap conversion.
         context.set_buffer("PNG", bytes)
     }
     #[cfg(target_os = "macos")]

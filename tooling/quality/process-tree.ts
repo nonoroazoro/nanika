@@ -51,8 +51,7 @@ export async function runProcessTree(
         }
         else if (process.platform === "darwin" && _groupExists(child.pid))
         {
-            // A CLI can leave a frontend server behind even after a successful exit.
-            // Stop owned descendants before releasing the build slot.
+            // A successful CLI can leave descendants; stop them before releasing the build slot.
             await _terminate(child, "SIGTERM");
         }
         return child;
@@ -120,8 +119,7 @@ function _signalGroup(pid: number, signal: "SIGINT" | "SIGTERM"): void
 
 function _groupExists(pid: number): boolean
 {
-    // A descendant can be reparented after the group leader exits. Inspect group
-    // membership without requiring permission to send another signal to it.
+    // Reparented descendants retain group membership; inspect it without requiring signal permission.
     const result = Bun.spawnSync(["lsof", "-a", "-g", String(pid), "-d", "cwd", "-t"], { stderr: "pipe" });
     if ((result.exitCode !== 0 && result.exitCode !== 1) || result.stderr.length > 0)
     {

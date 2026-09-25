@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Versioned wire protocol used by one extension process.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "protocol", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ExtensionProtocol {

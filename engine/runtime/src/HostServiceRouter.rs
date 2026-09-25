@@ -9,7 +9,6 @@ use nanika_storage::is_valid_extension_id;
 
 use crate::{DiagnosticCode, HostDiagnostic, HostServiceHandler};
 
-/// Routes typed extension requests to host-owned platform services.
 pub struct HostServiceRouter {
     launcher: Result<ProcessLauncher, String>,
     clipboard: Result<ClipboardService, String>,

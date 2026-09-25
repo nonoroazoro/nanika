@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-/// Error at the application extension boundary.
 #[derive(Debug)]
 pub enum ApplicationError {
     Configuration(String),

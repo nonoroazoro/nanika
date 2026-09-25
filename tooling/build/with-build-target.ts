@@ -22,8 +22,7 @@ export async function withBuildTarget(
     ) => Promise<void>
 ): Promise<void>
 {
-    // Cargo's own lock ends before staging, packaging and launching. Keep the
-    // entire pipeline exclusive so another command cannot replace its executable.
+    // Lock through staging and launch; Cargo's lock ends before executables can be replaced.
     await withBuildLock(root, slot === "test" ? "test" : "cargo", async () =>
     {
         const target = join(root, "target", `${slot}-work`);

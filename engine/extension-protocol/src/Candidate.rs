@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CandidateKind, ContributionIcon, IconReference};
 
-/// A bounded searchable entry contributed by an extension.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Candidate {
     pub kind: CandidateKind,

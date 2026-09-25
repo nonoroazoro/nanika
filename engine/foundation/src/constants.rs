@@ -2,7 +2,6 @@ use crate::ProjectIdentity;
 
 pub const PRODUCT_NAME: &str = "Nanika";
 
-/// Current pre-1.0 identity baseline.
 pub const PROJECT_IDENTITY: ProjectIdentity = ProjectIdentity {
     bundle_id: "app.nanika",
 };

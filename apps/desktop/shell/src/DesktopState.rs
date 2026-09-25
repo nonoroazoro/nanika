@@ -285,8 +285,7 @@ impl DesktopState {
         };
         self.wake();
         let result = runtime.refresh_root_search(generation);
-        // A user may type or close the window while scanning. Republish only the
-        // originating session's latest query, never the query captured at F5.
+        // Scanning can outlast input or the window; republish only the originating session's latest query.
         let publication = (|| {
             let mut state = self
                 .shared
@@ -452,8 +451,7 @@ impl DesktopState {
                 .as_mut()
                 .ok_or("The window session is not open.")?;
             session.authorize(request.session_id)?;
-            // The operation lock also excludes invalidation delivery. Validate against
-            // the same route that is passed to the extension, never a UI prediction.
+            // Exclude invalidation while validating the route passed to the extension.
             let route = session
                 .navigation
                 .authorize_input(&request, menu_revision)?
@@ -558,8 +556,7 @@ impl DesktopState {
                 }
             } else {
                 drop(state);
-                // A completed action can outlive its WebView. Release a newly opened
-                // extension view instead of delivering it to an unrelated session.
+                // If the action outlives its WebView, release its new view instead of crossing sessions.
                 if let nanika_protocol::NavigationEffect::Push {
                     view_id, revision, ..
                 } = effect
@@ -582,8 +579,7 @@ impl DesktopState {
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        // Only release a newly created view. A duplicate id still belongs to an
-        // existing route and must never be closed as rejection cleanup.
+        // Release only new views; duplicate IDs still belong to existing routes.
         let cleanup =
             match &effect {
                 nanika_protocol::NavigationEffect::Push {
@@ -972,8 +968,7 @@ pub(crate) fn apply_invocation_completion(
     else {
         return Err("The action was cancelled before it completed.".to_owned());
     };
-    // Navigation owns presentation or explicit disposal of any newly opened view.
-    // Reporting the recording error first would orphan that view in the extension.
+    // Let navigation adopt or dispose of the new view before reporting recording errors.
     let navigation = apply(effect);
     match (navigation, completion.recording_error) {
         (result, None) => result,

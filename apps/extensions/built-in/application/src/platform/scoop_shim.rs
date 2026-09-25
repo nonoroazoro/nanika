@@ -47,8 +47,7 @@ pub(super) fn identity(
             return Err(_invalid("expected a key/value field"));
         };
         let value = value.trim();
-        // Other fields affect activation semantics. Preserve those wrappers as distinct
-        // applications rather than equating them with a plain executable.
+        // Other fields change activation semantics, so keep these wrappers as distinct applications.
         match key.trim().to_ascii_lowercase().as_str() {
             "path" if target.is_none() => target = Some(value),
             "args" if prefix.is_none() => prefix = Some(value),
@@ -63,8 +62,7 @@ pub(super) fn identity(
         .unwrap_or(target);
     let target = PathBuf::from(target);
     let prefix = prefix.unwrap_or_default();
-    // Variable expansion differs between wrapper implementations. Keep such launch
-    // variants separate unless their semantics can be established unambiguously.
+    // Wrapper-specific variable expansion prevents safely merging these identities.
     if !target.is_absolute() || target.to_string_lossy().contains('%') || prefix.contains('%') {
         return Ok(original());
     }

@@ -140,8 +140,7 @@ impl ExtensionSearchWorker {
                     let Some(work) = work else {
                         break;
                     };
-                    // Visibility hints never activate an idle process. Configuration
-                    // is retained for first initialization without starting it.
+                    // Ignore idle visibility hints; defer configuration that does not require a live process.
                     if runtime.is_none() {
                         match work {
                             ExtensionWork::PrepareEntries { .. } => continue,
@@ -194,8 +193,7 @@ impl ExtensionSearchWorker {
                             match result {
                                 Ok(completed) => Ok(completed),
                                 Err(query_error) => {
-                                    // A failed query still completes this worker's barrier slot so
-                                    // one unavailable extension cannot leave the launcher pending.
+                                    // Complete the barrier slot on failure so the launcher cannot remain pending.
                                     match publish_extension_snapshot(
                                         &search,
                                         &worker_extension_id,
@@ -484,8 +482,7 @@ pub(crate) fn queue_view_invalidation(
     extension_id: &str,
     view_id: String,
 ) {
-    // A worker owns at most one visible route. Replace its pending signal so
-    // extension-controlled view IDs cannot grow this queue without bound.
+    // One worker owns one visible route; replacing its pending signal bounds the queue.
     pending
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -886,8 +883,8 @@ fn notify(notifier: &ExtensionNotifier) {
     }
 }
 
-// Capacity is an in-memory admission bound, not a timeout or a policy that drops
-// accepted work. Waiting releases the state lock so cancellation and shutdown work.
+// Bound admission without expiring or dropping accepted work.
+// Release the lock while waiting so cancellation and shutdown can proceed.
 const PENDING_WORK_CAPACITY: usize = 16;
 
 fn wait_for_capacity<'a>(

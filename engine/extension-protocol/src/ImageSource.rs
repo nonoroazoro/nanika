@@ -4,7 +4,6 @@ pub const MAX_PNG_ENCODED_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PNG_DIMENSION: u32 = 8_192;
 pub const MAX_PNG_PIXELS: u64 = 16_777_216;
 
-/// An image source rendered by the host-owned frontend.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ImageSource {

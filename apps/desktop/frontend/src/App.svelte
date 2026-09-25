@@ -291,8 +291,7 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
     try
     {
-        // The RPC response acknowledges submission only. Search state comes solely
-        // from the session Channel, even when it arrives before this Promise resolves.
+        // RPC only acknowledges submission; search state arrives independently through the Channel.
         await tauriBridge.publishQuery({ sessionId: application.sessionId, requestId, query });
     }
     catch (error)
@@ -393,8 +392,7 @@ function updateRootSearch(next: RootSearchSnapshot): void
         fail(next.error ?? "Search failed without an error message.");
         return;
     }
-    // Pending work preserves the last coherent list. Its entries cannot be invoked
-    // until the current request has produced results and Rust can validate them.
+    // Keep the last coherent list noninteractive until Rust can validate the new results.
     if (next.phase === "ready")
     {
         hasCompletedSearch = true;

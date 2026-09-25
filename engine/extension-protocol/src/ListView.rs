@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DetailView, ListLayout, ListSection, ViewFilter};
 
-/// A searchable, optionally paginated list rendered by the host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListView {
     pub title: String,

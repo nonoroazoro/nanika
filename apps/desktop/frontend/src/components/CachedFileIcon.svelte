@@ -28,8 +28,7 @@ $effect(() =>
     }
     const requestedSource = failedSource === source ? fileIcon : source;
     let active = true;
-    // Reused nodes may keep the same src across groups and emit no new load
-    // event. Decode the current source and cancel delivery when selection changes.
+    // Reused sources may emit no load event; decode explicitly and cancel on selection changes.
     void image.decode().then(() =>
     {
         if (active && image.getAttribute("src") === requestedSource)

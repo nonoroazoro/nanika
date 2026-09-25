@@ -248,8 +248,7 @@ pub fn render_clipboard_view(
         unreachable!()
     };
 
-    // Rendering only reads complete persistent artifacts. Native acquisition belongs to the
-    // background icon owner so every response remains independent of system icon latency.
+    // Render only complete cached artifacts; native acquisition stays on the icon worker.
     let selected = list.selected_item_id.clone();
     let mut selected_references = Vec::new();
     if let Some(paths) = selected.as_ref().and_then(|selected| paths.get(selected)) {
@@ -282,8 +281,7 @@ pub fn render_clipboard_view(
     }) = &mut list.detail
         && selected_references.iter().all(Option::is_some)
     {
-        // Publish the bounded stack together. List icons remain progressive;
-        // failed members settle with their semantic fallback and do not stall it.
+        // Publish the stack together, settling failures with semantic icons; list icons remain progressive.
         for (file, reference) in files.iter_mut().zip(selected_references) {
             file.icon = reference.flatten();
         }

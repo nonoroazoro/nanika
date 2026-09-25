@@ -39,8 +39,7 @@ function _activate(action: Action): void
 
 function _keydown(event: KeyboardEvent): void
 {
-    // Escape must reach Bits' document listener. It prevents default before
-    // launcher/view window handlers run; other keys stay inside this menu.
+    // Let Bits handle Escape before window handlers; keep other keys inside the menu.
     if (event.key === "Escape")
     {
         return;

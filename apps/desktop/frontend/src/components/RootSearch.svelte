@@ -153,8 +153,7 @@ function moveSelection(delta: number): void
     const next = clampIndex(activeIndex + delta, results.length);
     const result = results[next];
     requestedActiveId = result ? `${result.extensionId}:${result.entryId}` : null;
-    // aria-activedescendant preserves input focus but does not scroll the option.
-    // Let the browser reveal only the nearest edge, only for keyboard navigation.
+    // aria-activedescendant does not scroll; reveal the nearest edge during keyboard navigation.
     list?.children.item(next)?.scrollIntoView({
         block: "nearest",
         inline: "nearest",

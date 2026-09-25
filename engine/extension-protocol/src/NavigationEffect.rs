@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::View;
 
-/// Host navigation requested after an extension operation completes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum NavigationEffect {

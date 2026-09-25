@@ -1,4 +1,3 @@
-/// Current Nanika extension protocol identifier.
 pub const PROTOCOL_NAME: &str = "nanika.extension.v1";
 
 /// Host-defined activation action for a static command contribution.

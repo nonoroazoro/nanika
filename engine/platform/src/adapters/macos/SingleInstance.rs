@@ -11,7 +11,6 @@ pub struct SingleInstance {
 }
 
 impl SingleInstance {
-    /// Move the activation stream to the host event bridge.
     pub fn take_events(&mut self) -> Result<Receiver<crate::PlatformEvent>, crate::PlatformError> {
         self.events
             .take()

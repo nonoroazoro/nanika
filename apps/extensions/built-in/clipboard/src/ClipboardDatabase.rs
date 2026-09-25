@@ -29,7 +29,6 @@ ON clipboard_entries(captured_at DESC, entry_id);
 PRAGMA user_version=1;
 ";
 
-/// Clipboard extension database owner boundary.
 pub struct ClipboardDatabase {
     connection: Connection,
 }

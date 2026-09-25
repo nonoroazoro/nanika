@@ -42,8 +42,7 @@ export const settingsBridge = {
                 onUpdate(event.update);
             }
         };
-        // Registration precedes configuration loading in Rust, so a failed read
-        // still retains this channel for window events and a later retry.
+        // Rust registers before loading configuration; retain the channel even if loading fails.
         return await invoke("read_settings", { updates: subscribe ? updates : null });
     },
     ready: async (): Promise<boolean> => invoke("settings_ready"),

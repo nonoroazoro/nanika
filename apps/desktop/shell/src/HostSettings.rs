@@ -150,8 +150,7 @@ pub(crate) fn register(app: &tauri::AppHandle, value: &str) -> Result<(), String
     app.global_shortcut()
         .on_shortcut(parse(value)?, |app, shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                // The OS consumes the registered chord before the WebView sees it.
-                // Deliver it to the recorder instead of toggling the launcher.
+                // The OS intercepts this chord; forward it to the recorder without toggling the launcher.
                 if app
                     .state::<HostSettings>()
                     .recording

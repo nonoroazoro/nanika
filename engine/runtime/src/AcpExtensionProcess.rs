@@ -31,7 +31,6 @@ use crate::{
 
 const ACP_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// A supervised stable ACP v1 extension child process.
 pub struct AcpExtensionProcess {
     extension_id: String,
     initialized: bool,

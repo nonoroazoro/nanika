@@ -2,7 +2,6 @@ use std::io;
 
 use nanika_protocol::FrameError;
 
-/// Failures raised by the extension process supervisor.
 #[derive(Debug)]
 pub enum SupervisorError {
     Io(io::Error),

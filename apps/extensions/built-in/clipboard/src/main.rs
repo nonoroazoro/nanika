@@ -1,5 +1,3 @@
-//! Clipboard history extension process entry point.
-
 use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -135,8 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 let mut state = ClipboardViewState::new();
-                // First paint reads in-memory results only. Filesystem metadata, persistent
-                // cache lookup, and native acquisition all stay on the icon worker.
+                // First paint uses memory only; filesystem and native icon work stay on the worker.
                 let view = render_clipboard_view(&mut state, &entries, &|path| {
                     icon_worker.resolution(path)
                 });
@@ -476,8 +473,7 @@ fn schedule_visible_icons(
             ClipboardContent::Files { paths } => paths.first(),
             _ => None,
         });
-    // Multi-file detail renders a bounded icon stack. Rows need only the first file icon, so
-    // scheduling remains proportional to the visible page rather than payload size.
+    // Bound detail icons and request one icon per row to keep work proportional to the visible page.
     worker.schedule(
         selected_paths
             .chain(other_paths)

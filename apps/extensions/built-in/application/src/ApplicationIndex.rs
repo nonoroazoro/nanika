@@ -114,8 +114,7 @@ impl ApplicationIndex {
             }
             let metadata = match root.symlink_metadata() {
                 Ok(metadata) => metadata,
-                // A deleted source contributes no entries. A complete scan can
-                // then retire its old records without recreating the directory.
+                // A deleted source is empty; complete scans retire its records without recreating it.
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => {
                     coverage.failed(root);

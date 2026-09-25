@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS usage_stats (
 PRAGMA user_version=1;
 ";
 
-/// Host-owned database using the current pre-release schema baseline.
 pub struct HostDatabase {
     connection: Connection,
 }

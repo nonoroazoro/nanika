@@ -10,7 +10,6 @@ const BUILTIN_ROOT_PREFIX: &str = "application.builtin.";
 const MAX_PATHS: usize = 256;
 const MAX_PATH_BYTES: usize = 4_096;
 
-/// Application discovery configuration supplied by the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationConfig {
     pub roots: Vec<PathBuf>,

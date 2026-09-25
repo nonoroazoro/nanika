@@ -14,7 +14,6 @@ struct RegisteredConfiguration {
     values: BTreeMap<String, Value>,
 }
 
-/// Host-owned configuration schema and persisted values for installed extensions.
 pub(crate) struct ExtensionConfigurationRegistry {
     store: ConfigStore,
     registered: Mutex<HashMap<String, RegisteredConfiguration>>,
@@ -110,7 +109,6 @@ impl ExtensionConfigurationRegistry {
         let mut effective = previous_values;
         effective.extend(values);
         contribution.validate_values(&effective)?;
-
         let path = self.store.extension_configuration_file(extension_id);
         if path.is_file() {
             let updates = effective

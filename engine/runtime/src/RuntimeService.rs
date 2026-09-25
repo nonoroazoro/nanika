@@ -198,8 +198,7 @@ impl RuntimeService {
             extension_ids = ?extension_ids,
             "search query dispatched"
         );
-        // Pending workers retain only the latest query and publish it once ready.
-        // They must not hold the barrier for extensions that can already answer.
+        // Pending workers publish the latest query when ready without blocking ready extensions.
         self.extensions.query(generation, &query);
         Ok(generation)
     }

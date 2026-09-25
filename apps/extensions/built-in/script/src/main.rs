@@ -1,5 +1,3 @@
-//! Script extension process entry point.
-
 use std::collections::BTreeMap;
 use std::io::{BufReader, BufWriter, stdin, stdout};
 

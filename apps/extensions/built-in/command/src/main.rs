@@ -1,5 +1,3 @@
-//! Command extension process entry point.
-
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, stdin, stdout};
 

@@ -86,8 +86,7 @@ export function viewInputScheduler()
             if (query !== null && !inputError && current.view.kind === "list")
             {
                 const text = query;
-                // Consume submitted intent. Failure never automatically retries it;
-                // a newer query remains independently eligible after completion.
+                // Consume this intent without retry; newer queries remain eligible after completion.
                 query = null;
                 if (text !== current.view.list.search_text)
                 {

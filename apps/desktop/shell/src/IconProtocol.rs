@@ -59,10 +59,7 @@ impl IconProtocol {
             request,
             responder,
         };
-        // The protocol callback is synchronous. Spawning one async task per
-        // request would make the bounded channel ineffective because tasks
-        // waiting for capacity could grow without a limit. Refuse overload
-        // explicitly so pending requests remain bounded by the queue.
+        // Reject overload here; per-request async tasks would bypass the queue bound.
         match self.requests.try_send(request) {
             Ok(()) => {}
             Err(async_channel::TrySendError::Full(request)) => request.responder.respond(response(

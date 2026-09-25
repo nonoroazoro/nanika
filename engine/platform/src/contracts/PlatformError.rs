@@ -1,4 +1,3 @@
-/// Platform-independent adapter error.
 #[derive(Debug)]
 pub enum PlatformError {
     Unsupported(&'static str),

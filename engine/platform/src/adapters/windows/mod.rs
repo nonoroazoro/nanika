@@ -42,7 +42,6 @@ pub fn clipboard_revision_is_after(candidate: u64, baseline: u64) -> bool {
     distance != 0 && distance < (1_u32 << 31)
 }
 
-/// Platform selected by this artifact's compilation target.
 pub const fn target_platform() -> &'static str {
     "windows"
 }

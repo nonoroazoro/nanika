@@ -34,7 +34,7 @@ impl ConfigurationReply {
             )));
             return false;
         }
-        *pending = Some((id, completion));
+        *pending = Some((id, progress, completion));
         true
     }
 

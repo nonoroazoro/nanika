@@ -34,8 +34,7 @@ pub(crate) fn windows_application(value: &str) -> std::io::Result<()> {
         ));
     }
     let path = std::path::absolute(path)?;
-    // Direct executables keep the discovery contract's parent directory; Shell
-    // Links retain their own working directory and other activation settings.
+    // Executables use the discovered parent directory; Shell Links retain their activation settings.
     let directory = if path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
@@ -68,8 +67,7 @@ pub(crate) fn windows_application(value: &str) -> std::io::Result<()> {
     }
     let mut launch = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-        // This owner has no message loop. Wait for Shell acceptance, not for the
-        // launched application to exit. Security prompts remain owned by Windows.
+        // Without a message loop, wait for Shell acceptance only; Windows owns security prompts.
         fMask: SEE_MASK_INVOKEIDLIST | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI,
         lpFile: path.as_ptr(),
         lpDirectory: directory

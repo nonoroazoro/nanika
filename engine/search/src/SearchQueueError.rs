@@ -1,4 +1,3 @@
-/// Search owner boundary failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchQueueError {
     Closed,

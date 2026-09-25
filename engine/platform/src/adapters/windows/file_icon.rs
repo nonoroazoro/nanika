@@ -322,8 +322,7 @@ fn hbitmap_pixels(
     if copied != height {
         return Err(error);
     }
-    // IShellItemImageFactory returns a 32-bit PARGB bitmap. Convert its
-    // premultiplied BGRA channels before normalization and PNG encoding.
+    // Convert premultiplied BGRA to straight RGBA before normalization and PNG encoding.
     crate::windows_alpha_recovery::unpremultiply_bgra_to_rgba(&mut pixels);
     crate::normalize_icon_rgba(&pixels, width as u32, height as u32, size)
         .ok_or_else(|| std::io::Error::other("Windows provided an empty file icon"))

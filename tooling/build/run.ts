@@ -37,8 +37,7 @@ await withBuildTarget(root, mode, async (target, run) =>
         return;
     }
     const command = ["bun", join(root, "node_modules/@tauri-apps/cli/tauri.js"), "build"];
-    // A successful invocation may publish only bundles created by that invocation.
-    // Keep the compiler cache and the previously published bundle intact.
+    // Clear only staging bundles to prevent publishing stale output; retain the cache and published bundle.
     await rm(join(cargoTarget, profile, "bundle"), { recursive: true, force: true });
     if (mode === "computer-use")
     {
@@ -46,7 +45,6 @@ await withBuildTarget(root, mode, async (target, run) =>
     }
     command.push("--config", config);
     await run(command, desktop, { NANIKA_DEV_REQUIRE_PRIMARY: "1" });
-    // Publish distributable output separately from the reusable compiler cache.
     await publishBundle(join(cargoTarget, profile, "bundle"), join(root, "target", profile));
     if (mode === "computer-use")
     {

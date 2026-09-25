@@ -1,6 +1,5 @@
 use std::io;
 
-/// Configuration boundary errors.
 #[derive(Debug)]
 pub enum ConfigError {
     Io(io::Error),

@@ -1,5 +1,3 @@
-//! Calculator extension process entry point.
-
 use std::collections::HashMap;
 use std::io::{BufWriter, stdout};
 use std::sync::atomic::Ordering;

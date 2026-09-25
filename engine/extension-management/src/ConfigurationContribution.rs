@@ -7,7 +7,6 @@ use crate::{ConfigurationProperty, validate_key};
 
 const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
 
-/// Static Settings schema declared by one extension package.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationContribution {

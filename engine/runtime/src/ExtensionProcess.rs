@@ -23,7 +23,6 @@ use crate::{
 type ReceivePoll = Option<Option<Message>>;
 type ViewInvalidationNotifier = Arc<Mutex<Option<Arc<dyn Fn(String) + Send + Sync>>>>;
 
-/// A supervised extension child process using the universal protocol.
 pub struct ExtensionProcess {
     candidate_changes: ExtensionNotifier,
     view_invalidations: ViewInvalidationNotifier,
@@ -249,8 +248,7 @@ impl ExtensionProcess {
     }
 
     fn receive(&mut self) -> Result<Option<Message>, SupervisorError> {
-        // This interval observes explicit shutdown; it never expires an operation.
-        // All protocol waits, including initialization and configuration updates, use this path.
+        // All protocol waits poll for explicit shutdown here; operations never expire.
         loop {
             if let Some(message) = self.poll_receive(Duration::from_millis(25))? {
                 return Ok(message);
@@ -916,8 +914,7 @@ impl ExtensionProcess {
             Ok(receiver) => loop {
                 match interruption() {
                     ExtensionInterruption::None => {}
-                    // Submission already accepted a potentially side-effecting operation.
-                    // Cancellation cannot retract it. Deliver its concrete outcome first.
+                    // Accepted side effects cannot be retracted; deliver their outcome before cancellation.
                     ExtensionInterruption::Cancel => {}
                     ExtensionInterruption::Terminate => {
                         self.terminate()?;
