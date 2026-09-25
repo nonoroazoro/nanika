@@ -42,7 +42,10 @@ fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
         .expect("exact match should remain available");
     assert_eq!(candidate.title, "Zettelkasten");
     assert_eq!(
-        candidate.icon.as_ref().map(|icon| icon.key()),
+        candidate.icon.as_ref().and_then(|icon| match icon {
+            nanika_protocol::IconSource::Cache(reference) => Some(reference.key()),
+            _ => None,
+        }),
         Some("fallback")
     );
 }

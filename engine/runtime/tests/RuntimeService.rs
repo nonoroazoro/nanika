@@ -41,7 +41,7 @@ impl Fixture {
         let manifests = [HEALTHY, DELAYED].map(|id| {
             serde_json::json!({
                 "format": "nanika-extension",
-                "name": "Test Extension", "icon": "extension",
+                "name": "Test Extension", "icon": "assets/icon.png",
         "manifestVersion": 1,
                 "id": id,
                 "version": "0.1.0",
@@ -107,7 +107,11 @@ impl Fixture {
         let (sender, receiver) = mpsc::channel();
         let thread = std::thread::spawn(move || {
             let sources = manifests.iter().map(String::as_str).collect::<Vec<_>>();
-            let _ = sender.send(RuntimeService::start(&paths, &sources));
+            let _ = sender.send(RuntimeService::start(
+                &paths,
+                &sources,
+                &paths.app_data_root().join("resources"),
+            ));
         });
         let result = receiver.recv_timeout(WAIT);
         if result.is_err() {
@@ -500,7 +504,10 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
         assert_eq!(info.len(), 1);
         assert_eq!(info[0].id, HEALTHY);
         assert_eq!(info[0].name, "Test Extension");
-        assert_eq!(serde_json::to_value(&info[0]).unwrap()["icon"], "extension");
+        assert_eq!(
+            serde_json::to_value(&info[0]).unwrap()["icon"],
+            "assets/icon.png"
+        );
         let generation = runtime.begin_query("fixture").unwrap();
         wait_until(|| has_result(&runtime, generation, HEALTHY));
         runtime.prepare_visible_entries(&runtime.latest_snapshot().unwrap(), 10);

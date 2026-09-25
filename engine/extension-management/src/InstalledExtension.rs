@@ -7,8 +7,9 @@ use crate::{ExtensionContributions, ExtensionManifest, ExtensionProtocol};
 pub struct InstalledExtension {
     pub extension_id: String,
     pub name: String,
-    pub icon: crate::ContributionIcon,
+    pub icon: String,
     pub program: PathBuf,
+    pub resource_root: PathBuf,
     pub protocol: ExtensionProtocol,
     pub activation: crate::ExtensionActivation,
     pub permissions: Vec<String>,
@@ -17,12 +18,17 @@ pub struct InstalledExtension {
 
 impl InstalledExtension {
     /// Convert one validated manifest into the common runtime input.
-    pub fn from_manifest(manifest: ExtensionManifest, program: PathBuf) -> Self {
+    pub fn from_manifest(
+        manifest: ExtensionManifest,
+        program: PathBuf,
+        resource_root: PathBuf,
+    ) -> Self {
         Self {
             extension_id: manifest.id,
             name: manifest.name,
             icon: manifest.icon,
             program,
+            resource_root,
             protocol: manifest.runtime,
             activation: manifest.activation,
             permissions: manifest.permissions,

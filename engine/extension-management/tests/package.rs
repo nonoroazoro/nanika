@@ -31,6 +31,8 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
         }
     );
     assert!(installed.program.is_file());
+    assert!(installed.resource_root.join("manifest.jsonc").is_file());
+    assert_eq!(installed.icon, "assets/icon.png");
 
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
@@ -43,6 +45,10 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
     let (active, errors) = resolve_installed_extensions(&paths, &records);
     assert!(errors.is_empty());
     assert_eq!(active.len(), 1, "disabled extensions remain discoverable");
+    assert_eq!(
+        active[0].resource_root,
+        installed.resource_root.canonicalize().unwrap()
+    );
     assert!(
         !ExtensionRegistryConfig::load(&store)
             .unwrap()
@@ -911,7 +917,7 @@ fn create_package_definition_with_runtime_and_contributions(
     let entrypoint = format!("bin/{target}/example{}", std::env::consts::EXE_SUFFIX);
     let mut manifest = serde_json::json!({
         "format": "nanika-extension",
-        "name": "Test Extension", "icon": "extension",
+        "name": "Test Extension", "icon": "assets/icon.png",
         "manifestVersion": manifest_version,
         "id": "com.example.extension",
         "version": version,
@@ -983,7 +989,7 @@ mod activation {
     #[test]
     fn activation_is_explicit_and_rejects_dynamic_or_acp_on_demand() {
         let mut manifest = serde_json::json!({
-            "format": "nanika-extension", "name": "Test Extension", "icon": "extension",
+            "format": "nanika-extension", "name": "Test Extension", "icon": "assets/icon.png",
             "manifestVersion": 1,
             "id": "test.extension", "version": "0.1.0", "hostApi": "^0.1",
             "targets": { "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/test.exe" } },
@@ -1017,20 +1023,20 @@ mod activation {
 }
 
 mod presentation {
-    use nanika_extension_package::{ContributionIcon, parse_extension_manifest};
+    use nanika_extension_package::parse_extension_manifest;
 
     #[test]
     fn presentation_metadata_is_required_bounded_and_host_rendered() {
         let baseline = serde_json::json!({
             "format": "nanika-extension", "manifestVersion": 1,
-            "id": "example.tools", "name": "Example Tools", "icon": "script",
+            "id": "example.tools", "name": "Example Tools", "icon": "assets/icon.png",
             "version": "0.1.0", "hostApi": "^0.1",
             "targets": { "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/tools.exe" } },
             "runtime": { "protocol": "nanika", "protocolVersion": 1 }
         });
         let parsed = parse_extension_manifest(&baseline.to_string()).unwrap();
         assert_eq!(parsed.name, "Example Tools");
-        assert_eq!(parsed.icon, ContributionIcon::Script);
+        assert_eq!(parsed.icon, "assets/icon.png");
         for name in [
             String::new(),
             "  ".into(),

@@ -15,8 +15,6 @@ mod candidate_kind;
 #[path = "ClipboardContent.rs"]
 mod clipboard_content;
 mod constants;
-#[path = "ContributionIcon.rs"]
-mod contribution_icon;
 #[path = "DetailContent.rs"]
 mod detail_content;
 #[path = "DetailView.rs"]
@@ -32,6 +30,8 @@ mod host_service_request;
 mod host_service_response;
 #[path = "IconReference.rs"]
 mod icon_reference;
+#[path = "IconSource.rs"]
+mod icon_source;
 #[path = "ImageSource.rs"]
 mod image_source;
 #[path = "LaunchArguments.rs"]
@@ -73,7 +73,6 @@ pub use candidate::*;
 pub use candidate_kind::*;
 pub use clipboard_content::*;
 pub use constants::*;
-pub use contribution_icon::*;
 pub use detail_content::*;
 pub use detail_view::*;
 pub use extension_configuration::*;
@@ -82,6 +81,7 @@ pub use framing::*;
 pub use host_service_request::*;
 pub use host_service_response::*;
 pub use icon_reference::*;
+pub use icon_source::*;
 pub use image_source::*;
 pub use launch_arguments::*;
 pub use launch_descriptor::*;

@@ -15,6 +15,7 @@ pub(crate) struct SettingsSnapshot {
 pub(crate) struct ExtensionSettings {
     #[serde(flatten)]
     pub(crate) info: nanika_host::RuntimeExtensionInfo,
+    pub(crate) icon_url: String,
     pub(crate) configuration: Option<nanika_host::RuntimeExtensionConfiguration>,
     pub(crate) application: Option<SettingsApplicationUpdate>,
 }

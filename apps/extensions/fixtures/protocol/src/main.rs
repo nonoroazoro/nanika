@@ -443,7 +443,6 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         actions: vec![action],
         aliases: vec!["fixture alias".to_owned()],
         icon: None,
-        contribution_icon: None,
     }
 }
 

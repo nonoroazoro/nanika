@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "com.nanika.script",
   "name": "Scripts",
-  "icon": "script",
+  "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
   "targets": {

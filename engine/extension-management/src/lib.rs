@@ -10,8 +10,6 @@ mod configuration_contribution;
 mod configuration_property;
 #[path = "ConfigurationSchema.rs"]
 mod configuration_schema;
-#[path = "ContributionIcon.rs"]
-mod contribution_icon;
 #[path = "ExtensionContributions.rs"]
 mod extension_contributions;
 #[path = "ExtensionManifest.rs"]
@@ -44,7 +42,6 @@ pub use command_contribution::*;
 pub use configuration_contribution::*;
 pub use configuration_property::*;
 pub use configuration_schema::*;
-pub use contribution_icon::*;
 pub use extension_contributions::*;
 pub use extension_manifest::*;
 pub use extension_package_error::*;

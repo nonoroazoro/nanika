@@ -12,13 +12,15 @@ pub(crate) struct SearchResult {
     pub(crate) title: String,
     pub(crate) subtitle: Option<String>,
     pub(crate) icon_url: Option<String>,
-    pub(crate) contribution_icon: Option<String>,
     pub(crate) kind: String,
     pub(crate) entry_type: &'static str,
 }
 
 impl SearchResult {
-    pub(crate) fn from_candidate(candidate: &nanika_search::Candidate) -> Self {
+    pub(crate) fn from_candidate(
+        candidate: &nanika_search::Candidate,
+        extension_icon: Option<nanika_protocol::IconSource>,
+    ) -> Self {
         Self {
             extension_id: candidate.extension_id().to_owned(),
             entry_id: candidate.entry_id().to_owned(),
@@ -29,10 +31,10 @@ impl SearchResult {
             }),
             title: candidate.title().to_owned(),
             subtitle: candidate.subtitle().map(str::to_owned),
-            icon_url: candidate.icon_key().map(|key| {
-                resource_protocol::url(&format!("{}/{key}/128.png", candidate.extension_id()))
-            }),
-            contribution_icon: candidate.contribution_icon().map(str::to_owned),
+            icon_url: candidate
+                .icon()
+                .or(extension_icon.as_ref())
+                .map(|icon| resource_protocol::icon_url(candidate.extension_id(), icon)),
             kind: "Extension".to_owned(),
             entry_type: match candidate.kind() {
                 nanika_search::CandidateKind::Action => "action",
@@ -41,3 +43,7 @@ impl SearchResult {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/SearchResult.rs"]
+mod tests;

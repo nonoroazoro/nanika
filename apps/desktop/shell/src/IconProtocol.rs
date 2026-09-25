@@ -4,18 +4,22 @@ use tauri::http::{Method, Request, Response, StatusCode};
 
 use crate::icon_request::IconRequest;
 
-// Limit queued disk reads independently of catalog size. Senders wait for space;
-// the reader processes one cached icon at a time.
+// Bound queued disk reads independently of catalog size; reject overload without
+// spawning unbounded tasks. All package, cache and payload reads share this worker.
 const REQUEST_CAPACITY: usize = 400;
 
 pub(crate) struct IconProtocol {
     requests: async_channel::Sender<IconRequest>,
+    packages: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, PathBuf>>>,
     thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl IconProtocol {
     pub(crate) fn spawn(cache_root: PathBuf, payload_root: PathBuf) -> Result<Self, String> {
         let (requests, receiver) = async_channel::bounded::<IconRequest>(REQUEST_CAPACITY);
+        let packages =
+            std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
+        let worker_packages = std::sync::Arc::clone(&packages);
         let thread = std::thread::Builder::new()
             .name("nanika-icon-protocol".to_owned())
             .spawn(move || {
@@ -23,6 +27,9 @@ impl IconProtocol {
                     request.responder.respond(resolve_request(
                         &cache_root,
                         &payload_root,
+                        &worker_packages
+                            .read()
+                            .unwrap_or_else(|error| error.into_inner()),
                         &request.webview_label,
                         &request.request,
                     ));
@@ -31,8 +38,16 @@ impl IconProtocol {
             .map_err(|error| error.to_string())?;
         Ok(Self {
             requests,
+            packages,
             thread: std::sync::Mutex::new(Some(thread)),
         })
+    }
+
+    pub(crate) fn set_packages(&self, packages: std::collections::HashMap<String, PathBuf>) {
+        *self
+            .packages
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = packages;
     }
 
     pub(crate) fn shutdown(&self) {
@@ -83,10 +98,11 @@ impl Drop for IconProtocol {
 pub(crate) fn resolve_request(
     cache_root: &std::path::Path,
     payload_root: &std::path::Path,
+    packages: &std::collections::HashMap<String, PathBuf>,
     webview_label: &str,
     request: &Request<Vec<u8>>,
 ) -> Response<Vec<u8>> {
-    if webview_label != "launcher" || request.method() != Method::GET {
+    if !matches!(webview_label, "launcher" | "settings") || request.method() != Method::GET {
         return response(StatusCode::FORBIDDEN, "text/plain", Vec::new());
     }
     let segments = request
@@ -95,60 +111,62 @@ pub(crate) fn resolve_request(
         .trim_start_matches('/')
         .split('/')
         .collect::<Vec<_>>();
-    if segments.len() == 2
-        && nanika_foundation::is_valid_extension_id(segments[0])
-        && segments[1].ends_with(".png")
-        && nanika_protocol::is_valid_resource_path(segments[1])
-    {
-        let extension_root = payload_root.join(segments[0]);
-        let payload = extension_root.join(segments[1]);
-        return match nanika_platform::read_png_resource(&payload, &extension_root) {
-            Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
-            Err(nanika_platform::PngResourceError::NotFound) => {
-                response(StatusCode::NOT_FOUND, "text/plain", Vec::new())
-            }
-            Err(error) => {
-                tracing::warn!(
-                    extension_id = segments[0],
-                    resource = segments[1],
-                    %error,
-                    "image resource request failed"
-                );
-                let status = match error {
-                    nanika_platform::PngResourceError::OutsideRoot => StatusCode::FORBIDDEN,
-                    nanika_platform::PngResourceError::EncodedSize => StatusCode::PAYLOAD_TOO_LARGE,
-                    nanika_platform::PngResourceError::Dimensions { .. }
-                    | nanika_platform::PngResourceError::Decode(_) => {
-                        StatusCode::UNPROCESSABLE_ENTITY
-                    }
-                    nanika_platform::PngResourceError::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                    nanika_platform::PngResourceError::NotFound => unreachable!(),
-                };
-                response(status, "text/plain", Vec::new())
-            }
-        };
-    }
-    let [extension_id, icon_key, file_name] = segments.as_slice() else {
+    let [extension_id, source, rest @ ..] = segments.as_slice() else {
         return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     };
-    if !nanika_foundation::is_valid_extension_id(extension_id)
-        || nanika_protocol::IconReference::new(*icon_key).is_err()
-        || !matches!(*file_name, "32.png" | "64.png" | "128.png" | "512.png")
-    {
+    if !nanika_foundation::is_valid_extension_id(extension_id) {
         return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
     }
-    let path = cache_root
-        .join("icons")
-        .join(extension_id)
-        .join(icon_key)
-        .join(file_name);
-    match std::fs::read(path) {
-        Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            response(StatusCode::NOT_FOUND, "text/plain", Vec::new())
-        }
-        Err(_) => response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", Vec::new()),
+    if webview_label == "settings" && *source != "package" {
+        return response(StatusCode::FORBIDDEN, "text/plain", Vec::new());
     }
+    let (root, relative) = match (*source, rest) {
+        ("package", segments) => {
+            let relative = segments.join("/");
+            if !nanika_protocol::is_valid_package_icon_path(&relative) {
+                return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new());
+            }
+            let Some(root) = packages.get(*extension_id) else {
+                return response(StatusCode::NOT_FOUND, "text/plain", Vec::new());
+            };
+            (root.clone(), relative)
+        }
+        ("payload", [file]) if nanika_protocol::is_valid_resource_path(file) => {
+            (payload_root.join(extension_id), (*file).to_owned())
+        }
+        ("cache", [key, file])
+            if nanika_protocol::IconReference::new(*key).is_ok()
+                && matches!(*file, "32.png" | "64.png" | "128.png" | "512.png") =>
+        {
+            (
+                cache_root.join("icons").join(extension_id),
+                format!("{key}/{file}"),
+            )
+        }
+        _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new()),
+    };
+    let mut result = match nanika_platform::read_png_resource(&root.join(relative), &root) {
+        Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
+        Err(error) => {
+            use nanika_platform::PngResourceError as Error;
+            let status = match error {
+                Error::NotFound => StatusCode::NOT_FOUND,
+                Error::OutsideRoot => StatusCode::FORBIDDEN,
+                Error::EncodedSize => StatusCode::PAYLOAD_TOO_LARGE,
+                Error::Dimensions { .. } | Error::Decode(_) => StatusCode::UNPROCESSABLE_ENTITY,
+                Error::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            response(status, "text/plain", Vec::new())
+        }
+    };
+    // Package paths can be replaced by an extension update; only content-addressed artifacts are immutable.
+    if *source == "package" {
+        result.headers_mut().insert(
+            "Cache-Control",
+            tauri::http::HeaderValue::from_static("no-store"),
+        );
+    }
+    result
 }
 
 fn response(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Vec<u8>> {

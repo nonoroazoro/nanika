@@ -52,7 +52,6 @@ impl CalculatorEngine {
                 )],
                 aliases: vec![query.to_owned()],
                 icon: None,
-                contribution_icon: None,
             },
             result.to_owned(),
         ))

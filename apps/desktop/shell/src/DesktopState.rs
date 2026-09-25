@@ -788,6 +788,7 @@ impl DesktopState {
             .lifecycle
             .iter()
             .map(|entry| crate::ExtensionSettings {
+                icon_url: entry.icon_url.clone(),
                 configuration: entry.configuration.clone(),
                 info: entry.info.clone(),
                 application: applications.latest.get(&entry.info.id).cloned(),

@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "com.nanika.clipboard",
   "name": "Clipboard History",
-  "icon": "clipboard",
+  "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
   "targets": {
@@ -19,7 +19,7 @@
         "id": "clipboard.history",
         "title": "Clipboard History",
         "description": "Search and copy previous clipboard content.",
-        "icon": "clipboard",
+        "icon": "assets/icon.png",
         "keywords": ["clipboard", "history", "paste"]
       }
     ],

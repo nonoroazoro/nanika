@@ -38,7 +38,11 @@ pub struct RuntimeService {
 }
 
 impl RuntimeService {
-    pub fn start(paths: &NanikaPaths, built_in_manifests: &[&str]) -> Result<Arc<Self>, String> {
+    pub fn start(
+        paths: &NanikaPaths,
+        built_in_manifests: &[&str],
+        built_in_resources: &Path,
+    ) -> Result<Arc<Self>, String> {
         let inventory = BuiltInExtensionInventory::parse(built_in_manifests)?;
         let mut diagnostics = Vec::new();
         let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
@@ -102,7 +106,12 @@ impl RuntimeService {
                         )
                     })?;
             }
-            installed_extensions.push(InstalledExtension::from_manifest(manifest, program));
+            let resource_root = built_in_resources.join(&manifest.id);
+            installed_extensions.push(InstalledExtension::from_manifest(
+                manifest,
+                program,
+                resource_root,
+            ));
         }
 
         let (mut external, errors) = resolve_installed_extensions(paths, &storage_state.extensions);
@@ -449,6 +458,24 @@ impl RuntimeService {
 
     pub fn extension_configurations(&self) -> Vec<crate::RuntimeExtensionConfiguration> {
         self.configurations.snapshots()
+    }
+
+    /// Installed presentation metadata remains available without a live process.
+    pub fn extension_icon(&self, extension_id: &str) -> Option<nanika_protocol::IconSource> {
+        self.installed
+            .get(extension_id)
+            .map(|extension| nanika_protocol::IconSource::Package {
+                path: extension.icon.clone(),
+            })
+    }
+
+    pub fn extension_resource_roots(
+        &self,
+    ) -> std::collections::HashMap<String, std::path::PathBuf> {
+        self.installed
+            .iter()
+            .map(|(id, extension)| (id.clone(), extension.resource_root.clone()))
+            .collect()
     }
 
     pub fn extension_info(&self) -> Vec<crate::RuntimeExtensionInfo> {

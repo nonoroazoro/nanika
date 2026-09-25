@@ -12,7 +12,7 @@ const { reference, resourceOrigin, extensionId, preview = false, collection = fa
 } = $props();
 const source = $derived(
     reference
-        ? `${resourceOrigin}/${extensionId}/${reference.key}/${preview || collection ? 512 : 128}.png`
+        ? `${resourceOrigin}/${extensionId}/cache/${reference.key}/${preview || collection ? 512 : 128}.png`
         : fileIcon
 );
 let failedSource = $state<string | null>(null);

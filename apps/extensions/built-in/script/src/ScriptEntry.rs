@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use nanika_protocol::{Candidate, CandidateKind, ContributionIcon, LaunchDescriptor};
+use nanika_protocol::{Candidate, CandidateKind, LaunchDescriptor};
 
 use crate::RUN_ACTION_ID;
 
@@ -26,7 +26,6 @@ impl ScriptEntry {
             )],
             aliases: Vec::new(),
             icon: None,
-            contribution_icon: Some(ContributionIcon::Script),
         }
     }
 

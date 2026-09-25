@@ -3,8 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use nanika_extension_package::{
-    CommandContribution, ContributionIcon, ExtensionContributions, RootSearchContribution,
-    ViewContribution,
+    CommandContribution, ExtensionContributions, RootSearchContribution, ViewContribution,
 };
 
 use crate::{
@@ -153,7 +152,7 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
             description: "Open the example view.".to_owned(),
             category: Some("Example".to_owned()),
             keywords: vec!["sample".to_owned()],
-            icon: Some(ContributionIcon::Clipboard),
+            icon: Some("assets/command.png".to_owned()),
         }],
         views: vec![ViewContribution {
             id: "example.view".to_owned(),
@@ -173,8 +172,10 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
         ["sample", "Open the example view.", "Example"]
     );
     assert_eq!(
-        candidates[0].contribution_icon,
-        Some(nanika_protocol::ContributionIcon::Clipboard)
+        candidates[0].icon,
+        Some(nanika_protocol::IconSource::Package {
+            path: "assets/command.png".to_owned()
+        })
     );
     assert_eq!(candidates[0].kind, nanika_protocol::CandidateKind::Action);
     assert_eq!(candidates[1].entry_id, "example.view");

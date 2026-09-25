@@ -180,6 +180,41 @@ The source and reconciliation contract is implemented in the application
 extension's [platform adapters](../apps/extensions/built-in/application/src/platform.rs)
 and [index](../apps/extensions/built-in/application/src/ApplicationIndex.rs).
 
+## Extension image resources
+
+Every extension manifest declares a package-relative PNG path, for example
+`"icon": "assets/icon.png"`. Optional command and view icons use the same path
+contract. Root search candidates accept `{"kind":"package","path":"assets/item.png"}`
+or `{"kind":"cache","key":"file-icon"}`. Omitted item icons inherit the extension
+icon. The frontend receives a resolved URL and uses one image component in Settings
+and root results; it has no built-in icon names or domain-specific artwork.
+
+Paths use nonempty slash-separated ASCII letters, digits, dots, underscores and
+hyphens, with no dot or parent segments, and at most 512 bytes. PNGs use the shared
+encoded-size and dimension limits. The shell resolves package paths only inside
+the host inventory's resource root, including canonical containment checks, and
+returns image errors without changing extension lifecycle state. Missing or invalid
+images render a neutral placeholder. Remote URLs, SVG and host filesystem paths
+are not accepted.
+
+The shell resource protocol exposes `/{extensionId}/package/{path}`,
+`/{extensionId}/cache/{key}/{size}.png`, and `/{extensionId}/payload/{hash}.png`.
+Settings can read package images only; the launcher can also read cache and payload
+images. Package responses are not cached across requests because updates can replace
+a file at the same path. Content-addressed cache and payload responses are immutable.
+The registered package roots remain available while an extension is disabled.
+
+External package roots come from installed metadata. Built-in resource staging is
+derived from `bundle.externalBin` and each matching manifest; `assets/**/*.png`
+exports are bundled under `extensions/{extensionId}/assets`. The desktop shell uses
+Tauri's resource directory on Windows and macOS and supplies that root to the engine.
+The installed application needs neither Bun nor Node to resolve images.
+
+The package-path convention follows the
+[VS Code extension manifest](https://code.visualstudio.com/api/references/extension-manifest).
+VS Code also [excludes SVG manifest icons from publishing](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
+Nanika uses PNG consistently with its existing bounded native image reader.
+
 ## Native presentation and reveal
 
 Windows default-index application icons share native extraction and transparent

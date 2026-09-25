@@ -10,5 +10,5 @@ pub struct RuntimeExtensionInfo {
     pub instance_id: Option<u64>,
     pub lifecycle_error: Option<String>,
     pub configuration_error: Option<String>,
-    pub icon: nanika_extension_package::ContributionIcon,
+    pub icon: String,
 }

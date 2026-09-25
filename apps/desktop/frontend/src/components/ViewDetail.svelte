@@ -19,7 +19,7 @@ function resolveImageSource(): string | null
     }
     return detail.content.source.kind === "dataUrl"
         ? detail.content.source.value
-        : `${resourceOrigin}/${extensionId}/${detail.content.source.path}`;
+        : `${resourceOrigin}/${extensionId}/payload/${detail.content.source.path}`;
 }
 
 const text = $derived(detail.content.kind === "text" ? detail.content.value : null);

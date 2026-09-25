@@ -204,7 +204,6 @@ impl ExtensionRuntime {
                         )],
                         aliases: vec![query],
                         icon: None,
-                        contribution_icon: None,
                     }]
                 } else {
                     Vec::new()

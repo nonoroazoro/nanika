@@ -11,7 +11,7 @@ pub struct ExtensionManifest {
     pub manifest_version: u32,
     pub id: String,
     pub name: String,
-    pub icon: crate::ContributionIcon,
+    pub icon: String,
     pub version: String,
     pub host_api: String,
     pub targets: BTreeMap<String, ExtensionTarget>,

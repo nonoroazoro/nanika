@@ -883,8 +883,10 @@ pub(crate) fn contribution_candidates(
             action_id: nanika_protocol::COMMAND_EXECUTE_ACTION_ID.to_owned(),
             actions: vec![command.action.clone()],
             aliases,
-            icon: None,
-            contribution_icon: command.icon.map(protocol_contribution_icon),
+            icon: command
+                .icon
+                .as_ref()
+                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() }),
         }
     });
     let views = contributions.views.iter().map(|view| {
@@ -904,36 +906,13 @@ pub(crate) fn contribution_candidates(
                 "Open",
             )],
             aliases,
-            icon: None,
-            contribution_icon: view.icon.map(protocol_contribution_icon),
+            icon: view
+                .icon
+                .as_ref()
+                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() }),
         }
     });
     commands.chain(views).collect()
-}
-
-fn protocol_contribution_icon(
-    icon: nanika_extension_package::ContributionIcon,
-) -> nanika_protocol::ContributionIcon {
-    match icon {
-        nanika_extension_package::ContributionIcon::Applications => {
-            nanika_protocol::ContributionIcon::Applications
-        }
-        nanika_extension_package::ContributionIcon::Calculator => {
-            nanika_protocol::ContributionIcon::Calculator
-        }
-        nanika_extension_package::ContributionIcon::Clipboard => {
-            nanika_protocol::ContributionIcon::Clipboard
-        }
-        nanika_extension_package::ContributionIcon::Command => {
-            nanika_protocol::ContributionIcon::Command
-        }
-        nanika_extension_package::ContributionIcon::Script => {
-            nanika_protocol::ContributionIcon::Script
-        }
-        nanika_extension_package::ContributionIcon::Extension => {
-            nanika_protocol::ContributionIcon::Extension
-        }
-    }
 }
 
 fn run_invocation(

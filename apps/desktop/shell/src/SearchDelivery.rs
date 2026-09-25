@@ -168,7 +168,14 @@ pub(crate) fn run_delivery_with_preparation(
                 snapshot
                     .results
                     .iter()
-                    .map(|ranked| crate::SearchResult::from_candidate(&ranked.candidate))
+                    .map(|ranked| {
+                        crate::SearchResult::from_candidate(
+                            &ranked.candidate,
+                            runtime.as_ref().and_then(|runtime| {
+                                runtime.extension_icon(ranked.candidate.extension_id())
+                            }),
+                        )
+                    })
                     .collect()
             }));
         }

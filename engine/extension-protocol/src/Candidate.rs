@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{CandidateKind, ContributionIcon, IconReference};
+use crate::{CandidateKind, IconSource};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Candidate {
@@ -12,6 +12,5 @@ pub struct Candidate {
     pub action_id: String,
     pub actions: Vec<crate::Action>,
     pub aliases: Vec<String>,
-    pub icon: Option<IconReference>,
-    pub contribution_icon: Option<ContributionIcon>,
+    pub icon: Option<IconSource>,
 }

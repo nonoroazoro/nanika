@@ -110,6 +110,14 @@ async function _fixture(): Promise<string>
         JSON.stringify({ bundle: { externalBin: ["freshness-extension"] } })
     );
     await Bun.write(
+        join(fixture, "apps/extensions/built-in/freshness-extension/manifest.jsonc"),
+        JSON.stringify({ id: "test.freshness", icon: "assets/icon.png" })
+    );
+    await Bun.write(
+        join(fixture, "apps/extensions/built-in/freshness-extension/assets/icon.png"),
+        Bun.file(join(repository, "apps/extensions/built-in/calculator/assets/icon.png"))
+    );
+    await Bun.write(
         join(fixture, "tooling/development/processes.ts"),
         `
         export function nanikaProcesses() {

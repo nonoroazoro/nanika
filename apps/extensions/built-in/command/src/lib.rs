@@ -27,7 +27,6 @@ pub fn command_candidate(query: &str) -> Option<(Candidate, String)> {
             )],
             aliases: vec![query.to_owned()],
             icon: None,
-            contribution_icon: None,
         },
         command.to_owned(),
     ))

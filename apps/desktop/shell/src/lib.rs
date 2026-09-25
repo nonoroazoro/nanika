@@ -174,6 +174,7 @@ pub fn run() -> Result<(), String> {
             tray::install(app.handle())?;
             let runtime_handle = app.handle().clone();
             let runtime_paths = paths.clone();
+            let runtime_resources = app.path().resource_dir()?.join("extensions");
             let initializer = std::thread::Builder::new()
                 .name("nanika-runtime-initializer".to_owned())
                 .spawn(move || {
@@ -184,8 +185,15 @@ pub fn run() -> Result<(), String> {
                         include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),
                     ];
-                    match nanika_host::RuntimeService::start(&runtime_paths, &built_in_manifests) {
+                    match nanika_host::RuntimeService::start(
+                        &runtime_paths,
+                        &built_in_manifests,
+                        &runtime_resources,
+                    ) {
                         Ok(runtime) => {
+                            runtime_handle
+                                .state::<std::sync::Arc<icon_protocol::IconProtocol>>()
+                                .set_packages(runtime.extension_resource_roots());
                             for diagnostic in runtime.startup_diagnostics() {
                                 tracing::warn!(
                                     message = diagnostic,

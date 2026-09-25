@@ -40,7 +40,7 @@ library requires a separate decision.
 | Location                         | Ownership                                                             |
 | -------------------------------- | --------------------------------------------------------------------- |
 | [assets/icons](assets/icons/)    | Original high-resolution icon artwork for editing and export          |
-| apps/desktop/frontend/src/assets | Optimized runtime images imported by shared UI components             |
+| apps/extensions/built-in/*/assets | Packaged extension images loaded through the shared resource protocol |
 | apps/desktop/shell/icons         | Application icon source and platform packaging variants used by Tauri |
 | target                           | Temporary previews, screenshots, probes and measurement output        |
 
@@ -48,6 +48,10 @@ Keep originals distinct from optimized exports. Documentation artwork is not a
 runtime dependency; move or rename exports only together with their consumers.
 
 ## Shared controls and visual language
+
+Root search results use their declared package image or cached file icon. Results without
+an item icon use their extension's manifest icon, rendered by the same shared icon
+component as Settings. This rule applies equally to built-in and external extensions.
 
 - Shared Button, Switch, Select and ContextMenu wrap Bits UI. Shared native Input
   and Textarea preserve editing, IME, selection, validation and typed DOM refs.

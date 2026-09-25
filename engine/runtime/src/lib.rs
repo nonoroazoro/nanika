@@ -168,15 +168,6 @@ pub(crate) fn search_candidates(
     entries
         .into_iter()
         .map(|entry| {
-            let icon_key = entry
-                .icon
-                .filter(nanika_protocol::IconReference::is_valid)
-                .map(|icon| icon.key().to_owned());
-            let contribution_icon = if icon_key.is_none() {
-                entry.contribution_icon.map(|icon| icon.as_str().to_owned())
-            } else {
-                None
-            };
             nanika_search::Candidate::new(
                 match entry.kind {
                     nanika_protocol::CandidateKind::Action => nanika_search::CandidateKind::Action,
@@ -190,8 +181,7 @@ pub(crate) fn search_candidates(
                 entry.aliases,
             )
             .with_subtitle(entry.subtitle)
-            .with_icon_key(icon_key)
-            .with_contribution_icon(contribution_icon)
+            .with_icon(entry.icon.filter(nanika_protocol::IconSource::is_valid))
         })
         .collect()
 }

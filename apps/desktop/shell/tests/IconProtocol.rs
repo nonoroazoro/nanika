@@ -21,8 +21,9 @@ fn image_resources_are_bounded_and_content_addressed() {
     let response = resolve_request(
         &cache_root,
         &payload_root,
+        &Default::default(),
         "launcher",
-        &request(&format!("/com.nanika.clipboard/{RESOURCE_NAME}")),
+        &request(&format!("/com.nanika.clipboard/payload/{RESOURCE_NAME}")),
     );
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
@@ -33,8 +34,9 @@ fn image_resources_are_bounded_and_content_addressed() {
     let mutable_name = resolve_request(
         &cache_root,
         &payload_root,
+        &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/preview.png"),
+        &request("/com.nanika.clipboard/payload/preview.png"),
     );
     assert_eq!(mutable_name.status(), StatusCode::BAD_REQUEST);
 
@@ -47,9 +49,10 @@ fn image_resources_are_bounded_and_content_addressed() {
     let response = resolve_request(
         &cache_root,
         &payload_root,
+        &Default::default(),
         "launcher",
         &request(&format!(
-            "/com.nanika.clipboard/{}",
+            "/com.nanika.clipboard/payload/{}",
             oversized_path.file_name().unwrap().to_string_lossy()
         )),
     );
@@ -88,16 +91,81 @@ fn cached_file_icons_support_large_previews_and_reject_arbitrary_sizes() {
     let response = resolve_request(
         &root,
         &root.join("payloads"),
+        &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/file-icon/512.png"),
+        &request("/com.nanika.clipboard/cache/file-icon/512.png"),
     );
     assert_eq!(response.status(), StatusCode::OK);
     let response = resolve_request(
         &root,
         &root.join("payloads"),
+        &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/file-icon/1024.png"),
+        &request("/com.nanika.clipboard/cache/file-icon/1024.png"),
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn package_icons_are_scoped_shared_with_settings_and_fail_independently() {
+    let root = std::env::temp_dir().join(format!("nanika-package-icons-{}", std::process::id()));
+    let package = root.join("package");
+    std::fs::create_dir_all(package.join("assets")).unwrap();
+    write_png(&package.join("assets/icon.png"));
+    std::fs::write(package.join("assets/broken.png"), "not a PNG").unwrap();
+    let packages = std::collections::HashMap::from([("example.tools".to_owned(), package)]);
+    for surface in ["launcher", "settings"] {
+        for (path, status) in [
+            (
+                "/example.tools/package/assets/missing.png",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/example.tools/package/assets/broken.png",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                "/example.other/package/assets/icon.png",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/example.tools/package/../outside.png",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "/example.tools/package/%2e%2e/outside.png",
+                StatusCode::BAD_REQUEST,
+            ),
+            ("/example.tools/package/assets/icon.png", StatusCode::OK),
+        ] {
+            let response = resolve_request(&root, &root, &packages, surface, &request(path));
+            assert_eq!(response.status(), status, "{surface}: {path}");
+            assert_eq!(response.headers()["Cache-Control"], "no-store");
+            if status == StatusCode::OK {
+                assert_eq!(response.headers()["Content-Type"], "image/png");
+            }
+        }
+    }
+    for path in [
+        "/example.tools/cache/file/128.png",
+        &format!("/example.tools/payload/{RESOURCE_NAME}"),
+    ] {
+        assert_eq!(
+            resolve_request(&root, &root, &packages, "settings", &request(path)).status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        resolve_request(
+            &root,
+            &root,
+            &packages,
+            "unknown",
+            &request("/example.tools/package/assets/icon.png")
+        )
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

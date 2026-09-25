@@ -10,8 +10,7 @@ pub struct Candidate {
     action_id: String,
     actions: Vec<nanika_protocol::Action>,
     aliases: Vec<String>,
-    icon_key: Option<String>,
-    contribution_icon: Option<String>,
+    icon: Option<nanika_protocol::IconSource>,
     search_values: Vec<String>,
 }
 
@@ -40,8 +39,7 @@ impl Candidate {
             actions,
             action_id,
             aliases,
-            icon_key: None,
-            contribution_icon: None,
+            icon: None,
             search_values,
         }
     }
@@ -50,13 +48,8 @@ impl Candidate {
         self.kind
     }
 
-    pub fn with_icon_key(mut self, icon_key: Option<String>) -> Self {
-        self.icon_key = icon_key;
-        self
-    }
-
-    pub fn with_contribution_icon(mut self, contribution_icon: Option<String>) -> Self {
-        self.contribution_icon = contribution_icon;
+    pub fn with_icon(mut self, icon: Option<nanika_protocol::IconSource>) -> Self {
+        self.icon = icon;
         self
     }
 
@@ -97,12 +90,8 @@ impl Candidate {
         &self.aliases
     }
 
-    pub fn icon_key(&self) -> Option<&str> {
-        self.icon_key.as_deref()
-    }
-
-    pub fn contribution_icon(&self) -> Option<&str> {
-        self.contribution_icon.as_deref()
+    pub fn icon(&self) -> Option<&nanika_protocol::IconSource> {
+        self.icon.as_ref()
     }
 
     pub(crate) fn set_extension_id(&mut self, extension_id: &str) {

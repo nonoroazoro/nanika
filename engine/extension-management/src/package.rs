@@ -177,6 +177,7 @@ fn apply_package(
     Ok(InstalledExtension::from_manifest(
         manifest,
         version_root.join(entrypoint),
+        version_root,
     ))
 }
 
@@ -364,7 +365,11 @@ fn resolve_installed_extension(
     }
     let program = fs::canonicalize(program)?;
     validate_managed_path(&canonical_install, &program)?;
-    Ok(InstalledExtension::from_manifest(manifest, program))
+    Ok(InstalledExtension::from_manifest(
+        manifest,
+        program,
+        canonical_install,
+    ))
 }
 
 fn validate_package_operation(
@@ -591,6 +596,7 @@ pub fn validate_extension_manifest(
                 .to_owned(),
         ));
     }
+    _validate_icon_path(&manifest.icon)?;
     let _ = Version::parse(&manifest.version)
         .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
     let host_requirement = VersionReq::parse(&manifest.host_api)
@@ -733,6 +739,9 @@ fn validate_command_contributions(
     }
     let mut ids = HashSet::new();
     for command in commands {
+        if let Some(icon) = &command.icon {
+            _validate_icon_path(icon)?;
+        }
         nanika_protocol::validate_actions(std::slice::from_ref(&command.action))
             .map_err(ExtensionPackageError::Manifest)?;
         if command.action.id != nanika_protocol::COMMAND_EXECUTE_ACTION_ID {
@@ -775,6 +784,9 @@ fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), Extensi
     }
     let mut ids = HashSet::new();
     for view in views {
+        if let Some(icon) = &view.icon {
+            _validate_icon_path(icon)?;
+        }
         if !is_valid_contribution_id(&view.id) {
             return Err(ExtensionPackageError::Manifest(
                 "extension view id is invalid".to_owned(),
@@ -940,4 +952,13 @@ fn unix_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |duration| duration.as_secs())
+}
+
+fn _validate_icon_path(path: &str) -> Result<(), ExtensionPackageError> {
+    if !nanika_protocol::is_valid_package_icon_path(path) {
+        return Err(ExtensionPackageError::Manifest(
+            "icon must name a PNG file inside the extension package".into(),
+        ));
+    }
+    Ok(())
 }

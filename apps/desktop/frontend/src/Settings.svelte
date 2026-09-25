@@ -20,7 +20,7 @@ import { ExtensionSettingsState } from "./settings/ExtensionSettingsState.svelte
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
 import type { SettingsWindowAction } from "./types/SettingsWindowAction";
 import { orderedProperties } from "./settings/properties";
-import ContributionIconTile from "./components/ContributionIconTile.svelte";
+import ExtensionIcon from "./components/ExtensionIcon.svelte";
 import type { ExtensionSettings, HostPreferences, SettingsApplicationUpdate, SettingsSnapshot } from "./types/Settings";
 
 let notification = $state<string | null>(null);
@@ -319,7 +319,7 @@ function _windowAction(action: SettingsWindowAction): void
                             selection = extension.id;
                         }}
                     >
-                        <span class="nav-icon" aria-hidden="true"><ContributionIconTile kind={extension.icon} /></span>
+                        <span class="nav-icon" aria-hidden="true"><ExtensionIcon src={extension.iconUrl} /></span>
                         <span class="nav-title">{extension.name}</span>
                     </Button>
                 {/each}
@@ -351,7 +351,7 @@ function _windowAction(action: SettingsWindowAction): void
                 <div class="extension-page">
                     <header>
                         <div class="extension-heading">
-                            <span class="heading-icon"><ContributionIconTile kind={selected.icon} /></span><div>
+                            <span class="heading-icon"><ExtensionIcon src={selected.iconUrl} /></span><div>
                                 <h1>{selected.name}</h1>
                                 {#key selected.id}<ExtensionStatus lifecycleState={selected.state} />{/key}
                             </div>

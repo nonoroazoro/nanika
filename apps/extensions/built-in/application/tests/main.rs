@@ -110,7 +110,10 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     let icon_key = entry
         .icon
         .as_ref()
-        .map(|icon| icon.key())
+        .and_then(|icon| match icon {
+            nanika_protocol::IconSource::Cache(reference) => Some(reference.key()),
+            _ => None,
+        })
         .expect("application candidate should reference its icon");
     assert!(
         cache_root

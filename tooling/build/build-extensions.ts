@@ -1,5 +1,5 @@
 import { copyFile, mkdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import tauriConfig from "../../apps/desktop/shell/tauri.conf.json";
 
@@ -46,7 +46,29 @@ export async function buildExtensions(
             await copyFile(source, destination);
         }
     }
-    return JSON.stringify({ bundle: { externalBin } });
+    const resources: Record<string, string> = { ...tauriConfig.bundle.resources };
+    for (const binary of tauriConfig.bundle.externalBin)
+    {
+        const directory = resolve(
+            import.meta.dirname,
+            "../../apps/extensions/built-in",
+            basename(binary).replace(/^nanika-extension-/, "")
+        );
+        const manifest = Bun.JSONC.parse(await Bun.file(join(directory, "manifest.jsonc")).text()) as {
+            icon: string;
+            id: string;
+        };
+        for await (const path of new Bun.Glob("assets/**/*.png").scan(directory))
+        {
+            resources[join(directory, path)] = `extensions/${manifest.id}/${path.replaceAll("\\", "/")}`;
+        }
+        const icon = join(directory, manifest.icon);
+        if (!resources[icon])
+        {
+            throw new Error(`Extension icon is not included in package assets: ${icon}`);
+        }
+    }
+    return JSON.stringify({ bundle: { externalBin, resources } });
 }
 
 function _hostTriple(): string

@@ -101,7 +101,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             title: format!("Application {index}"),
             subtitle: None,
             icon_url: None,
-            contribution_icon: None,
+
             kind: "Extension".to_owned(),
             entry_type: "action",
         })
@@ -180,7 +180,9 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
     ));
     let paths =
         nanika_storage::NanikaPaths::from_roots(&root, root.join("cache"), root.join("config"));
-    let runtime = nanika_host::RuntimeService::start(&paths, &[]).unwrap();
+    let runtime =
+        nanika_host::RuntimeService::start(&paths, &[], &paths.app_data_root().join("resources"))
+            .unwrap();
     let (wakes, receiver) = mpsc::sync_channel(1);
     let runtime_wakes = wakes.clone();
     runtime.set_notifier(Arc::new(move || {

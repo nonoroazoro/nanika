@@ -78,7 +78,7 @@ fn manifest_rejects_integer_constraints_outside_the_frontend_safe_range() {
     let mut manifest = serde_json::json!({
         "format": "nanika-extension",
         "name": "Test Extension",
-        "icon": "extension",
+        "icon": "assets/icon.png",
         "manifestVersion": 1,
         "id": "test.extension",
         "version": "0.1.0",

@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ContributionIcon;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CommandContribution {
@@ -15,5 +13,5 @@ pub struct CommandContribution {
     #[serde(default)]
     pub keywords: Vec<String>,
     #[serde(default)]
-    pub icon: Option<ContributionIcon>,
+    pub icon: Option<String>,
 }

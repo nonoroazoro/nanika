@@ -28,8 +28,18 @@ test("concurrent builds stage independent copies and repeated builds preserve un
                         }
                     }
                 })
-            ) as { bundle: { externalBin: string[]; }; };
+            ) as { bundle: { externalBin: string[]; resources: Record<string, string>; }; };
             expect(configuration.bundle.externalBin.length).toBeGreaterThan(0);
+            const resources = Object.entries(configuration.bundle.resources);
+            const icons = resources.filter(([, path]) => path.startsWith("extensions/"));
+            expect(icons).toHaveLength(configuration.bundle.externalBin.length);
+            for (const [source, destination] of icons)
+            {
+                expect(destination).toMatch(/^extensions\/com\.nanika\.[a-z]+\/assets\/icon\.png$/);
+                expect(new Uint8Array(await Bun.file(source).arrayBuffer()).slice(0, 8)).toEqual(
+                    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+                );
+            }
             for (const binary of configuration.bundle.externalBin)
             {
                 expect(binary.startsWith(join(target, "sidecars"))).toBe(true);
@@ -92,7 +102,7 @@ test("staging replaces changed binaries even when size and modification time mat
                         }
                     }
                 }, cargoTarget)
-            ) as { bundle: { externalBin: string[]; }; };
+            ) as { bundle: { externalBin: string[]; resources: Record<string, string>; }; };
             expect(config.bundle.externalBin.length).toBeGreaterThan(0);
             for (const name of await readdir(join(target, "sidecars")))
             {

@@ -66,8 +66,9 @@ impl ApplicationEntry {
             action_id: RUN_ACTION_ID.to_owned(),
             actions: self.actions(),
             aliases,
-            icon: IconReference::new(&self.icon_key).ok(),
-            contribution_icon: None,
+            icon: IconReference::new(&self.icon_key)
+                .ok()
+                .map(nanika_protocol::IconSource::Cache),
         }
     }
 

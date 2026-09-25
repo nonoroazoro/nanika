@@ -1,4 +1,3 @@
-import type { ContributionIcon } from "./ContributionIcon";
 import type { OperationProgress } from "./OperationProgress";
 import type { ConfigurationWriteResult } from "../settings/ConfigurationWriteResult";
 
@@ -42,7 +41,8 @@ export interface ExtensionSettings
 {
     id: string;
     name: string;
-    icon: ContributionIcon;
+    icon: string;
+    iconUrl: string;
     enabled: boolean;
     pending: boolean;
     state: "disabled" | "dormant" | "failed" | "ready" | "starting" | "stopping";
