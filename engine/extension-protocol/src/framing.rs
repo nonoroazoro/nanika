@@ -1,12 +1,36 @@
 use std::io::{Read, Write};
 
-use crate::{FrameError, MAX_FRAME_BYTES, Message};
+use crate::{FrameError, MAX_EXTENSION_FRAME_BYTES, Message};
 
-/// Write one little-endian length-delimited JSON frame.
-pub fn write_frame(writer: &mut impl Write, message: &Message) -> Result<(), FrameError> {
+/// Write a host-owned frame, including complete configuration snapshots.
+pub fn write_host_frame(writer: &mut impl Write, message: &Message) -> Result<(), FrameError> {
+    _write_frame(writer, message, None)
+}
+
+/// Write an extension response within the host's inbound allocation budget.
+pub fn write_extension_frame(writer: &mut impl Write, message: &Message) -> Result<(), FrameError> {
+    _write_frame(writer, message, Some(MAX_EXTENSION_FRAME_BYTES))
+}
+
+/// Read the owning host's stdin stream, including complete configuration snapshots.
+/// The host validates configuration against the extension's schema before transmission.
+pub fn read_host_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError> {
+    _read_frame(reader, None)
+}
+
+/// Read an untrusted extension's stdout stream. Reject oversized headers before allocation.
+pub fn read_extension_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError> {
+    _read_frame(reader, Some(MAX_EXTENSION_FRAME_BYTES))
+}
+
+fn _write_frame(
+    writer: &mut impl Write,
+    message: &Message,
+    maximum: Option<usize>,
+) -> Result<(), FrameError> {
     let payload =
         serde_json::to_vec(message).map_err(|error| FrameError::Json(error.to_string()))?;
-    if payload.len() > MAX_FRAME_BYTES {
+    if maximum.is_some_and(|maximum| payload.len() > maximum) {
         return Err(FrameError::InvalidLength(payload.len()));
     }
     let length =
@@ -17,8 +41,10 @@ pub fn write_frame(writer: &mut impl Write, message: &Message) -> Result<(), Fra
     Ok(())
 }
 
-/// Read one frame, returning `None` only when the stream closes before a frame starts.
-pub fn read_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError> {
+fn _read_frame(
+    reader: &mut impl Read,
+    maximum: Option<usize>,
+) -> Result<Option<Message>, FrameError> {
     let mut length_bytes = [0; 4];
     match reader.read_exact(&mut length_bytes[..1]) {
         Ok(()) => {}
@@ -27,10 +53,14 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError>
     }
     reader.read_exact(&mut length_bytes[1..])?;
     let length = u32::from_le_bytes(length_bytes) as usize;
-    if length > MAX_FRAME_BYTES {
+    if maximum.is_some_and(|maximum| length > maximum) {
         return Err(FrameError::InvalidLength(length));
     }
-    let mut payload = vec![0; length];
+    let mut payload = Vec::new();
+    payload
+        .try_reserve_exact(length)
+        .map_err(std::io::Error::other)?;
+    payload.resize(length, 0);
     reader.read_exact(&mut payload)?;
     serde_json::from_slice(&payload)
         .map(Some)

@@ -2,7 +2,9 @@ use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    HostServiceResponse, Message, PROTOCOL_NAME, read_extension_frame, write_host_frame,
+};
 
 #[test]
 fn command_process_contributes_and_requests_an_explicit_shell_launch() {
@@ -16,7 +18,7 @@ fn command_process_contributes_and_requests_an_explicit_shell_launch() {
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
     initialize(&mut input, &mut output);
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query-command".to_owned(),
@@ -25,12 +27,13 @@ fn command_process_contributes_and_requests_an_explicit_shell_launch() {
         },
     )
     .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).expect("query response")
+    let Some(Message::Snapshot { entries, .. }) =
+        read_extension_frame(&mut output).expect("query response")
     else {
         panic!("command extension should return a snapshot");
     };
     let entry = entries.into_iter().next().expect("command candidate");
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke-command".to_owned(),
@@ -45,7 +48,7 @@ fn command_process_contributes_and_requests_an_explicit_shell_launch() {
 }
 
 fn initialize(input: &mut impl std::io::Write, output: &mut impl std::io::Read) {
-    write_frame(
+    write_host_frame(
         input,
         &Message::Initialize {
             request_id: "initialize".to_owned(),
@@ -55,7 +58,7 @@ fn initialize(input: &mut impl std::io::Write, output: &mut impl std::io::Read) 
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_frame(output).expect("initialize response"),
+        read_extension_frame(output).expect("initialize response"),
         Some(Message::Initialized { .. })
     ));
 }
@@ -70,11 +73,11 @@ fn complete_host_request(
         parent_request_id,
         generation,
         ..
-    }) = read_frame(output).expect("host request")
+    }) = read_extension_frame(output).expect("host request")
     else {
         panic!("extension should request a host service");
     };
-    write_frame(
+    write_host_frame(
         input,
         &Message::HostResponse {
             request_id,
@@ -85,7 +88,7 @@ fn complete_host_request(
     )
     .expect("host response should write");
     assert!(matches!(
-        read_frame(output).expect("action result"),
+        read_extension_frame(output).expect("action result"),
         Some(Message::Result { .. })
     ));
 }
@@ -95,7 +98,7 @@ fn shutdown(
     input: &mut impl std::io::Write,
     output: &mut impl std::io::Read,
 ) {
-    write_frame(
+    write_host_frame(
         input,
         &Message::Shutdown {
             request_id: "shutdown".to_owned(),
@@ -103,7 +106,7 @@ fn shutdown(
     )
     .expect("shutdown should write");
     assert!(matches!(
-        read_frame(output).expect("shutdown response"),
+        read_extension_frame(output).expect("shutdown response"),
         Some(Message::ShutdownAck { .. })
     ));
     assert!(child.wait().expect("child should exit").success());

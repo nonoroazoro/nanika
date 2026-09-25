@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_extension_frame,
+    write_host_frame,
 };
 
 #[test]
@@ -30,7 +31,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-application".to_owned(),
@@ -51,7 +52,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         "nanika sample",
         "Nanika Sample",
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh-application".to_owned(),
@@ -63,7 +64,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "refresh response"),
         Some(Message::Refreshed { generation: 2, .. })
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query-application".to_owned(),
@@ -89,7 +90,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         .expect("synthetic Chinese application should be discovered");
     assert!(sync.aliases.iter().any(|alias| alias == "tongbu"));
     assert!(sync.aliases.iter().any(|alias| alias == "tb"));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "mixed-pinyin-query".to_owned(),
@@ -119,7 +120,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             .join("32.png")
             .is_file()
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke-application".to_owned(),
@@ -138,7 +139,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     else {
         panic!("application extension should request host launch");
     };
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::HostResponse {
             request_id: service_request_id,
@@ -152,7 +153,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "invoke result"),
         Some(Message::Result { generation: 3, .. })
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke-application-invalid".to_owned(),
@@ -171,7 +172,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     else {
         panic!("application extension should request host launch");
     };
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::HostResponse {
             request_id: service_request_id,
@@ -189,7 +190,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             ..
         }) if request_id == "invoke-application-invalid" && code == "invalid_host_response"
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Shutdown {
             request_id: "shutdown-application".to_owned(),
@@ -231,7 +232,7 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-application-failure".to_owned(),
@@ -257,7 +258,7 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
         .find(|entry| entry.title == "Nanika Sample")
         .expect("search should remain available");
     assert!(entry.icon.is_none());
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "cleared-query-without-icons".to_owned(),
@@ -272,7 +273,7 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
             .iter()
             .any(|entry| entry.title == "Nanika Sample")
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Shutdown {
             request_id: "shutdown-application-failure".to_owned(),
@@ -317,7 +318,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-configuration".to_owned(),
@@ -331,7 +332,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         Some(Message::Initialized { .. })
     ));
 
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "change-configuration".to_owned(),
@@ -343,7 +344,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     assert!(progress.iter().any(|value| value.total.is_none()));
     assert!(progress.iter().any(|value| value.total.is_some()));
 
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query-updated-configuration".to_owned(),
@@ -356,7 +357,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     assert!(updated.iter().any(|entry| entry.title == "Nanika Sample"));
     prepare_entries(&mut input, 2, &updated);
 
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Shutdown {
             request_id: "shutdown-configuration".to_owned(),
@@ -374,7 +375,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
 
 fn read_complete_snapshot(output: &mut impl std::io::Read) -> Vec<nanika_protocol::Candidate> {
     loop {
-        match read_frame(output).expect("query response") {
+        match read_extension_frame(output).expect("query response") {
             Some(Message::Snapshot {
                 complete: true,
                 entries,
@@ -395,7 +396,7 @@ fn query_until_candidate(
     title: &str,
 ) -> Vec<nanika_protocol::Candidate> {
     loop {
-        write_frame(
+        write_host_frame(
             &mut *input,
             &Message::Query {
                 request_id: request_id.to_owned(),
@@ -411,7 +412,7 @@ fn query_until_candidate(
         }
         loop {
             if matches!(
-                read_frame(&mut *output).expect("candidate change"),
+                read_extension_frame(&mut *output).expect("candidate change"),
                 Some(Message::CandidatesChanged)
             ) {
                 break;
@@ -425,7 +426,7 @@ fn prepare_entries(
     generation: u64,
     entries: &[nanika_protocol::Candidate],
 ) {
-    write_frame(
+    write_host_frame(
         input,
         &Message::PrepareEntries {
             generation,
@@ -441,7 +442,7 @@ fn prepare_entries(
 
 fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Message> {
     loop {
-        match read_frame(output).expect(context) {
+        match read_extension_frame(output).expect(context) {
             Some(Message::CandidatesChanged) => {}
             response => return response,
         }
@@ -561,7 +562,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         .unwrap();
     let mut input = BufWriter::new(child.stdin.take().unwrap());
     let mut output = BufReader::new(child.stdout.take().unwrap());
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-partial".to_owned(),
@@ -582,7 +583,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         "nanika sample",
         "Nanika Sample",
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "configure-partial".to_owned(),
@@ -591,7 +592,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
     )
     .unwrap();
     _read_configuration(&mut output, "configure-partial");
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh-partial".to_owned(),
@@ -603,7 +604,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         read_response(&mut output, "refresh"),
         Some(Message::Refreshed { generation: 3, .. })
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query-after-refresh".to_owned(),
@@ -617,7 +618,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
             .iter()
             .any(|entry| entry.title == "Nanika Sample")
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Shutdown {
             request_id: "shutdown-partial".to_owned(),

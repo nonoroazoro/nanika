@@ -1031,3 +1031,67 @@ fn progress_does_not_complete_an_operation_even_at_one_hundred_percent() {
     assert!(receipt.wait().unwrap().error.is_none());
     fixture.stop(runtime);
 }
+
+#[test]
+fn large_configuration_is_applied_persisted_and_reloaded_for_both_policies() {
+    for persistence in ["beforeApply", "afterApply"] {
+        let mut fixture = Fixture::new();
+        fixture.manifests.truncate(1);
+        let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+        manifest["contributes"]["configuration"]["properties"]["fixture.payload"] = serde_json::json!({
+            "type": "array", "title": "Payload", "default": [], "persistence": persistence,
+            "maxItems": 5000, "items": { "type": "string", "maxLength": 4096 }
+        });
+        fixture.manifests[0] = manifest.to_string();
+        let payload = serde_json::json!(vec!["x".repeat(4000); 2400]);
+        assert!(
+            serde_json::to_vec(&payload).unwrap().len()
+                > nanika_protocol::MAX_EXTENSION_FRAME_BYTES
+        );
+        let runtime = fixture.start();
+        let generation = runtime.begin_query("ready").unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        let outcome = runtime
+            .save_configuration(
+                HEALTHY,
+                "large-settings",
+                "fixture.payload".into(),
+                payload.clone(),
+                std::sync::Arc::new(|_| {}),
+            )
+            .unwrap()
+            .wait()
+            .unwrap();
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert_eq!(outcome.saved["fixture.payload"], payload);
+        assert_eq!(
+            outcome.effective.as_ref().unwrap()["fixture.payload"],
+            payload
+        );
+        fixture.stop(runtime);
+
+        // Startup must initialize the process with the same complete persisted snapshot.
+        let runtime = fixture.start();
+        assert_eq!(
+            runtime.extension_configurations()[0].saved["fixture.payload"],
+            payload
+        );
+        let generation = runtime.begin_query("reloaded").unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        let outcome = runtime
+            .save_configuration(
+                HEALTHY,
+                "small-edit-large-snapshot",
+                "fixture.enabled".into(),
+                false.into(),
+                std::sync::Arc::new(|_| {}),
+            )
+            .unwrap()
+            .wait()
+            .unwrap();
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        assert_eq!(outcome.saved["fixture.payload"], payload);
+        assert_eq!(outcome.saved["fixture.enabled"], false);
+        fixture.stop(runtime);
+    }
+}

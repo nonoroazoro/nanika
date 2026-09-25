@@ -269,3 +269,7 @@ pub(crate) use settings_applications::*;
 #[cfg(test)]
 #[path = "../tests/SettingsApplications.rs"]
 mod settings_applications_tests;
+
+#[cfg(test)]
+#[path = "../tests/SettingsSnapshot.rs"]
+mod settings_snapshot_tests;

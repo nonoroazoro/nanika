@@ -7,7 +7,9 @@ use nanika_extension_application::{
     ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
     select_candidates,
 };
-use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
+use nanika_protocol::{
+    HostServiceResponse, Message, PROTOCOL_NAME, read_host_frame, write_extension_frame,
+};
 
 #[path = "PendingInvocation.rs"]
 mod pending_invocation;
@@ -26,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut output = BufWriter::new(stdout().lock());
     let (initialize_request_id, initial_configuration) = {
         let mut input = BufReader::new(stdin().lock());
-        match read_frame(&mut input)? {
+        match read_host_frame(&mut input)? {
             Some(Message::Initialize {
                 request_id,
                 protocol,
@@ -77,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&entries),
         event_sender.clone(),
     )?;
-    write_frame(
+    write_extension_frame(
         &mut output,
         &Message::Initialized {
             request_id: initialize_request_id,
@@ -144,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match descriptor {
                         Ok(descriptor) => {
                             let service_request_id = format!("host-{request_id}");
-                            write_frame(
+                            write_extension_frame(
                                 &mut output,
                                 &Message::HostRequest {
                                     request_id: service_request_id.clone(),
@@ -216,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if parent_request_id == pending.request_id
                             && response_generation == pending.generation
                         {
-                            write_frame(
+                            write_extension_frame(
                                 &mut output,
                                 &Message::Result {
                                     request_id: pending.request_id,
@@ -244,7 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Message::Shutdown { request_id } => {
-                    write_frame(&mut output, &Message::ShutdownAck { request_id })?;
+                    write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
                     break;
                 }
                 message => write_error(
@@ -259,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 progress,
             } => {
                 if configuration_requests.contains_key(&request_id) {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::ConfigurationProgress {
                             request_id,
@@ -269,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             RuntimeEvent::CandidatesChanged => {
-                write_frame(&mut output, &Message::CandidatesChanged)?;
+                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
             }
             RuntimeEvent::ProtocolClosed => break,
             RuntimeEvent::ProtocolError(message) => {
@@ -286,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let pending = configuration_requests
                     .remove(&request_id)
                     .expect("guarded configuration request must exist");
-                write_frame(&mut output, &Message::CandidatesChanged)?;
+                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if pending.generation != response_generation {
                     *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
                     write_error(
@@ -310,7 +312,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             report.warnings
                         );
                     }
-                    write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+                    write_extension_frame(
+                        &mut output,
+                        &Message::ConfigurationApplied { request_id },
+                    )?;
                 }
             }
             RuntimeEvent::ScanFinished {
@@ -319,7 +324,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 result: Ok(report),
             } if !report.cancelled => {
                 refresh_requests.remove(&request_id);
-                write_frame(&mut output, &Message::CandidatesChanged)?;
+                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if !report.complete || report.warnings > 0 {
                     eprintln!(
                         "application scan was incomplete with {} path errors",
@@ -328,7 +333,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Refresh acknowledges completion; path failures stay in the scan log
                 // and partial scan state instead of becoming user-facing errors.
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Refreshed {
                         request_id,
@@ -341,7 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response_generation: _,
                 result: Err(message),
             } => {
-                write_frame(&mut output, &Message::CandidatesChanged)?;
+                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if let Some(request_id) = request_id {
                     if let Some(pending) = configuration_requests.remove(&request_id) {
                         *config.write().unwrap_or_else(|error| error.into_inner()) =
@@ -370,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(request_id) = request_id {
                     refresh_requests.remove(&request_id);
                 }
-                write_frame(&mut output, &Message::CandidatesChanged)?;
+                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if !report.cancelled && (!report.complete || report.warnings > 0) {
                     eprintln!(
                         "application scan was incomplete with {} path errors",
@@ -394,7 +399,7 @@ fn write_snapshot(
 ) -> Result<(), nanika_protocol::FrameError> {
     let entries = entries.read().unwrap_or_else(|error| error.into_inner());
     let candidates = select_candidates(&entries, query);
-    write_frame(
+    write_extension_frame(
         output,
         &Message::Snapshot {
             request_id: request_id.to_owned(),
@@ -413,7 +418,7 @@ fn spawn_protocol_reader(
         .spawn(move || {
             let mut input = BufReader::new(stdin().lock());
             loop {
-                match read_frame(&mut input) {
+                match read_host_frame(&mut input) {
                     Ok(Some(message)) => {
                         if events.send(RuntimeEvent::Protocol(message)).is_err() {
                             break;
@@ -438,7 +443,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_frame(
+    write_extension_frame(
         output,
         &Message::Error {
             request_id,

@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_extension_frame,
+    write_host_frame,
 };
 
 #[test]
@@ -24,7 +25,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         .expect("script extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize".to_owned(),
@@ -34,10 +35,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_frame(&mut output).expect("initialize response"),
+        read_extension_frame(&mut output).expect("initialize response"),
         Some(Message::Initialized { .. })
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query".to_owned(),
@@ -46,13 +47,14 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         },
     )
     .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).expect("query response")
+    let Some(Message::Snapshot { entries, .. }) =
+        read_extension_frame(&mut output).expect("query response")
     else {
         panic!("script extension should return a snapshot");
     };
     let entry = entries.into_iter().next().expect("script candidate");
     assert_eq!(entry.title, "Build project");
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke".to_owned(),
@@ -67,7 +69,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         parent_request_id,
         generation,
         request,
-    }) = read_frame(&mut output).expect("host request")
+    }) = read_extension_frame(&mut output).expect("host request")
     else {
         panic!("script extension should request host launch");
     };
@@ -91,7 +93,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
                 .unwrap()
         ]
     );
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::HostResponse {
             request_id,
@@ -102,10 +104,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .expect("host response should write");
     assert!(matches!(
-        read_frame(&mut output).expect("action result"),
+        read_extension_frame(&mut output).expect("action result"),
         Some(Message::Result { .. })
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "bad-directory".to_owned(),
@@ -114,10 +116,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     assert!(
-        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
+        matches!(read_extension_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
     );
     std::fs::write(root.join("Second.py"), b"print(2)").unwrap();
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh".to_owned(),
@@ -126,14 +128,14 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     assert!(matches!(
-        read_frame(&mut output).unwrap(),
+        read_extension_frame(&mut output).unwrap(),
         Some(Message::Refreshed { generation: 2, .. })
     ));
     assert!(matches!(
-        read_frame(&mut output).unwrap(),
+        read_extension_frame(&mut output).unwrap(),
         Some(Message::CandidatesChanged)
     ));
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Query {
             request_id: "query-updated".to_owned(),
@@ -142,12 +144,12 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         },
     )
     .unwrap();
-    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).unwrap() else {
+    let Some(Message::Snapshot { entries, .. }) = read_extension_frame(&mut output).unwrap() else {
         panic!("expected refreshed catalog");
     };
     // The rejected update retains the previous configured directory; refresh sees new files there.
     assert_eq!(entries.len(), 2);
-    write_frame(
+    write_host_frame(
         &mut input,
         &Message::Shutdown {
             request_id: "shutdown".to_owned(),
@@ -155,7 +157,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .expect("shutdown should write");
     assert!(matches!(
-        read_frame(&mut output).expect("shutdown response"),
+        read_extension_frame(&mut output).expect("shutdown response"),
         Some(Message::ShutdownAck { .. })
     ));
     assert!(child.wait().expect("child should exit").success());

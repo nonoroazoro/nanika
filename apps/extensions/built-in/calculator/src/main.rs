@@ -9,7 +9,8 @@ use protocol_input::ProtocolInput;
 
 use nanika_extension_calculator::{COPY_ACTION_ID, CalculatorEngine};
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, write_frame,
+    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME,
+    write_extension_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } if protocol == PROTOCOL_NAME => {
                 initialized = true;
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Initialized {
                         request_id,
@@ -69,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     continue;
                 }
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Snapshot {
                         request_id,
@@ -100,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => write_frame(
+            } => write_extension_frame(
                 &mut output,
                 &Message::Refreshed {
                     request_id,
@@ -110,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
             Message::Shutdown { request_id } => {
-                write_frame(&mut output, &Message::ShutdownAck { request_id })?;
+                write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 break;
             }
             message => write_error(
@@ -132,7 +133,7 @@ fn invoke_host(
     value: String,
 ) -> Result<(), nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
-    write_frame(
+    write_extension_frame(
         output,
         &Message::HostRequest {
             request_id: service_request_id.clone(),
@@ -154,7 +155,7 @@ fn invoke_host(
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return write_frame(
+                return write_extension_frame(
                     output,
                     &Message::Result {
                         request_id,
@@ -182,7 +183,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_frame(
+    write_extension_frame(
         output,
         &Message::Error {
             request_id,

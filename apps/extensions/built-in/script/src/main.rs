@@ -3,14 +3,14 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 
 use nanika_extension_script::{RUN_ACTION_ID, ScriptConfig, ScriptEntry, discover_scripts};
 use nanika_protocol::{
-    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME, read_frame,
-    write_frame,
+    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME,
+    read_host_frame, write_extension_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = BufReader::new(stdin().lock());
     let mut output = BufWriter::new(stdout().lock());
-    let (initialize_request_id, configuration) = match read_frame(&mut input)? {
+    let (initialize_request_id, configuration) = match read_host_frame(&mut input)? {
         Some(Message::Initialize {
             request_id,
             protocol,
@@ -48,20 +48,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    write_frame(
+    write_extension_frame(
         &mut output,
         &Message::Initialized {
             request_id: initialize_request_id,
             protocol: PROTOCOL_NAME.to_owned(),
         },
     )?;
-    while let Some(message) = read_frame(&mut input)? {
+    while let Some(message) = read_host_frame(&mut input)? {
         match message {
             Message::Query {
                 request_id,
                 generation,
                 ..
-            } => write_frame(
+            } => write_extension_frame(
                 &mut output,
                 &Message::Snapshot {
                     request_id,
@@ -102,14 +102,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => match discover_scripts(&config) {
                 Ok(updated) => {
                     scripts = updated;
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Refreshed {
                             request_id,
                             generation,
                         },
                     )?;
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                    write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 }
                 Err(message) => {
                     write_error(&mut output, Some(request_id), "discovery_failed", &message)?
@@ -122,8 +122,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((updated, catalog)) => {
                     config = updated;
                     scripts = catalog;
-                    write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
-                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                    write_extension_frame(
+                        &mut output,
+                        &Message::ConfigurationApplied { request_id },
+                    )?;
+                    write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 }
                 Err(message) => write_error(
                     &mut output,
@@ -135,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
             Message::Shutdown { request_id } => {
-                write_frame(&mut output, &Message::ShutdownAck { request_id })?;
+                write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 break;
             }
             message => write_error(
@@ -165,7 +168,7 @@ fn invoke_host(
     descriptor: LaunchDescriptor,
 ) -> Result<(), nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
-    write_frame(
+    write_extension_frame(
         output,
         &Message::HostRequest {
             request_id: service_request_id.clone(),
@@ -175,7 +178,7 @@ fn invoke_host(
         },
     )?;
     loop {
-        match read_frame(input)? {
+        match read_host_frame(input)? {
             Some(Message::HostResponse {
                 request_id: response_id,
                 parent_request_id,
@@ -185,7 +188,7 @@ fn invoke_host(
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return write_frame(
+                return write_extension_frame(
                     output,
                     &Message::Result {
                         request_id,
@@ -213,7 +216,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_frame(
+    write_extension_frame(
         output,
         &Message::Error {
             request_id,

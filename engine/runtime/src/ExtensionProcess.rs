@@ -12,7 +12,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use nanika_protocol::{
-    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_frame, write_frame,
+    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_extension_frame,
+    write_host_frame,
 };
 
 use crate::{
@@ -105,7 +106,7 @@ impl ExtensionProcess {
             .spawn(move || {
                 let mut reader = BufReader::new(output);
                 loop {
-                    let frame = read_frame(&mut reader);
+                    let frame = read_extension_frame(&mut reader);
                     if reader_configuration.dispatch(&frame) {
                         continue;
                     }
@@ -219,7 +220,7 @@ impl ExtensionProcess {
     fn send(&mut self, message: &Message) -> Result<(), SupervisorError> {
         self.check_shutdown()?;
         let input = self.input.as_mut().ok_or(SupervisorError::ChannelClosed)?;
-        write_frame(input, message).map_err(SupervisorError::Protocol)
+        write_host_frame(input, message).map_err(SupervisorError::Protocol)
     }
 
     pub(crate) fn prepare_entries(

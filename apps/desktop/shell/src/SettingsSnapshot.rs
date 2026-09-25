@@ -81,9 +81,5 @@ pub(crate) fn validate_settings_request(request: &SaveSettingsRequest) -> Result
     {
         return Err("Invalid extension settings request.".to_owned());
     }
-    let bytes = serde_json::to_vec(&request.value).map_err(|error| error.to_string())?;
-    if bytes.len() > 1024 * 1024 {
-        return Err("Extension settings exceed 1 MiB.".to_owned());
-    }
     Ok(())
 }

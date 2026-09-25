@@ -6,5 +6,5 @@ pub const COMMAND_EXECUTE_ACTION_ID: &str = "command.execute";
 /// Host-defined activation action for a static view contribution.
 pub const VIEW_OPEN_ACTION_ID: &str = "view.open";
 
-/// Maximum encoded protocol frame accepted by the host.
-pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
+/// Allocation bound for frames received from an extension process.
+pub const MAX_EXTENSION_FRAME_BYTES: usize = 8 * 1024 * 1024;

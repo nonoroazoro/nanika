@@ -4,7 +4,7 @@ use std::io::{self, stdin, stdout};
 
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, LaunchArguments, LaunchDescriptor, Message,
-    PROTOCOL_NAME, read_frame, write_frame,
+    PROTOCOL_NAME, read_host_frame, write_extension_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -55,14 +55,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = stdin().lock();
     let mut output = stdout().lock();
 
-    while let Some(message) = read_frame(&mut input)? {
+    while let Some(message) = read_host_frame(&mut input)? {
         match message {
             Message::Initialize { request_id, .. } => {
                 if let Some(root) = data_root(&arguments) {
                     std::fs::write(root.join(format!("{request_id}.entered")), b"initializing")?;
                 }
                 wait_for_release(&arguments, &request_id)?;
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Initialized {
                         request_id,
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )?;
                 if error_after_initialize {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Error {
                             request_id: None,
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Message::Shutdown { request_id } => {
-                write_frame(&mut output, &Message::ShutdownAck { request_id })?;
+                write_extension_frame(&mut output, &Message::ShutdownAck { request_id })?;
                 return Ok(());
             }
             Message::Query {
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .and_then(|id| id.rsplit_once('-').map(|(id, _)| id))
                     && root.join(format!("fail-search-{extension_id}")).exists()
                 {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 if incremental_query {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Snapshot {
                             request_id: request_id.clone(),
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     )?;
                 }
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Snapshot {
                         request_id,
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::write(marker, request_id.as_bytes())?;
                     if let Some(previous) = &previous_result {
                         // A duplicate old completion must never complete the next action.
-                        write_frame(&mut output, previous)?;
+                        write_extension_frame(&mut output, previous)?;
                     }
                     pending_invoke = Some((request_id, generation));
                     continue;
@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     && action_id == "fixture.run"
                 {
                     let service_request_id = format!("host-{request_id}");
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::HostRequest {
                             request_id: service_request_id.clone(),
@@ -175,14 +175,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         },
                     )?;
-                    match read_frame(&mut input)? {
+                    match read_host_frame(&mut input)? {
                         Some(Message::HostResponse {
                             request_id: response_id,
                             response: HostServiceResponse::Launched,
                             ..
                         }) if response_id == service_request_id => {}
                         Some(Message::Error { code, message, .. }) => {
-                            write_frame(
+                            write_extension_frame(
                                 &mut output,
                                 &Message::Error {
                                     request_id: Some(request_id),
@@ -234,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message: "fixture entry or action does not exist".to_owned(),
                     }
                 };
-                write_frame(&mut output, &response)?;
+                write_extension_frame(&mut output, &response)?;
             }
             Message::ViewClose {
                 request_id,
@@ -252,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message: "fixture view is not open".to_owned(),
                     }
                 };
-                write_frame(&mut output, &response)?;
+                write_extension_frame(&mut output, &response)?;
             }
             Message::Cancel {
                 request_id,
@@ -260,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 if pending_query.as_ref() == Some(&request_id) {
                     pending_query = None;
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -286,7 +286,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if matches!(terminal, Message::Result { .. }) {
                         previous_result = Some(terminal.clone());
                     }
-                    write_frame(&mut output, &terminal)?;
+                    write_extension_frame(&mut output, &terminal)?;
                 }
             }
             Message::Refresh {
@@ -298,7 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .iter()
                     .any(|argument| argument == "--fail-refresh")
                 {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -311,7 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(marker) = &mark_refresh {
                     std::fs::write(marker, b"refreshed")?;
                 }
-                write_frame(
+                write_extension_frame(
                     &mut output,
                     &Message::Refreshed {
                         request_id,
@@ -322,7 +322,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::ConfigurationChanged { request_id, .. } => {
                 if request_id == "progress-settings" {
                     for completed in [0, 1, 2] {
-                        write_frame(
+                        write_extension_frame(
                             &mut output,
                             &Message::ConfigurationProgress {
                                 request_id: request_id.clone(),
@@ -346,7 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if data_root(&arguments)
                     .is_some_and(|root| root.join(format!("fail-{request_id}")).exists())
                 {
-                    write_frame(
+                    write_extension_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -356,7 +356,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     continue;
                 }
-                write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+                write_extension_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
             Message::PrepareEntries { .. } => {}
             Message::Snapshot { .. }
@@ -373,7 +373,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::ShutdownAck { .. }
             | Message::ConfigurationProgress { .. }
             | Message::ConfigurationApplied { .. }
-            | Message::Error { .. } => write_frame(
+            | Message::Error { .. } => write_extension_frame(
                 &mut output,
                 &Message::Error {
                     request_id: None,
@@ -383,7 +383,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
         }
         if let Some(request_id) = deferred_configuration.take() {
-            write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+            write_extension_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
         }
     }
 

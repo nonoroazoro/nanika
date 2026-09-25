@@ -69,6 +69,15 @@ and converts its draft to schema-defined values before no-op detection or admiss
 The writer receives that same prepared value. No-op detection compares durable and
 authoritative presentation values and retains unresolved application failures.
 
+Configuration values have no fixed aggregate byte quota. The schema still defines
+valid values. Both initialization and live updates deliver the complete host-owned
+snapshot through `write_host_frame` / `read_host_frame`. The extension response
+endpoints `write_extension_frame` / `read_extension_frame` keep an 8 MiB frame
+budget; the host rejects oversized response headers before allocating their payload.
+The shared framing code and both platform adapters use the same contract for built-in
+and external extensions. Frames retain their 32-bit byte length; encoding and I/O
+failures remain explicit errors rather than truncation or a successful-save claim.
+
 Every configuration property explicitly declares `persistence`:
 
 - `beforeApply`: persist desired configuration, then apply it. Application failure
