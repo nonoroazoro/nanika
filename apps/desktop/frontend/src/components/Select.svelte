@@ -10,6 +10,7 @@ const { value, label, options, disabled = false, onChange }: {
     disabled?: boolean;
     onChange: (value: string) => void;
 } = $props();
+const contentId = $props.id();
 let open = $state(false);
 const selected = $derived(options.find(option => option.value === value));
 onMount(() =>
@@ -24,26 +25,33 @@ onMount(() =>
 </script>
 
 <Select.Root type="single" {value} {disabled} items={options} onValueChange={onChange} bind:open loop>
-    <Select.Trigger class="control-button select-trigger" aria-label={label}>
+    <!-- Focus stays on the trigger while Bits highlights options via aria-activedescendant. -->
+    <Select.Trigger
+        class="control-button select-trigger"
+        role="combobox"
+        aria-label={label}
+        aria-controls={open ? contentId : undefined}
+    >
         <span>{selected?.label ?? value}</span>
         <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
-            stroke-width="1.6"
+            stroke-width="1.5"
             aria-hidden="true"
         >
-            <path d="m7 10 5 5 5-5" />
+            <path d="m4 6 4 4 4-4" />
         </svg>
     </Select.Trigger>
     {#if $uiActivity.visible && $uiActivity.focused}
         <Select.Portal>
             <Select.Content
+                id={contentId}
                 class="popup-surface select-options"
                 aria-label={label}
-                sideOffset={5}
+                sideOffset={4}
                 collisionPadding={8}
                 align="end"
                 preventScroll={false}
@@ -78,8 +86,8 @@ onMount(() =>
 </Select.Root>
 
 <style>
-:global(.select-trigger) { display: flex; justify-content: space-between; gap: var(--space-4); min-width: 7rem; font-weight: 400; }
+:global(.select-trigger) { display: flex; justify-content: space-between; gap: var(--space-4); min-width: var(--settings-control-width); font-weight: 400; }
 :global(.select-trigger svg) { color: var(--text-secondary); flex-shrink: 0; }
-:global(.select-options) { font-size: var(--font-control); }
+:global(.select-options) { font-size: var(--font-control); line-height: var(--control-line-height); }
 :global(.select-options svg) { color: var(--accent); flex-shrink: 0; }
 </style>

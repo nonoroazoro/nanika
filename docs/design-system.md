@@ -35,6 +35,47 @@ validation. Preserve Windows 10+ and macOS 13+ WebView support.
 Use CSS/Svelte motion with shared reduced-motion behavior. Adding an animation
 library requires a separate decision.
 
+## Reference lookup workflow
+
+Use this order for UI/UX research:
+
+1. Read this document for Nanika's adopted rules, values and product adaptations.
+2. Open the relevant official Fluent 2 page directly using the topic index below.
+3. Inspect the local Fluent UI source when exact token values, component state styles
+   or implementation details remain unclear.
+4. Use web search for unresolved questions, official discussions and known issues.
+
+The existing reference checkout on this workstation is `D:\Workspace\fluentui`,
+from [microsoft/fluentui](https://github.com/microsoft/fluentui). Treat this as a
+local research location, not a build dependency or a required path on other machines.
+Follow the global repository lookup rules: verify the remote, working tree and
+upstream before updating with `git pull --ff-only`; preserve local changes and
+report when the checkout cannot be updated safely. If absent, check other candidate
+checkouts before cloning into a dedicated system temporary directory.
+
+Start source inspection with `packages/tokens` for concrete token values and
+`packages/web-components` for concrete component parameters. Do not use the
+React implementation as reference. Treat source styles as options to evaluate in
+Nanika, rather than as a complete visual prescription. The repository does not replace the
+website's design guidance. If guidance and implementation differ, record the
+specific discrepancy and the reason for Nanika's choice.
+
+| Topic | Official entry points |
+| --- | --- |
+| Principles and layout | [Design principles](https://fluent2.microsoft.design/design-principles), [Layout](https://fluent2.microsoft.design/layout) |
+| Color and tokens | [Color](https://fluent2.microsoft.design/color), [Design tokens](https://fluent2.microsoft.design/design-tokens), [Color tokens](https://fluent2.microsoft.design/color-tokens) |
+| Typography and icons | [Typography](https://fluent2.microsoft.design/typography), [Iconography](https://fluent2.microsoft.design/iconography) |
+| Shape and depth | [Shapes](https://fluent2.microsoft.design/shapes), [Elevation](https://fluent2.microsoft.design/elevation), [Material](https://fluent2.microsoft.design/material) |
+| Motion | [Motion](https://fluent2.microsoft.design/motion) |
+| Accessibility and content | [Accessibility](https://fluent2.microsoft.design/accessibility), [Content design](https://fluent2.microsoft.design/content-design) |
+| Component parameters | [Non-React Web Components](https://github.com/microsoft/fluentui/tree/d27922755b/packages/web-components/src) |
+
+Keep adopted rules, parameters, adaptation reasons and source links in the relevant
+sections of this document. When an implementation detail depends on repository
+state, cite the source file and commit. Consult the live website for visual and
+motion examples. Do not maintain a full-site mirror as part of the current workflow;
+add focused, attributed reference notes only when repeated lookups justify them.
+
 ## Document and artwork ownership
 
 | Location                         | Ownership                                                             |
@@ -109,6 +150,17 @@ component as Settings. This rule applies equally to built-in and external extens
   appear immediately and cancel the pending label; runtime state is not delayed.
   A newly opened page without a previous settled state shows the current state.
   The existing field progress indicator supplies feedback for longer operations.
+- Settings uses Fluent's Web [type ramp](https://fluent2.microsoft.design/typography):
+  row labels are Body 1 (14px/20px), descriptions are Caption 1 (12px/16px), and
+  page titles are Subtitle 1 (20px/26px). Shared controls retain their compact text
+  treatment and 32px minimum height. Fluent's
+  [medium Input implementation](https://github.com/microsoft/fluentui/blob/master/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts)
+  also uses 32px; a control height is not a setting row height.
+  General and extension rows share 8px vertical and 16px horizontal padding;
+  groups are separated by 16px. These values come from Fluent's spacing ramp.
+  Their assignment to Settings is a Nanika density decision, not a Fluent mandate:
+  an ordinary single-line row is 48px before borders. Descriptions and compound
+  editors grow naturally instead of clipping to a fixed row height.
 - Pending feedback appears after one second below the affected control, with
   stable geometry. Unknown progress uses a small indeterminate bar; real
   completed/total work units use a determinate bar. Progress never unlocks input;
@@ -119,6 +171,47 @@ component as Settings. This rule applies equally to built-in and external extens
 - Settings failures appear in a compact top notification with explicit dismissal.
   There is no field-level retry button or persistent error paragraph. The original
   cause remains in diagnostics; saved and effective values are reconciled separately.
+
+## Settings component treatment
+
+Settings uses Fluent's spacing, proximity and alignment principles with a restrained
+native desktop treatment. `styles/settings.css` owns surface-specific semantic
+tokens, including portaled controls; shared controls retain their input contracts.
+
+- Row labels remain 14/20px and descriptions 12/16px. Navigation and control text
+  use 13px regular for compact desktop reading. Page headings are 20/26px at weight
+  500; section headings and selected navigation also use 500. The 13px control
+  size and lighter heading weights are product adaptations, not the Web type ramp.
+- Body and control text use regular weight. Shortcut keycaps use the shared
+  launcher treatment: subtle backgrounds, 12px text at weight 500, 4px corner
+  radii and 4px gaps around separators. Settings has no keycap overrides. Primary text is soft charcoal in light
+  mode and off-white in dark mode; secondary text retains readable contrast.
+- Navigation icons and their containers share 20px. Page artwork uses 48px to
+  balance the 46px title/status stack (26px title, 4px gap, 16px status), centered
+  vertically as one heading group.
+  Navigation rows are 36px. Existing 8px/16px form padding and the separate first
+  enablement group preserve compact density and responsibility boundaries.
+- Form controls share a 32px height, 6px radius and a uniform subtle border. Theme
+  has no emphasized bottom edge. Hover and pressed states change fill/border without
+  changing geometry. A 20px line plus two 1px borders leaves 5px vertical insets.
+- Select and numeric controls use 128px width; the shortcut recorder uses 160px for
+  key combinations. The 16px chevron uses an 8px-wide stroke drawing.
+- Switches retain a compact filled 32x20px track and 40x32px hit area. The 14px thumb
+  has 2px internal insets plus the 1px border on both ends; travel derives from that
+  geometry. This compact treatment is a Nanika adaptation. Stable state remains
+  static and the existing interruption/reduced-motion/hidden-activity rules apply.
+- Popup items use 32px rows with 6px/8px padding and 4px outer padding. Colors,
+  border opacity and popup shadows are deliberate surface choices, not verbatim
+  Fluent token mappings. Assess them in complete light/dark pages at native DPI.
+- Select exposes the select-only combobox role and the controlled listbox ID because
+  Bits keeps DOM focus on its trigger and highlights options via aria-activedescendant.
+  Keyboard selection and Escape remain owned by Bits; see the
+  [ARIA select-only pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-select-only/).
+
+Use [Fluent typography](https://fluent2.microsoft.design/typography) and
+[layout guidance](https://fluent2.microsoft.design/layout) to guide hierarchy and
+rhythm. Matching individual constants does not establish visual quality. Review
+alignment, optical size, text weight, borders and interaction states together.
 
 ## Motion
 

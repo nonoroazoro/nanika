@@ -1,4 +1,5 @@
 <script lang="ts">
+import "./styles/settings.css";
 import Switch from "./components/Switch.svelte";
 import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
 import { SvelteMap } from "svelte/reactivity";
@@ -297,15 +298,15 @@ function _windowAction(action: SettingsWindowAction): void
                     }}
                 >
                     <span class="nav-icon" aria-hidden="true"><svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 20 20"
                             fill="none"
                             stroke="currentColor"
-                            stroke-width="1.6"
+                            stroke-width="1.25"
                         >
-                            <rect x="3" y="4" width="18" height="16" rx="3" />
-                            <path d="M3 10h18M9 10v10" />
+                            <rect x="1.5" y="1.5" width="17" height="17" rx="3" />
+                            <path d="M1.5 6.5h17M7 6.5v12" />
                         </svg></span>General
                 </Button>
                 <h2>Extensions</h2>
@@ -463,31 +464,30 @@ function _windowAction(action: SettingsWindowAction): void
 .window-error { padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
 
 .settings { display: grid; min-height: 0; flex: 1; grid-template-columns: 13rem minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
-.sidebar { display: flex; flex-direction: column; min-height: 0; gap: 18px; padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--surface-hovered); }
+.sidebar { display: flex; flex-direction: column; min-height: 0; gap: var(--space-4); padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--surface-hovered); }
 nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; overflow-y: auto; }
-nav :global(button) { justify-content: flex-start; gap: 9px; flex: 0 0 auto; width: 100%; min-height: 34px; border: 0; border-radius: var(--control-radius); padding: 6px 10px; background: transparent; text-align: left; font-size: 13px; }
-nav :global(button.active) { background: var(--surface-selected); font-weight: 600; }
+nav :global(button) { justify-content: flex-start; gap: var(--space-2); flex: 0 0 auto; width: 100%; min-height: var(--settings-nav-height); border: 0; border-radius: var(--control-radius); padding: 6px 10px; background: transparent; text-align: left; font-size: var(--font-control); line-height: 20px; }
+nav :global(button.active) { background: var(--surface-selected); font-weight: var(--settings-heading-weight); }
 .extension-heading { display: flex; align-items: center; gap: 12px; }
-.heading-icon { --icon-size: 36px; display: block; flex-shrink: 0; }
-.nav-icon { --icon-size: 22px; display: grid; width: 20px; height: 20px; flex-shrink: 0; place-items: center; color: var(--text-secondary); }
+.heading-icon { --icon-size: 48px; display: block; flex-shrink: 0; }
+.nav-icon { --icon-size: var(--settings-nav-icon-size); display: grid; width: var(--settings-nav-icon-size); height: var(--settings-nav-icon-size); flex-shrink: 0; place-items: center; color: var(--text-secondary); }
 .nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-nav h2 { display: flex; justify-content: space-between; margin: 22px 10px 6px; color: var(--text-secondary); font-size: 11px; font-weight: 600; }
-.sidebar-footer { padding: 8px 10px; color: var(--text-tertiary); font-size: 11px; }
+nav h2 { display: flex; justify-content: space-between; margin: var(--space-5) 10px var(--space-2); color: var(--text-secondary); font-size: 12px; font-weight: var(--settings-heading-weight); }
+.sidebar-footer { padding: 8px 10px; color: var(--text-tertiary); font-size: 12px; }
 .content { min-width: 0; min-height: 0; overflow-y: auto; }
-.extension-page { max-width: 52rem; margin: 0 auto; padding: 24px 28px 0; }
+.extension-page { max-width: 52rem; margin: 0 auto; padding: var(--space-4) var(--space-6) 0; }
 .extension-page { display: flex; flex-direction: column; min-height: 100%; }
-header { margin-bottom: 24px; }
-h1 { margin: 0 0 5px; font-size: 20px; line-height: 1.35; letter-spacing: -0.015em; font-weight: 600; }
-p { color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; }
-h2 { margin: 0 0 9px; font-size: var(--font-control); font-weight: 600; }
+header { margin-bottom: var(--settings-group-gap); }
+h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
+p { color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
 form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.fields { display: grid; gap: 0; min-width: 0; margin: 0 0 24px; border: 1px solid var(--border-subtle); border-radius: var(--radius-row); padding: 0; background: var(--surface-form); }
-.property { min-width: 0; padding: 16px; }
+.fields { display: grid; gap: 0; min-width: 0; margin: 0 0 var(--settings-group-gap); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); padding: 0; background: var(--surface-form); }
+.property { min-width: 0; padding: var(--settings-row-padding); }
 .property + .property { border-top: 1px solid var(--border-subtle); }
-.property.scalar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; }
-.property h2 { margin: 0; font-size: 13px; font-weight: 500; }
+.property.scalar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); }
+.property h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
 .property-copy p { margin: 4px 0 0; }
-.property:not(.scalar):not(.directory) .property-control { margin-top: 12px; }
+.property:not(.scalar):not(.directory) .property-control { margin-top: var(--space-2); }
 .empty-state { display: grid; min-height: 100%; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; }
-@media (width < 800px) { .settings { grid-template-columns: 12rem minmax(0, 1fr); } .extension-page { padding: 20px 20px 0; } }
+@media (width < 800px) { .settings { grid-template-columns: 12rem minmax(0, 1fr); } .extension-page { padding: var(--space-4) var(--space-4) 0; } }
 </style>

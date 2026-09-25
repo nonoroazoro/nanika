@@ -46,7 +46,7 @@ function _drag(event: MouseEvent): void
 <style>
 .titlebar { display: flex; min-width: 0; height: 2.75rem; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
 .drag-region { display: flex; min-width: 0; flex: 1; align-items: center; padding-left: var(--space-5); cursor: default; }
-.drag-region span { pointer-events: none; font-size: var(--font-control); font-weight: 600; }
+.drag-region span { pointer-events: none; font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); font-weight: var(--settings-heading-weight); }
 .window-controls { display: flex; height: 100%; }
 /* Adjacent caption buttons switch highlight immediately, without overlapping fade tails. */
 .window-controls :global(button) { width: 2.75rem; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); transition: none; }

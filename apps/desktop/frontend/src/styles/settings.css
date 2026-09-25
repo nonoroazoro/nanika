@@ -1,0 +1,61 @@
+/* Settings-specific visual tokens.
+   Keep the scope on the document so portaled controls inherit the same tokens. */
+:root[data-surface="settings"] {
+  --text-primary: #3b4048;
+  --surface-selected: rgb(30 45 70 / 5%);
+  --text-secondary: #646b76;
+  --text-tertiary: #646b76;
+  --font-control: 13px;
+  --control-line-height: 20px;
+  --button-font-weight: 400;
+  --control-padding: 5px 10px;
+  --control-border: rgb(35 45 65 / 14%);
+  --control-border-hover: rgb(35 45 65 / 23%);
+  --control-surface: #ffffff;
+  --control-surface-hover: #f7f8fa;
+  --control-surface-pressed: #eef0f4;
+  --settings-heading-weight: 500;
+  --settings-nav-icon-size: 20px;
+  --settings-nav-height: 36px;
+  --settings-control-width: 128px;
+  --switch-track-width: 32px;
+  --switch-track-height: 20px;
+  --switch-thumb-size: 14px;
+  --switch-inset: 2px;
+  --switch-stroke: 1px;
+  --switch-thumb-travel: calc(var(--switch-track-width) - var(--switch-thumb-size) - 2 * (var(--switch-inset) + var(--switch-stroke)));
+  --switch-surface: #e7e9ef;
+  --switch-border: rgb(35 45 65 / 10%);
+  --switch-thumb: #697180;
+  --switch-thumb-hover: #515b6b;
+  --switch-thumb-on: #ffffff;
+  --switch-active: #3570e8;
+  --switch-active-hover: #2864df;
+  --switch-active-pressed: #2058ca;
+  --popup-padding: 4px;
+  --popup-item-padding: 6px 8px;
+  --popup-item-height: 32px;
+  --shadow-popup: 0 8px 24px rgb(20 30 50 / 10%), 0 2px 6px rgb(20 30 50 / 6%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-surface="settings"] {
+    --text-primary: #dce0e7;
+    --surface-selected: rgb(210 222 245 / 9%);
+    --text-secondary: #a4abb7;
+    --text-tertiary: #9ca4b2;
+    --control-border: rgb(215 225 245 / 13%);
+    --control-border-hover: rgb(215 225 245 / 24%);
+    --control-surface: #292c33;
+    --control-surface-hover: #30343c;
+    --control-surface-pressed: #383d47;
+    --switch-surface: #383e49;
+    --switch-border: rgb(215 225 245 / 12%);
+    --switch-thumb: #aab3c2;
+    --switch-thumb-hover: #c5cddb;
+    --switch-active: #5789e8;
+    --switch-active-hover: #6091ee;
+    --switch-active-pressed: #4b7edc;
+    --shadow-popup: 0 8px 24px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 16%);
+  }
+}

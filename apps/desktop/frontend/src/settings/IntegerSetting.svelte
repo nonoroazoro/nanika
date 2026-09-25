@@ -87,10 +87,10 @@ $effect(() =>
 </div>
 
 <style>
-.integer-setting { display: flex; align-items: center; width: 7rem; padding: 0; }
+.integer-setting { display: flex; align-items: center; width: var(--settings-control-width); padding: 0; }
 .integer-setting :global(input) { text-align: right; font-variant-numeric: tabular-nums; }
 .unlimited :global(input) { color: var(--text-secondary); text-align: left; }
-.integer-setting :global(.limit-toggle) { width: 32px; min-width: 32px; min-height: 26px; height: 26px; margin-right: 2px; padding: 4px; border-radius: 4px; color: var(--text-secondary); }
+.integer-setting :global(.limit-toggle) { width: 28px; min-width: 28px; min-height: calc(var(--control-height) - 6px); height: calc(var(--control-height) - 6px); margin-right: 2px; padding: 4px; border-radius: 4px; color: var(--text-secondary); }
 .integer-setting :global(.limit-toggle[aria-pressed="true"]) { color: var(--accent); background: var(--surface-selected); }
 .integer-setting :global(.limit-toggle:hover:not(:disabled)) { background: var(--surface-hovered); color: var(--text-primary); }
 .integer-setting.invalid { border-color: var(--border-danger); }

@@ -140,7 +140,7 @@ function _change(next: ConfigurationValue): void
 .optional { display: flex; align-items: center; gap: var(--space-2); }
 .array, .object { display: grid; gap: var(--space-3); }
 .array-item { display: flex; align-items: flex-start; gap: var(--space-2); }
-.array-item.structured { padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); }
+.array-item.structured { padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); }
 .item-value { flex: 1; min-width: 0; }
 .array-item :global(.remove) { flex: 0 0 auto; }
 .array-actions, .field-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }

@@ -162,7 +162,7 @@ onDestroy(() =>
         onclick={toggleRecording}
         onblur={cancel}
     >
-        {#if recording && preview.length === 0}<span>Press shortcut…</span>
+        {#if recording && preview.length === 0}<span class="recording-prompt">Press keys…</span>
         {:else}<ShortcutKeys
                 keys={recording ? preview : shortcutKeys(value)}
                 success={confirmed}
@@ -175,8 +175,9 @@ onDestroy(() =>
 
 <style>
 .recorder { position: relative; flex-shrink: 0; }
-.recorder :global(button) { min-width: 156px; gap: var(--space-1); }
-.help { position: absolute; z-index: 1; top: calc(100% + 8px); right: 0; width: max-content; max-width: 260px; padding: 9px 12px; border: 1px solid var(--border-window); border-radius: var(--control-radius); background: var(--surface-form); color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; box-shadow: 0 4px 12px rgb(0 0 0 / 8%); }
+.recording-prompt { color: var(--text-secondary); }
+.recorder :global(button) { min-width: 160px; gap: var(--space-1); }
+.help { position: absolute; z-index: 1; top: calc(100% + 8px); right: 0; width: max-content; max-width: 260px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-window); border-radius: var(--control-radius); background: var(--surface-form); color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); box-shadow: var(--shadow-popup); }
 .help[role="alert"] { color: var(--text-danger); }
 .recorder :global(button.recording), .recorder :global(button.recording:hover), .recorder :global(button.recording:focus-visible) { border-color: var(--accent); background: var(--surface-accent); }
 </style>

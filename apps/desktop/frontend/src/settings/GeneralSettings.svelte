@@ -114,16 +114,16 @@ const startupStatusMessage = $derived.by(() =>
 </div>
 
 <style>
-.general-page { display: flex; flex-direction: column; min-height: 100%; max-width: 52rem; margin: 0 auto; padding: 24px 28px 0; }
+.general-page { display: flex; flex-direction: column; min-height: 100%; max-width: 52rem; margin: 0 auto; padding: var(--space-4) var(--space-6) 0; }
 .sections { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-h1 { margin: 0 0 24px; font-size: 20px; font-weight: 600; }
-h2 { margin: 0 0 9px; font-size: var(--font-control); font-weight: 600; }
-section { margin-bottom: 24px; }
+h1 { margin: 0 0 var(--settings-group-gap); font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
+h2 { color: var(--text-secondary); margin: 0 0 var(--space-2); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); font-weight: var(--settings-heading-weight); }
+section { margin-bottom: var(--settings-group-gap); }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .group { border: 1px solid var(--border-subtle); border-radius: var(--radius-row); background: var(--surface-form); }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 16px; font-size: 13px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--settings-row-padding); font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); }
 .row + .row { border-top: 1px solid var(--border-subtle); }
 .row-copy { min-width: 0; }
-.row-copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; }
-@media (width < 800px) { .general-page { padding: 20px 20px 0; } }
+.row-copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
+@media (width < 800px) { .general-page { padding: var(--space-4) var(--space-4) 0; } }
 </style>

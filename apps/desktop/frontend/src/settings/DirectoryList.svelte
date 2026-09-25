@@ -80,7 +80,7 @@ async function add(): Promise<void>
             >
                 <path d="M12 5v14M5 12h14" />
             </svg>
-            {picking ? "Choosing folder…" : "Add folder"}
+            Add folder
         </Button>
     </div>
     {#if paths.length > 0}<div class="directory-items">
@@ -126,13 +126,13 @@ async function add(): Promise<void>
 </div>
 
 <style>
-.directories { display: grid; gap: 12px; }
-.directory-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.directories { display: grid; gap: var(--space-2); }
+.directory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .copy { min-width: 0; }
-h2 { margin: 0; font-size: 13px; font-weight: 500; }
-.copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--font-control); line-height: 1.5; }
+h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
+.copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
 .directories :global(.add-folder) { flex-shrink: 0; }
-.directory-items { display: grid; gap: var(--space-2); max-height: 320px; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
+.directory-items { display: grid; gap: var(--space-2); max-height: 320px; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
 .directory { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .directory > svg { flex-shrink: 0; color: var(--text-secondary); }
 .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }
