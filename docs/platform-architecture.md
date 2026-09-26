@@ -206,8 +206,8 @@ viewport overscan are delivery targets, not total limits. The frontend renders v
 rows and reconciles only the delivered window; see
 [result state](design-system.md#root-search).
 
-Application discovery initially publishes the extension icon without per-entry cache
-probes. Visible-range requests prepare cached/native icons in small batches. One
+Application discovery initially publishes an explicit empty icon without per-entry
+cache probes, preserving the fixed icon slot without requesting an image. Visible-range requests prepare cached/native icons in small batches. One
 queued/active wake represents the latest viewport. Batch completion rechecks pending
 work under the admission lock, preserving requests that arrive during extraction even
 when the old batch publishes no changes. Hidden UI schedules no viewport requests.
@@ -216,7 +216,8 @@ when the old batch publishes no changes. Hidden UI schedules no viewport request
 
 Manifests require a package-relative PNG icon. Commands/views may declare package
 icons; candidates accept `{ "kind": "package", "path": "assets/item.png" }` or
-`{ "kind": "cache", "key": "file-icon" }`. Omitted icons inherit the extension icon.
+`{ "kind": "cache", "key": "file-icon" }`. `{ "kind": "empty" }` reserves a transparent
+icon slot without an image URL. Omitted icons inherit the extension icon.
 The frontend receives resolved URLs through a shared renderer, without domain artwork.
 
 Paths contain slash-separated ASCII letters, digits, dots, underscores and hyphens,

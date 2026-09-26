@@ -42,12 +42,10 @@ impl SettingsApplications {
         let current = infos
             .into_iter()
             .map(|info| crate::ExtensionLifecycle {
-                icon_url: crate::resource_protocol::icon_url(
-                    &info.id,
-                    &nanika_protocol::IconSource::Package {
-                        path: info.icon.clone(),
-                    },
-                ),
+                icon_url: crate::resource_protocol::url(&format!(
+                    "{}/package/{}",
+                    info.id, info.icon
+                )),
                 configuration: configurations.remove(&info.id),
                 info,
             })

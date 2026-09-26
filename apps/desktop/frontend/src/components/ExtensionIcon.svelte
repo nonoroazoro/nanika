@@ -1,14 +1,27 @@
 <script lang="ts">
 const { src }: { src: string | null; } = $props();
 let failed = $state<string | null>(null);
+let loaded = $state<string | null>(null);
 </script>
 
-{#if src && failed !== src}
+{#if !src || failed !== src}
     <img
-        {src}
+        src={src ?? undefined}
+        class:pending={!src || loaded !== src}
         alt=""
         aria-hidden="true"
         decoding="async"
+        onload={event =>
+        {
+            const image = event.currentTarget;
+            if (
+                image instanceof HTMLImageElement && image.getAttribute("src") === src && image.complete
+                && image.naturalWidth > 0
+            )
+            {
+                loaded = src;
+            }
+        }}
         onerror={() =>
         {
             failed = src;
@@ -27,4 +40,5 @@ let failed = $state<string | null>(null);
 
 <style>
 img, svg { display: block; width: var(--icon-size); height: var(--icon-size); object-fit: contain; color: var(--text-secondary); }
+.pending { visibility: hidden; }
 </style>

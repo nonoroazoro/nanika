@@ -50,7 +50,9 @@ build dependencies. Cite commits for implementation-specific values; do not mirr
   aria-activedescendant; Bits owns navigation and Escape. See the
   [select-only pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-select-only/).
 - Root rows and Settings use the same image component. Item icons inherit the extension
-  manifest icon when omitted; invalid images show a neutral placeholder.
+  manifest icon when omitted; explicit empty icons reserve the fixed icon slot.
+  Images have no `src` while empty and stay hidden with `visibility: hidden` until
+  loaded, preserving row geometry; invalid images show a neutral placeholder.
 
 ## Settings
 

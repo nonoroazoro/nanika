@@ -34,7 +34,7 @@ impl SearchResult {
             icon_url: candidate
                 .icon()
                 .or(extension_icon.as_ref())
-                .map(|icon| resource_protocol::icon_url(candidate.extension_id(), icon)),
+                .and_then(|icon| resource_protocol::icon_url(candidate.extension_id(), icon)),
             kind: "Extension".to_owned(),
             entry_type: match candidate.kind() {
                 nanika_search::CandidateKind::Action => "action",

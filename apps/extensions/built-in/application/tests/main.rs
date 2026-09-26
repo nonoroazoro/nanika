@@ -63,10 +63,10 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     assert!(entries.iter().any(|entry| entry.title == "同步"));
     let entry = loop {
         let entries = read_catalog(&mut input, &mut output, &mut catalog);
-        if let Some(entry) = entries
-            .into_iter()
-            .find(|entry| entry.title == "Nanika Sample" && entry.icon.is_some())
-        {
+        if let Some(entry) = entries.into_iter().find(|entry| {
+            entry.title == "Nanika Sample"
+                && matches!(entry.icon, Some(nanika_protocol::IconSource::Cache(_)))
+        }) {
             break entry;
         }
         assert!(matches!(
@@ -210,7 +210,7 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
         .iter()
         .find(|entry| entry.title == "Nanika Sample")
         .expect("search should remain available");
-    assert!(entry.icon.is_none());
+    assert_eq!(entry.icon, Some(nanika_protocol::IconSource::Empty));
     let cleared_entries = read_catalog(&mut input, &mut output, &mut catalog);
     assert!(
         cleared_entries

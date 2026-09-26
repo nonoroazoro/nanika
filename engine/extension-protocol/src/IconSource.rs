@@ -6,13 +6,18 @@ use crate::IconReference;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum IconSource {
-    Package { path: String },
+    /// Reserve the icon slot without inheriting the extension image.
+    Empty,
+    Package {
+        path: String,
+    },
     Cache(IconReference),
 }
 
 impl IconSource {
     pub fn is_valid(&self) -> bool {
         match self {
+            Self::Empty => true,
             Self::Package { path } => is_valid_package_icon_path(path),
             Self::Cache(reference) => reference.is_valid(),
         }

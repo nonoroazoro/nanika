@@ -3,6 +3,7 @@ use nanika_protocol::{IconReference, IconSource, is_valid_package_icon_path};
 #[test]
 fn sources_have_one_unambiguous_wire_identity() {
     for (source, json) in [
+        (IconSource::Empty, serde_json::json!({"kind":"empty"})),
         (
             IconSource::Package {
                 path: "assets/icon.png".into(),

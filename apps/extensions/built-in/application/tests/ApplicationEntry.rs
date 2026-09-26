@@ -45,9 +45,10 @@ fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
         .last()
         .expect("exact match should remain available");
     assert_eq!(candidate.title, "Zettelkasten");
-    assert!(
-        candidate.icon.is_none(),
-        "discovery does not inspect or publish unprepared icons"
+    assert_eq!(
+        candidate.icon,
+        Some(nanika_protocol::IconSource::Empty),
+        "discovery reserves the icon slot without inspecting unprepared icons"
     );
 }
 

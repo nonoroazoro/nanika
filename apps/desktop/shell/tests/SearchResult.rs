@@ -44,6 +44,17 @@ fn results_inherit_package_icons_and_allow_item_overrides() {
         );
         assert!(result.icon_url.unwrap().ends_with(suffix));
     }
+    let empty = candidate.with_icon(Some(IconSource::Empty));
+    let result = SearchResult::from_candidate(
+        &empty,
+        Some(IconSource::Package {
+            path: "assets/icon.png".into(),
+        }),
+    );
+    assert!(
+        result.icon_url.is_none(),
+        "empty icons suppress manifest inheritance"
+    );
 }
 
 #[test]

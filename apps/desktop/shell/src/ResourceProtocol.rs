@@ -11,13 +11,15 @@ pub(crate) fn url(path: &str) -> String {
     format!("{ORIGIN}/{path}")
 }
 
-pub(crate) fn icon_url(extension_id: &str, icon: &nanika_protocol::IconSource) -> String {
+pub(crate) fn icon_url(extension_id: &str, icon: &nanika_protocol::IconSource) -> Option<String> {
     match icon {
+        nanika_protocol::IconSource::Empty => None,
         nanika_protocol::IconSource::Package { path } => {
-            url(&format!("{extension_id}/package/{path}"))
+            Some(url(&format!("{extension_id}/package/{path}")))
         }
-        nanika_protocol::IconSource::Cache(reference) => {
-            url(&format!("{extension_id}/cache/{}/128.png", reference.key()))
-        }
+        nanika_protocol::IconSource::Cache(reference) => Some(url(&format!(
+            "{extension_id}/cache/{}/128.png",
+            reference.key()
+        ))),
     }
 }

@@ -51,7 +51,8 @@ impl ApplicationEntry {
                 ._icon_ready
                 .then(|| IconReference::new(&self.icon_key).ok())
                 .flatten()
-                .map(nanika_protocol::IconSource::Cache),
+                .map(nanika_protocol::IconSource::Cache)
+                .or(Some(nanika_protocol::IconSource::Empty)),
         }
     }
 
