@@ -6,8 +6,13 @@ mod adapters;
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
 mod commands;
+#[path = "ReadResultsRequest.rs"]
+mod read_results_request;
+use read_results_request::*;
 #[path = "ContextMenuRequest.rs"]
 mod context_menu_request;
+#[path = "LauncherRefresh.rs"]
+mod launcher_refresh;
 use context_menu_request::*;
 #[path = "MenuTarget.rs"]
 mod menu_target;
@@ -154,7 +159,7 @@ pub fn run() -> Result<(), String> {
             invoke_candidate,
             open_session,
             publish_query,
-            refresh_search,
+            read_results,
             view_event,
             open_settings,
             read_settings,

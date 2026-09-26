@@ -57,7 +57,7 @@ pub(crate) fn request_close(window: &tauri::Window) -> Result<(), String> {
         .state::<crate::host_settings::HostSettings>()
         .recording
         .store(false, Ordering::Release);
-    window.hide().map_err(|error| error.to_string())?;
+    crate::window::hide_window(window)?;
     let state = window.state::<SettingsWindow>();
     state.ready.store(false, Ordering::Release);
     state.requested.store(false, Ordering::Release);
@@ -100,10 +100,13 @@ pub(crate) fn resized(window: &tauri::Window) -> Result<(), String> {
 
 fn _present(window: &tauri::WebviewWindow) -> Result<(), String> {
     let state = window.state::<SettingsWindow>();
-    if !state.ready.load(Ordering::Acquire) || !state.requested.load(Ordering::Acquire) {
+    if !state.ready.load(Ordering::Acquire) {
         return Ok(());
     }
+    if !state.requested.load(Ordering::Acquire) {
+        return crate::window::hide_window(&window.as_ref().window());
+    }
     window.unminimize().map_err(|error| error.to_string())?;
-    window.show().map_err(|error| error.to_string())?;
+    crate::window::show_window(window)?;
     window.set_focus().map_err(|error| error.to_string())
 }

@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use nanika_extension_application::{
-    ApplicationConfig, ApplicationDatabase, ApplicationIndex, IconCache, select_candidates,
+    ApplicationConfig, ApplicationDatabase, ApplicationIndex, IconCache,
 };
 use nanika_protocol::Message;
 
@@ -24,9 +24,10 @@ fn indexing(criterion: &mut Criterion) {
         enabled_builtin_roots: Default::default(),
     };
     let cancellation = AtomicU64::new(0);
-    let (_, entries) = index
-        .scan(&config, 1, &cancellation, |_| {})
+    index
+        .scan(&config, 1, &cancellation, |_| {}, |_, _| {})
         .expect("warm scan should complete");
+    let entries = index.load().unwrap();
 
     criterion.bench_function("application_index_cold_validation_500", |bencher| {
         bencher.iter_batched(
@@ -37,7 +38,7 @@ fn indexing(criterion: &mut Criterion) {
             },
             |mut cold_index| {
                 cold_index
-                    .scan(&config, 2, &cancellation, |_| {})
+                    .scan(&config, 2, &cancellation, |_| {}, |_, _| {})
                     .expect("cold validation scan should complete")
             },
             BatchSize::SmallInput,
@@ -48,7 +49,7 @@ fn indexing(criterion: &mut Criterion) {
     criterion.bench_function("application_index_500", |bencher| {
         bencher.iter(|| {
             let result = index
-                .scan(&config, generation, &cancellation, |_| {})
+                .scan(&config, generation, &cancellation, |_| {}, |_, _| {})
                 .expect("scan should complete");
             generation = generation.saturating_add(1);
             result
@@ -60,6 +61,8 @@ fn indexing(criterion: &mut Criterion) {
         .map(nanika_extension_application::ApplicationEntry::candidate)
         .collect::<Vec<_>>();
     let snapshot = Message::Snapshot {
+        replace: true,
+        removed: Vec::new(),
         request_id: "benchmark".to_owned(),
         generation: 1,
         complete: true,
@@ -78,8 +81,13 @@ fn indexing(criterion: &mut Criterion) {
             entry
         })
         .collect::<Vec<_>>();
-    criterion.bench_function("application_preselection_10000", |bencher| {
-        bencher.iter(|| select_candidates(&large_entries, "application 9999"));
+    criterion.bench_function("application_catalog_projection_10000", |bencher| {
+        bencher.iter(|| {
+            large_entries
+                .iter()
+                .map(|entry| entry.candidate())
+                .collect::<Vec<_>>()
+        });
     });
     drop(index);
     std::fs::remove_dir_all(root).expect("benchmark directory should be removable");

@@ -1,68 +1,56 @@
-# Nanika Reference Tasks
+# TODO
 
-Unfinished candidates and validation gaps, not a roadmap or a commitment.
-Reassess relevance and scope before starting an item; code and tests define what
-already exists. Remove completed or abandoned items instead of keeping a history.
-Design references: [extensions](extension-lifecycle.md),
-[architecture](platform-architecture.md), and [design system](design-system.md).
+Open work only. Remove completed, abandoned or superseded items. Code/tests define
+what exists; optional design items require a concrete product need before implementation.
+See [architecture](platform-architecture.md), [lifecycle](extension-lifecycle.md) and
+[design system](design-system.md).
 
-## Product and architecture candidates
+## Implementation gaps
 
-- Live extension install/uninstall after package commit and graceful retirement.
-- Session-bound frontend delivery for streaming output, diagnostics and runtime
-  state where a product surface needs them.
-- Additional automated boundary checks for domain code outside extensions,
-  extension-owned frontend assets and overly broad shell permissions.
-- An explicit repair operation for interrupted package transactions.
-- Immediate-application Switch settings and an audit of visual/motion parameters
-  against applicable Fluent 2 sources, documenting local adaptations.
-- A route-scoped extension error boundary and local asynchronous failure handling.
-- Typed message catalogs using OS locale and a deterministic English fallback.
-- An accessible Root Search result-count announcement, plus remaining gaps in
-  loading, degraded, unavailable and actionable-error presentation.
-- Optional native window effects, subject to measured benefit and a legible CSS baseline.
+- [ ] Add an explicit repair operation for interrupted extension package transactions;
+      preserve committed data and report unresolved conflicts. No automatic startup repair.
+- [ ] Scope extension rendering failures to their route. The current launcher-wide
+      boundary exists; a failing extension surface should not require reloading Root Search.
+- [ ] Add an accessible Root Search result-count announcement and validate loading,
+      empty and degraded result states with a screen reader.
 
-## Validation and measurement gaps
+## Native acceptance
 
-- Native live-extension acceptance on macOS, plus focus, input, mixed-DPI and
-  rendered Settings state on both platforms. Measure withdrawal, process exit and
-  reactivation separately from unrelated UI latency at 60/120 Hz and hidden idle.
+- [ ] Validate macOS 13 WKWebView: launcher focus/input/IME, Settings, menus, Finder
+      reveal, shared scrollbars, reduced motion and hidden-state settling.
+- [ ] Validate macOS live enable/disable/recovery, current-query reactivation and open
+      route retirement. Check withdrawal, process/descendant exit and readiness separately.
+- [ ] Validate macOS viewport delivery with 50,000 candidates: fast scrolling, keyboard
+      navigation and selection during background root commits.
+- [ ] Validate Windows minimum supported WebView, mixed DPI/text scaling, physical CJK
+      IME and screen-reader behavior. Recheck caption fades and scrollbars at native DPI.
+- [ ] Validate login startup, second-instance activation, stale instances, shortcuts,
+      monitor placement and shutdown on both platforms.
+- [ ] Validate process containment, atomic replacement failures, package permissions,
+      diagnostics opening and directory picker ownership/cancellation on both platforms.
+- [ ] Validate native app discovery/activation, icon reuse, clipboard revisions/file
+      thumbnails and search with pinyin, initials, polyphonic and mixed-script inputs.
+- [ ] Validate release-equivalent Isolation rejection/acceptance and small/large/small
+      Channel delivery on both WebViews, including transport failures and delayed discovery.
+- [ ] Measure comparable cold start, summon/focus/readiness, search, IPC/view commits,
+      icon/scroll latency and frame pacing at 60/120 Hz. Measure memory and hidden idle;
+      browser fixtures and build size do not substitute for native results.
 
-- Actual macOS 13 WKWebView acceptance, including native focus, menus, Settings,
-  Finder reveal and extension interaction. Existing Windows checks do not cover it.
-- Windows minimum-WebView and mixed-DPI acceptance; physical CJK IME, screen readers,
-  text scaling, live OS reduced motion and 60/120 Hz behavior on both platforms.
-- Remaining native lifecycle acceptance: launch at login, second-instance
-  activation, stale instances, global shortcuts, monitor placement and shutdown.
-- Native data-path acceptance: extension process-tree containment, atomic file
-  replacement failure, package target/permissions, diagnostics opening, directory
-  picker ownership/cancellation, application discovery/activation, icon cache reuse,
-  clipboard revisions and file thumbnails.
-- Release-equivalent packaged Isolation checks for accepted/rejected envelopes and
-  small/large/small Channel delivery on both WebViews.
-- Native regression coverage for cold start, delayed discovery, transport failure,
-  extension-to-UI actions, and pinyin/initials/polyphonic/mixed-script search.
-- A repeatable full-application workload for 1,000/2,000 results before deciding
-  whether virtualization is needed. Keep all matching results accessible.
-- Comparable startup, summon, first-paint/focus/readiness, search, IPC, view commit,
-  icon, scrolling, memory and hidden-idle measurements. Include parse/evaluation
-  cost and frame pacing; existing build-size measurements are not runtime evidence.
+## Release readiness
 
-## Release candidates
+- [ ] Automate releases and inspect final artifacts: CLI, declared sidecars/resources,
+      built-in identities/checksums and exclusion of development tooling/test fixtures.
+- [ ] Complete Windows signing and macOS signing, notarization and stapling.
+- [ ] Run clean-profile install, first run, Settings/actions, diagnostics, startup and
+      removal on each platform; verify package rollback where supported.
 
-- Release automation and final artifact inventory verification, including CLI,
-  approved sidecars/resources and exclusion of development tooling. Existing Tauri
-  sidecar build/staging does not establish signed-release contents.
-- Windows signing and macOS signing, notarization and stapling; verify packaged
-  built-in identities and checksums against the signed release.
-- Clean-profile acceptance for installation, first run, Settings, actions,
-  diagnostics, startup and removal on each release platform, plus failure
-  rollback for package transactions where that contract exists.
+## Optional design work
 
-## Revisit only with a concrete need
-
-- Post-release schema migration, backup and rollback policy when a released format changes.
-- Machine overrides and secret handling when a capability needs them.
-- Captured launched-process output and action process-tree cancellation.
-- A platform-neutral paste-to-foreground service with Windows and macOS adapters.
-- Removal of the development ACP fixture before a production release.
+- [ ] Evaluate live install/uninstall. Publish inventory only after package commit;
+      finish disable before unregistering/deleting files. Built-in files remain release-owned.
+- [ ] Design typed localization catalogs when localization is scheduled, using OS
+      locale and a deterministic English fallback.
+- [ ] Define session-bound streaming output/diagnostics when an extension surface
+      requires it, including launched-process output ownership and cancellation.
+- [ ] Design paste-to-foreground only for an approved workflow, with Windows/macOS
+      adapters and explicit focus/clipboard ownership.

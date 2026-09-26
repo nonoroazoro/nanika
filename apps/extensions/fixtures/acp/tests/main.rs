@@ -189,7 +189,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
             move |entries| {
                 *published_candidates
                     .lock()
-                    .unwrap_or_else(|error| error.into_inner()) = entries;
+                    .unwrap_or_else(|error| error.into_inner()) = entries.entries;
                 Ok(())
             },
             || false,

@@ -61,11 +61,10 @@ impl SearchStorageWorker {
                     let (operation, result, response) = match command {
                         SearchStorageCommand::RegisterBuiltInExtension {
                             extension_id,
-                            updated_at,
                             response,
                         } => (
                             "register built-in extension metadata",
-                            database.register_builtin_extension(&extension_id, updated_at),
+                            database.register_builtin_extension(&extension_id),
                             response,
                         ),
                         SearchStorageCommand::RecordHistory {
@@ -202,7 +201,6 @@ impl SearchStorageWorker {
     pub fn register_builtin_extension(
         &self,
         extension_id: impl Into<String>,
-        updated_at: u64,
     ) -> Result<(), StorageQueueError> {
         let extension_id = extension_id.into();
         if !is_valid_extension_id(&extension_id) {
@@ -212,7 +210,6 @@ impl SearchStorageWorker {
         self.send(
             SearchStorageCommand::RegisterBuiltInExtension {
                 extension_id,
-                updated_at,
                 response,
             },
             result,

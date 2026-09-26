@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 nanika-protocol = { path = "../extension-protocol" }
+nanika-text-search = { path = "../text-search" }
 nucleo-matcher.workspace = true
 tracing.workspace = true
 
@@ -19,4 +20,8 @@ workspace = true
 
 [[bench]]
 name = "ranking"
+harness = false
+
+[[bench]]
+name = "memory"
 harness = false

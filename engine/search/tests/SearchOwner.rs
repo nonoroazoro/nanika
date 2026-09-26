@@ -289,3 +289,152 @@ fn concurrent_query_admission_cannot_publish_an_older_generation_last() {
     }
     owner.shutdown();
 }
+
+#[test]
+fn patches_change_only_their_entries_and_cannot_revive_a_retired_catalog() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let handle = owner.handle();
+    let (sent, received) = std::sync::mpsc::channel();
+    handle.set_notifier(std::sync::Arc::new(move || {
+        let _ = sent.send(());
+    }));
+    let generation = handle
+        .begin_query_with_expected_extensions("", ["test".to_owned()])
+        .unwrap();
+    let entry = |id: &str, title: &str| {
+        Candidate::new(
+            CandidateKind::Action,
+            "untrusted",
+            id,
+            title,
+            "open",
+            vec![nanika_protocol::Action::primary("open", "Open")],
+            Vec::new(),
+        )
+    };
+    handle
+        .publish_extension_snapshot(
+            "test",
+            generation,
+            vec![
+                entry("a", "Original"),
+                entry("b", "Keep"),
+                entry("c", "Remove"),
+            ],
+        )
+        .unwrap();
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    handle
+        .publish_extension_delta(
+            "test",
+            generation,
+            vec![entry("a", "Updated")],
+            vec!["c".to_owned()],
+        )
+        .unwrap();
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    let snapshot = handle.latest_snapshot().unwrap();
+    assert_eq!(snapshot.results.len(), 2);
+    assert!(
+        snapshot
+            .results
+            .iter()
+            .any(|entry| entry.candidate.title() == "Updated")
+    );
+    assert!(
+        snapshot
+            .results
+            .iter()
+            .any(|entry| entry.candidate.title() == "Keep")
+    );
+    assert!(
+        snapshot
+            .results
+            .iter()
+            .all(|entry| entry.candidate.extension_id() == "test")
+    );
+    handle.remove_extension("test").unwrap();
+    received.recv_timeout(Duration::from_secs(2)).unwrap();
+    handle
+        .publish_extension_delta("test", generation, vec![entry("a", "Retired")], Vec::new())
+        .unwrap();
+    assert!(received.recv_timeout(Duration::from_millis(30)).is_err());
+    assert!(handle.latest_snapshot().unwrap().results.is_empty());
+    owner.shutdown();
+}
+
+#[test]
+fn catalog_commits_are_independent_of_queries_and_share_unchanged_metadata() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let handle = owner.handle();
+    let entry = |id: &str, title: &str| {
+        Candidate::new(
+            CandidateKind::Action,
+            "catalog",
+            id,
+            title,
+            "open",
+            vec![nanika_protocol::Action::primary("open", "Open")],
+            Vec::new(),
+        )
+    };
+    handle
+        .register_static_catalog("catalog", vec![entry("keep", "Keep")])
+        .unwrap();
+    handle.begin_query("cancelled").unwrap();
+    let generation = handle.begin_query("").unwrap();
+    handle
+        .commit_catalog("catalog", false, vec![entry("new", "New")], Vec::new())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let before = loop {
+        if let Some(snapshot) = handle
+            .latest_snapshot()
+            .filter(|s| s.generation == generation && s.results.len() == 2)
+        {
+            break snapshot;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    handle
+        .commit_catalog("catalog", false, vec![entry("new", "Updated")], Vec::new())
+        .unwrap();
+    let after = loop {
+        if let Some(snapshot) = handle.latest_snapshot().filter(|s| {
+            s.results
+                .iter()
+                .any(|row| row.candidate.title() == "Updated")
+        }) {
+            break snapshot;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    let old = &before
+        .results
+        .iter()
+        .find(|row| row.candidate.entry_id() == "keep")
+        .unwrap()
+        .candidate;
+    let new = &after
+        .results
+        .iter()
+        .find(|row| row.candidate.entry_id() == "keep")
+        .unwrap()
+        .candidate;
+    assert!(std::ptr::eq(old.title().as_ptr(), new.title().as_ptr()));
+    assert!(
+        before
+            .results
+            .iter()
+            .any(|row| row.candidate.title() == "New")
+    );
+    handle.remove_extension("catalog").unwrap();
+    assert!(
+        handle
+            .commit_catalog("catalog", false, vec![entry("late", "Late")], Vec::new())
+            .is_err()
+    );
+    owner.shutdown();
+}

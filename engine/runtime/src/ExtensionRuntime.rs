@@ -14,13 +14,13 @@ use crate::{
 
 /// Protocol-aware process supervisor shared by built-in and external extensions.
 pub enum ExtensionRuntime {
-    Nanika(ExtensionProcess),
+    Nanika(Box<ExtensionProcess>),
     Acp(AcpExtensionProcess),
 }
 
 impl From<ExtensionProcess> for ExtensionRuntime {
     fn from(process: ExtensionProcess) -> Self {
-        Self::Nanika(process)
+        Self::Nanika(Box::new(process))
     }
 }
 
@@ -68,7 +68,7 @@ impl ExtensionRuntime {
         match protocol {
             ExtensionProtocol::Nanika {
                 protocol_version: 1,
-            } => ExtensionProcess::spawn_with(program, arguments, limits).map(Self::Nanika),
+            } => ExtensionProcess::spawn_with(program, arguments, limits).map(Self::from),
             ExtensionProtocol::Acp {
                 protocol_version: 1,
             } => AcpExtensionProcess::spawn_with_configuration(
@@ -162,17 +162,36 @@ impl ExtensionRuntime {
         }
     }
 
-    pub(crate) fn refresh_cancellable(
+    pub(crate) fn start_refresh(
         &mut self,
-        request_id: impl Into<String>,
+        request_id: String,
         generation: u64,
-        mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<bool, SupervisorError> {
+        completion: crate::RefreshCompletion,
+    ) {
         match self {
-            Self::Nanika(process) => {
-                process.refresh_cancellable(request_id, generation, should_cancel)
-            }
-            Self::Acp(_) => Ok(!should_cancel()),
+            Self::Nanika(process) => process.start_refresh(request_id, generation, completion),
+            Self::Acp(_) => completion(Ok(())),
+        }
+    }
+
+    pub(crate) fn read_catalog(
+        &mut self,
+        request_id: String,
+    ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
+        match self {
+            Self::Nanika(process) => process.read_catalog(request_id),
+            Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
+                "ACP does not publish catalogs".into(),
+            )),
+        }
+    }
+
+    pub(crate) fn acknowledge_catalog(&mut self, transaction: u64) -> Result<(), SupervisorError> {
+        match self {
+            Self::Nanika(process) => process.acknowledge_catalog(transaction),
+            Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
+                "ACP does not publish catalogs".into(),
+            )),
         }
     }
 
@@ -181,13 +200,18 @@ impl ExtensionRuntime {
         request_id: impl Into<String>,
         generation: u64,
         query: impl Into<String>,
-        mut publish: impl FnMut(Vec<Candidate>) -> Result<(), SupervisorError>,
+        mut publish: impl FnMut(nanika_protocol::CandidateUpdate) -> Result<(), SupervisorError>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
         match self {
-            Self::Nanika(process) => {
-                process.query_incremental(request_id, generation, query, publish, should_cancel)
-            }
+            Self::Nanika(process) => process.query_incremental(
+                request_id,
+                generation,
+                query,
+                true,
+                publish,
+                should_cancel,
+            ),
             Self::Acp(_) if should_cancel() => Ok(false),
             Self::Acp(process) => {
                 let query = query.into();
@@ -196,7 +220,9 @@ impl ExtensionRuntime {
                         kind: nanika_protocol::CandidateKind::Action,
                         entry_id: "prompt".to_owned(),
                         title: format!("Ask {}", process.extension_id()),
-                        subtitle: Some("AI Command".to_owned()),
+                        subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
+                            "AI Command".to_owned(),
+                        )),
                         action_id: "prompt".to_owned(),
                         actions: vec![nanika_protocol::Action::primary(
                             "prompt".to_owned(),
@@ -208,7 +234,11 @@ impl ExtensionRuntime {
                 } else {
                     Vec::new()
                 };
-                publish(entries)?;
+                publish(nanika_protocol::CandidateUpdate {
+                    replace: true,
+                    entries,
+                    removed: Vec::new(),
+                })?;
                 Ok(true)
             }
         }

@@ -163,7 +163,7 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
             icon: None,
         }],
         configuration: None,
-        root_search: Some(RootSearchContribution {}),
+        root_search: Some(RootSearchContribution::default()),
     });
 
     assert_eq!(candidates.len(), 2);
@@ -309,4 +309,32 @@ fn dormant_factory_receives_the_last_accepted_configuration() {
     );
     coordinator.shutdown();
     owner.shutdown();
+}
+
+#[test]
+fn active_refresh_allows_queries_but_serializes_catalog_mutations() {
+    let state = Arc::new((Mutex::new(ExtensionSearchState::default()), Condvar::new()));
+    {
+        let mut inner = state.0.lock().unwrap();
+        inner.refresh_pending = true;
+        inner.refreshes.push_back(crate::ExtensionRefresh {
+            request_id: 1,
+            generation: 1,
+            completion: mpsc::sync_channel(1).0,
+        });
+        inner.query = Some(crate::ExtensionSearchQuery {
+            generation: 2,
+            query: "new input".to_owned(),
+        });
+    }
+    assert!(
+        matches!(next_work(&state), Some(ExtensionWork::Query(query)) if query.generation == 2)
+    );
+    {
+        let mut inner = state.0.lock().unwrap();
+        assert_eq!(inner.refreshes.len(), 1);
+        inner.refresh_pending = false;
+    }
+    assert!(matches!(next_work(&state), Some(ExtensionWork::Refresh(_))));
+    assert!(state.0.lock().unwrap().refresh_pending);
 }

@@ -34,7 +34,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
     let search = owner.handle();
     worker.attach_search(search.clone());
     worker
-        .register_builtin_extension("test.extension", unix_timestamp())
+        .register_builtin_extension("test.extension")
         .expect("extension registration should enqueue");
     let generation = search.begin_query("tool").expect("query should enqueue");
     search
@@ -95,7 +95,7 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
     cleanup(&database);
     let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
     assert_eq!(
-        worker.register_builtin_extension("../escape", unix_timestamp()),
+        worker.register_builtin_extension("../escape"),
         Err(StorageQueueError::InvalidExtensionId)
     );
     worker.shutdown();
@@ -137,7 +137,7 @@ fn usage_is_preserved_until_an_explicit_reset() {
     ));
     cleanup(&database);
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_builtin_extension("test.extension", 1)
+    host.register_builtin_extension("test.extension")
         .expect("extension should register");
     host.record_usage("test.extension", "old", "open", "old", 1)
         .expect("old usage should persist");
@@ -160,7 +160,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
     let _ = std::fs::remove_dir_all(&root);
     let database = root.join("nanika.db");
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_builtin_extension("com.example.valid", 1)
+    host.register_builtin_extension("com.example.valid")
         .expect("valid extension should register");
     drop(host);
     let connection = rusqlite::Connection::open(&database).expect("raw database should open");
@@ -170,24 +170,24 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, updated_at
-             ) VALUES ('com.example.invalid', 'corrupt', 1)",
+                extension_id, kind
+             ) VALUES ('com.example.invalid', 'corrupt')",
             [],
         )
         .expect("invalid fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, updated_at
-             ) VALUES ('com.example.incomplete-package', 'external', 1)",
+                extension_id, kind
+             ) VALUES ('com.example.incomplete-package', 'external')",
             [],
         )
         .expect("incomplete package fixture should be inserted");
     connection
         .execute(
             "INSERT INTO extensions (
-                extension_id, kind, updated_at
-             ) VALUES ('../escape', 'external', 1)",
+                extension_id, kind
+             ) VALUES ('../escape', 'external')",
             [],
         )
         .expect("invalid id fixture should be inserted");

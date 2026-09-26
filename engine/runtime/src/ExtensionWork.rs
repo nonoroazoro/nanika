@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub(crate) enum ExtensionWork {
+    Catalog,
     Query(ExtensionSearchQuery),
     PrepareEntries {
         generation: u64,

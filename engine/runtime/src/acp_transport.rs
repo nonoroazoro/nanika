@@ -8,14 +8,13 @@ use futures::{Sink, Stream};
 
 use nanika_platform::ExtensionProcessTree;
 
-pub(crate) const ACP_FRAME_LIMIT: usize = 8 * 1024 * 1024;
 pub(crate) const ACP_STDERR_LIMIT: usize = 64 * 1024;
 
 pub(crate) fn incoming_lines(
     stdout: ChildStdout,
 ) -> impl Stream<Item = io::Result<String>> + Send + 'static {
     futures::stream::try_unfold(BufReader::new(stdout), |mut reader| async move {
-        read_bounded_line(&mut reader, ACP_FRAME_LIMIT)
+        read_acp_line(&mut reader)
             .await
             .map(|line| line.map(|line| (line, reader)))
     })
@@ -25,12 +24,6 @@ pub(crate) fn outgoing_lines(
     stdin: ChildStdin,
 ) -> impl Sink<String, Error = io::Error> + Send + 'static {
     futures::sink::unfold(stdin, |mut writer, line: String| async move {
-        if line.len() > ACP_FRAME_LIMIT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "ACP outgoing frame exceeds the byte limit",
-            ));
-        }
         writer.write_all(line.as_bytes()).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
@@ -82,46 +75,18 @@ pub(crate) async fn terminate_child(
     first_error.map_or(Ok(()), Err)
 }
 
-pub(crate) async fn read_bounded_line<R: AsyncRead + Unpin>(
+pub(crate) async fn read_acp_line<R: AsyncRead + Unpin>(
     reader: &mut BufReader<R>,
-    byte_limit: usize,
 ) -> io::Result<Option<String>> {
-    let mut bytes = Vec::new();
-    loop {
-        let (consumed, complete) = {
-            let available = reader.fill_buf().await?;
-            if available.is_empty() {
-                if bytes.is_empty() {
-                    return Ok(None);
-                }
-                return decode_line(bytes).map(Some);
-            }
-            let newline = available.iter().position(|byte| *byte == b'\n');
-            let consumed = newline.map_or(available.len(), |index| index + 1);
-            let content = if newline.is_some() {
-                &available[..consumed - 1]
-            } else {
-                &available[..consumed]
-            };
-            if bytes.len().saturating_add(content.len()) > byte_limit {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "ACP incoming frame exceeds the byte limit",
-                ));
-            }
-            bytes.extend_from_slice(content);
-            (consumed, newline.is_some())
-        };
-        reader.consume_unpin(consumed);
-        if complete {
-            return decode_line(bytes).map(Some);
-        }
+    let mut line = String::new();
+    if reader.read_line(&mut line).await? == 0 {
+        return Ok(None);
     }
-}
-
-fn decode_line(mut bytes: Vec<u8>) -> io::Result<String> {
-    if bytes.last() == Some(&b'\r') {
-        bytes.pop();
+    if line.ends_with('\n') {
+        line.pop();
     }
-    String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+    if line.ends_with('\r') {
+        line.pop();
+    }
+    Ok(Some(line))
 }

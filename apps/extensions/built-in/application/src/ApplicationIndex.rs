@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -16,8 +16,9 @@ pub struct ApplicationIndex {
     database: ApplicationDatabase,
     icon_cache: IconCache,
     discovery_state: DiscoveryState,
-    prepared_entries: Option<Vec<ApplicationEntry>>,
-    pending_icons: Vec<usize>,
+    prepared_entries: Option<HashMap<String, ApplicationEntry>>,
+    pending_icons: HashSet<String>,
+    sources: Option<crate::application_sources::ApplicationSources>,
 }
 
 impl ApplicationIndex {
@@ -27,33 +28,38 @@ impl ApplicationIndex {
             icon_cache,
             discovery_state: DiscoveryState::new(),
             prepared_entries: None,
-            pending_icons: Vec::new(),
+            pending_icons: HashSet::new(),
+            sources: None,
         }
     }
 
     pub fn load(&mut self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
         if self.prepared_entries.is_none() {
-            let mut entries = self.database.load_entries()?;
-            for entry in &mut entries {
-                entry.prepare_search_readings();
+            let mut sources = crate::application_sources::ApplicationSources::default();
+            for (root, entries) in self.database.load_sources()? {
+                sources.commit(root, entries);
             }
-            self.prepared_entries = Some(entries);
+            let entries = sources.winners();
+            self.sources = Some(sources);
+            self.prepared_entries = Some(
+                entries
+                    .into_iter()
+                    .map(|entry| (entry.entry_id.clone(), entry))
+                    .collect(),
+            );
         }
-        Ok(self
+        let mut entries = self
             .prepared_entries
             .as_ref()
             .expect("catalog loaded")
-            .clone())
-    }
-
-    pub(crate) fn load_presentable(&mut self) -> Result<Vec<ApplicationEntry>, ApplicationError> {
-        let mut entries = self.load()?;
-        if let Err(error) = self.icon_cache.use_available_icons(&mut entries) {
-            eprintln!("application icon cache is unavailable: {error}");
-            for entry in &mut entries {
-                entry.icon_key.clear();
-            }
-        }
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| {
+            left.normalized_name
+                .cmp(&right.normalized_name)
+                .then_with(|| left.entry_id.cmp(&right.entry_id))
+        });
         Ok(entries)
     }
 
@@ -62,26 +68,87 @@ impl ApplicationIndex {
         config: &ApplicationConfig,
         generation: u64,
         cancelled_through: &AtomicU64,
+        progress: impl FnMut(nanika_protocol::OperationProgress),
+        publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+    ) -> Result<ScanReport, ApplicationError> {
+        let result = self._scan_roots(config, generation, cancelled_through, progress, publish);
+        // The owner cannot run icon work during a scan. Restore its queue invariant before
+        // returning on success, cancellation, or failure, preserving each committed root.
+        self.pending_icons.retain(|id| {
+            self.prepared_entries
+                .as_ref()
+                .is_some_and(|entries| entries.contains_key(id))
+        });
+        result
+    }
+
+    /// Populate at most `limit` icons so visible results can publish first.
+    pub fn populate_icon_batch(
+        &mut self,
+        cancelled_through: &AtomicU64,
+        generation: u64,
+        limit: usize,
+        requested: &[String],
+    ) -> (Vec<String>, Vec<ApplicationEntry>) {
+        let mut failures = Vec::new();
+        let ids = requested
+            .iter()
+            .filter(|id| self.pending_icons.contains(*id))
+            .take(limit)
+            .cloned()
+            .collect::<Vec<_>>();
+        let entries = self
+            .prepared_entries
+            .as_mut()
+            .expect("pending icons belong to the prepared catalog");
+        let mut updated = Vec::new();
+        for id in &ids {
+            if is_cancelled(cancelled_through, generation) {
+                break;
+            }
+            self.pending_icons.remove(id);
+            let entry = entries.get_mut(id).expect("pending icon entry");
+            if let Err(error) = self.icon_cache.prepare(entry) {
+                failures.push(format!("{}: {error}", entry.target_path));
+            }
+            updated.push(entry.clone());
+        }
+        if let Err(error) = self.icon_cache.use_available_icons(&mut updated) {
+            failures.push(error.to_string());
+            for entry in &mut updated {
+                entry.icon_key.clear();
+            }
+        }
+        (failures, updated)
+    }
+
+    pub(crate) fn has_pending_icons_for(&self, requested: &[String]) -> bool {
+        requested.iter().any(|id| self.pending_icons.contains(id))
+    }
+
+    pub(crate) fn has_pending_icons(&self) -> bool {
+        !self.pending_icons.is_empty()
+    }
+    fn _scan_roots(
+        &mut self,
+        config: &ApplicationConfig,
+        generation: u64,
+        cancelled_through: &AtomicU64,
         mut progress: impl FnMut(nanika_protocol::OperationProgress),
-    ) -> Result<(ScanReport, Vec<ApplicationEntry>), ApplicationError> {
+        mut publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+    ) -> Result<ScanReport, ApplicationError> {
         progress(nanika_protocol::OperationProgress {
             label: "Finding application sources".to_owned(),
             completed: 0,
             total: None,
         });
-        self.database.begin_scan(generation)?;
         self.discovery_state.begin_scan();
-        let standard_roots = match platform::configured_roots(&config.enabled_builtin_roots) {
-            Ok(roots) => roots,
-            Err(error) => {
-                if let Err(record_error) = self.database.fail_scan(generation, &error.to_string()) {
-                    eprintln!(
-                        "application scan failure could not be recorded: {record_error}; original failure: {error}"
-                    );
-                }
-                return Err(error);
-            }
-        };
+        let exclusions = config
+            .exclusions
+            .iter()
+            .map(|path| path_key(path).trim_end_matches('/').to_owned())
+            .collect::<Vec<_>>();
+        let standard_roots = platform::configured_roots(&config.enabled_builtin_roots)?;
         let roots_resolved = standard_roots
             .failures
             .iter()
@@ -110,7 +177,11 @@ impl ApplicationIndex {
         {
             coverage.failed(path);
         }
-        let mut entries = HashMap::<String, ApplicationEntry>::new();
+        let mut discovered = HashSet::new();
+        if self.prepared_entries.is_none() {
+            self.load()?;
+        }
+        self.pending_icons.clear();
         let total = u32::try_from(roots.len())
             .unwrap_or(u32::MAX - 1)
             .saturating_add(1);
@@ -123,92 +194,150 @@ impl ApplicationIndex {
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
-            if is_excluded(root, &config.exclusions) {
-                continue;
-            }
-            let metadata = match root.symlink_metadata() {
-                Ok(metadata) => metadata,
-                // A deleted source is empty; complete scans retire its records without recreating it.
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => {
-                    coverage.failed(root);
-                    eprintln!(
-                        "application scan could not read root {}: {error}",
-                        root.display()
-                    );
-                    warnings = warnings.saturating_add(1);
-                    complete = false;
-                    continue;
+            let mut root_entries = HashMap::new();
+            'root_scan: {
+                if is_excluded(root, &exclusions) {
+                    break 'root_scan;
                 }
-            };
-            if metadata.file_type().is_symlink() {
-                coverage.failed(root);
-                eprintln!("application scan skipped symlink root: {}", root.display());
-                warnings = warnings.saturating_add(1);
-                complete = false;
-                continue;
-            }
-            if metadata.is_file() || platform::is_application_bundle(root) {
-                complete &= collect_entry(
-                    root,
-                    *priority,
-                    &mut self.discovery_state,
-                    &mut entries,
-                    &mut warnings,
-                    &mut coverage,
-                );
-                continue;
-            }
-            if !metadata.is_dir() {
-                coverage.failed(root);
-                eprintln!("application scan root is unavailable: {}", root.display());
-                warnings = warnings.saturating_add(1);
-                complete = false;
-                continue;
-            }
-            let mut walker = WalkDir::new(root).follow_links(false).into_iter();
-            while let Some(result) = walker.next() {
-                if is_cancelled(cancelled_through, generation) {
-                    break;
-                }
-                let entry = match result {
-                    Ok(entry) => entry,
+                let metadata = match root.symlink_metadata() {
+                    Ok(metadata) => metadata,
+                    // A deleted source is empty; complete scans retire its records without recreating it.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => break 'root_scan,
                     Err(error) => {
-                        coverage.failed(error.path().unwrap_or(root));
-                        eprintln!("application scan could not read a path: {error}");
+                        coverage.failed(root);
+                        eprintln!(
+                            "application scan could not read root {}: {error}",
+                            root.display()
+                        );
                         warnings = warnings.saturating_add(1);
                         complete = false;
-                        continue;
+                        break 'root_scan;
                     }
                 };
-                let path = entry.path();
-                if entry.depth() > 0 && is_excluded(path, &config.exclusions) {
-                    if entry.file_type().is_dir() {
-                        walker.skip_current_dir();
-                    }
-                    continue;
+                if metadata.file_type().is_symlink() {
+                    coverage.failed(root);
+                    eprintln!("application scan skipped symlink root: {}", root.display());
+                    warnings = warnings.saturating_add(1);
+                    complete = false;
+                    break 'root_scan;
                 }
-                if platform::is_application_bundle(path) {
+                if metadata.is_file() || platform::is_application_bundle(root) {
                     complete &= collect_entry(
-                        path,
+                        root,
                         *priority,
                         &mut self.discovery_state,
-                        &mut entries,
+                        &mut root_entries,
                         &mut warnings,
                         &mut coverage,
                     );
-                    walker.skip_current_dir();
-                } else if entry.file_type().is_file() && platform::is_application_path(path) {
-                    complete &= collect_entry(
-                        path,
-                        *priority,
-                        &mut self.discovery_state,
-                        &mut entries,
-                        &mut warnings,
-                        &mut coverage,
-                    );
+                    break 'root_scan;
+                }
+                if !metadata.is_dir() {
+                    coverage.failed(root);
+                    eprintln!("application scan root is unavailable: {}", root.display());
+                    warnings = warnings.saturating_add(1);
+                    complete = false;
+                    break 'root_scan;
+                }
+                let mut walker = WalkDir::new(root).follow_links(false).into_iter();
+                while let Some(result) = walker.next() {
+                    if is_cancelled(cancelled_through, generation) {
+                        break;
+                    }
+                    let entry = match result {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            coverage.failed(error.path().unwrap_or(root));
+                            eprintln!("application scan could not read a path: {error}");
+                            warnings = warnings.saturating_add(1);
+                            complete = false;
+                            continue;
+                        }
+                    };
+                    let path = entry.path();
+                    // Directory enumeration already knows the type. Avoid an extra stat for
+                    // every irrelevant file merely to ask whether it is an application package.
+                    if !entry.file_type().is_dir()
+                        && !(entry.file_type().is_file() && platform::is_application_path(path))
+                    {
+                        continue;
+                    }
+                    if entry.depth() > 0 && is_excluded(path, &exclusions) {
+                        if entry.file_type().is_dir() {
+                            walker.skip_current_dir();
+                        }
+                        continue;
+                    }
+                    if entry.file_type().is_dir() && platform::is_application_bundle(path) {
+                        complete &= collect_entry(
+                            path,
+                            *priority,
+                            &mut self.discovery_state,
+                            &mut root_entries,
+                            &mut warnings,
+                            &mut coverage,
+                        );
+                        walker.skip_current_dir();
+                    } else if entry.file_type().is_file() && platform::is_application_path(path) {
+                        complete &= collect_entry(
+                            path,
+                            *priority,
+                            &mut self.discovery_state,
+                            &mut root_entries,
+                            &mut warnings,
+                            &mut coverage,
+                        );
+                    }
                 }
             }
+            // Cancellation discards this root's staging area, retaining earlier commits.
+            if is_cancelled(cancelled_through, generation) {
+                break;
+            }
+            for entry in root_entries.values_mut() {
+                if !entry.icon_key.is_empty() {
+                    continue;
+                }
+                match self
+                    .icon_cache
+                    .key_with_state(entry, &mut self.discovery_state)
+                {
+                    Ok(key) => entry.icon_key = key,
+                    Err(error) => {
+                        eprintln!(
+                            "application icon key failed for {}: {error}",
+                            entry.target_path
+                        );
+                        entry.icon_source = None;
+                        if let Err(fallback_error) = self.icon_cache.prepare(entry) {
+                            eprintln!(
+                                "application fallback icon failed for {}: {fallback_error}",
+                                entry.target_path
+                            );
+                        }
+                        entry.icon_key = IconCache::fallback_key().to_owned();
+                    }
+                }
+            }
+            if is_cancelled(cancelled_through, generation) {
+                break;
+            }
+            discovered.extend(root_entries.keys().cloned());
+            let root_key = path_key(root);
+            // A failed subtree keeps its previous contribution, including non-winning sources.
+            if let Some(previous) = self
+                .sources
+                .as_ref()
+                .expect("sources initialized")
+                .entries(&root_key)
+            {
+                for entry in previous.values() {
+                    if !coverage.replaces(&entry.source_key) {
+                        _insert_preferred(&mut root_entries, entry.clone());
+                    }
+                }
+            }
+            self._commit_root(root_key, root_entries, &mut publish)?;
         }
 
         progress(nanika_protocol::OperationProgress {
@@ -218,163 +347,136 @@ impl ApplicationIndex {
         });
         let was_cancelled = is_cancelled(cancelled_through, generation);
         complete &= !was_cancelled;
-        let mut entries = entries.into_values().collect::<Vec<_>>();
-        entries.sort_by(|left, right| {
-            left.normalized_name
-                .cmp(&right.normalized_name)
-                .then_with(|| left.entry_id.cmp(&right.entry_id))
-        });
-        for entry in &mut entries {
-            if !entry.icon_key.is_empty() {
-                continue;
-            }
-            match self
-                .icon_cache
-                .key_with_state(entry, &mut self.discovery_state)
-            {
-                Ok(key) => entry.icon_key = key,
-                Err(error) => {
-                    eprintln!(
-                        "application icon key failed for {}: {error}",
-                        entry.target_path
-                    );
-                    entry.icon_source = None;
-                    if let Err(fallback_error) = self.icon_cache.prepare(entry) {
-                        eprintln!(
-                            "application fallback icon failed for {}: {fallback_error}",
-                            entry.target_path
-                        );
-                    }
-                    entry.icon_key = IconCache::fallback_key().to_owned();
-                }
-            }
-        }
-        let was_cancelled = is_cancelled(cancelled_through, generation);
-        complete &= !was_cancelled;
         let report = ScanReport {
             generation,
-            discovered: entries.len(),
+            discovered: discovered.len(),
             warnings,
             complete,
             cancelled: was_cancelled,
         };
-        let error = (warnings > 0).then(|| format!("scan completed with {warnings} warnings"));
-        let replaced = if was_cancelled || complete {
-            Vec::new()
-        } else {
-            self.database
-                .load_entries()?
-                .into_iter()
-                .filter(|entry| coverage.replaces(&entry.source_key))
-                .map(|entry| entry.entry_id)
-                .collect::<Vec<_>>()
-        };
-        if let Err(commit_error) =
-            self.database
-                .commit_scan(report, &entries, &replaced, error.as_deref())
-        {
-            if let Err(record_error) = self
-                .database
-                .fail_scan(generation, &commit_error.to_string())
-            {
-                eprintln!(
-                    "application scan commit failure could not be recorded: {record_error}; original failure: {commit_error}"
-                );
+        if !was_cancelled {
+            let configured = roots
+                .iter()
+                .map(|(path, _)| path_key(path))
+                .collect::<HashSet<_>>();
+            let obsolete = self
+                .sources
+                .as_ref()
+                .expect("sources initialized")
+                .roots()
+                .filter(|root| !configured.contains(*root))
+                .cloned()
+                .collect::<Vec<_>>();
+            for root in obsolete {
+                let retained = self
+                    .sources
+                    .as_ref()
+                    .expect("sources initialized")
+                    .entries(&root)
+                    .into_iter()
+                    .flat_map(|entries| entries.iter())
+                    .filter(|(_, entry)| !coverage.replaces(&entry.source_key))
+                    .map(|(id, entry)| (id.clone(), entry.clone()))
+                    .collect();
+                self._commit_root(root, retained, &mut publish)?;
             }
-            return Err(commit_error);
         }
-        self.cache_scanned_entries(entries)?;
-        Ok((report, self.load_presentable()?))
+        Ok(report)
     }
 
-    // Reuse spellings only when their inputs match the committed catalog.
-    fn cache_scanned_entries(
+    fn _commit_root(
         &mut self,
-        discovered: Vec<ApplicationEntry>,
+        root: String,
+        mut replacement: HashMap<String, ApplicationEntry>,
+        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>),
     ) -> Result<(), ApplicationError> {
-        let mut loaded = self.database.load_entries()?;
-        let mut previous = self
-            .prepared_entries
-            .take()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|entry| (entry.entry_id.clone(), entry))
-            .collect::<HashMap<_, _>>();
-        let mut discovered = discovered
-            .into_iter()
-            .map(|entry| (entry.entry_id.clone(), entry))
-            .collect::<HashMap<_, _>>();
-        let mut pending = Vec::with_capacity(discovered.len());
-        for (index, entry) in loaded.iter_mut().enumerate() {
-            if let Some(mut prior) = previous.remove(&entry.entry_id)
-                && prior.display_name == entry.display_name
-                && prior.normalized_tokens == entry.normalized_tokens
-            {
-                entry.search_readings = std::mem::take(&mut prior.search_readings);
-            } else {
-                entry.prepare_search_readings();
-            }
-            if let Some(source) = discovered.remove(&entry.entry_id) {
-                entry.icon_source = source.icon_source;
-                entry.icon_index = source.icon_index;
-                entry.priority = source.priority;
-                pending.push(index);
+        let sources = self.sources.as_ref().expect("sources initialized");
+        if let Some(previous) = sources.entries(&root) {
+            for (id, entry) in &mut replacement {
+                if let Some(old) = previous.get(id).filter(|old| *old == entry) {
+                    *entry = old.clone();
+                }
             }
         }
-        self.prepared_entries = Some(loaded);
-        self.pending_icons = pending;
+        let (winners, removed) = sources.resolve(&root, &replacement);
+        let current = self.prepared_entries.as_mut().expect("catalog loaded");
+        let committed = winners
+            .iter()
+            .filter(|entry| {
+                current
+                    .get(&entry.entry_id)
+                    .is_none_or(|old| !_same_metadata(old, entry))
+            })
+            .map(|entry| (*entry).clone())
+            .collect::<Vec<_>>();
+        let previous = sources.entries(&root);
+        let changed_sources = replacement
+            .values()
+            .filter(|entry| {
+                previous
+                    .and_then(|entries| entries.get(&entry.entry_id))
+                    .is_none_or(|old| old != *entry)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let removed_sources = previous
+            .into_iter()
+            .flat_map(|entries| entries.keys())
+            .filter(|id| !replacement.contains_key(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        self.database
+            .commit_root(&root, &changed_sources, &removed_sources)?;
+        for entry in winners {
+            self.pending_icons.insert(entry.entry_id.clone());
+            if let Some(previous) = current.get_mut(&entry.entry_id)
+                && (previous.icon_source != entry.icon_source
+                    || previous.icon_index != entry.icon_index
+                    || previous.priority != entry.priority)
+            {
+                previous.icon_source = entry.icon_source.clone();
+                previous.icon_index = entry.icon_index;
+                previous.priority = entry.priority;
+            }
+        }
+        self.sources
+            .as_mut()
+            .expect("sources initialized")
+            .commit(root, replacement);
+        if !committed.is_empty() || !removed.is_empty() {
+            let visible = self._apply_committed(committed, &removed);
+            publish(visible, removed);
+        }
         Ok(())
     }
 
-    /// Populate at most `limit` icons so visible results can publish first.
-    pub fn populate_icon_batch(
+    fn _apply_committed(
         &mut self,
-        cancelled_through: &AtomicU64,
-        generation: u64,
-        limit: usize,
-    ) -> Result<(Vec<String>, bool), ApplicationError> {
-        let mut failures = Vec::new();
-        let count = limit.min(self.pending_icons.len());
-        let mut processed = 0;
-        let entries = self
-            .prepared_entries
-            .as_mut()
-            .expect("pending icons belong to the prepared catalog");
-        for &index in &self.pending_icons[..count] {
-            if is_cancelled(cancelled_through, generation) {
-                break;
-            }
-            processed += 1;
-            let entry = &mut entries[index];
-            if let Err(error) = self.icon_cache.prepare(entry) {
-                failures.push(format!("{}: {error}", entry.target_path));
-            }
+        updated: Vec<ApplicationEntry>,
+        removed: &[String],
+    ) -> Vec<ApplicationEntry> {
+        let current = self.prepared_entries.as_mut().expect("catalog loaded");
+        let mut visible = Vec::with_capacity(updated.len());
+        for entry in updated {
+            visible.push(entry.clone());
+            current.insert(entry.entry_id.clone(), entry);
         }
-        self.pending_icons.drain(..processed);
-        Ok((failures, !self.pending_icons.is_empty()))
+        for id in removed {
+            current.remove(id);
+        }
+        visible
     }
+}
 
-    pub(crate) fn prioritize_pending_icons(&mut self, entry_ids: &[String]) {
-        let priorities = entry_ids
-            .iter()
-            .enumerate()
-            .map(|(index, entry_id)| (entry_id.as_str(), index))
-            .collect::<HashMap<_, _>>();
-        let entries = self
-            .prepared_entries
-            .as_ref()
-            .expect("pending icons belong to the prepared catalog");
-        self.pending_icons.sort_by_key(|index| {
-            priorities
-                .get(entries[*index].entry_id.as_str())
-                .copied()
-                .unwrap_or(usize::MAX)
-        });
-    }
-
-    pub(crate) fn has_pending_icons(&self) -> bool {
-        !self.pending_icons.is_empty()
-    }
+fn _same_metadata(left: &ApplicationEntry, right: &ApplicationEntry) -> bool {
+    left.source_key == right.source_key
+        && left.display_name == right.display_name
+        && left.normalized_name == right.normalized_name
+        && left.normalized_tokens == right.normalized_tokens
+        && left.launch_kind == right.launch_kind
+        && left.target_path == right.target_path
+        && left.arguments_json == right.arguments_json
+        && left.icon_key == right.icon_key
 }
 
 fn is_cancelled(cancelled_through: &AtomicU64, generation: u64) -> bool {
@@ -390,15 +492,7 @@ fn collect_entry(
     coverage: &mut crate::scan_coverage::ScanCoverage,
 ) -> bool {
     match platform::read_entry(discovery_state, path, priority) {
-        Ok(Some(entry)) => match entries.get(&entry.entry_id) {
-            Some(existing)
-                if existing.priority > entry.priority
-                    || (existing.priority == entry.priority
-                        && existing.source_key <= entry.source_key) => {}
-            _ => {
-                entries.insert(entry.entry_id.clone(), entry);
-            }
-        },
+        Ok(Some(entry)) => _insert_preferred(entries, entry),
         Ok(None) => {}
         Err(error) => {
             coverage.failed(path);
@@ -411,6 +505,19 @@ fn collect_entry(
         }
     }
     true
+}
+
+// Retained failed sources and freshly read sources use the same winner ordering.
+fn _insert_preferred(entries: &mut HashMap<String, ApplicationEntry>, entry: ApplicationEntry) {
+    match entries.get(&entry.entry_id) {
+        Some(existing)
+            if existing.priority > entry.priority
+                || (existing.priority == entry.priority
+                    && existing.source_key <= entry.source_key) => {}
+        _ => {
+            entries.insert(entry.entry_id.clone(), entry);
+        }
+    }
 }
 
 fn deduplicate_paths(paths: &mut Vec<(PathBuf, usize)>) {
@@ -428,13 +535,15 @@ fn deduplicate_paths(paths: &mut Vec<(PathBuf, usize)>) {
     paths.sort_by_key(|(path, _)| path_key(path));
 }
 
-fn is_excluded(path: &Path, exclusions: &[PathBuf]) -> bool {
+fn is_excluded(path: &Path, exclusions: &[String]) -> bool {
+    if exclusions.is_empty() {
+        return false;
+    }
     let path = path_key(path);
     exclusions.iter().any(|excluded| {
-        let excluded = path_key(excluded).trim_end_matches('/').to_owned();
-        path == excluded
+        path == *excluded
             || path
-                .strip_prefix(&excluded)
+                .strip_prefix(excluded)
                 .is_some_and(|rest| rest.starts_with('/'))
     })
 }

@@ -10,7 +10,7 @@ pub(crate) struct SearchResult {
     pub(crate) action_id: String,
     pub(crate) allow_default_execution: bool,
     pub(crate) title: String,
-    pub(crate) subtitle: Option<String>,
+    pub(crate) subtitle: Option<nanika_protocol::CandidateSubtitle>,
     pub(crate) icon_url: Option<String>,
     pub(crate) kind: String,
     pub(crate) entry_type: &'static str,
@@ -30,7 +30,7 @@ impl SearchResult {
                     && action.allows_invocation(nanika_protocol::ActionInvocation::Default)
             }),
             title: candidate.title().to_owned(),
-            subtitle: candidate.subtitle().map(str::to_owned),
+            subtitle: candidate.subtitle().cloned(),
             icon_url: candidate
                 .icon()
                 .or(extension_icon.as_ref())

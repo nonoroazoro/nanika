@@ -8,6 +8,7 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+nanika-database = { path = "../database" }
 rusqlite.workspace = true
 nanika-foundation = { path = "../foundation" }
 nanika-platform = { path = "../platform" }

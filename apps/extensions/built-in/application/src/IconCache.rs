@@ -39,6 +39,7 @@ impl IconCache {
     }
 
     pub fn prepare(&self, entry: &mut ApplicationEntry) -> Result<(), ApplicationError> {
+        entry._icon_ready = false;
         let key = if entry.icon_key.is_empty() {
             self.key(entry)?
         } else {
@@ -46,7 +47,10 @@ impl IconCache {
         };
         if key == FALLBACK_KEY {
             self.ensure_fallback()?;
-            entry.icon_key = key;
+            if entry.icon_key != key {
+                entry.icon_key = key;
+            }
+            entry._icon_ready = true;
             return Ok(());
         }
         let Some(source) = entry.icon_source.as_deref() else {
@@ -89,7 +93,10 @@ impl IconCache {
         {
             return Err(error.into());
         }
-        entry.icon_key = key;
+        if entry.icon_key != key {
+            entry.icon_key = key;
+        }
+        entry._icon_ready = true;
         Ok(())
     }
 
@@ -102,6 +109,7 @@ impl IconCache {
             if !self.is_ready(&entry.icon_key) {
                 entry.icon_key = FALLBACK_KEY.to_owned();
             }
+            entry._icon_ready = true;
         }
         Ok(())
     }

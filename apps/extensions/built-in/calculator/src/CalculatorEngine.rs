@@ -44,7 +44,9 @@ impl CalculatorEngine {
                 kind: CandidateKind::Action,
                 entry_id: format!("calculator.{}", stable_hash(&[query, result])),
                 title: format!("= {result}"),
-                subtitle: Some("Calculator".to_owned()),
+                subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
+                    "Calculator".to_owned(),
+                )),
                 action_id: COPY_ACTION_ID.to_owned(),
                 actions: vec![nanika_protocol::Action::primary(
                     COPY_ACTION_ID,

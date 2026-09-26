@@ -28,8 +28,7 @@ pub(crate) fn capture(
             }
             let hash = stable_hash("files", &encoded);
             return Ok(Some(ClipboardEntry {
-                entry_id: format!("clipboard.{hash}"),
-                content_hash: hash,
+                entry_id: hash,
                 title: file_title(&paths),
                 content: ClipboardContent::Files { paths },
                 byte_size: encoded.len() as u64,
@@ -48,8 +47,7 @@ pub(crate) fn capture(
         if !value.trim().is_empty() {
             let hash = stable_hash("text", value.as_bytes());
             return Ok(Some(ClipboardEntry {
-                entry_id: format!("clipboard.{hash}"),
-                content_hash: hash,
+                entry_id: hash,
                 title: text_title(&value),
                 byte_size: value.len() as u64,
                 content: ClipboardContent::Text { value },
@@ -80,8 +78,7 @@ pub(crate) fn capture(
             write_atomic(&path, bytes)?;
         }
         return Ok(Some(ClipboardEntry {
-            entry_id: format!("clipboard.{hash}"),
-            content_hash: hash,
+            entry_id: hash,
             title: format!("Image {width} x {height}"),
             content: ClipboardContent::PngFile {
                 path: path.to_string_lossy().into_owned(),

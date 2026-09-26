@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME,
-    read_extension_frame, write_host_frame,
+    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame,
+    write_frame,
 };
 
 #[test]
@@ -18,7 +18,7 @@ fn calculator_process_contributes_and_copies_through_the_host() {
     .expect("calculator extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize".to_owned(),
@@ -28,25 +28,25 @@ fn calculator_process_contributes_and_copies_through_the_host() {
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_extension_frame(&mut output).expect("initialize response"),
+        read_frame(&mut output).expect("initialize response"),
         Some(Message::Initialized { .. })
     ));
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Query {
+            incremental: false,
             request_id: "query".to_owned(),
             generation: 1,
             query: "6 * 7".to_owned(),
         },
     )
     .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) =
-        read_extension_frame(&mut output).expect("query response")
+    let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).expect("query response")
     else {
         panic!("calculator extension should return a snapshot");
     };
     let entry = entries.into_iter().next().expect("calculator candidate");
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke".to_owned(),
@@ -64,12 +64,12 @@ fn calculator_process_contributes_and_copies_through_the_host() {
             HostServiceRequest::WriteClipboard {
                 content: ClipboardContent::Text { value },
             },
-    }) = read_extension_frame(&mut output).expect("host request")
+    }) = read_frame(&mut output).expect("host request")
     else {
         panic!("calculator should request a clipboard write");
     };
     assert_eq!(value, "42");
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::HostResponse {
             request_id,
@@ -80,7 +80,7 @@ fn calculator_process_contributes_and_copies_through_the_host() {
     )
     .expect("host response should write");
     assert!(matches!(
-        read_extension_frame(&mut output).expect("action result"),
+        read_frame(&mut output).expect("action result"),
         Some(Message::Result { .. })
     ));
     drop(input);
@@ -100,14 +100,14 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
     let mut output = BufReader::new(child.stdout.take().unwrap());
     let (sender, receiver) = mpsc::channel();
     let reader = std::thread::spawn(move || {
-        while let Ok(Some(message)) = read_extension_frame(&mut output) {
+        while let Ok(Some(message)) = read_frame(&mut output) {
             if sender.send(message).is_err() {
                 break;
             }
         }
     });
     let result = (|| -> Result<(), String> {
-        write_host_frame(
+        write_frame(
             &mut input,
             &Message::Initialize {
                 request_id: "init".to_owned(),
@@ -119,9 +119,10 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
         receiver
             .recv_timeout(Duration::from_secs(5))
             .map_err(|error| error.to_string())?;
-        write_host_frame(
+        write_frame(
             &mut input,
             &Message::Query {
+                incremental: false,
                 request_id: "slow".to_owned(),
                 generation: 1,
                 query: "100000!".to_owned(),
@@ -132,7 +133,7 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
         if receiver.recv_timeout(Duration::from_millis(100)).is_ok() {
             return Err("expected the expensive evaluation to remain active".to_owned());
         }
-        write_host_frame(
+        write_frame(
             &mut input,
             &Message::Cancel {
                 request_id: "slow".to_owned(),
@@ -140,9 +141,10 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
             },
         )
         .unwrap();
-        write_host_frame(
+        write_frame(
             &mut input,
             &Message::Query {
+                incremental: false,
                 request_id: "latest".to_owned(),
                 generation: 2,
                 query: "1+1".to_owned(),

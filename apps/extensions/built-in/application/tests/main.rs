@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_extension_frame,
-    write_host_frame,
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
 };
 
 #[test]
@@ -31,7 +30,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_host_frame(
+    let mut catalog = std::collections::HashMap::new();
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-application".to_owned(),
@@ -44,15 +44,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
     ));
-    query_until_candidate(
-        &mut input,
-        &mut output,
-        "startup-query",
-        1,
-        "nanika sample",
-        "Nanika Sample",
-    );
-    write_host_frame(
+    catalog_until_candidate(&mut input, &mut output, &mut catalog, "Nanika Sample");
+    write_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh-application".to_owned(),
@@ -64,49 +57,23 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "refresh response"),
         Some(Message::Refreshed { generation: 2, .. })
     ));
-    write_host_frame(
-        &mut input,
-        &Message::Query {
-            request_id: "query-application".to_owned(),
-            generation: 3,
-            query: "nanika sample".to_owned(),
-        },
-    )
-    .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) = read_response(&mut output, "query response")
-    else {
-        panic!("application extension should return a snapshot");
-    };
+    let entries = read_catalog(&mut input, &mut output, &mut catalog);
     assert!(entries.iter().any(|entry| entry.title == "Nanika Sample"));
-    let music = entries
-        .iter()
-        .find(|entry| entry.title == "音乐")
-        .expect("Chinese application should be discovered");
-    assert!(music.aliases.iter().any(|alias| alias == "yinyue"));
-    assert!(music.aliases.iter().any(|alias| alias == "yy"));
-    let sync = entries
-        .iter()
-        .find(|entry| entry.title == "同步")
-        .expect("synthetic Chinese application should be discovered");
-    assert!(sync.aliases.iter().any(|alias| alias == "tongbu"));
-    assert!(sync.aliases.iter().any(|alias| alias == "tb"));
-    write_host_frame(
-        &mut input,
-        &Message::Query {
-            request_id: "mixed-pinyin-query".to_owned(),
-            generation: 2,
-            query: "音yue".to_owned(),
-        },
-    )
-    .expect("mixed query should write");
-    let mixed_entries = read_complete_snapshot(&mut output);
-    assert!(mixed_entries.iter().any(|entry| {
-        entry.title == "音乐" && entry.aliases.iter().any(|alias| alias == "音yue")
-    }));
-    let entry = entries
-        .into_iter()
-        .find(|entry| entry.title == "Nanika Sample")
-        .expect("sample application candidate");
+    assert!(entries.iter().any(|entry| entry.title == "音乐"));
+    assert!(entries.iter().any(|entry| entry.title == "同步"));
+    let entry = loop {
+        let entries = read_catalog(&mut input, &mut output, &mut catalog);
+        if let Some(entry) = entries
+            .into_iter()
+            .find(|entry| entry.title == "Nanika Sample" && entry.icon.is_some())
+        {
+            break entry;
+        }
+        assert!(matches!(
+            read_frame(&mut output).unwrap(),
+            Some(Message::CandidatesChanged)
+        ));
+    };
     let icon_key = entry
         .icon
         .as_ref()
@@ -123,7 +90,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             .join("32.png")
             .is_file()
     );
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke-application".to_owned(),
@@ -142,7 +109,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     else {
         panic!("application extension should request host launch");
     };
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::HostResponse {
             request_id: service_request_id,
@@ -156,7 +123,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "invoke result"),
         Some(Message::Result { generation: 3, .. })
     ));
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke-application-invalid".to_owned(),
@@ -175,7 +142,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     else {
         panic!("application extension should request host launch");
     };
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::HostResponse {
             request_id: service_request_id,
@@ -224,7 +191,8 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_host_frame(
+    let mut catalog = std::collections::HashMap::new();
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-application-failure".to_owned(),
@@ -237,29 +205,13 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
         read_response(&mut output, "initialize response"),
         Some(Message::Initialized { .. })
     ));
-    let entries = query_until_candidate(
-        &mut input,
-        &mut output,
-        "startup-query-without-icons",
-        1,
-        "nanika sample",
-        "Nanika Sample",
-    );
+    let entries = catalog_until_candidate(&mut input, &mut output, &mut catalog, "Nanika Sample");
     let entry = entries
         .iter()
         .find(|entry| entry.title == "Nanika Sample")
         .expect("search should remain available");
     assert!(entry.icon.is_none());
-    write_host_frame(
-        &mut input,
-        &Message::Query {
-            request_id: "cleared-query-without-icons".to_owned(),
-            generation: 2,
-            query: String::new(),
-        },
-    )
-    .expect("cleared query should write");
-    let cleared_entries = read_complete_snapshot(&mut output);
+    let cleared_entries = read_catalog(&mut input, &mut output, &mut catalog);
     assert!(
         cleared_entries
             .iter()
@@ -295,7 +247,8 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     .expect("application extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_host_frame(
+    let mut catalog = std::collections::HashMap::new();
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-configuration".to_owned(),
@@ -309,7 +262,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         Some(Message::Initialized { .. })
     ));
 
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "change-configuration".to_owned(),
@@ -321,16 +274,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     assert!(progress.iter().any(|value| value.total.is_none()));
     assert!(progress.iter().any(|value| value.total.is_some()));
 
-    write_host_frame(
-        &mut input,
-        &Message::Query {
-            request_id: "query-updated-configuration".to_owned(),
-            generation: 2,
-            query: "nanika sample".to_owned(),
-        },
-    )
-    .expect("query should write");
-    let updated = read_complete_snapshot(&mut output);
+    let updated = read_catalog(&mut input, &mut output, &mut catalog);
     assert!(updated.iter().any(|entry| entry.title == "Nanika Sample"));
     prepare_entries(&mut input, 2, &updated);
 
@@ -339,51 +283,61 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
-fn read_complete_snapshot(output: &mut impl std::io::Read) -> Vec<nanika_protocol::Candidate> {
+fn read_catalog(
+    input: &mut impl std::io::Write,
+    output: &mut impl std::io::Read,
+    catalog: &mut std::collections::HashMap<String, nanika_protocol::Candidate>,
+) -> Vec<nanika_protocol::Candidate> {
     loop {
-        match read_extension_frame(output).expect("query response") {
-            Some(Message::Snapshot {
-                complete: true,
-                entries,
-                ..
-            }) => return entries,
-            Some(Message::Snapshot { .. } | Message::CandidatesChanged) => {}
-            message => panic!("application extension should return a snapshot, got {message:?}"),
+        write_frame(
+            &mut *input,
+            &Message::CatalogRead {
+                request_id: "catalog".into(),
+            },
+        )
+        .unwrap();
+        let Some(Message::CatalogBatch { batch, .. }) = read_response(output, "catalog batch")
+        else {
+            panic!("expected catalog batch")
+        };
+        if batch.index == 0 && batch.replace {
+            catalog.clear();
+        }
+        for id in batch.removed {
+            catalog.remove(&id);
+        }
+        for entry in batch.entries {
+            catalog.insert(entry.entry_id.clone(), entry);
+        }
+        if batch.complete {
+            write_frame(
+                &mut *input,
+                &Message::CatalogApplied {
+                    transaction: batch.transaction,
+                },
+            )
+            .unwrap();
+            return catalog.values().cloned().collect();
         }
     }
 }
 
-fn query_until_candidate(
+fn catalog_until_candidate(
     input: &mut impl std::io::Write,
     output: &mut impl std::io::Read,
-    request_id: &str,
-    generation: u64,
-    query: &str,
+    catalog: &mut std::collections::HashMap<String, nanika_protocol::Candidate>,
     title: &str,
 ) -> Vec<nanika_protocol::Candidate> {
     loop {
-        write_host_frame(
-            &mut *input,
-            &Message::Query {
-                request_id: request_id.to_owned(),
-                generation,
-                query: query.to_owned(),
-            },
-        )
-        .expect("query should write");
-        let entries = read_complete_snapshot(output);
+        let entries = read_catalog(input, output, catalog);
         if entries.iter().any(|entry| entry.title == title) {
-            prepare_entries(&mut *input, generation, &entries);
+            prepare_entries(&mut *input, 1, &entries);
             return entries;
         }
-        loop {
-            if matches!(
-                read_extension_frame(&mut *output).expect("candidate change"),
-                Some(Message::CandidatesChanged)
-            ) {
-                break;
-            }
-        }
+        assert!(matches!(
+            read_frame(&mut *output).unwrap(),
+            Some(Message::CandidatesChanged)
+        ));
     }
 }
 
@@ -392,7 +346,7 @@ fn prepare_entries(
     generation: u64,
     entries: &[nanika_protocol::Candidate],
 ) {
-    write_host_frame(
+    write_frame(
         input,
         &Message::PrepareEntries {
             generation,
@@ -408,7 +362,7 @@ fn prepare_entries(
 
 fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Message> {
     loop {
-        match read_extension_frame(output).expect(context) {
+        match read_frame(output).expect(context) {
             Some(Message::CandidatesChanged) => {}
             response => return response,
         }
@@ -528,7 +482,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         .unwrap();
     let mut input = BufWriter::new(child.stdin.take().unwrap());
     let mut output = BufReader::new(child.stdout.take().unwrap());
-    write_host_frame(
+    let mut catalog = std::collections::HashMap::new();
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize-partial".to_owned(),
@@ -541,15 +496,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         read_response(&mut output, "initialize"),
         Some(Message::Initialized { .. })
     ));
-    query_until_candidate(
-        &mut input,
-        &mut output,
-        "query-partial",
-        1,
-        "nanika sample",
-        "Nanika Sample",
-    );
-    write_host_frame(
+    catalog_until_candidate(&mut input, &mut output, &mut catalog, "Nanika Sample");
+    write_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "configure-partial".to_owned(),
@@ -558,7 +506,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
     )
     .unwrap();
     _read_configuration(&mut output, "configure-partial");
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh-partial".to_owned(),
@@ -570,17 +518,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         read_response(&mut output, "refresh"),
         Some(Message::Refreshed { generation: 3, .. })
     ));
-    write_host_frame(
-        &mut input,
-        &Message::Query {
-            request_id: "query-after-refresh".to_owned(),
-            generation: 4,
-            query: "nanika sample".to_owned(),
-        },
-    )
-    .unwrap();
     assert!(
-        read_complete_snapshot(&mut output)
+        read_catalog(&mut input, &mut output, &mut catalog)
             .iter()
             .any(|entry| entry.title == "Nanika Sample")
     );
@@ -652,13 +591,15 @@ fn graceful_discovery_shutdown_drains_a_full_event_queue() {
     let (sender, events) = mpsc::sync_channel(1);
     // Deterministically occupy the only slot before the producer starts.
     sender
-        .send(nanika_extension_application::RuntimeEvent::CandidatesChanged)
+        .send(nanika_extension_application::RuntimeEvent::CatalogUpdated {
+            entry_ids: Vec::new(),
+        })
         .unwrap();
     let worker = nanika_extension_application::DiscoveryWorker::spawn(
         root.join("application.db"),
         root.join("icons"),
         Arc::new(RwLock::new(config)),
-        Arc::new(RwLock::new(Vec::new())),
+        Arc::new(RwLock::new(std::collections::HashMap::new())),
         sender,
     )
     .unwrap();

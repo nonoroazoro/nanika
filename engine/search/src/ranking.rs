@@ -5,7 +5,7 @@ use nucleo_matcher::{Matcher, Utf32Str};
 use crate::constants::{MIN_FUZZY_SCORE_PER_CHARACTER, RECENCY_HALF_LIFE_DAYS};
 use crate::{
     Candidate, MatchContext, RankedCandidate, SearchSnapshot, UsageKey, UsageMap, UsageStat,
-    normalize_query,
+    normalize_history_key, normalize_query,
 };
 
 pub(crate) fn rank<'a>(
@@ -15,33 +15,71 @@ pub(crate) fn rank<'a>(
     usage: &UsageMap,
     now: u64,
     context: &mut MatchContext,
-) -> SearchSnapshot {
+    cancelled: impl Fn() -> bool,
+) -> Option<SearchSnapshot> {
     let normalized_query = normalize_query(query);
+    let mixed_query = nanika_text_search::romanized_query(query);
+    let mut usage_key = UsageKey::new("", "", "", "");
+    usage_key.query_context = normalize_history_key(query);
     let cross_field_terms = cross_field_terms(&normalized_query);
-    let mut scored = candidates
-        .filter_map(|candidate| {
-            let lexical = lexical_match(
+    let mut scored = Vec::new();
+    for (index, candidate) in candidates.enumerate() {
+        if index % 256 == 0 && cancelled() {
+            return None;
+        }
+        let matched = (|| {
+            let mut lexical = lexical_match(
                 &normalized_query,
                 candidate,
                 &mut context.matcher,
                 &mut context.haystack_buffer,
                 &mut context.query_buffer,
             );
+            if let Some(matched) =
+                nanika_text_search::find_romanized_match(candidate.readings(), &mixed_query)
+            {
+                let score = match matched {
+                    nanika_text_search::RomanizedMatch::Exact => (3, u32::MAX),
+                    nanika_text_search::RomanizedMatch::Prefix(_) => (2, u32::MAX - 1),
+                    nanika_text_search::RomanizedMatch::Infix(_) => (1, u32::MAX - 2),
+                };
+                lexical = lexical.max(Some(score));
+            }
             let (lexical_tier, fuzzy_score) = if lexical.is_some_and(|(tier, _)| tier >= 1) {
                 lexical
             } else {
                 lexical.max(match_cross_field(&cross_field_terms, candidate))
             }?;
-            let contextual_boost = usage
-                .get(&UsageKey::for_candidate(candidate, query))
-                .map_or(0, |stat| contextual_boost(*stat, now));
+            let contextual_boost = if usage.is_empty() {
+                0
+            } else {
+                for (target, value) in [
+                    (&mut usage_key.extension_id, candidate.extension_id()),
+                    (&mut usage_key.entry_id, candidate.entry_id()),
+                    (&mut usage_key.action_id, candidate.action_id()),
+                ] {
+                    target.clear();
+                    target.push_str(value);
+                }
+                usage
+                    .get(&usage_key)
+                    .map_or(0, |stat| contextual_boost(*stat, now))
+            };
             Some((candidate, lexical_tier, fuzzy_score, contextual_boost))
-        })
-        .collect::<Vec<_>>();
+        })();
+        if let Some(matched) = matched {
+            scored.push(matched);
+        }
+    }
+    if cancelled() {
+        return None;
+    }
+    scored.sort_unstable_by(compare_scored);
+    if cancelled() {
+        return None;
+    }
 
-    scored.sort_by(compare_scored);
-
-    SearchSnapshot {
+    Some(SearchSnapshot {
         generation,
         normalized_query,
         results: scored
@@ -55,7 +93,7 @@ pub(crate) fn rank<'a>(
                 },
             )
             .collect(),
-    }
+    })
 }
 
 // Split explicit terms and adjacent Han/non-Han text, without treating accented

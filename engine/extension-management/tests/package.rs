@@ -193,7 +193,7 @@ fn manifest_preserves_valid_command_contributions() {
             "protocolVersion": 1
         })),
         Some(serde_json::json!({
-            "rootSearch": {},
+            "rootSearch": {"mode": "query"},
             "commands": [{
                 "command": "example.open",
                 "action": nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Run"),
@@ -1009,7 +1009,7 @@ mod activation {
                 .activation,
             ExtensionActivation::OnDemand
         );
-        manifest["contributes"]["rootSearch"] = serde_json::json!({});
+        manifest["contributes"]["rootSearch"] = serde_json::json!({"mode":"query"});
         assert!(parse_extension_manifest(&manifest.to_string()).is_err());
         manifest["contributes"]
             .as_object_mut()

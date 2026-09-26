@@ -21,7 +21,6 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
         database
             .upsert(&ClipboardEntry {
                 entry_id: index.to_string(),
-                content_hash: index.to_string(),
                 title: "Image".to_owned(),
                 content: ClipboardContent::PngFile {
                     path: path.to_string_lossy().into_owned(),
@@ -82,7 +81,6 @@ fn failed_capture_does_not_block_later_capture_or_poison_shutdown() {
             }
             Ok(Some(ClipboardEntry {
                 entry_id: "next-copy".into(),
-                content_hash: "next-copy".into(),
                 title: "Next copy".into(),
                 content: ClipboardContent::Text {
                     value: "Next copy".into(),
@@ -127,4 +125,61 @@ fn worker_panic_is_still_a_shutdown_failure() {
         })),
     };
     assert_eq!(worker.shutdown().unwrap_err(), "clipboard worker panicked");
+}
+#[test]
+fn capture_publishes_committed_state_when_payload_cleanup_fails() {
+    use crate::{ClipboardCommand, ClipboardConfig, ClipboardWorker};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let root = std::env::temp_dir().join(format!(
+        "nanika-clipboard-cleanup-failure-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let payloads = root.join("payloads");
+    let entries = Arc::new(RwLock::new(Vec::new()));
+    let changes = Arc::new(AtomicUsize::new(0));
+    let notify = Arc::clone(&changes);
+    let worker = ClipboardWorker::_spawn(
+        root.join("clipboard.db"),
+        payloads.clone(),
+        ClipboardConfig {
+            max_entries: None,
+            max_age_days: None,
+        },
+        Arc::clone(&entries),
+        Arc::new(move || {
+            notify.fetch_add(1, Ordering::SeqCst);
+        }),
+        |_| {
+            Ok(Some(ClipboardEntry {
+                entry_id: "committed".into(),
+                title: "saved".into(),
+                content: ClipboardContent::Text {
+                    value: "saved".into(),
+                },
+                byte_size: 5,
+                captured_at: 1,
+            }))
+        },
+    )
+    .unwrap();
+    std::fs::write(&payloads, b"block cleanup after commit").unwrap();
+    worker
+        .command_sender()
+        .send(ClipboardCommand::Capture)
+        .unwrap();
+    worker.shutdown().unwrap();
+    assert_eq!(changes.load(Ordering::SeqCst), 1);
+    assert_eq!(entries.read().unwrap()[0].entry_id, "committed");
+    assert_eq!(
+        ClipboardDatabase::open(root.join("clipboard.db"))
+            .unwrap()
+            .load()
+            .unwrap(),
+        *entries.read().unwrap()
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

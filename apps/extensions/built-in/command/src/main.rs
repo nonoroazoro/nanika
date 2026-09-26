@@ -3,8 +3,8 @@ use std::io::{BufReader, BufWriter, stdin, stdout};
 
 use nanika_extension_command::{RUN_ACTION_ID, command_candidate};
 use nanika_protocol::{
-    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME,
-    read_host_frame, write_extension_frame,
+    HostServiceRequest, HostServiceResponse, LaunchDescriptor, Message, PROTOCOL_NAME, read_frame,
+    write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut output = BufWriter::new(stdout().lock());
     let mut initialized = false;
     let mut commands = HashMap::<String, String>::new();
-    while let Some(message) = read_host_frame(&mut input)? {
+    while let Some(message) = read_frame(&mut input)? {
         match message {
             Message::Initialize {
                 request_id,
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } if protocol == PROTOCOL_NAME => {
                 initialized = true;
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Initialized {
                         request_id,
@@ -44,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 query,
+                ..
             } => {
                 commands.clear();
                 let entries = command_candidate(&query)
@@ -52,9 +53,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         vec![candidate]
                     })
                     .unwrap_or_default();
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Snapshot {
+                        replace: true,
+                        removed: Vec::new(),
                         request_id,
                         generation,
                         complete: true,
@@ -94,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => write_extension_frame(
+            } => write_frame(
                 &mut output,
                 &Message::Refreshed {
                     request_id,
@@ -122,7 +125,7 @@ fn invoke_host(
     descriptor: LaunchDescriptor,
 ) -> Result<(), nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
-    write_extension_frame(
+    write_frame(
         output,
         &Message::HostRequest {
             request_id: service_request_id.clone(),
@@ -132,7 +135,7 @@ fn invoke_host(
         },
     )?;
     loop {
-        match read_host_frame(input)? {
+        match read_frame(input)? {
             Some(Message::HostResponse {
                 request_id: response_id,
                 parent_request_id,
@@ -142,7 +145,7 @@ fn invoke_host(
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return write_extension_frame(
+                return write_frame(
                     output,
                     &Message::Result {
                         request_id,
@@ -170,7 +173,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_extension_frame(
+    write_frame(
         output,
         &Message::Error {
             request_id,
@@ -184,6 +187,8 @@ fn request_id(message: &Message) -> Option<String> {
     match message {
         Message::Initialize { request_id, .. }
         | Message::Initialized { request_id, .. }
+        | Message::CatalogRead { request_id }
+        | Message::CatalogBatch { request_id, .. }
         | Message::Query { request_id, .. }
         | Message::Snapshot { request_id, .. }
         | Message::Invoke { request_id, .. }
@@ -201,7 +206,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged
+        Message::CatalogApplied { .. }
+        | Message::CandidatesChanged
         | Message::ViewInvalidated { .. }
         | Message::PrepareEntries { .. } => None,
     }

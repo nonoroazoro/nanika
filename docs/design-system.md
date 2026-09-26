@@ -1,302 +1,255 @@
-# UI and UX: Fluent 2
+# Design System
 
-The single UI/UX design reference for the launcher, Settings and host-rendered
-extension surfaces. Code and manifests define implemented behavior; [tasks](tasks.md)
-records unfinished candidates without committing to implementation. Update this
-document in place instead of adding component plans or implementation diaries.
+UI/UX contracts for the launcher, Settings and host-rendered extension surfaces.
+Code and semantic tokens define implementation; [TODO](tasks.md) tracks unfinished work.
+Prioritize responsive interaction, stable geometry and readable states.
 
 ## Direction and references
 
-Keep Nanika quiet, immediate and content-first. Preserve stable geometry while
-communicating hover, selection, pressed, pending, disabled and failure states.
-Built-in and external extensions use the same renderer and interaction contracts.
+Use **Fluent 2** for design guidance and **Svelte 5 + Bits UI + plain CSS semantic
+tokens** for implementation. Built-in and external extensions share one renderer.
+Adapt for native conventions or concrete product needs and record the reason. Do not
+adopt Fluent components/themes, Tailwind, shadcn-svelte or higher OS/WebView requirements.
 
-Nanika uses **Fluent 2 as its design system**. The implementation stack is
-**Svelte 5 + Bits UI (headless) + plain CSS and Nanika semantic tokens**.
+1. Read the adopted contract here.
+2. Consult the relevant official guidance below.
+3. Inspect Fluent `packages/tokens` or `packages/web-components` for unresolved details;
+   use non-React component references.
+4. Research remaining discrepancies and record only the adopted decision/source.
 
-| Layer             | Responsibility                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| Svelte 5          | Rendering, reactive state and component composition                                     |
-| Bits UI           | Headless primitive behavior, keyboard interaction and accessibility semantics           |
-| Fluent 2          | Design system for UX patterns, interaction states, layout, motion and design parameters |
-| Nanika CSS/tokens | Implementation of that design in product styles, light/dark colors and shared values    |
+Check existing workspace checkouts before cloning; verify remote, working tree and
+upstream, then update safely with `git pull --ff-only`. Reference repositories are not
+build dependencies. Cite commits for implementation-specific values; do not mirror sites.
 
-Follow [Fluent 2](https://fluent2.microsoft.design/design-principles) for most UI/UX
-work, including interaction patterns, states, layout and motion. Adapt only for
-native conventions or concrete product needs; document the reason. Adopt applicable
-official values with source attribution and identify local adaptations explicitly.
+| Topic                 | Reference                                                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Principles/layout     | [Principles](https://fluent2.microsoft.design/design-principles), [layout](https://fluent2.microsoft.design/layout)                                               |
+| Color/tokens          | [Color](https://fluent2.microsoft.design/color), [tokens](https://fluent2.microsoft.design/design-tokens)                                                         |
+| Typography/icons      | [Typography](https://fluent2.microsoft.design/typography), [iconography](https://fluent2.microsoft.design/iconography)                                            |
+| Shape/depth           | [Shapes](https://fluent2.microsoft.design/shapes), [elevation](https://fluent2.microsoft.design/elevation), [material](https://fluent2.microsoft.design/material) |
+| Motion/waiting        | [Motion](https://fluent2.microsoft.design/motion), [Wait UX](https://fluent2.microsoft.design/wait-ux)                                                            |
+| Accessibility/content | [Accessibility](https://fluent2.microsoft.design/accessibility), [content](https://fluent2.microsoft.design/content-design)                                       |
+| Component source      | [Web Components](https://github.com/microsoft/fluentui/tree/d27922755b/packages/web-components/src)                                                               |
 
-Implement the design with shared Bits UI wrappers and semantic CSS tokens, without
-Fluent components/themes, Tailwind or shadcn-svelte. Where Bits UI lacks a needed
-primitive, use a small native wrapper with the same contract. Business components
-compose these controls. Application-level styling and accessibility still require
-validation. Preserve Windows 10+ and macOS 13+ WebView support.
+## Shared controls
 
-Use CSS/Svelte motion with shared reduced-motion behavior. Adding an animation
-library requires a separate decision.
+- Button, Switch, Select and ContextMenu wrap Bits UI; native Input/Textarea preserve
+  editing, IME, selection, validation and typed refs. Feature surfaces compose them.
+- Semantic tokens own light/dark colors, system fonts, spacing, geometry and motion,
+  including portaled popups. Keep the CSS baseline legible without native effects.
+- Preserve roles, keyboard operation, caret and fill feedback. No focus rings or
+  focus-only borders; retain structural, validation and shortcut-recording borders.
+- Action buttons/enabled popup options use pointer cursors. Disabled controls use
+  default cursors; text/collection rows retain native semantics. Native disabled and
+  aria-disabled both suppress actionable hover.
+- Labels are not selectable. Inputs, textareas and copyable previews/paths retain
+  native text selection. Decorative elements do not intercept pointer input.
+- Busy Switches block repeat activation but retain hover, cursor and opacity with
+  aria-busy. Hover affects track/thumb without an outer fill. Stable state is static.
+- Select keeps focus on its combobox trigger and exposes the controlled listbox and
+  aria-activedescendant; Bits owns navigation and Escape. See the
+  [select-only pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-select-only/).
+- Root rows and Settings use the same image component. Item icons inherit the extension
+  manifest icon when omitted; invalid images show a neutral placeholder.
 
-## Reference lookup workflow
+## Settings
 
-Use this order for UI/UX research:
+Selection controls apply on activation. Text/number fields commit on leaving the
+complete field or native form submission; focus movement inside compound editors does
+not commit intermediate values. Invalid drafts remain editable. Only the accepted
+field locks, and distinct edits serialize within the extension. Navigation/hiding
+preserves accepted work. There is no Save/Discard footer or success notification.
+See [configuration semantics](platform-architecture.md#settings-operations).
 
-1. Read this document for Nanika's adopted rules, values and product adaptations.
-2. Open the relevant official Fluent 2 page directly using the topic index below.
-3. Inspect the local Fluent UI source when exact token values, component state styles
-   or implementation details remain unclear.
-4. Use web search for unresolved questions, official discussions and known issues.
+Enablement occupies a separate first group before domain configuration, using shared
+rows and controls. Lifecycle status combines an 8px dot, a 6px gap and exact state text:
+green available, gray disabled/transitioning, red failed. Color is never the only cue.
+Settled status does not pulse. Transition labels replace settled text after one second;
+completion/failure appear immediately. A newly opened page shows current state directly.
 
-The existing reference checkout on this workstation is `D:\Workspace\fluentui`,
-from [microsoft/fluentui](https://github.com/microsoft/fluentui). Treat this as a
-local research location, not a build dependency or a required path on other machines.
-Follow the global repository lookup rules: verify the remote, working tree and
-upstream before updating with `git pull --ff-only`; preserve local changes and
-report when the checkout cannot be updated safely. If absent, check other candidate
-checkouts before cloning into a dedicated system temporary directory.
+Pending field feedback appears after one second without shifting geometry. Unknown
+progress uses an indeterminate bar; actual completed/total units use a determinate bar.
+Only terminal completion unlocks input. Hidden UI stops animation; reduced motion uses
+a static indicator. Failures appear in a dismissible top notification; concrete causes
+remain in diagnostics, with saved/effective state reconciled separately.
 
-Start source inspection with `packages/tokens` for concrete token values and
-`packages/web-components` for concrete component parameters. Do not use the
-React implementation as reference. Treat source styles as options to evaluate in
-Nanika, rather than as a complete visual prescription. The repository does not replace the
-website's design guidance. If guidance and implementation differ, record the
-specific discrepancy and the reason for Nanika's choice.
+`styles/settings.css` owns surface tokens, including portaled controls. Typography and
+spacing follow Fluent ramps; compact control text, heading weight, geometry and colors
+are Nanika adaptations. These are current values, not a mandate to copy Fluent components:
 
-| Topic | Official entry points |
-| --- | --- |
-| Principles and layout | [Design principles](https://fluent2.microsoft.design/design-principles), [Layout](https://fluent2.microsoft.design/layout) |
-| Color and tokens | [Color](https://fluent2.microsoft.design/color), [Design tokens](https://fluent2.microsoft.design/design-tokens), [Color tokens](https://fluent2.microsoft.design/color-tokens) |
-| Typography and icons | [Typography](https://fluent2.microsoft.design/typography), [Iconography](https://fluent2.microsoft.design/iconography) |
-| Shape and depth | [Shapes](https://fluent2.microsoft.design/shapes), [Elevation](https://fluent2.microsoft.design/elevation), [Material](https://fluent2.microsoft.design/material) |
-| Motion | [Motion](https://fluent2.microsoft.design/motion) |
-| Accessibility and content | [Accessibility](https://fluent2.microsoft.design/accessibility), [Content design](https://fluent2.microsoft.design/content-design) |
-| Component parameters | [Non-React Web Components](https://github.com/microsoft/fluentui/tree/d27922755b/packages/web-components/src) |
+| Element                      | Treatment                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| Labels / descriptions        | 14px/20px and 12px/16px, regular                                                       |
+| Page headings / control text | 20px/26px at 500; 13px regular                                                         |
+| Rows / groups                | 8px vertical, 16px horizontal padding; 16px group gap; compound rows grow naturally    |
+| Navigation / artwork         | 36px rows, 20px icons; 48px page artwork centered beside title/status                  |
+| Controls                     | 32px height, 6px radius, uniform subtle border; state changes preserve geometry        |
+| Select / number / shortcut   | 128px / 128px / 160px widths                                                           |
+| Switch                       | 32x20px track, 40x32px hit area, 14px thumb; travel derived from inset/border geometry |
+| Popup items                  | 32px rows, 6px/8px padding, 4px outer padding                                          |
+| Shortcut keycaps             | Shared launcher treatment: 12px at 500, 4px radius/gaps, subtle fill                   |
 
-Keep adopted rules, parameters, adaptation reasons and source links in the relevant
-sections of this document. When an implementation detail depends on repository
-state, cite the source file and commit. Consult the live website for visual and
-motion examples. Do not maintain a full-site mirror as part of the current workflow;
-add focused, attributed reference notes only when repeated lookups justify them.
+Status token provenance: Fluent commit `d27922755b`
+[light](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/lightColorPalette.ts),
+[dark](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/darkColorPalette.ts),
+[global colors](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/global/colors.ts).
+Available maps to `colorPaletteGreenForeground3` (#107c10/#9fd89f), failed to
+`colorPaletteRedForeground3` (#d13438/#e37d80), inactive to `colorNeutralForeground3`
+(#616161/#adadad), light/dark respectively. Dot/text composition and state mapping are
+Nanika choices; the transparent dot border preserves forced-color visibility.
 
-## Document and artwork ownership
+## Root Search
 
-| Location                         | Ownership                                                             |
-| -------------------------------- | --------------------------------------------------------------------- |
-| [assets/icons](assets/icons/)    | Original high-resolution icon artwork for editing and export          |
-| apps/extensions/built-in/*/assets | Packaged extension images loaded through the shared resource protocol |
-| apps/desktop/shell/icons         | Application icon source and platform packaging variants used by Tauri |
-| target                           | Temporary previews, screenshots, probes and measurement output        |
+Fixed-height virtual rows use `--row-height`; top/bottom spacers preserve full scroll
+range. Only the delivered viewport/overscan creates rows and images. Arrow navigation
+uses absolute positions and revision-bound range requests. ARIA exposes absolute row
+position/full count; native input/IME remains intact. No stagger or animated reordering.
+Disable browser scroll anchoring because the list owns spacer geometry.
 
-Keep originals distinct from optimized exports. Documentation artwork is not a
-runtime dependency; move or rename exports only together with their consumers.
+One `RootSearchState` owns the displayed window, selection and scroll position. Pending
+queries/local validation failures retain all three. The first completed new query
+resets scroll/selection together, including empty results. Do not scroll to the top
+while retaining the preceding page's spacer. Same-ranking page changes preserve
+offscreen identity, but unloaded rows cannot execute. New rankings retain selection
+when present in the delivered window, otherwise choose its nearest available row.
+Empty results clear selection; keyboard targets become actionable when their page arrives.
+Reconciliation scans the delivered window, not the full catalog.
 
-## Shared controls and visual language
+Candidate `subtitle` is optional `{ "kind": "label" | "description", "text": string }`.
+The host preserves its declared kind instead of inferring it from extension identity:
 
-Root search results use their declared package image or cached file icon. Results without
-an item icon use their extension's manifest icon, rendered by the same shared icon
-component as Settings. This rule applies equally to built-in and external extensions.
+- Short labels and the right-side extension/type label remain complete on one line.
+- Titles take remaining space and ellipsize only when required by those labels.
+- Descriptions, including script paths, yield space to titles and may ellipsize.
+- Native text hints expose full titles/descriptions.
 
-- Shared Button, Switch, Select and ContextMenu wrap Bits UI. Shared native Input
-  and Textarea preserve editing, IME, selection, validation and typed DOM refs.
-- Feature surfaces consume these controls. StatusBar, result rows and forms retain
-  business layout; they do not implement separate primitive behavior or styling.
-- Root-level tokens own light/dark colors, typography, spacing, geometry, elevation
-  and motion, including portaled popups. Use system fonts, compact layouts and
-  legible states without relying on optional native effects.
-- Menus and Select share surface, spacing, selection and separator treatment.
-  Long labels retain accessible names and do not overlap shortcut hints.
-- Action buttons and enabled popup options use a pointer cursor. Disabled controls
-  use the default cursor; editable text and collection rows retain native semantics.
-  Both native disabled and aria-disabled suppress actionable hover feedback.
-- Preserve semantic roles, keyboard operation, caret and fill feedback. Do not add
-  focus rings or focus-only borders. Keep structural, validation and recording borders.
-- Labels are not text-selectable. Inputs, textareas and explicitly copyable content,
-  including Clipboard previews and file paths, support native selection.
-- Switch hover affects the track or thumb, with no surrounding button fill.
-  Decorative parts do not intercept pointer input. A Switch marked busy blocks
-  repeat activation while retaining cursor, opacity and hover treatment and
-  exposing aria-busy. Settings locks only the field with an accepted operation.
-- General and extension settings apply immediately, following
-  [Fluent Switch guidance](https://fluent2.microsoft.design/components/web/react/core/switch/usage).
-  Text and number edits commit when focus leaves the complete setting field or
-  native form submission occurs; selection controls commit on activation. Internal
-  focus movement in compound fields does not submit an intermediate value.
-  Navigation and native hiding retain accepted work. No Save/Discard footer or
-  saving/success notification is shown.
-- Extension enablement occupies a separate first settings group, followed by the
-  extension's domain configuration. Both use the same row and control treatment.
-  Group spacing expresses the different responsibilities, following Fluent's
-  [spacing and proximity guidance](https://fluent2.microsoft.design/layout).
-  This grouping is a Nanika product decision, not a Fluent-specific extension pattern.
-- Extension lifecycle status pairs a fixed 8px dot with visible text at a 6px gap, following
-  Fluent [Badge](https://fluent2.microsoft.design/components/web/react/core/badge/usage)
-  guidance. Green means available (running or ready on demand), gray means disabled
-  or transitioning, and red means failed. Text preserves the exact state, so color
-  is never the only cue. The 8px diameter, 6px gap and assignment of lifecycle
-  states to three colors are Nanika choices. Values were verified against
-  `microsoft/fluentui` commit `d27922755b`:
-  [Badge sizes and ghost colors](https://github.com/microsoft/fluentui/blob/d27922755b/packages/react-components/react-badge/library/src/components/Badge/useBadgeStyles.styles.ts),
-  [light palette](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/lightColorPalette.ts),
-  [dark palette](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/alias/darkColorPalette.ts),
-  and [global colors](https://github.com/microsoft/fluentui/blob/d27922755b/packages/tokens/src/global/colors.ts).
-  `--status-available` maps to `colorPaletteGreenForeground3` (#107c10 / #9fd89f),
-  `--status-failed` to `colorPaletteRedForeground3` (#d13438 / #e37d80), and
-  `--status-inactive` to `colorNeutralForeground3` (#616161 / #adadad), with light
-  then dark values. The transparent border preserves the dot in forced colors.
-  The dot plus separate caption is Nanika's composition, not the React component.
-  Keep stable status static: a running extension is not a loading operation.
-  Only color changes use the shared short control transition, respecting hidden
-  activity and reduced motion. Do not fade status text or continuously pulse dots.
-  Following [Wait UX](https://fluent2.microsoft.design/wait-ux), a transition label
-  replaces the last settled label only after one second. Completion and failure
-  appear immediately and cancel the pending label; runtime state is not delayed.
-  A newly opened page without a previous settled state shows the current state.
-  The existing field progress indicator supplies feedback for longer operations.
-- Settings uses Fluent's Web [type ramp](https://fluent2.microsoft.design/typography):
-  row labels are Body 1 (14px/20px), descriptions are Caption 1 (12px/16px), and
-  page titles are Subtitle 1 (20px/26px). Shared controls retain their compact text
-  treatment and 32px minimum height. Fluent's
-  [medium Input implementation](https://github.com/microsoft/fluentui/blob/master/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts)
-  also uses 32px; a control height is not a setting row height.
-  General and extension rows share 8px vertical and 16px horizontal padding;
-  groups are separated by 16px. These values come from Fluent's spacing ramp.
-  Their assignment to Settings is a Nanika density decision, not a Fluent mandate:
-  an ordinary single-line row is 48px before borders. Descriptions and compound
-  editors grow naturally instead of clipping to a fixed row height.
-- Pending feedback appears after one second below the affected control, with
-  stable geometry. Unknown progress uses a small indeterminate bar; real
-  completed/total work units use a determinate bar. Progress never unlocks input;
-  only the terminal result does. Hidden UI stops animation and reduced motion
-  uses a static indicator. Follow Fluent's
-  [progress information hierarchy](https://fluent2.microsoft.design/components/web/react/core/progressbar/usage),
-  not its animation implementation. Motion and compact positioning are Nanika adaptations.
-- Settings failures appear in a compact top notification with explicit dismissal.
-  There is no field-level retry button or persistent error paragraph. The original
-  cause remains in diagnostics; saved and effective values are reconciled separately.
+## Shared scroll areas
 
-## Settings component treatment
+All collection, Settings, directory, menu and Select scrolling uses `ScrollArea.svelte`.
+Bits owns geometry, pointer capture and drag mapping; content uses native WebView
+scrolling without a second momentum/wheel engine. Select composes its Viewport with
+the shared viewport via `viewportProps`, retaining both ref attachments so keyboard
+highlighting scrolls the real element. Read-only detail text recomputes height on
+content/width changes and keeps native selection.
 
-Settings uses Fluent's spacing, proximity and alignment principles with a restrained
-native desktop treatment. `styles/settings.css` owns surface-specific semantic
-tokens, including portaled controls; shared controls retain their input contracts.
+The visual reference is VS Code **Source Control and Extensions lists**, not editor
+scrollbars, at commit `529ee19061e6723e0a640fe432e57c69d50a4f4f`:
+[styles](https://github.com/microsoft/vscode/blob/529ee19061e6723e0a640fe432e57c69d50a4f4f/src/vs/base/browser/ui/scrollbar/media/scrollbars.css),
+[visibility](https://github.com/microsoft/vscode/blob/529ee19061e6723e0a640fe432e57c69d50a4f4f/src/vs/base/browser/ui/scrollbar/scrollableElement.ts),
+[colors](https://github.com/microsoft/vscode/blob/529ee19061e6723e0a640fe432e57c69d50a4f4f/src/vs/platform/theme/common/colors/miscColors.ts),
+[Modern UI](https://github.com/microsoft/vscode/blob/529ee19061e6723e0a640fe432e57c69d50a4f4f/src/vs/workbench/contrib/modernUI/browser/modernUI.contribution.ts).
+Windows/macOS share presentation; input conventions remain native.
 
-- Row labels remain 14/20px and descriptions 12/16px. Navigation and control text
-  use 13px regular for compact desktop reading. Page headings are 20/26px at weight
-  500; section headings and selected navigation also use 500. The 13px control
-  size and lighter heading weights are product adaptations, not the Web type ramp.
-- Body and control text use regular weight. Shortcut keycaps use the shared
-  launcher treatment: subtle backgrounds, 12px text at weight 500, 4px corner
-  radii and 4px gaps around separators. Settings has no keycap overrides. Primary text is soft charcoal in light
-  mode and off-white in dark mode; secondary text retains readable contrast.
-- Navigation icons and their containers share 20px. Page artwork uses 48px to
-  balance the 46px title/status stack (26px title, 4px gap, 16px status), centered
-  vertically as one heading group.
-  Navigation rows are 36px. Existing 8px/16px form padding and the separate first
-  enablement group preserve compact density and responsibility boundaries.
-- Form controls share a 32px height, 6px radius and a uniform subtle border. Theme
-  has no emphasized bottom edge. Hover and pressed states change fill/border without
-  changing geometry. A 20px line plus two 1px borders leaves 5px vertical insets.
-- Select and numeric controls use 128px width; the shortcut recorder uses 160px for
-  key combinations. The 16px chevron uses an 8px-wide stroke drawing.
-- Switches retain a compact filled 32x20px track and 40x32px hit area. The 14px thumb
-  has 2px internal insets plus the 1px border on both ends; travel derives from that
-  geometry. This compact treatment is a Nanika adaptation. Stable state remains
-  static and the existing interruption/reduced-motion/hidden-activity rules apply.
-- Popup items use 32px rows with 6px/8px padding and 4px outer padding. Colors,
-  border opacity and popup shadows are deliberate surface choices, not verbatim
-  Fluent token mappings. Assess them in complete light/dark pages at native DPI.
-- Select exposes the select-only combobox role and the controlled listbox ID because
-  Bits keeps DOM focus on its trigger and highlights options via aria-activedescendant.
-  Keyboard selection and Escape remain owned by Bits; see the
-  [ARIA select-only pattern](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-select-only/).
-
-Use [Fluent typography](https://fluent2.microsoft.design/typography) and
-[layout guidance](https://fluent2.microsoft.design/layout) to guide hierarchy and
-rhythm. Matching individual constants does not establish visual quality. Review
-alignment, optical size, text weight, borders and interaction states together.
+- 10px track with a rounded 8px thumb. The 1px horizontal insets are Nanika's adaptation
+  of standard 10px lists and Modern UI's 8px rounded lists.
+- Hover reveals in 100ms; pointer exit immediately starts an 800ms linear fade.
+  Re-entry reverses from current opacity. Scrolling outside hover reveals for 500ms;
+  dragging holds visibility through pointer exit until release.
+- Rest/hover/pressed colors follow VS Code light/dark defaults.
+- Bits' 18px minimum thumb remains part of its drag geometry; do not override it in CSS.
+  VS Code uses 20px. Large result counts cannot shrink the thumb below its minimum.
+- Hidden documents cancel reveal timers/transitions. Live reduced motion removes
+  transitions. Idle surfaces do not poll.
 
 ## Motion
 
-Choose duration and easing for the interaction, using the official
-[Fluent motion guidance](https://fluent2.microsoft.design/motion) and applicable
-component tokens as the design baseline. Small controls need immediate feedback;
-start-fast, end-slow motion suits the Switch. Avoid a universal easing curve.
+Use CSS/Svelte motion and shared activity/preferences, without per-control preference
+listeners or another scheduler. Adding an animation dependency needs demonstrated value.
+Current timings are Nanika adaptations; source CSS is authoritative.
 
-Current CSS values below are **Nanika adaptations**, not verified Fluent token
-values. The stylesheet is authoritative; audit provenance before broader adoption.
+| Interaction       | Timing                            | Behavior                                             |
+| ----------------- | --------------------------------- | ---------------------------------------------------- |
+| General feedback  | 100ms, cubic-bezier(0.2, 0, 0, 1) | Short color feedback                                 |
+| Switch            | 180ms, ease-out                   | Reverse from current position/color                  |
+| Popup entry       | 140ms, cubic-bezier(0.2, 0, 0, 1) | Opacity and up to 2px translation                    |
+| Popup exit        | 90ms, same curve                  | Finite, noninteractive outro                         |
+| Windows caption   | 150ms, ease-out                   | Independent background opacity and glyph color       |
+| Results / windows | Immediate / native lifecycle      | No list reordering or app-authored window transition |
 
-| Interaction                  | Current timing                    | Behavior                                                   |
-| ---------------------------- | --------------------------------- | ---------------------------------------------------------- |
-| Windows caption buttons      | Immediate                         | Adjacent highlights switch without overlapping fades      |
-| General control feedback     | 100ms, cubic-bezier(0.2, 0, 0, 1) | Short color feedback                                       |
-| Switch position and color    | 180ms, ease-out                   | Fast start, gentle stop; reverse from the current position |
-| Popup entry                  | 140ms, cubic-bezier(0.2, 0, 0, 1) | Opacity and up to 2px translation                          |
-| Popup exit                   | 90ms, cubic-bezier(0.2, 0, 0, 1)  | Finite, noninteractive outro                               |
-| Search results and selection | Immediate                         | No stagger or animated reordering                          |
-| Window show/hide             | No app-authored transition        | Native lifecycle; no animation acknowledgement             |
-
-Preserve the existing N hover bounce. Do not add bounce to frequent controls.
-Animate popup content without replacing its positioning wrapper transform.
-CSS and Svelte must not own the same animated property. Execution never waits
-for an animation; rapid input settles to the latest authoritative state.
-
-Follow prefers-reduced-motion live in every WebView. Nonessential motion becomes
-an immediate final state; loading retains static text and accessible status.
-Hidden windows do not poll or animate. Shared document activity controls visual
-work only; Tauri owns native window hiding. Do not add a scheduler or per-control
-preference listeners.
+Preserve the N hover bounce; do not add bounce to frequent controls. Animate popup
+content without replacing its positioning wrapper transform. CSS and Svelte must not
+own the same animated property. Execution never waits for motion; interrupted input
+settles to the latest state. Follow live `prefers-reduced-motion`: nonessential motion
+settles immediately and loading retains static text/status. Hidden windows do not
+poll or animate. DOM activity controls visuals only; Tauri owns launcher hiding.
 
 ## Menus, focus and windows
 
-Use one shared controlled menu presenter with bounded actions, groups, disabled
-and destructive states, confirmation labels and hints for existing shortcuts.
-Callers supply a semantic target and pointer position. Search results, list rows
-and standalone detail views must all retain an explicit action entry point,
-including when default execution is forbidden. Detail targets have no item ID;
-a split preview belongs to its list route.
+Use one controlled menu presenter for bounded actions, groups, disabled/destructive
+states, confirmation and existing shortcut hints. Callers supply target/position.
+Search rows, list rows and standalone details retain an explicit context-menu action
+entry, including when default execution is forbidden. Detail targets have no item ID;
+split previews belong to their list route.
 
-Bits owns menu navigation, typeahead, placement and dismissal. Escape closes the
-menu before the owning surface handles another Escape. Outside clicks dismiss
-without restoring focus to the dismissed menu. Inactive document state removes
-menu content immediately. Do not add Actions buttons, Shift+F10/Menu-key bindings,
-hidden triggers or a second focus manager. Launcher Tab and F5 retain their existing product behavior.
+Bits owns navigation, typeahead, placement and dismissal. Escape closes the menu before
+the owning surface handles another Escape. Outside click dismisses without restoring
+focus; inactive documents remove content immediately. Restore focus only on active
+surfaces. Launcher menus use `trapFocus=false` and `preventScroll=false`. No extra Actions
+button, hidden trigger, Shift+F10/Menu binding or second focus manager. Keep launcher Tab behavior.
 
-An in-WebView menu creates no native window. Tauri Focused(false) owns launcher
-hide-on-blur; DOM blur must not hide, suppress hiding or refocus the app. Allow
-menu focus restoration only while the surface is active. Launcher menus use
-trapFocus=false and preventScroll=false.
+In-WebView menus create no native window. Tauri `Focused(false)` owns hide-on-blur;
+DOM blur must not hide, suppress hiding or refocus the app. Windows Settings uses custom
+controls/transparent rounded surfaces; macOS uses native titlebar controls/gestures.
+Maximized content removes rounding. See [native presentation](platform-architecture.md#native-presentation-and-reveal).
 
-Windows Settings uses a transparent rounded surface and custom window controls;
-macOS uses native titlebar controls and gestures. Maximized content removes
-rounding. Native mechanisms and file reveal remain in the shell/platform adapters,
-with typed IPC, permissions and concrete errors. See [platform architecture](platform-architecture.md).
+## Windows caption controls
+
+Three 46px grid slots form a 138px group. Visual and pointer regions coincide without
+gaps, hit insets or overlap. The 44px header includes a separate 1px separator grid row;
+content starts below it. Decorative SVGs ignore pointer hits. Hover changes no geometry.
+Caption width follows VS Code; header/separator geometry is Nanika's adaptation.
+
+Animate opacity on a fixed-color, non-interactive `::before` layer isolated behind each
+glyph. Foreground color transitions separately; both use 150ms ease-out and interrupt
+from current values. Neutral hover is black/white at 10%; close hover is
+`rgb(232 17 35 / 90%)` with white foreground. Hidden/reduced-motion states settle
+immediately; focus changes do not alter durations.
+
+### Rendering constraint and regression check
+
+Windows user testing exposed a stale painted background frame at completion of a
+`background-color` transition, despite disjoint geometry and stable hover/computed-color
+traces. Fixed-color layer opacity resolved the reported flicker. This does not prove
+an internal WebView2/Chromium cause or a confirmed Tauri bug. Preserve this animation
+structure; do not substitute hit insets, gaps, pointer debouncing, forced repaints,
+permanent `will-change` or GPU-disable flags.
+
+Move slowly across adjacent buttons and the bottom separator, reversing mid-transition.
+Check rendered pixels as well as hover state, hidden settling and live reduced motion.
+Use accelerated-content capture if needed; GDI can miss these painted backgrounds.
+Windows evidence does not establish other platforms' native behavior.
 
 ## Action and input contracts
 
-Rust authorizes execution. Search candidates, manifest commands, list items and
-detail views share Action metadata. Visual style never grants permission.
+Rust authorizes shared Action metadata. Visual state and invocation intent never grant
+extension permissions. Auxiliary actions do not count as app launches.
 
-| Declaration                                    | Default activation | Explicit activation          |
-| ---------------------------------------------- | ------------------ | ---------------------------- |
-| disabled                                       | Rejected           | Rejected                     |
-| allow_default_execution=true, no confirmation  | Allowed            | Allowed                      |
-| allow_default_execution=false, no confirmation | Rejected           | Allowed                      |
-| confirmation_title set                         | Rejected           | Requires a second activation |
+| Declaration                                    | Default activation | Explicit activation        |
+| ---------------------------------------------- | ------------------ | -------------------------- |
+| disabled                                       | Rejected           | Rejected                   |
+| allow_default_execution=true, no confirmation  | Allowed            | Allowed                    |
+| allow_default_execution=false, no confirmation | Rejected           | Allowed                    |
+| confirmation_title set                         | Rejected           | Requires second activation |
 
-Default permission and confirmation cannot be combined. Restricted candidates
-remain searchable and explicitly invokable when allowed. Invocation intent never
-grants an extension capability. Auxiliary actions do not count as app launches.
+Default permission and confirmation cannot combine. Restricted candidates remain
+searchable and explicitly actionable when allowed. Menus/confirmation expire with
+the reviewed target; queued input must not retarget or predict revisions. Selection
+is nonblocking; blocking feedback waits for RPC completion and correlated state.
+See [execution authority](platform-architecture.md#ipc-and-execution-authority).
 
-Menus and confirmation bind to the reviewed target and expire when it changes.
-Queued input must not retarget actions or guess revisions. Selection remains
-nonblocking; blocking view-action feedback waits for RPC completion and correlated
-state delivery. See [execution contracts](platform-architecture.md#ipc-and-execution-authority).
+## Validation and artwork
 
-## Validation
-
-Validate actual Tauri input, IME, focus, menus, rapid state changes, light/dark,
+Validate actual Tauri input/IME, focus, menus, rapid state changes, light/dark,
 accessibility, DPI, reduced motion and hidden activity on both platforms. Browser
-fixtures do not establish native correctness; remaining gaps live in [tasks](tasks.md).
+fixtures alone do not prove native correctness. Compare latency, frame pacing,
+startup, memory and hidden idle under equivalent workloads; build size alone is not
+runtime evidence. Outstanding acceptance belongs in [TODO](tasks.md).
 
-Measure replacement cost after removing superseded code: production JS/CSS,
-startup, interaction latency, frame pacing, memory and hidden idle under comparable
-workloads. Source size and selective imports alone do not establish performance.
-Temporary previews and measurements belong under target.
+| Location                          | Ownership                                     |
+| --------------------------------- | --------------------------------------------- |
+| [assets/icons](assets/icons/)     | Original editable artwork                     |
+| apps/extensions/built-in/*/assets | Packaged extension images                     |
+| apps/desktop/shell/icons          | App icon sources and packaging variants       |
+| target                            | Temporary previews, captures and measurements |
+
+Keep originals separate from runtime exports; move exports with their consumers.

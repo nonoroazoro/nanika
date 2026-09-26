@@ -1,73 +1,88 @@
+use crate::ApplicationEntryData;
+use crate::{ApplicationArguments, ApplicationDatabase, ApplicationEntry};
 use std::io::{Seek, Write};
 use std::path::PathBuf;
 
-use crate::{ApplicationArguments, ApplicationDatabase, ApplicationEntry, ScanReport};
-
 #[test]
-fn baseline_schema_is_the_only_initial_version() {
+fn schema_contains_only_persistent_application_metadata() {
     let root = test_root("schema");
     let path = root.join("application.db");
-    drop(ApplicationDatabase::open(&path).expect("database should open"));
-
-    let connection = rusqlite::Connection::open(path).expect("database should reopen");
-    let version: u32 = connection
-        .query_row("PRAGMA user_version", [], |row| row.get(0))
-        .expect("schema version should load");
-    assert_eq!(version, 1);
+    drop(ApplicationDatabase::open(&path).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
     assert_eq!(
-        table_columns(&connection, "scan_state"),
-        [
-            "id",
-            "generation",
-            "status",
-            "started_at",
-            "completed_at",
-            "last_error",
-        ]
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        1
     );
+    let tables = connection
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(tables, ["app_sources"]);
     assert_eq!(
-        table_columns(&connection, "app_entries"),
+        table_columns(&connection, "app_sources"),
         [
+            "root_key",
             "entry_id",
             "source_key",
             "display_name",
-            "normalized_name",
             "normalized_tokens",
             "launch_kind",
             "target_path",
-            "working_directory",
             "arguments_json",
-            "bundle_id",
             "icon_key",
+            "icon_source",
+            "icon_index",
+            "priority"
         ]
     );
-    for table in ["scan_state", "app_entries"] {
-        assert!(
-            table_is_strict(&connection, table),
-            "{table} must be strict"
-        );
-    }
+    assert!(table_is_strict(&connection, "app_sources"));
     drop(connection);
-    std::fs::remove_dir_all(root).expect("test root should be removable");
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
-fn database_initializes_and_recovers_an_interrupted_scan() {
-    let root = test_root("baseline");
+fn root_commits_preserve_unrelated_records_and_survive_reopen() {
+    let root = test_root("root-commits");
     let path = root.join("application.db");
-    let database = ApplicationDatabase::open(&path).expect("database should open");
-    database.begin_scan(7).expect("scan should begin");
-    drop(database);
-
-    let database = ApplicationDatabase::open(&path).expect("database should reopen");
-    assert_eq!(database.scan_status().expect("scan status"), "interrupted");
-    database.begin_scan(8).expect("scan should begin");
+    let mut database = ApplicationDatabase::open(&path).unwrap();
     database
-        .fail_scan(8, "known folders unavailable")
-        .expect("scan failure should persist");
-    assert_eq!(database.scan_status().expect("scan status"), "failed");
+        .commit_root("root", &[entry("first"), entry("unrelated")], &[])
+        .unwrap();
+    database
+        .commit_root("root", &[entry("replacement")], &["first".to_owned()])
+        .unwrap();
     drop(database);
-    std::fs::remove_dir_all(root).expect("test root should be removable");
+    let database = ApplicationDatabase::open(&path).unwrap();
+    let entries = database.load_entries().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|entry| entry.entry_id == "unrelated"));
+    assert!(entries.iter().any(|entry| entry.entry_id == "replacement"));
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn failed_root_upsert_rolls_back_its_deletions() {
+    let root = test_root("root-rollback");
+    let mut database = ApplicationDatabase::open(root.join("application.db")).unwrap();
+    database
+        .commit_root("root", &[entry("retained")], &[])
+        .unwrap();
+    let mut invalid = entry("invalid");
+    invalid.display_name.clear();
+    assert!(
+        database
+            .commit_root("root", &[invalid], &["retained".to_owned()])
+            .is_err()
+    );
+    assert_eq!(database.load_entries().unwrap()[0].entry_id, "retained");
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -85,9 +100,8 @@ fn corrupt_application_table_fails_explicitly() {
     let root = test_root("corrupt-table");
     let path = root.join("application.db");
     let mut database = ApplicationDatabase::open(&path).expect("database should open");
-    database.begin_scan(1).expect("scan should begin");
     database
-        .commit_scan(report(1, true), &[entry("app.corrupt")], &[], None)
+        .commit_root("root", &[entry("app.corrupt")], &[])
         .expect("application row should persist");
     drop(database);
     let connection = rusqlite::Connection::open(&path).expect("database should reopen");
@@ -99,7 +113,7 @@ fn corrupt_application_table_fails_explicitly() {
         .expect("page size should load") as u64;
     let root_page = connection
         .query_row(
-            "SELECT rootpage FROM sqlite_schema WHERE name = 'app_entries'",
+            "SELECT rootpage FROM sqlite_schema WHERE name = 'app_sources'",
             [],
             |row| row.get::<_, i64>(0),
         )
@@ -123,118 +137,23 @@ fn corrupt_application_table_fails_explicitly() {
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
-#[test]
-fn complete_scans_replace_the_previous_snapshot() {
-    let root = test_root("snapshot");
-    let path = root.join("application.db");
-    let mut database = ApplicationDatabase::open(path).expect("database should open");
-    let entry = entry("app.one");
-    database.begin_scan(1).expect("scan should begin");
-    database
-        .commit_scan(report(1, true), &[entry], &[], None)
-        .expect("first scan should commit");
-    assert_eq!(database.load_entries().expect("entries").len(), 1);
-
-    database.begin_scan(2).expect("scan should begin");
-    database
-        .commit_scan(report(2, true), &[], &[], None)
-        .expect("second scan should commit");
-    assert!(database.load_entries().expect("entries").is_empty());
-
-    database.begin_scan(3).expect("scan should begin");
-    database
-        .commit_scan(report(3, true), &[], &[], None)
-        .expect("third scan should commit");
-    assert!(database.load_entries().expect("entries").is_empty());
-    drop(database);
-    std::fs::remove_dir_all(root).expect("test root should be removable");
-}
-
-#[test]
-fn partial_scans_preserve_entries_not_seen_during_failures() {
-    let root = test_root("partial");
-    let path = root.join("application.db");
-    let mut database = ApplicationDatabase::open(path).expect("database should open");
-    database.begin_scan(1).expect("scan should begin");
-    database
-        .commit_scan(report(1, true), &[entry("app.one")], &[], None)
-        .expect("first scan should commit");
-    database.begin_scan(2).expect("scan should begin");
-    database
-        .commit_scan(report(2, false), &[], &[], Some("permission denied"))
-        .expect("partial scan should commit");
-    assert_eq!(database.load_entries().expect("entries").len(), 1);
-    drop(database);
-    std::fs::remove_dir_all(root).expect("test root should be removable");
-}
-
-#[test]
-fn partial_scan_replaces_changed_identity_only_for_observed_sources() {
-    let root = test_root("changed-source");
-    let mut database = ApplicationDatabase::open(root.join("application.db")).unwrap();
-    let old = entry("app.old-target");
-    let mut unavailable = entry("app.unavailable");
-    unavailable.source_key = "unavailable-source".to_owned();
-    database.begin_scan(1).unwrap();
-    database
-        .commit_scan(report(1, true), &[old, unavailable.clone()], &[], None)
-        .unwrap();
-    let current = entry("app.current-target");
-    database.begin_scan(2).unwrap();
-    database
-        .commit_scan(
-            report(2, false),
-            std::slice::from_ref(&current),
-            &["app.old-target".to_owned()],
-            Some("unavailable source"),
-        )
-        .unwrap();
-    let entries = database.load_entries().unwrap();
-    assert_eq!(entries.len(), 2);
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.entry_id == current.entry_id)
-    );
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.entry_id == unavailable.entry_id)
-    );
-    drop(database);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-fn report(generation: u64, complete: bool) -> ScanReport {
-    ScanReport {
-        generation,
-        discovered: 0,
-        warnings: usize::from(!complete),
-        complete,
-        cancelled: false,
-    }
-}
-
 fn entry(entry_id: &str) -> ApplicationEntry {
-    ApplicationEntry {
+    ApplicationEntry::new(ApplicationEntryData {
         entry_id: entry_id.to_owned(),
         source_key: "source".to_owned(),
         display_name: "Example".to_owned(),
         normalized_name: "example".to_owned(),
         normalized_tokens: "example".to_owned(),
-        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: "example.exe".to_owned(),
-        working_directory: None,
         arguments_json: ApplicationArguments::empty()
             .to_json()
             .expect("arguments should encode"),
-        bundle_id: None,
         icon_key: "fallback".to_owned(),
         icon_source: None,
         icon_index: 0,
         priority: 0,
-    }
+    })
 }
 
 fn test_root(name: &str) -> PathBuf {

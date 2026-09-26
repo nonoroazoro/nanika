@@ -9,12 +9,15 @@ type SearchUpdate = {
     results?: RootSearchSnapshot["results"];
 } & Omit<RootSearchSnapshot, "navigation" | "results">;
 
+let _rangeSequence = 0;
+
 export const tauriBridge: NanikaBridge = {
     readContextMenu: async request => invoke("read_context_menu", { request }),
     invokeContextMenu: async (request, actionId, confirmed) =>
         invoke("invoke_context_menu", { request, actionId, confirmed }),
     openSession: async (listener, onError) =>
     {
+        _rangeSequence = 0;
         let previous: RootSearchSnapshot | null = null;
         const updates = new Channel<SearchUpdate>(update =>
         {
@@ -49,8 +52,8 @@ export const tauriBridge: NanikaBridge = {
         return invoke("open_session", { updates });
     },
     closeSession: async sessionId => invoke("close_session", { sessionId }),
+    readResults: async request => invoke("read_results", { request: { ...request, rangeId: ++_rangeSequence } }),
     publishQuery: async request => invoke("publish_query", { request }),
-    refreshSearch: async sessionId => invoke("refresh_search", { sessionId }),
     invokeCandidate: async request => invoke("invoke_candidate", { request }),
     viewEvent: async request => invoke("view_event", { request }),
     dismissLauncher: async () => invoke("dismiss_launcher"),

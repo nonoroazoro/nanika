@@ -9,6 +9,7 @@ use crate::{
 };
 
 pub(crate) struct DesktopState {
+    _launcher_refresh: Mutex<Option<crate::launcher_refresh::LauncherRefresh>>,
     next_session_id: AtomicU64,
     next_settings_request: AtomicU64,
     settings_operation_lock: Mutex<()>,
@@ -122,11 +123,20 @@ impl DesktopState {
                 extension_id,
                 entry_id,
                 revision,
-            } => self
-                .run_invocation(
+            } => {
+                let result_revision = self
+                    .shared
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .session
+                    .as_ref()
+                    .ok_or("The window session is not open.")?
+                    .result_revision;
+                self.run_invocation(
                     &InvokeCandidateRequest {
                         session_id: request.session_id,
                         request_id: *request_id,
+                        result_revision,
                         extension_id: extension_id.clone(),
                         entry_id: entry_id.clone(),
                         action_id,
@@ -134,7 +144,8 @@ impl DesktopState {
                     Some(*revision),
                     invocation,
                 )
-                .map(|()| None),
+                .map(|()| None)
+            }
             crate::MenuTarget::View {
                 route_id,
                 revision,
@@ -164,6 +175,32 @@ impl DesktopState {
         diagnostics: nanika_host::Diagnostics,
     ) -> Result<Self, String> {
         let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
+        let refresh_state = Arc::clone(&shared);
+        let launcher_refresh = crate::launcher_refresh::LauncherRefresh::spawn(move || {
+            let (runtime, generation) = {
+                let state = refresh_state
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                let Some(runtime) = &state.runtime else {
+                    // Extension initialization scans the latest configured paths.
+                    return;
+                };
+                (
+                    Arc::clone(runtime),
+                    state
+                        .session
+                        .as_ref()
+                        .map_or(1, |session| session.generation.max(1)),
+                )
+            };
+            // Neither the native event loop nor the Channel writer waits for discovery.
+            // CandidatesChanged schedules each contributor's current query through
+            // the existing instance-bound delivery path, including during navigation.
+            if let Err(error) = runtime.refresh_root_search(generation) {
+                tracing::warn!(%error, "launcher catalog refresh failed");
+            }
+        })
+        .map_err(|error| error.to_string())?;
         let (wakes, receiver) = mpsc::sync_channel(1);
         let worker_state = Arc::clone(&shared);
         let settings_applications = Arc::new(Mutex::new(crate::SettingsApplications::default()));
@@ -188,6 +225,7 @@ impl DesktopState {
             })
             .map_err(|error| error.to_string())?;
         Ok(Self {
+            _launcher_refresh: Mutex::new(Some(launcher_refresh)),
             next_session_id: AtomicU64::new(1),
             next_settings_request: AtomicU64::new(1),
             settings_operation_lock: Mutex::new(()),
@@ -205,6 +243,20 @@ impl DesktopState {
             diagnostics: Mutex::new(Some(diagnostics)),
             hotkey_timing: Mutex::new(nanika_platform::HotkeyTimingObserver::install()),
         })
+    }
+
+    pub(crate) fn launcher_opened(&self) {
+        if self.stopping.load(Ordering::Acquire) {
+            return;
+        }
+        if let Some(refresh) = self
+            ._launcher_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+        {
+            refresh.wake();
+        }
     }
 
     pub(crate) fn open_session(
@@ -261,6 +313,8 @@ impl DesktopState {
         session.request_id = request.request_id;
         session.query = request.query;
         session.delivered = None;
+        session.result_range.0 = 0;
+        session.delivered_range = None;
         session.phase = None;
         session.generation = if let Some(runtime) = runtime {
             runtime.begin_query(session.query.clone())?
@@ -272,51 +326,19 @@ impl DesktopState {
         Ok(())
     }
 
-    pub(crate) fn refresh_search(&self, session_id: u64) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
-        let (runtime, generation) = {
-            let mut state = self
-                .shared
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
-            let session = state
-                .session
-                .as_mut()
-                .ok_or("The window session is not open.")?;
-            session.begin_refresh(session_id)?;
-            (runtime, session.generation)
-        };
+    pub(crate) fn read_results(&self, request: crate::ReadResultsRequest) -> Result<(), String> {
+        let mut state = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let session = state
+            .session
+            .as_mut()
+            .ok_or("The window session is not open.")?;
+        session.request_range(request)?;
+        drop(state);
         self.wake();
-        let result = runtime.refresh_root_search(generation);
-        // Scanning can outlast input or the window; republish only the originating session's latest query.
-        let publication = (|| {
-            let mut state = self
-                .shared
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            let Some(session) = state
-                .session
-                .as_mut()
-                .filter(|session| session.id == session_id)
-            else {
-                return Ok(());
-            };
-            session.generation = runtime.begin_query(session.query.clone())?;
-            session.delivered = None;
-            session.phase = None;
-            Ok::<(), String>(())
-        })();
-        let result = match (result, publication) {
-            (Err(refresh), Err(publish)) => Err(format!("{refresh}\n{publish}")),
-            (Err(error), _) | (_, Err(error)) => Err(error),
-            _ => Ok(()),
-        };
-        if let Err(error) = &result {
-            tracing::warn!(%error, "root search refresh failed");
-        }
-        let _ = self.finish_navigation(session_id, result.clone());
-        result
+        Ok(())
     }
 
     pub(crate) fn acknowledge_search(&self, session_id: u64, revision: u64) -> Result<(), String> {
@@ -381,9 +403,9 @@ impl DesktopState {
                 .as_mut()
                 .ok_or("The window session is not open.")?;
             session.authorize(request.session_id)?;
+            session.authorize_result(request.request_id, request.result_revision)?;
             // Recheck a menu's revision under the same lock that starts the action.
-            if session.request_id != request.request_id
-                || menu_revision.is_some_and(|revision| revision != session.revision)
+            if menu_revision.is_some_and(|revision| revision != session.revision)
                 || !session.navigation.stack.is_empty()
             {
                 return Err("Search changed. Select a current result.".to_owned());
@@ -938,6 +960,12 @@ impl DesktopState {
         if let Some(runtime) = &runtime {
             runtime.request_shutdown();
         }
+        let refresh = self
+            ._launcher_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        drop(refresh);
         let _operations = self
             .operations
             .write()

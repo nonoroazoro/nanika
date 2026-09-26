@@ -1,4 +1,4 @@
-use crate::{Candidate, normalize_history_key};
+use crate::normalize_history_key;
 
 /// Stable identity for one action in one punctuation-preserving query context.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -15,15 +15,6 @@ impl UsageKey {
             extension_id: extension_id.to_owned(),
             entry_id: entry_id.to_owned(),
             action_id: action_id.to_owned(),
-            query_context: normalize_history_key(query_context),
-        }
-    }
-
-    pub(crate) fn for_candidate(candidate: &Candidate, query_context: &str) -> Self {
-        Self {
-            extension_id: candidate.extension_id().to_owned(),
-            entry_id: candidate.entry_id().to_owned(),
-            action_id: candidate.action_id().to_owned(),
             query_context: normalize_history_key(query_context),
         }
     }

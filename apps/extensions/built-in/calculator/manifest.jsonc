@@ -13,5 +13,5 @@
   },
   "runtime": { "protocol": "nanika", "protocolVersion": 1 },
   "permissions": ["clipboard.write"],
-  "contributes": { "rootSearch": {} }
+  "contributes": { "rootSearch": {"mode": "query"} }
 }

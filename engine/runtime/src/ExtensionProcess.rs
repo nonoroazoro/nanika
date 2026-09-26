@@ -12,8 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use nanika_protocol::{
-    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_extension_frame,
-    write_host_frame,
+    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_frame, write_frame,
 };
 
 use crate::{
@@ -29,7 +28,9 @@ pub struct ExtensionProcess {
     candidate_changes: ExtensionNotifier,
     view_invalidations: ViewInvalidationNotifier,
     configuration_reply: Arc<crate::ConfigurationReply>,
+    refresh_reply: Arc<crate::RefreshReply>,
     initialized: bool,
+    query_generation: Option<u64>,
     clean_exit: bool,
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
@@ -102,6 +103,8 @@ impl ExtensionProcess {
         let changes = Arc::clone(&candidate_changes);
         let invalidations = Arc::clone(&view_invalidations);
         let configuration_reply = Arc::new(crate::ConfigurationReply::default());
+        let refresh_reply = Arc::new(crate::RefreshReply::default());
+        let reader_refresh = Arc::clone(&refresh_reply);
         let reader_configuration = Arc::clone(&configuration_reply);
         let connection_exit = Arc::new(crate::ExtensionConnectionExit::default());
         let reader_exit = Arc::clone(&connection_exit);
@@ -110,8 +113,8 @@ impl ExtensionProcess {
             .spawn(move || {
                 let mut reader = BufReader::new(output);
                 loop {
-                    let frame = read_extension_frame(&mut reader);
-                    if reader_configuration.dispatch(&frame) {
+                    let frame = read_frame(&mut reader);
+                    if reader_configuration.dispatch(&frame) || reader_refresh.dispatch(&frame) {
                         continue;
                     }
                     if matches!(frame, Ok(Some(Message::CandidatesChanged))) {
@@ -145,6 +148,7 @@ impl ExtensionProcess {
                     }
                 }
                 reader_configuration.fail(SupervisorError::ChannelClosed);
+                reader_refresh.fail(SupervisorError::ChannelClosed);
             }) {
             Ok(thread) => thread,
             Err(error) => {
@@ -175,7 +179,9 @@ impl ExtensionProcess {
             candidate_changes,
             view_invalidations,
             configuration_reply,
+            refresh_reply,
             initialized: false,
+            query_generation: None,
             clean_exit: false,
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
@@ -235,7 +241,7 @@ impl ExtensionProcess {
     fn send(&mut self, message: &Message) -> Result<(), SupervisorError> {
         self.check_shutdown()?;
         let input = self.input.as_mut().ok_or(SupervisorError::ChannelClosed)?;
-        write_host_frame(input, message).map_err(SupervisorError::Protocol)
+        write_frame(input, message).map_err(SupervisorError::Protocol)
     }
 
     pub(crate) fn prepare_entries(
@@ -333,8 +339,9 @@ impl ExtensionProcess {
             request_id,
             generation,
             query,
-            |entries| {
-                latest = entries;
+            false,
+            |update| {
+                latest = update.entries;
                 Ok(())
             },
             || false,
@@ -358,8 +365,17 @@ impl ExtensionProcess {
         request_id: impl Into<String>,
         generation: u64,
     ) -> Result<(), SupervisorError> {
-        self.refresh_cancellable(request_id, generation, || false)
-            .map(|_| ())
+        let (completion, response) = mpsc::sync_channel(1);
+        self.start_refresh(
+            request_id.into(),
+            generation,
+            Box::new(move |result| {
+                let _ = completion.send(result);
+            }),
+        );
+        response
+            .recv()
+            .map_err(|_| SupervisorError::ChannelClosed)?
     }
 
     pub fn apply_configuration(
@@ -401,53 +417,27 @@ impl ExtensionProcess {
         }
     }
 
-    pub(crate) fn refresh_cancellable(
+    pub(crate) fn start_refresh(
         &mut self,
-        request_id: impl Into<String>,
+        request_id: String,
         generation: u64,
-        mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<bool, SupervisorError> {
-        self.ensure_initialized()?;
-        let request_id = request_id.into();
-        self.send(&Message::Refresh {
-            request_id: request_id.clone(),
+        completion: crate::RefreshCompletion,
+    ) {
+        if let Err(error) = self.ensure_initialized() {
+            completion(Err(error));
+            return;
+        }
+        if !self
+            .refresh_reply
+            .register(request_id.clone(), generation, completion)
+        {
+            return;
+        }
+        if let Err(error) = self.send(&Message::Refresh {
+            request_id,
             generation,
-        })?;
-        loop {
-            if should_cancel() {
-                self.send(&Message::Cancel {
-                    request_id: request_id.clone(),
-                    generation,
-                })?;
-                return Ok(false);
-            }
-            let message = match self.poll_receive(Duration::from_millis(25))? {
-                Some(message) => message,
-                None => continue,
-            };
-            match message {
-                Some(Message::Refreshed {
-                    request_id: response_id,
-                    generation: response_generation,
-                }) if response_id == request_id && response_generation == generation => {
-                    return Ok(true);
-                }
-                Some(Message::Error {
-                    request_id: response_id,
-                    code,
-                    message,
-                }) => {
-                    return Err(extension_reported_error(
-                        "refresh",
-                        &request_id,
-                        response_id.as_deref(),
-                        &code,
-                        &message,
-                    ));
-                }
-                Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
-            }
+        }) {
+            self.refresh_reply.fail(error);
         }
     }
 
@@ -555,17 +545,50 @@ impl ExtensionProcess {
         }
     }
 
+    pub(crate) fn read_catalog(
+        &mut self,
+        request_id: String,
+    ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
+        self.ensure_initialized()?;
+        self.send(&Message::CatalogRead {
+            request_id: request_id.clone(),
+        })?;
+        match self.receive()? {
+            Some(Message::CatalogBatch {
+                request_id: response,
+                batch,
+            }) if response == request_id => Ok(batch),
+            Some(Message::Error { code, message, .. }) => Err(SupervisorError::UnexpectedMessage(
+                format!("{code}: {message}"),
+            )),
+            None => Err(SupervisorError::ChannelClosed),
+            _ => Err(SupervisorError::UnexpectedMessage(
+                "expected correlated catalog batch".into(),
+            )),
+        }
+    }
+
+    pub(crate) fn acknowledge_catalog(&mut self, transaction: u64) -> Result<(), SupervisorError> {
+        self.send(&Message::CatalogApplied { transaction })
+    }
+
     pub(crate) fn query_incremental(
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
         query: impl Into<String>,
-        mut publish: impl FnMut(Vec<nanika_protocol::Candidate>) -> Result<(), SupervisorError>,
+        incremental: bool,
+        mut publish: impl FnMut(nanika_protocol::CandidateUpdate) -> Result<(), SupervisorError>,
         mut should_cancel: impl FnMut() -> bool,
     ) -> Result<bool, SupervisorError> {
         self.ensure_initialized()?;
+        // A request consumes its baseline until every accepted response has been published.
+        // Cancellation, transport, validation and publication failures all require a new baseline.
+        let incremental = incremental && self.query_generation.take() == Some(generation);
+        self.query_generation = None;
         let request_id = request_id.into();
         self.send(&Message::Query {
+            incremental,
             request_id: request_id.clone(),
             generation,
             query: query.into(),
@@ -588,6 +611,8 @@ impl ExtensionProcess {
                     request_id: response_id,
                     generation: response_generation,
                     complete,
+                    replace,
+                    removed,
                     entries,
                 }) if response_id == request_id && response_generation == generation => {
                     for entry in &entries {
@@ -604,9 +629,21 @@ impl ExtensionProcess {
                         }
                     }
                     if !cancellation_sent {
-                        publish(entries)?;
+                        if !incremental && !replace {
+                            return Err(SupervisorError::UnexpectedMessage(
+                                "query requires a replacement snapshot".to_owned(),
+                            ));
+                        }
+                        publish(nanika_protocol::CandidateUpdate {
+                            replace,
+                            removed,
+                            entries,
+                        })?;
                     }
                     if complete {
+                        if !cancellation_sent {
+                            self.query_generation = Some(generation);
+                        }
                         return Ok(!cancellation_sent);
                     }
                 }

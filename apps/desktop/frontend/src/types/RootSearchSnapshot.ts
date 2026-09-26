@@ -8,6 +8,9 @@ export interface RootSearchSnapshot
     revision: number;
     query: string;
     results: SearchResult[];
+    resultRevision: number;
+    resultOffset: number;
+    totalResults: number;
     phase: SearchPhase;
     error: string | null;
     warnings: string[];

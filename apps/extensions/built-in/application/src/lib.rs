@@ -12,7 +12,8 @@ mod application_entry;
 mod application_error;
 #[path = "ApplicationIndex.rs"]
 mod application_index;
-mod candidate_selection;
+#[path = "ApplicationSources.rs"]
+mod application_sources;
 #[path = "DiscoveryCommand.rs"]
 mod discovery_command;
 #[path = "DiscoveryServices.rs"]
@@ -21,6 +22,9 @@ mod discovery_services;
 mod discovery_state;
 #[path = "DiscoveryWorker.rs"]
 mod discovery_worker;
+#[path = "EntryPriority.rs"]
+mod entry_priority;
+pub(crate) use entry_priority::EntryPriority;
 #[path = "IconCache.rs"]
 mod icon_cache;
 mod normalization;
@@ -40,7 +44,6 @@ pub use application_database::*;
 pub use application_entry::*;
 pub use application_error::*;
 pub use application_index::*;
-pub use candidate_selection::*;
 pub(crate) use discovery_command::*;
 pub(crate) use discovery_services::*;
 pub(crate) use discovery_state::*;
@@ -64,14 +67,18 @@ mod application_config_tests;
 #[path = "../tests/ApplicationDatabase.rs"]
 mod application_database_tests;
 #[cfg(test)]
+#[path = "../tests/ApplicationEntry.rs"]
+mod application_entry_tests;
+#[cfg(test)]
 #[path = "../tests/ApplicationError.rs"]
 mod application_error_tests;
-#[cfg(test)]
-#[path = "../tests/candidate_selection.rs"]
-mod candidate_selection_tests;
 #[cfg(test)]
 #[path = "../tests/IconCache.rs"]
 mod icon_cache_tests;
 #[cfg(test)]
 #[path = "../tests/ScanCoverage.rs"]
 mod scan_coverage_tests;
+
+#[path = "ApplicationEntryData.rs"]
+mod entry_data;
+pub use entry_data::ApplicationEntryData;

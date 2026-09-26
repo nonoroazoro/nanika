@@ -3,6 +3,21 @@ use nanika_search::{Candidate, CandidateKind, SearchEngine, UsageKey, UsageMap, 
 use std::hint::black_box;
 
 fn ranking_benchmark(criterion: &mut Criterion) {
+    let mut group = criterion.benchmark_group("catalog");
+    group.sample_size(10);
+    group.warm_up_time(std::time::Duration::from_millis(300));
+    group.measurement_time(std::time::Duration::from_secs(1));
+    for count in [100, 1_000, 5_000, 10_000, 50_000] {
+        let entries = make_candidates(count);
+        let mut engine = SearchEngine::new();
+        let usage = UsageMap::new();
+        for (name, query) in [("empty", ""), ("fuzzy", "app42")] {
+            group.bench_function(format!("{name}/{count}"), |bencher| {
+                bencher.iter(|| black_box(engine.query(black_box(query), &entries, &usage, 0)));
+            });
+        }
+    }
+    group.finish();
     let candidates = make_candidates(1_000);
     let large_candidates = make_candidates(20_000);
     criterion.bench_function("rank_1000_candidates", |bencher| {

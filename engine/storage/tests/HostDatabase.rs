@@ -35,7 +35,6 @@ fn baseline_schema_is_the_only_initial_version() {
             "version",
             "install_path",
             "package_digest",
-            "updated_at",
         ]
     );
     assert_eq!(
@@ -93,14 +92,13 @@ fn external_package_metadata_round_trips_without_affecting_builtins() {
     ));
     cleanup(&database);
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_builtin_extension("com.nanika.command", 1)
+    host.register_builtin_extension("com.nanika.command")
         .expect("built-in should register");
     host.install_external_extension(
         "com.example.extension",
         "1.2.3",
         std::path::Path::new("C:/nanika/extensions/com.example.extension/1.2.3"),
         "digest",
-        2,
     )
     .expect("external extension should install");
 
@@ -133,11 +131,7 @@ fn obsolete_schema_is_rejected_without_rewriting_user_records() {
     let error = HostDatabase::open(&database)
         .err()
         .expect("obsolete schema must fail explicitly");
-    assert!(
-        error
-            .to_string()
-            .contains("unsupported pre-release host database schema")
-    );
+    assert!(error.to_string().contains("unsupported database schema"));
     let saved: String = connection
         .query_row(
             "SELECT state FROM extensions WHERE extension_id = 'com.example.saved'",
@@ -177,4 +171,23 @@ fn cleanup(database: &std::path::Path) {
     let _ = std::fs::remove_file(database);
     let _ = std::fs::remove_file(database.with_extension("db-wal"));
     let _ = std::fs::remove_file(database.with_extension("db-shm"));
+}
+#[test]
+fn repeated_builtin_registration_does_not_write_inventory() {
+    let database = std::env::temp_dir().join(format!(
+        "nanika-storage-idempotent-{}.db",
+        std::process::id()
+    ));
+    cleanup(&database);
+    let host = HostDatabase::open(&database).unwrap();
+    host.register_builtin_extension("com.nanika.command")
+        .unwrap();
+    let observer = rusqlite::Connection::open(&database).unwrap();
+    observer.execute_batch("CREATE TRIGGER reject_rewrite BEFORE UPDATE ON extensions BEGIN SELECT RAISE(ABORT, 'unchanged inventory must not be rewritten'); END;").unwrap();
+    host.register_builtin_extension("com.nanika.command")
+        .unwrap();
+    assert!(host.extension("com.nanika.command").unwrap().is_some());
+    drop(observer);
+    drop(host);
+    cleanup(&database);
 }

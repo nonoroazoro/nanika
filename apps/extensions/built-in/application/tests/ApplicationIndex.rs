@@ -1,164 +1,79 @@
 use super::*;
+use crate::ApplicationEntryData;
 use crate::ScanReport;
 
 fn entry(id: &str) -> ApplicationEntry {
-    ApplicationEntry {
+    ApplicationEntry::new(ApplicationEntryData {
         entry_id: id.to_owned(),
         source_key: id.to_owned(),
         display_name: id.to_owned(),
         normalized_name: id.to_owned(),
         normalized_tokens: id.to_owned(),
-        search_readings: Vec::new(),
         launch_kind: "macos-bundle".to_owned(),
         target_path: format!("/{id}.app"),
-        working_directory: None,
         arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
-        bundle_id: None,
         icon_key: id.to_owned(),
         icon_source: None,
         icon_index: 0,
         priority: 0,
-    }
+    })
 }
 
 #[test]
-fn host_visible_entries_move_to_the_front_in_host_order() {
-    let root = std::env::temp_dir().join(format!(
-        "nanika-application-priority-{}",
-        std::process::id()
-    ));
+fn icon_preparation_only_consumes_requested_entries() {
+    let root =
+        std::env::temp_dir().join(format!("nanika-application-demand-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
     let mut index = ApplicationIndex::new(
         ApplicationDatabase::open(root.join("index.db")).unwrap(),
         IconCache::new(root.join("icons")),
     );
-    index.prepared_entries = Some(vec![entry("a"), entry("b"), entry("c"), entry("d")]);
-    index.pending_icons = vec![0, 1, 2, 3];
-    assert!(
-        index
-            .pending_icons
-            .iter()
-            .any(|&index_id| index.prepared_entries.as_ref().unwrap()[index_id].entry_id == "b")
+    index.prepared_entries = Some(
+        [entry("a"), entry("b"), entry("c")]
+            .into_iter()
+            .map(|entry| (entry.entry_id.clone(), entry))
+            .collect(),
     );
-    assert!(
-        !index
-            .pending_icons
-            .iter()
-            .any(
-                |&index_id| index.prepared_entries.as_ref().unwrap()[index_id].entry_id
-                    == "missing"
-            )
-    );
-    index.prioritize_pending_icons(&["d".to_owned(), "b".to_owned()]);
-    assert_eq!(
-        index
-            .pending_icons
-            .iter()
-            .map(
-                |&index_id| index.prepared_entries.as_ref().unwrap()[index_id]
-                    .entry_id
-                    .as_str()
-            )
-            .collect::<Vec<_>>(),
-        ["d", "b", "a", "c"]
-    );
+    index.pending_icons = ["a", "b", "c"].map(str::to_owned).into_iter().collect();
+    let (_, updated) = index.populate_icon_batch(&AtomicU64::new(0), 1, 10, &["b".into()]);
+    assert!(!index.has_pending_icons_for(&["b".into()]));
+    assert!(index.has_pending_icons_for(&["a".into()]));
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].entry_id, "b");
+    assert_eq!(index.pending_icons, HashSet::from(["a".into(), "c".into()]));
     drop(index);
     std::fs::remove_dir_all(root).unwrap();
 }
 
-#[test]
-fn unchanged_names_reuse_readings_across_scans_and_icon_batches() {
-    let root = std::env::temp_dir().join(format!(
-        "nanika-application-readings-cache-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&root).unwrap();
-    let mut index = ApplicationIndex::new(
-        ApplicationDatabase::open(root.join("index.db")).unwrap(),
-        IconCache::new(root.join("icons")),
-    );
-    let mut application = entry("sync");
-    application.display_name = "同步".to_owned();
-    application.normalized_name = "同步".to_owned();
-    application.normalized_tokens = "同步".to_owned();
-
-    commit(&mut index, 1, &application);
-    let initial = index.load_presentable().unwrap();
-    assert_eq!(initial[0].search_readings[0].full, "tongbu");
-    let allocation = index.prepared_entries.as_ref().unwrap()[0].search_readings[0]
-        .full
-        .as_ptr();
-
-    commit(&mut index, 2, &application);
-    index
-        .cache_scanned_entries(vec![application.clone()])
-        .unwrap();
-    assert_eq!(
-        index.prepared_entries.as_ref().unwrap()[0].search_readings[0]
-            .full
-            .as_ptr(),
-        allocation,
-        "unchanged search inputs must move cached readings, not rebuild them"
-    );
-    index.populate_icon_batch(&AtomicU64::new(0), 2, 1).unwrap();
-    assert_eq!(
-        index.prepared_entries.as_ref().unwrap()[0].search_readings[0]
-            .full
-            .as_ptr(),
-        allocation,
-        "icon-only work must not rebuild search readings"
-    );
-    assert_eq!(
-        index.load_presentable().unwrap()[0].search_readings[0].full,
-        "tongbu"
-    );
-
-    application.display_name = "音乐".to_owned();
-    application.normalized_name = "音乐".to_owned();
-    application.normalized_tokens = "音乐".to_owned();
-    commit(&mut index, 3, &application);
-    index.cache_scanned_entries(vec![application]).unwrap();
-    assert_eq!(
-        index.load_presentable().unwrap()[0].search_readings[0].full,
-        "yinyue"
-    );
-
-    let mut application = entry("sync");
-    application.display_name = "音乐".to_owned();
-    application.normalized_name = "音乐".to_owned();
-    application.normalized_tokens = "音乐\n同步".to_owned();
-    commit(&mut index, 4, &application);
-    index.cache_scanned_entries(vec![application]).unwrap();
-    assert_eq!(
-        index.load_presentable().unwrap()[0]
-            .search_readings
-            .iter()
-            .map(|reading| reading.full.as_str())
-            .collect::<Vec<_>>(),
-        ["yinyue", "tongbu"],
-        "alternate-name changes must invalidate the cached search inputs"
-    );
-    drop(index);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-fn commit(index: &mut ApplicationIndex, generation: u64, application: &ApplicationEntry) {
-    index.database.begin_scan(generation).unwrap();
-    index
-        .database
-        .commit_scan(
-            ScanReport {
-                generation,
-                discovered: 1,
-                warnings: 0,
-                complete: true,
-                cancelled: false,
-            },
-            std::slice::from_ref(application),
-            &[],
-            None,
-        )
-        .unwrap();
+fn scan(
+    index: &mut ApplicationIndex,
+    config: &ApplicationConfig,
+    generation: u64,
+    cancelled: &AtomicU64,
+    progress: impl FnMut(nanika_protocol::OperationProgress),
+    mut publish: impl FnMut(Vec<ApplicationEntry>),
+) -> Result<(ScanReport, Vec<ApplicationEntry>), ApplicationError> {
+    let mut visible = index
+        .load()?
+        .into_iter()
+        .map(|entry| (entry.entry_id.clone(), entry))
+        .collect::<HashMap<_, _>>();
+    let report = index.scan(
+        config,
+        generation,
+        cancelled,
+        progress,
+        |updated, removed| {
+            for id in removed {
+                visible.remove(&id);
+            }
+            for entry in updated {
+                visible.insert(entry.entry_id.clone(), entry);
+            }
+            publish(visible.values().cloned().collect());
+        },
+    )?;
+    Ok((report, index.load()?))
 }
 
 #[cfg(windows)]
@@ -179,6 +94,7 @@ mod windows {
     };
     use windows::core::{Interface, PCWSTR};
 
+    use super::scan;
     use crate::platform;
     use crate::{
         ApplicationConfig, ApplicationDatabase, ApplicationIndex, DiscoveryState, IconCache,
@@ -198,8 +114,7 @@ mod windows {
             exclusions: platform::standard_roots().expect("standard roots"),
             enabled_builtin_roots: Default::default(),
         };
-        let (report, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0), |_| {})
+        let (report, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("scan should complete");
         assert!(report.complete);
         assert_eq!(entries.len(), 1);
@@ -233,8 +148,7 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
         assert!(
-            index
-                .scan(&config, 1, &AtomicU64::new(0), |_| {})
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -243,13 +157,186 @@ mod windows {
         create_executable(&valid.join("Current.exe"));
         std::fs::write(broken.join("AppxManifest.xml"), "invalid manifest").unwrap();
         config.roots.pop();
-        let (report, entries) = index.scan(&config, 2, &AtomicU64::new(0), |_| {}).unwrap();
+        let (report, entries) =
+            scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(!report.complete);
         assert_eq!(report.warnings, 1);
         assert!(entries.iter().any(|entry| entry.display_name == "Current"));
         assert!(entries.iter().any(|entry| entry.display_name == "Retained"));
         assert!(!entries.iter().any(|entry| entry.display_name == "Previous"));
         assert!(!entries.iter().any(|entry| entry.display_name == "Removed"));
+        drop(index);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn completed_root_is_published_and_persisted_before_the_next_root_starts() {
+        use std::sync::atomic::Ordering;
+        let root = test_root("root-commit");
+        let first = root.join("a-first");
+        let second = root.join("b-second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(second.join("nested")).unwrap();
+        create_executable(&first.join("OldFirst.exe"));
+        create_executable(&second.join("nested/OldSecond.exe"));
+        let db_path = root.join("application.db");
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(&db_path).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        let config = ApplicationConfig {
+            roots: vec![first.clone(), second.clone()],
+            exclusions: Vec::new(),
+            enabled_builtin_roots: Default::default(),
+        };
+        scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        std::fs::remove_file(first.join("OldFirst.exe")).unwrap();
+        std::fs::remove_file(second.join("nested/OldSecond.exe")).unwrap();
+        create_executable(&first.join("NewFirst.exe"));
+        create_executable(&second.join("nested/NewSecond.exe"));
+        let cancelled = AtomicU64::new(0);
+        let observer = rusqlite::Connection::open(&db_path).unwrap();
+        let mut publications = 0;
+        let (report, entries) =
+            scan(
+                &mut index,
+                &config,
+                2,
+                &cancelled,
+                |_| {},
+                |entries| {
+                    publications += 1;
+                    assert!(entries.iter().any(|entry| entry.display_name == "NewFirst"));
+                    assert!(
+                        entries
+                            .iter()
+                            .any(|entry| entry.display_name == "OldSecond")
+                    );
+                    assert!(!entries.iter().any(|entry| entry.display_name == "OldFirst"
+                        || entry.display_name == "NewSecond"));
+                    let persisted: i64 = observer
+                        .query_row(
+                            "SELECT count(*) FROM app_sources WHERE display_name = 'NewFirst'",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .unwrap();
+                    assert_eq!(persisted, 1);
+                    cancelled.store(2, Ordering::Release);
+                },
+            )
+            .unwrap();
+        assert!(report.cancelled);
+        assert_eq!(publications, 1);
+        assert_eq!(entries.len(), 2);
+        drop(observer);
+        drop(index);
+        let mut restarted = ApplicationIndex::new(
+            ApplicationDatabase::open(&db_path).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        assert!(
+            restarted
+                .load()
+                .unwrap()
+                .iter()
+                .any(|entry| entry.display_name == "OldSecond")
+        );
+        let (_, entries) = scan(
+            &mut restarted,
+            &config,
+            3,
+            &AtomicU64::new(0),
+            |_| {},
+            |_| {},
+        )
+        .unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.display_name == "NewSecond")
+        );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.display_name.starts_with("Old"))
+        );
+        drop(restarted);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unchanged_roots_do_not_write_or_publish_and_one_deletion_is_a_small_patch() {
+        let root = test_root("root-delta");
+        let first = root.join("a");
+        let second = root.join("b");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        create_executable(&first.join("Remove.exe"));
+        create_executable(&second.join("Keep.exe"));
+        let path = root.join("application.db");
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(&path).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        let config = ApplicationConfig {
+            roots: vec![first.clone(), second],
+            exclusions: Vec::new(),
+            enabled_builtin_roots: Default::default(),
+        };
+        index
+            .scan(&config, 1, &AtomicU64::new(0), |_| {}, |_, _| {})
+            .unwrap();
+        let observer = rusqlite::Connection::open(&path).unwrap();
+        observer.execute_batch("CREATE TABLE audit(kind TEXT); CREATE TRIGGER track_insert AFTER INSERT ON app_sources BEGIN INSERT INTO audit VALUES ('insert'); END; CREATE TRIGGER track_update AFTER UPDATE ON app_sources BEGIN INSERT INTO audit VALUES ('update'); END; CREATE TRIGGER track_delete AFTER DELETE ON app_sources BEGIN INSERT INTO audit VALUES ('delete'); END;").unwrap();
+        let before: i64 = observer
+            .query_row("PRAGMA data_version", [], |row| row.get(0))
+            .unwrap();
+        index
+            .scan(
+                &config,
+                2,
+                &AtomicU64::new(0),
+                |_| {},
+                |_, _| panic!("unchanged roots must not publish"),
+            )
+            .unwrap();
+        let count: i64 = observer
+            .query_row("SELECT count(*) FROM audit", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(
+            observer
+                .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            before,
+            "unchanged scans must not commit any database writes"
+        );
+        std::fs::remove_file(first.join("Remove.exe")).unwrap();
+        let mut patches = 0;
+        index
+            .scan(
+                &config,
+                3,
+                &AtomicU64::new(0),
+                |_| {},
+                |updated, removed| {
+                    patches += 1;
+                    assert!(updated.is_empty());
+                    assert_eq!(removed.len(), 1);
+                },
+            )
+            .unwrap();
+        assert_eq!(patches, 1);
+        let kinds = observer
+            .prepare("SELECT kind FROM audit")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(kinds, ["delete"]);
+        drop(observer);
         drop(index);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -268,13 +355,11 @@ mod windows {
             exclusions: platform::standard_roots().expect("standard roots"),
             enabled_builtin_roots: Default::default(),
         };
-        index
-            .scan(&config, 1, &AtomicU64::new(0), |_| {})
+        scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("first scan should complete");
         std::fs::remove_file(applications.join("First.exe"))
             .expect("test executable should remove");
-        let (report, entries) = index
-            .scan(&config, 2, &AtomicU64::new(2), |_| {})
+        let (report, entries) = scan(&mut index, &config, 2, &AtomicU64::new(2), |_| {}, |_| {})
             .expect("cancelled scan should commit its state");
         assert!(report.cancelled);
         assert_eq!(entries.len(), 1);
@@ -302,13 +387,15 @@ mod windows {
             exclusions: platform::standard_roots().unwrap(),
             enabled_builtin_roots: Default::default(),
         };
-        let (report, initial) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
+        let (report, initial) =
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(initial.len(), 3);
         std::fs::remove_file(shortcut).unwrap();
         std::fs::remove_file(removed.join("Deleted.exe")).unwrap();
         std::fs::remove_dir(&removed).unwrap();
-        let (report, remaining) = index.scan(&config, 2, &AtomicU64::new(0), |_| {}).unwrap();
+        let (report, remaining) =
+            scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(report.warnings, 0);
         assert_eq!(remaining.len(), 1);
@@ -339,8 +426,7 @@ mod windows {
                 .map(|(key, _)| key.clone())
                 .collect(),
         };
-        let (report, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0), |_| {})
+        let (report, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("standard application scan should complete");
         assert!(!report.cancelled);
         assert!(!entries.is_empty());
@@ -359,16 +445,14 @@ mod windows {
         let mut disabled = config.clone();
         disabled.enabled_builtin_roots.clear();
         disabled.roots = vec![PathBuf::from(&retained.target_path)];
-        let (report, remaining) = index
-            .scan(&disabled, 2, &AtomicU64::new(0), |_| {})
-            .unwrap();
+        let (report, remaining) =
+            scan(&mut index, &disabled, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].entry_id, retained.entry_id);
         disabled.roots.clear();
-        let (report, empty) = index
-            .scan(&disabled, 3, &AtomicU64::new(0), |_| {})
-            .unwrap();
+        let (report, empty) =
+            scan(&mut index, &disabled, 3, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert!(empty.is_empty());
         drop(index);
@@ -412,8 +496,7 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
 
-        let (_, entries) = index
-            .scan(&config, 1, &AtomicU64::new(0), |_| {})
+        let (_, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("application scan should complete");
 
         assert_eq!(entries.len(), 1);
@@ -447,7 +530,7 @@ mod windows {
                 .unwrap();
             cache.prepare(&mut entry).unwrap();
             images.push(
-                std::fs::read(root.join("icons").join(entry.icon_key).join("128.png")).unwrap(),
+                std::fs::read(root.join("icons").join(&entry.icon_key).join("128.png")).unwrap(),
             );
         }
         assert_ne!(
@@ -483,7 +566,8 @@ mod windows {
             ApplicationDatabase::open(root.join("application.db")).unwrap(),
             IconCache::new(root.join("icons")),
         );
-        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
+        let (report, entries) =
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].display_name, "Preferred Tool");
@@ -513,8 +597,7 @@ mod windows {
             IconCache::new(root.join("icons")),
         );
         assert!(
-            index
-                .scan(&config, 1, &AtomicU64::new(0), |_| {})
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -564,7 +647,8 @@ mod windows {
             ApplicationDatabase::open(&database_path).unwrap(),
             IconCache::new(root.join("icons")),
         );
-        let (report, entries) = index.scan(&config, 1, &AtomicU64::new(0), |_| {}).unwrap();
+        let (report, entries) =
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
         assert_eq!(report.warnings, 0);
         assert_eq!(entries.len(), 1);
@@ -577,8 +661,7 @@ mod windows {
             .set_modified(old_time + std::time::Duration::from_secs(1))
             .unwrap();
         assert!(
-            index
-                .scan(&config, 2, &AtomicU64::new(0), |_| {})
+            scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {})
                 .unwrap()
                 .0
                 .complete
@@ -633,7 +716,7 @@ mod windows {
         let direct = platform::read_entry(&mut state, &executable, 0)
             .unwrap()
             .unwrap();
-        let mut ids = std::collections::HashSet::from([direct.entry_id]);
+        let mut ids = std::collections::HashSet::from([direct.entry_id.clone()]);
         for (name, arguments) in [
             ("Work", "--profile work"),
             ("Personal", "--profile personal"),
@@ -650,7 +733,7 @@ mod windows {
             let entry = platform::read_entry(&mut state, &shortcut, 0)
                 .unwrap()
                 .unwrap();
-            assert!(ids.insert(entry.entry_id));
+            assert!(ids.insert(entry.entry_id.clone()));
             assert_eq!(
                 entry.arguments_json,
                 crate::ApplicationArguments::from_windows_raw(Some(arguments.to_owned()))
@@ -699,7 +782,7 @@ mod windows {
     }
 
     #[test]
-    fn failed_index_transactions_leave_a_failed_scan_state() {
+    fn failed_index_transactions_do_not_publish_uncommitted_records() {
         let root = test_root("failed-transaction");
         let applications = root.join("applications");
         std::fs::create_dir_all(&applications).expect("application root should exist");
@@ -710,7 +793,7 @@ mod windows {
         let observer = rusqlite::Connection::open(&database_path).expect("observer should open");
         observer
             .execute_batch(
-                "CREATE TRIGGER reject_application_insert BEFORE INSERT ON app_entries BEGIN SELECT RAISE(ABORT, 'rejected by test'); END;",
+                "CREATE TRIGGER reject_application_insert BEFORE INSERT ON app_sources BEGIN SELECT RAISE(ABORT, 'rejected by test'); END;",
             )
             .expect("failure trigger should install");
         let config = ApplicationConfig {
@@ -719,13 +802,15 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
 
-        assert!(index.scan(&config, 1, &AtomicU64::new(0), |_| {}).is_err());
-        let status = observer
-            .query_row("SELECT status FROM scan_state WHERE id = 1", [], |row| {
-                row.get::<_, String>(0)
-            })
-            .expect("scan status should read");
-        assert_eq!(status, "failed");
+        assert!(scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).is_err());
+        assert!(index.load().unwrap().is_empty());
+        assert_eq!(
+            observer
+                .query_row("SELECT count(*) FROM app_sources", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
         drop(observer);
         drop(index);
         std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -819,6 +904,110 @@ mod windows {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn failed_preferred_duplicate_keeps_its_metadata_until_removed() {
+        let root = test_root("failed-preferred-duplicate");
+        let applications = root.join("applications");
+        std::fs::create_dir_all(&applications).unwrap();
+        let target = root.join("Target.exe");
+        create_executable(&target);
+        let preferred = applications.join("A Preferred.lnk");
+        create_shell_link(&preferred, &target);
+        create_shell_link(&applications.join("Z Alternate.lnk"), &target);
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(root.join("application.db")).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        let config = ApplicationConfig {
+            roots: vec![applications],
+            exclusions: Vec::new(),
+            enabled_builtin_roots: Default::default(),
+        };
+        let (_, initial) =
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        assert_eq!(initial.len(), 1);
+        assert_eq!(initial[0].display_name, "A Preferred");
+        std::fs::write(&preferred, "invalid shortcut").unwrap();
+        let (report, retained) =
+            scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        assert!(!report.complete);
+        assert_eq!(report.warnings, 1);
+        std::fs::remove_file(&preferred).unwrap();
+        let (report, promoted) =
+            scan(&mut index, &config, 3, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        assert!(report.complete);
+        drop(index);
+        std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(retained.len(), 1);
+        assert_eq!(
+            retained[0].display_name, "A Preferred",
+            "a failed read must preserve the previous winner"
+        );
+        assert_eq!(promoted.len(), 1);
+        assert_eq!(
+            promoted[0].display_name, "Z Alternate",
+            "deleting the winner must promote its remaining source"
+        );
+    }
+
+    #[test]
+    fn failed_scan_reconciles_icon_work_before_returning() {
+        let root = test_root("failed-scan-icon-work");
+        let first = root.join("a");
+        let second = root.join("b");
+        let third = root.join("c");
+        for path in [&first, &second, &third] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let target = root.join("Shared.exe");
+        create_executable(&target);
+        let first_link = first.join("Shared.lnk");
+        let second_link = second.join("Shared.lnk");
+        create_shell_link(&first_link, &target);
+        create_shell_link(&second_link, &target);
+        let database = root.join("apps.db");
+        let mut index = ApplicationIndex::new(
+            ApplicationDatabase::open(&database).unwrap(),
+            IconCache::new(root.join("icons")),
+        );
+        let config = ApplicationConfig {
+            roots: vec![first, second, third.clone()],
+            exclusions: Vec::new(),
+            enabled_builtin_roots: Default::default(),
+        };
+        let (_, entries) =
+            scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        assert_eq!(entries.len(), 1);
+        std::fs::remove_file(first_link).unwrap();
+        std::fs::remove_file(second_link).unwrap();
+        create_executable(&third.join("New.exe"));
+        let observer = rusqlite::Connection::open(&database).unwrap();
+        observer.execute_batch("CREATE TRIGGER reject_insert BEFORE INSERT ON app_sources WHEN NEW.display_name = 'New' BEGIN SELECT RAISE(ABORT, 'injected'); END").unwrap();
+        let result = scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {});
+        assert!(result.is_err());
+        let pending_after_failure = index.has_pending_icons();
+        let visible_after_failure = index.load().unwrap();
+        observer
+            .execute_batch("DROP TRIGGER reject_insert")
+            .unwrap();
+        let (report, recovered) =
+            scan(&mut index, &config, 3, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
+        drop(observer);
+        drop(index);
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(
+            !pending_after_failure,
+            "scan must return with no icon work for removed identities"
+        );
+        assert!(
+            visible_after_failure.is_empty(),
+            "earlier root deletions must remain committed"
+        );
+        assert!(report.complete);
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].display_name, "New");
+    }
+
     fn create_executable(target: &std::path::Path) {
         let source = std::env::current_exe().expect("test executable path");
         std::fs::hard_link(&source, target)
@@ -906,4 +1095,91 @@ mod windows {
         std::fs::create_dir_all(&root).expect("test root should exist");
         root
     }
+}
+
+#[test]
+fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
+    let root =
+        std::env::temp_dir().join(format!("nanika-application-sources-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("apps.db");
+    let low_root = root.join("a-low");
+    let high_root = root.join("z-high");
+    let low_key = path_key(&low_root);
+    let high_key = path_key(&high_root);
+    let mut low = entry("same-app");
+    low.source_key = format!("{low_key}/app.exe");
+    low.display_name = "Original".to_owned();
+    low.normalized_name = "original".into();
+    let mut high = low.clone();
+    high.source_key = format!("{high_key}/app.exe");
+    high.display_name = "Preferred".to_owned();
+    high.normalized_name = "preferred".into();
+    high.priority = 1;
+    let map = |value: ApplicationEntry| HashMap::from([(value.entry_id.clone(), value)]);
+    let mut index = ApplicationIndex::new(
+        ApplicationDatabase::open(&path).unwrap(),
+        IconCache::new(root.join("icons")),
+    );
+    index.load().unwrap();
+    index
+        ._commit_root(low_key.clone(), map(low.clone()), &mut |_, _| {})
+        .unwrap();
+    index
+        ._commit_root(high_key.clone(), map(high.clone()), &mut |_, _| {})
+        .unwrap();
+    // Reopening must seed the persisted winner before an earlier low-priority root is scanned.
+    drop(index);
+    let mut index = ApplicationIndex::new(
+        ApplicationDatabase::open(&path).unwrap(),
+        IconCache::new(root.join("icons")),
+    );
+    index.load().unwrap();
+    let observer = rusqlite::Connection::open(&path).unwrap();
+    let version = || {
+        observer
+            .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
+            .unwrap()
+    };
+    let before = version();
+    for _ in 0..2 {
+        index
+            ._commit_root(low_key.clone(), map(low.clone()), &mut |_, _| {
+                panic!("losing sources do not publish")
+            })
+            .unwrap();
+        index
+            ._commit_root(high_key.clone(), map(high.clone()), &mut |_, _| {
+                panic!("unchanged winner does not publish")
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        version(),
+        before,
+        "unchanged duplicate sources must not write"
+    );
+    observer.execute_batch("CREATE TRIGGER reject_change BEFORE DELETE ON app_sources BEGIN SELECT RAISE(ABORT, 'injected'); END").unwrap();
+    assert!(
+        index
+            ._commit_root(high_key.clone(), HashMap::new(), &mut |_, _| panic!(
+                "failed commit must not publish"
+            ))
+            .is_err()
+    );
+    assert_eq!(index.load().unwrap()[0].display_name, "Preferred");
+    observer
+        .execute_batch("DROP TRIGGER reject_change")
+        .unwrap();
+    let mut titles = Vec::new();
+    index
+        ._commit_root(high_key, HashMap::new(), &mut |updated, removed| {
+            assert!(removed.is_empty());
+            titles.extend(updated.into_iter().map(|entry| entry.display_name.clone()));
+        })
+        .unwrap();
+    assert_eq!(titles, ["Original"]);
+    drop(observer);
+    drop(index);
+    std::fs::remove_dir_all(root).unwrap();
 }

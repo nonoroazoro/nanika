@@ -2502,6 +2502,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanika-database"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+]
+
+[[package]]
 name = "nanika-desktop"
 version = "0.1.0"
 dependencies = [
@@ -2545,10 +2552,10 @@ name = "nanika-extension-application"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "nanika-database",
  "nanika-platform",
  "nanika-protocol",
  "nanika-search",
- "nanika-text-search",
  "objc2-foundation",
  "plist",
  "png 0.18.1",
@@ -2577,6 +2584,7 @@ version = "0.1.0"
 dependencies = [
  "clipboard-rs",
  "criterion",
+ "nanika-database",
  "nanika-platform",
  "nanika-protocol",
  "rusqlite",
@@ -2712,6 +2720,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "nanika-protocol",
+ "nanika-text-search",
  "nucleo-matcher",
  "tracing",
 ]
@@ -2720,6 +2729,7 @@ dependencies = [
 name = "nanika-storage"
 version = "0.1.0"
 dependencies = [
+ "nanika-database",
  "nanika-foundation",
  "nanika-platform",
  "nanika-search",

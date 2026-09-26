@@ -5,11 +5,8 @@ use std::sync::{Arc, RwLock};
 
 use nanika_extension_application::{
     ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
-    select_candidates,
 };
-use nanika_protocol::{
-    HostServiceResponse, Message, PROTOCOL_NAME, read_host_frame, write_extension_frame,
-};
+use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
 
 #[path = "DiscoveryRuntime.rs"]
 mod discovery_runtime;
@@ -31,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut output = BufWriter::new(stdout().lock());
     let (initialize_request_id, initial_configuration) = {
         let mut input = BufReader::new(stdin().lock());
-        match read_host_frame(&mut input)? {
+        match read_frame(&mut input)? {
             Some(Message::Initialize {
                 request_id,
                 protocol,
@@ -73,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(RwLock::new(initial_config));
     let database_path = paths.database_path();
     let icon_root = paths.icon_root();
-    let entries = Arc::new(RwLock::new(Vec::<ApplicationEntry>::new()));
+    let entries = Arc::new(RwLock::new(HashMap::<String, ApplicationEntry>::new()));
     let (event_sender, events) = mpsc::sync_channel(EVENT_CAPACITY);
     let worker = DiscoveryWorker::spawn(
         database_path,
@@ -83,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_sender.clone(),
     )?;
     let discovery = discovery_runtime::DiscoveryRuntime::new(events, worker);
-    write_extension_frame(
+    write_frame(
         &mut output,
         &Message::Initialized {
             request_id: initialize_request_id,
@@ -91,20 +88,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     let _reader = spawn_protocol_reader(event_sender)?;
-    let mut refresh_requests = HashMap::<String, u64>::new();
+    let mut startup_pending = true;
+    let mut catalog = nanika_protocol::CatalogPublisher::default();
+    let mut refresh_requests = HashMap::<String, (u64, u64)>::new();
     let mut configuration_requests = HashMap::<String, PendingConfiguration>::new();
     let mut pending_invocations = HashMap::<String, PendingInvocation>::new();
     let mut latest_generation = 1_u64;
     while let Ok(event) = discovery.receive() {
         match event {
             RuntimeEvent::Protocol(message) => match message {
-                Message::Query {
-                    request_id,
-                    generation,
-                    query,
-                } => {
-                    latest_generation = latest_generation.max(generation);
-                    write_snapshot(&mut output, &entries, &request_id, generation, &query, true)?;
+                Message::CatalogRead { request_id } => match catalog.read() {
+                    Ok(batch) => {
+                        write_frame(&mut output, &Message::CatalogBatch { request_id, batch })?
+                    }
+                    Err(error) => {
+                        write_error(&mut output, Some(request_id), "catalog_failed", &error)?
+                    }
+                },
+                Message::CatalogApplied { transaction } => {
+                    if catalog
+                        .acknowledge(transaction)
+                        .map_err(std::io::Error::other)?
+                    {
+                        write_frame(&mut output, &Message::CandidatesChanged)?;
+                    }
                 }
                 Message::PrepareEntries {
                     generation,
@@ -115,21 +122,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     generation,
                 } => {
                     latest_generation = latest_generation.max(generation);
+                    if startup_pending {
+                        refresh_requests.insert(request_id, (generation, 1));
+                        continue;
+                    }
+                    latest_generation = latest_generation.saturating_add(1);
                     if let Err(message) = discovery
                         .worker
-                        .refresh(Some(request_id.clone()), generation)
+                        .refresh(Some(request_id.clone()), latest_generation)
                     {
                         write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
                     } else {
-                        refresh_requests.insert(request_id, generation);
+                        refresh_requests.insert(request_id, (generation, latest_generation));
                     }
                 }
                 Message::Cancel {
                     request_id,
                     generation,
                 } => {
-                    if refresh_requests.get(&request_id) == Some(&generation) {
-                        discovery.worker.cancel(generation);
+                    if let Some((expected, scan)) = refresh_requests.get(&request_id)
+                        && *expected == generation
+                    {
+                        discovery.worker.cancel(*scan);
                     }
                 }
                 Message::Invoke {
@@ -142,8 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let descriptor = entries
                         .read()
                         .unwrap_or_else(|error| error.into_inner())
-                        .iter()
-                        .find(|entry| entry.entry_id == entry_id)
+                        .get(&entry_id)
                         .ok_or_else(|| "application entry or action does not exist".to_owned())
                         .and_then(|entry| {
                             entry
@@ -153,7 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match descriptor {
                         Ok(descriptor) => {
                             let service_request_id = format!("host-{request_id}");
-                            write_extension_frame(
+                            write_frame(
                                 &mut output,
                                 &Message::HostRequest {
                                     request_id: service_request_id.clone(),
@@ -228,7 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if parent_request_id == pending.request_id
                             && response_generation == pending.generation
                         {
-                            write_extension_frame(
+                            write_frame(
                                 &mut output,
                                 &Message::Result {
                                     request_id: pending.request_id,
@@ -267,7 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 progress,
             } => {
                 if configuration_requests.contains_key(&request_id) {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::ConfigurationProgress {
                             request_id,
@@ -276,8 +289,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                 }
             }
-            RuntimeEvent::CandidatesChanged => {
-                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
+            RuntimeEvent::CatalogUpdated { entry_ids } => {
+                let current = entries.read().unwrap_or_else(|error| error.into_inner());
+                let updated = entry_ids
+                    .iter()
+                    .filter_map(|id| current.get(id))
+                    .map(|entry| entry.candidate());
+                let removed = entry_ids
+                    .iter()
+                    .filter(|id| !current.contains_key(*id))
+                    .cloned();
+                let changed = catalog.update(updated, removed);
+                drop(current);
+                if changed {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
             }
             RuntimeEvent::ProtocolClosed => break,
             RuntimeEvent::ProtocolError(message) => {
@@ -294,7 +320,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let pending = configuration_requests
                     .remove(&request_id)
                     .expect("guarded configuration request must exist");
-                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if pending.generation != response_generation {
                     *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
                     write_error(
@@ -318,10 +343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             report.warnings
                         );
                     }
-                    write_extension_frame(
-                        &mut output,
-                        &Message::ConfigurationApplied { request_id },
-                    )?;
+                    write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
                 }
             }
             RuntimeEvent::ScanFinished {
@@ -329,8 +351,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response_generation,
                 result: Ok(report),
             } if !report.cancelled => {
-                refresh_requests.remove(&request_id);
-                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
+                let Some((generation, expected_scan)) = refresh_requests.remove(&request_id) else {
+                    continue;
+                };
+                if response_generation != expected_scan {
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "refresh_failed",
+                        "application scan returned the wrong generation",
+                    )?;
+                    continue;
+                }
                 if !report.complete || report.warnings > 0 {
                     eprintln!(
                         "application scan was incomplete with {} path errors",
@@ -339,11 +371,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Refresh acknowledges completion; path failures stay in the scan log
                 // and partial scan state instead of becoming user-facing errors.
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Refreshed {
                         request_id,
-                        generation: response_generation,
+                        generation,
                     },
                 )?;
             }
@@ -352,7 +384,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response_generation: _,
                 result: Err(message),
             } => {
-                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if let Some(request_id) = request_id {
                     if let Some(pending) = configuration_requests.remove(&request_id) {
                         *config.write().unwrap_or_else(|error| error.into_inner()) =
@@ -380,8 +411,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 if let Some(request_id) = request_id {
                     refresh_requests.remove(&request_id);
+                    write_error(
+                        &mut output,
+                        Some(request_id),
+                        "refresh_cancelled",
+                        "application scan was cancelled",
+                    )?;
+                } else {
+                    startup_pending = false;
+                    // Launcher opens during startup share its scan and receive their own acknowledgement.
+                    for (request_id, (generation, _)) in refresh_requests.drain() {
+                        if report.cancelled {
+                            write_error(
+                                &mut output,
+                                Some(request_id),
+                                "refresh_cancelled",
+                                "application scan was cancelled",
+                            )?;
+                        } else {
+                            write_frame(
+                                &mut output,
+                                &Message::Refreshed {
+                                    request_id,
+                                    generation,
+                                },
+                            )?;
+                        }
+                    }
                 }
-                write_extension_frame(&mut output, &Message::CandidatesChanged)?;
                 if !report.cancelled && (!report.complete || report.warnings > 0) {
                     eprintln!(
                         "application scan was incomplete with {} path errors",
@@ -395,27 +452,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn write_snapshot(
-    output: &mut impl std::io::Write,
-    entries: &RwLock<Vec<ApplicationEntry>>,
-    request_id: &str,
-    generation: u64,
-    query: &str,
-    complete: bool,
-) -> Result<(), nanika_protocol::FrameError> {
-    let entries = entries.read().unwrap_or_else(|error| error.into_inner());
-    let candidates = select_candidates(&entries, query);
-    write_extension_frame(
-        output,
-        &Message::Snapshot {
-            request_id: request_id.to_owned(),
-            generation,
-            complete,
-            entries: candidates,
-        },
-    )
-}
-
 fn spawn_protocol_reader(
     events: SyncSender<RuntimeEvent>,
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
@@ -424,7 +460,7 @@ fn spawn_protocol_reader(
         .spawn(move || {
             let mut input = BufReader::new(stdin().lock());
             loop {
-                match read_host_frame(&mut input) {
+                match read_frame(&mut input) {
                     Ok(Some(message)) => {
                         if events.send(RuntimeEvent::Protocol(message)).is_err() {
                             break;
@@ -449,7 +485,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_extension_frame(
+    write_frame(
         output,
         &Message::Error {
             request_id,
@@ -462,6 +498,8 @@ fn write_error(
 fn request_id(message: &Message) -> Option<String> {
     match message {
         Message::Initialize { request_id, .. }
+        | Message::CatalogRead { request_id }
+        | Message::CatalogBatch { request_id, .. }
         | Message::Query { request_id, .. }
         | Message::Snapshot { request_id, .. }
         | Message::Invoke { request_id, .. }
@@ -480,7 +518,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Initialized { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged
+        Message::CatalogApplied { .. }
+        | Message::CandidatesChanged
         | Message::ViewInvalidated { .. }
         | Message::PrepareEntries { .. } => None,
     }

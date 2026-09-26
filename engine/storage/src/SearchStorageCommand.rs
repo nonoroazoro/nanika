@@ -6,7 +6,6 @@ pub(crate) type StorageResponse = SyncSender<Result<(), String>>;
 pub(crate) enum SearchStorageCommand {
     RegisterBuiltInExtension {
         extension_id: String,
-        updated_at: u64,
         response: StorageResponse,
     },
     RecordHistory {

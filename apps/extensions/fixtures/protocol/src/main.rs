@@ -4,7 +4,7 @@ use std::io::{self, stdin, stdout};
 
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, LaunchArguments, LaunchDescriptor, Message,
-    PROTOCOL_NAME, read_host_frame, write_extension_frame,
+    PROTOCOL_NAME, read_frame, write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,8 +47,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let complete_on_cancel = arguments
         .iter()
         .any(|value| value == "--complete-on-cancel");
+    let cancel_patch_once = arguments.iter().any(|value| value == "--cancel-patch-once");
+    let mut catalog = nanika_protocol::CatalogPublisher::default();
+    catalog.update([candidate("fixture.catalog", "Catalog entry")], Vec::new());
+    let mut patch_queries = 0;
+    let mut pending_patch = None;
     let mut pending_query = None;
     let mut deferred_configuration = None;
+    let mut deferred_refresh = None;
     let mut pending_invoke = None;
     let mut previous_result = None;
     let mut initialized_id = None;
@@ -56,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = stdin().lock();
     let mut output = stdout().lock();
 
-    while let Some(message) = read_host_frame(&mut input)? {
+    while let Some(message) = read_frame(&mut input)? {
         match message {
             Message::Initialize {
                 request_id,
@@ -77,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 wait_for_release(&arguments, &request_id)?;
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Initialized {
                         request_id,
@@ -85,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 )?;
                 if error_after_initialize {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: None,
@@ -95,11 +101,81 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                 }
             }
+            Message::CatalogRead { request_id } => {
+                let batch = catalog.read().map_err(std::io::Error::other)?;
+                write_frame(&mut output, &Message::CatalogBatch { request_id, batch })?;
+            }
+            Message::CatalogApplied { transaction } => {
+                if catalog
+                    .acknowledge(transaction)
+                    .map_err(std::io::Error::other)?
+                {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
+            }
+            Message::CatalogBatch { .. } => {
+                return Err("host cannot publish extension catalog batches".into());
+            }
             Message::Query {
                 request_id,
                 generation,
                 query,
+                incremental,
             } => {
+                if arguments.iter().any(|value| value == "--catalog-only") {
+                    return Err("catalog provider received a query".into());
+                }
+                if arguments.iter().any(|value| value == "--large-catalog") {
+                    let range = if incremental { 4000..6001 } else { 0..4000 };
+                    let entries = range
+                        .map(|index| {
+                            candidate(
+                                &format!("entry-{index}"),
+                                &format!("{index:04} {}", "x".repeat(1500)),
+                            )
+                        })
+                        .collect();
+                    write_frame(
+                        &mut output,
+                        &Message::Snapshot {
+                            request_id,
+                            generation,
+                            complete: true,
+                            replace: !incremental,
+                            removed: Vec::new(),
+                            entries,
+                        },
+                    )?;
+                    continue;
+                }
+                if cancel_patch_once {
+                    patch_queries += 1;
+                    if patch_queries == 2 {
+                        pending_patch = Some((request_id, generation));
+                        // A second root update schedules another query while this patch is in flight.
+                        write_frame(&mut output, &Message::CandidatesChanged)?;
+                    } else {
+                        let entries = if patch_queries == 1 {
+                            vec![candidate("fixture.entry", "Original")]
+                        } else if incremental {
+                            Vec::new()
+                        } else {
+                            vec![candidate("fixture.entry", "Updated")]
+                        };
+                        write_frame(
+                            &mut output,
+                            &Message::Snapshot {
+                                request_id,
+                                generation,
+                                complete: true,
+                                replace: !incremental,
+                                removed: Vec::new(),
+                                entries,
+                            },
+                        )?;
+                    }
+                    continue;
+                }
                 if let Some(marker) = &cancellation_query
                     && query == "blocked"
                 {
@@ -113,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .and_then(|id| id.rsplit_once('-').map(|(id, _)| id))
                     && root.join(format!("fail-search-{extension_id}")).exists()
                 {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -124,9 +200,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 if incremental_query {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Snapshot {
+                            replace: true,
+                            removed: Vec::new(),
                             request_id: request_id.clone(),
                             generation,
                             complete: false,
@@ -134,18 +212,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     )?;
                 }
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Snapshot {
+                        replace: !incremental
+                            || !arguments.iter().any(|value| value == "--patch-query"),
+                        removed: if incremental
+                            && arguments.iter().any(|value| value == "--patch-query")
+                        {
+                            vec!["fixture.remove".to_owned()]
+                        } else {
+                            Vec::new()
+                        },
                         request_id,
                         generation,
                         complete: true,
-                        entries: vec![candidate(
-                            "fixture.entry",
-                            if query.is_empty() { "Fixture" } else { &query },
-                        )],
+                        entries: if arguments.iter().any(|value| value == "--patch-query") {
+                            if incremental {
+                                vec![candidate("fixture.entry", "Updated")]
+                            } else {
+                                vec![
+                                    candidate("fixture.entry", "Original"),
+                                    candidate("fixture.keep", "Keep"),
+                                    candidate("fixture.remove", "Remove"),
+                                ]
+                            }
+                        } else {
+                            vec![candidate(
+                                "fixture.entry",
+                                if query.is_empty() { "Fixture" } else { &query },
+                            )]
+                        },
                     },
                 )?;
+                if let Some((request_id, generation)) = deferred_refresh.take() {
+                    write_frame(
+                        &mut output,
+                        &Message::Refreshed {
+                            request_id,
+                            generation,
+                        },
+                    )?;
+                }
                 let exit_once = query == "fixture.exit-once"
                     && data_root(&arguments).is_some_and(|root| {
                         std::fs::OpenOptions::new()
@@ -172,7 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::write(marker, request_id.as_bytes())?;
                     if let Some(previous) = &previous_result {
                         // A duplicate old completion must never complete the next action.
-                        write_extension_frame(&mut output, previous)?;
+                        write_frame(&mut output, previous)?;
                     }
                     pending_invoke = Some((request_id, generation));
                     continue;
@@ -186,7 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     && action_id == "fixture.run"
                 {
                     let service_request_id = format!("host-{request_id}");
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::HostRequest {
                             request_id: service_request_id.clone(),
@@ -201,14 +309,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         },
                     )?;
-                    match read_host_frame(&mut input)? {
+                    match read_frame(&mut input)? {
                         Some(Message::HostResponse {
                             request_id: response_id,
                             response: HostServiceResponse::Launched,
                             ..
                         }) if response_id == service_request_id => {}
                         Some(Message::Error { code, message, .. }) => {
-                            write_extension_frame(
+                            write_frame(
                                 &mut output,
                                 &Message::Error {
                                     request_id: Some(request_id),
@@ -260,7 +368,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message: "fixture entry or action does not exist".to_owned(),
                     }
                 };
-                write_extension_frame(&mut output, &response)?;
+                write_frame(&mut output, &response)?;
             }
             Message::ViewClose {
                 request_id,
@@ -278,15 +386,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message: "fixture view is not open".to_owned(),
                     }
                 };
-                write_extension_frame(&mut output, &response)?;
+                write_frame(&mut output, &response)?;
             }
             Message::Cancel {
                 request_id,
                 generation,
             } => {
-                if pending_query.as_ref() == Some(&request_id) {
+                if pending_patch.as_ref() == Some(&(request_id.clone(), generation)) {
+                    pending_patch = None;
+                    // Emulate a response already being produced when Cancel reaches the extension.
+                    write_frame(
+                        &mut output,
+                        &Message::Snapshot {
+                            request_id,
+                            generation,
+                            complete: true,
+                            replace: false,
+                            removed: Vec::new(),
+                            entries: vec![candidate("fixture.entry", "Updated")],
+                        },
+                    )?;
+                } else if pending_query.as_ref() == Some(&request_id) {
                     pending_query = None;
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -312,19 +434,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if matches!(terminal, Message::Result { .. }) {
                         previous_result = Some(terminal.clone());
                     }
-                    write_extension_frame(&mut output, &terminal)?;
+                    write_frame(&mut output, &terminal)?;
                 }
             }
             Message::Refresh {
                 request_id,
                 generation,
             } => {
+                if arguments
+                    .iter()
+                    .any(|value| value == "--defer-refresh-until-query")
+                {
+                    if let Some(marker) = &mark_refresh {
+                        std::fs::write(marker, b"scan pending")?;
+                    }
+                    deferred_refresh = Some((request_id, generation));
+                    continue;
+                }
                 wait_for_release(&arguments, &request_id)?;
                 if arguments
                     .iter()
                     .any(|argument| argument == "--fail-refresh")
                 {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -337,18 +469,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(marker) = &mark_refresh {
                     std::fs::write(marker, b"refreshed")?;
                 }
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Refreshed {
                         request_id,
                         generation,
                     },
                 )?;
+                if arguments.iter().any(|value| value == "--patch-query") {
+                    write_frame(&mut output, &Message::CandidatesChanged)?;
+                }
             }
             Message::ConfigurationChanged { request_id, .. } => {
                 if request_id == "progress-settings" {
                     for completed in [0, 1, 2] {
-                        write_extension_frame(
+                        write_frame(
                             &mut output,
                             &Message::ConfigurationProgress {
                                 request_id: request_id.clone(),
@@ -372,7 +507,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if data_root(&arguments)
                     .is_some_and(|root| root.join(format!("fail-{request_id}")).exists())
                 {
-                    write_extension_frame(
+                    write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
@@ -382,7 +517,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     continue;
                 }
-                write_extension_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+                write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
             Message::PrepareEntries { .. } => {}
             Message::Snapshot { .. }
@@ -398,7 +533,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::Initialized { .. }
             | Message::ConfigurationProgress { .. }
             | Message::ConfigurationApplied { .. }
-            | Message::Error { .. } => write_extension_frame(
+            | Message::Error { .. } => write_frame(
                 &mut output,
                 &Message::Error {
                     request_id: None,
@@ -408,7 +543,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
         }
         if let Some(request_id) = deferred_configuration.take() {
-            write_extension_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
+            write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
         }
     }
 
@@ -438,7 +573,9 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         kind: nanika_protocol::CandidateKind::Action,
         entry_id: entry_id.to_owned(),
         title: title.to_owned(),
-        subtitle: Some("Fixture".to_owned()),
+        subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
+            "Fixture".to_owned(),
+        )),
         action_id: "fixture.run".to_owned(),
         actions: vec![action],
         aliases: vec!["fixture alias".to_owned()],

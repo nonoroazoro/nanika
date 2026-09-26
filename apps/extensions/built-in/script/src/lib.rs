@@ -14,3 +14,7 @@ pub use script_entry::*;
 
 pub const EXTENSION_ID: &str = "com.nanika.script";
 pub const RUN_ACTION_ID: &str = "script.run";
+
+#[path = "ScriptEntryData.rs"]
+mod entry_data;
+pub use entry_data::ScriptEntryData;

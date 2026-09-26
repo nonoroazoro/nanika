@@ -1,3 +1,4 @@
+use crate::ApplicationEntryData;
 use std::path::PathBuf;
 
 use crate::{ApplicationArguments, DiscoveryState, IconCache, platform};
@@ -164,24 +165,23 @@ fn fallback_icons_are_valid_png_files() {
         0,
     )
     .unwrap_or(None)
-    .unwrap_or_else(|| crate::ApplicationEntry {
-        entry_id: "app.missing".to_owned(),
-        source_key: "missing".to_owned(),
-        display_name: "Missing".to_owned(),
-        normalized_name: "missing".to_owned(),
-        normalized_tokens: "missing".to_owned(),
-        search_readings: Vec::new(),
-        launch_kind: "executable".to_owned(),
-        target_path: "missing".to_owned(),
-        working_directory: None,
-        arguments_json: ApplicationArguments::empty()
-            .to_json()
-            .expect("arguments should encode"),
-        bundle_id: None,
-        icon_key: String::new(),
-        icon_source: None,
-        icon_index: 0,
-        priority: 0,
+    .unwrap_or_else(|| {
+        crate::ApplicationEntry::new(ApplicationEntryData {
+            entry_id: "app.missing".to_owned(),
+            source_key: "missing".to_owned(),
+            display_name: "Missing".to_owned(),
+            normalized_name: "missing".to_owned(),
+            normalized_tokens: "missing".to_owned(),
+            launch_kind: "executable".to_owned(),
+            target_path: "missing".to_owned(),
+            arguments_json: ApplicationArguments::empty()
+                .to_json()
+                .expect("arguments should encode"),
+            icon_key: String::new(),
+            icon_source: None,
+            icon_index: 0,
+            priority: 0,
+        })
     });
     cache.prepare(&mut entry).expect("fallback should prepare");
     let bytes = std::fs::read(root.join(IconCache::fallback_key()).join("32.png"))
@@ -274,25 +274,22 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
     let root = test_root("retry");
     let executable = root.join("Invalid.exe");
     std::fs::write(&executable, []).expect("invalid executable should exist");
-    let mut entry = crate::ApplicationEntry {
+    let mut entry = crate::ApplicationEntry::new(ApplicationEntryData {
         entry_id: "app.invalid".to_owned(),
         source_key: executable.to_string_lossy().into_owned(),
         display_name: "Invalid".to_owned(),
         normalized_name: "invalid".to_owned(),
         normalized_tokens: "invalid".to_owned(),
-        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: executable.to_string_lossy().into_owned(),
-        working_directory: None,
         arguments_json: ApplicationArguments::empty()
             .to_json()
             .expect("arguments should encode"),
-        bundle_id: None,
         icon_key: String::new(),
         icon_source: Some(executable),
         icon_index: 0,
         priority: 0,
-    };
+    });
     let cache = IconCache::new(root.join("icons"));
 
     assert!(cache.prepare(&mut entry).is_err());
@@ -312,23 +309,20 @@ fn test_root(name: &str) -> PathBuf {
 }
 
 fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
-    crate::ApplicationEntry {
+    crate::ApplicationEntry::new(ApplicationEntryData {
         entry_id: "app.test".to_owned(),
         source_key: "test".to_owned(),
         display_name: "Test".to_owned(),
         normalized_name: "test".to_owned(),
         normalized_tokens: "test".to_owned(),
-        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: "test".to_owned(),
-        working_directory: None,
         arguments_json: ApplicationArguments::empty()
             .to_json()
             .expect("arguments should encode"),
-        bundle_id: None,
         icon_key: icon_key.to_owned(),
         icon_source: None,
         icon_index: 0,
         priority: 0,
-    }
+    })
 }

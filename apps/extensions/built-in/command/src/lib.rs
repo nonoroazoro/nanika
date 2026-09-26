@@ -19,7 +19,9 @@ pub fn command_candidate(query: &str) -> Option<(Candidate, String)> {
             kind: CandidateKind::Action,
             entry_id,
             title: format!("Run command: {command}"),
-            subtitle: Some("Command".to_owned()),
+            subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
+                "Command".to_owned(),
+            )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: vec![nanika_protocol::Action::primary(
                 RUN_ACTION_ID.to_owned(),

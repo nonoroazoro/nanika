@@ -9,7 +9,6 @@ fn clear_scope_matches_type_and_query_before_pagination() {
     let mut entries = (0..105)
         .map(|index| ClipboardEntry {
             entry_id: format!("text.{index}"),
-            content_hash: format!("text.{index}"),
             title: format!("Note {index}"),
             content: ClipboardContent::Text {
                 value: "Shared needle".to_owned(),
@@ -20,7 +19,6 @@ fn clear_scope_matches_type_and_query_before_pagination() {
         .collect::<Vec<_>>();
     entries.push(ClipboardEntry {
         entry_id: "files".to_owned(),
-        content_hash: "files".to_owned(),
         title: "File".to_owned(),
         content: ClipboardContent::Files {
             paths: vec!["/example/needle.txt".to_owned()],
@@ -30,7 +28,6 @@ fn clear_scope_matches_type_and_query_before_pagination() {
     });
     entries.push(ClipboardEntry {
         entry_id: "image".to_owned(),
-        content_hash: "image".to_owned(),
         title: "Image needle".to_owned(),
         content: ClipboardContent::PngFile {
             path: "image.png".to_owned(),
@@ -77,7 +74,6 @@ fn clear_scope_matches_type_and_query_before_pagination() {
 fn clear_action_requests_inline_confirmation() {
     let entries = [ClipboardEntry {
         entry_id: "text".to_owned(),
-        content_hash: "text".to_owned(),
         title: "Note".to_owned(),
         content: ClipboardContent::Text {
             value: "Example".to_owned(),
@@ -115,7 +111,6 @@ fn file_views_include_display_paths_and_native_icons_without_removing_missing_fi
             .enumerate()
             .map(|(index, path)| ClipboardEntry {
                 entry_id: index.to_string(),
-                content_hash: index.to_string(),
                 title: "File".to_owned(),
                 content: ClipboardContent::Files {
                     paths: if index == 0 {
@@ -184,7 +179,6 @@ fn multi_file_detail_bounds_icon_lookups_to_the_collection_preview() {
         .collect::<Vec<_>>();
     let entries = RwLock::new(vec![ClipboardEntry {
         entry_id: "collection".to_owned(),
-        content_hash: "collection".to_owned(),
         title: "Collection".to_owned(),
         content: ClipboardContent::Files {
             paths: paths.clone(),
@@ -222,7 +216,6 @@ fn collection_preview_waits_for_the_group_and_settles_failed_members() {
     let paths = (0..4).map(|i| format!("/file-{i}.png")).collect::<Vec<_>>();
     let entries = RwLock::new(vec![ClipboardEntry {
         entry_id: "group".to_owned(),
-        content_hash: "group".to_owned(),
         title: "Group".to_owned(),
         content: ClipboardContent::Files {
             paths: paths.clone(),

@@ -1,5 +1,5 @@
 use crate::protocol_input::ProtocolInput;
-use nanika_protocol::{FrameError, Message, read_host_frame};
+use nanika_protocol::{FrameError, Message, read_frame};
 use std::io::{BufReader, stdin};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -14,7 +14,7 @@ pub(crate) fn spawn() -> std::io::Result<mpsc::Receiver<Result<ProtocolInput, Fr
             let mut input = BufReader::new(stdin().lock());
             let mut active: Option<(String, u64, Arc<AtomicBool>)> = None;
             loop {
-                let message = match read_host_frame(&mut input) {
+                let message = match read_frame(&mut input) {
                     Ok(Some(message)) => message,
                     result => {
                         if let Some((_, _, cancelled)) = &active {

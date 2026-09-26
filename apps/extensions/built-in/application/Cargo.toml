@@ -8,9 +8,9 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+nanika-database = { path = "../../../../engine/database" }
 nanika-platform = { path = "../../../../engine/platform" }
 nanika-protocol = { path = "../../../../engine/extension-protocol" }
-nanika-text-search = { path = "../../../../engine/text-search" }
 rusqlite.workspace = true
 png.workspace = true
 serde.workspace = true

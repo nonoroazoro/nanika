@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import type { Action } from "../types/Action";
 import type { ContextMenuRequest } from "../types/ContextMenuRequest";
+import type { ReadResultsRequest } from "../types/ReadResultsRequest";
 
 export interface NanikaBridge
 {
@@ -22,8 +23,8 @@ export interface NanikaBridge
         onError: (error: unknown) => void
     ): Promise<ApplicationSnapshot>;
     closeSession(sessionId: number): Promise<void>;
+    readResults(request: ReadResultsRequest): Promise<void>;
     publishQuery(request: PublishQueryRequest): Promise<void>;
-    refreshSearch(sessionId: number): Promise<void>;
     invokeCandidate(request: InvokeCandidateRequest): Promise<void>;
     viewEvent(request: ViewEventRequest): Promise<ViewEventReceipt>;
     dismissLauncher(): Promise<void>;

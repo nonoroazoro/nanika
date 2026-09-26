@@ -87,7 +87,7 @@ impl ClipboardWorker {
                 };
                 let initial = database
                     .apply_retention(unix_timestamp_millis(), &config)
-                    .and_then(|retained| reconcile_payloads(&payload_root, &retained))
+                    .and_then(|change| reconcile_payloads(&payload_root, &change.retained_images))
                     .and_then(|()| database.load());
                 let Ok(initial) = initial else {
                     let _ = ready.send(initial);
@@ -100,28 +100,16 @@ impl ClipboardWorker {
                 while let Ok(command) = receiver.recv() {
                     match command {
                         ClipboardCommand::Capture => {
-                            let result = capture(&payload_root)
-                                .and_then(|entry| {
-                                    let changed = entry.is_some();
-                                    if let Some(entry) = entry {
-                                        let retained = database.upsert_with_retention(
-                                            &entry,
-                                            unix_timestamp_millis(),
-                                            &config,
-                                        )?;
-                                        reconcile_payloads(&payload_root, &retained)?;
-                                        let loaded = database.load()?;
-                                        *entries
-                                            .write()
-                                            .unwrap_or_else(|error| error.into_inner()) = loaded;
-                                    }
-                                    Ok(changed)
-                                });
+                            let result = capture(&payload_root).and_then(|entry| {
+                                let Some(entry) = entry else { return Ok(()); };
+                                let change = database.upsert_with_retention(&entry, unix_timestamp_millis(), &config)?;
+                                change.apply(&mut entries.write().unwrap_or_else(|error| error.into_inner()), Some(entry));
+                                // Database commit is authoritative even when orphan cleanup fails.
+                                invalidated();
+                                reconcile_payloads(&payload_root, &change.retained_images)
+                            });
                             if let Err(error) = &result {
                                 eprintln!("clipboard capture failed: {error}");
-                            }
-                            if result.as_ref().is_ok_and(|changed| *changed) {
-                                invalidated();
                             }
                         }
                         ClipboardCommand::Clear { entry_ids, response } => {
@@ -136,15 +124,14 @@ impl ClipboardWorker {
                             config: updated,
                             response,
                         } => {
-                            let result = database
-                                .apply_retention(unix_timestamp_millis(), &updated)
-                                .and_then(|retained| reconcile_payloads(&payload_root, &retained))
-                                .and_then(|()| database.load())
-                                .map(|loaded| {
-                                    config = updated;
-                                    *entries.write().unwrap_or_else(|error| error.into_inner()) =
-                                        loaded;
-                                });
+                            let result = database.apply_retention(unix_timestamp_millis(), &updated).map(|change| {
+                                change.apply(&mut entries.write().unwrap_or_else(|error| error.into_inner()), None);
+                                config = updated;
+                                if let Err(error) = reconcile_payloads(&payload_root, &change.retained_images) {
+                                    // Retention has committed; cleanup cannot reject effective settings.
+                                    eprintln!("clipboard payload cleanup failed: {error}");
+                                }
+                            });
                             if response.send(result).is_err() {
                                 eprintln!(
                                     "clipboard configuration requester closed before receiving result"
@@ -189,10 +176,13 @@ fn clear_entries(
     entries: &RwLock<Vec<ClipboardEntry>>,
     entry_ids: &[String],
 ) -> Result<(), String> {
-    let retained = database.clear(entry_ids)?;
+    let change = database.clear(entry_ids)?;
     // The transaction has committed. Publish that state even if orphan cleanup later fails.
-    *entries.write().unwrap_or_else(|error| error.into_inner()) = database.load()?;
-    reconcile_payloads(payload_root, &retained)
+    change.apply(
+        &mut entries.write().unwrap_or_else(|error| error.into_inner()),
+        None,
+    );
+    reconcile_payloads(payload_root, &change.retained_images)
 }
 
 fn reconcile_payloads(

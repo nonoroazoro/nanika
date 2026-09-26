@@ -1,73 +1,56 @@
-use std::path::PathBuf;
-
 use nanika_protocol::{Candidate, CandidateKind, IconReference, LaunchArguments, LaunchDescriptor};
-use nanika_text_search::{RomanizedReading, romanized_readings};
 
 use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
 /// Persisted application metadata plus transient icon extraction input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationEntry {
-    pub entry_id: String,
-    pub source_key: String,
-    pub display_name: String,
-    pub normalized_name: String,
-    pub normalized_tokens: String,
-    /// Prepared search spellings; derived from the original names, never persisted.
-    pub search_readings: Vec<RomanizedReading>,
-    pub launch_kind: String,
-    /// Native activation path, preserving the original spelling of Shell Links.
-    pub target_path: String,
-    pub working_directory: Option<String>,
-    pub arguments_json: String,
-    pub bundle_id: Option<String>,
-    pub icon_key: String,
-    pub(crate) icon_source: Option<PathBuf>,
-    pub(crate) icon_index: i32,
-    pub(crate) priority: usize,
+    _data: std::sync::Arc<crate::ApplicationEntryData>,
+    pub(crate) _icon_ready: bool,
+}
+
+impl std::ops::Deref for ApplicationEntry {
+    type Target = crate::ApplicationEntryData;
+    fn deref(&self) -> &Self::Target {
+        &self._data
+    }
+}
+
+impl std::ops::DerefMut for ApplicationEntry {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        std::sync::Arc::make_mut(&mut self._data)
+    }
 }
 
 impl ApplicationEntry {
-    pub(crate) fn prepare_search_readings(&mut self) {
-        let mut readings = romanized_readings(&self.display_name);
-        for alias in self
-            .normalized_tokens
-            .lines()
-            .filter(|alias| *alias != self.normalized_name)
-        {
-            for reading in romanized_readings(alias) {
-                if !readings.contains(&reading) {
-                    readings.push(reading);
-                }
-            }
+    pub fn new(data: crate::ApplicationEntryData) -> Self {
+        Self {
+            _data: std::sync::Arc::new(data),
+            _icon_ready: false,
         }
-        self.search_readings = readings;
     }
 
     pub fn candidate(&self) -> Candidate {
-        let mut aliases = self
+        let aliases = self
             .normalized_tokens
             .lines()
             .filter(|alias| *alias != self.normalized_name)
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        for reading in &self.search_readings {
-            for alias in [&reading.full, &reading.initials] {
-                if alias != &self.normalized_name && !aliases.iter().any(|item| item == alias) {
-                    aliases.push(alias.clone());
-                }
-            }
-        }
         Candidate {
             kind: CandidateKind::Action,
             entry_id: self.entry_id.clone(),
             title: self.display_name.clone(),
-            subtitle: Some("Application".to_owned()),
+            subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
+                "Application".to_owned(),
+            )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: self.actions(),
             aliases,
-            icon: IconReference::new(&self.icon_key)
-                .ok()
+            icon: self
+                ._icon_ready
+                .then(|| IconReference::new(&self.icon_key).ok())
+                .flatten()
                 .map(nanika_protocol::IconSource::Cache),
         }
     }
@@ -93,7 +76,7 @@ impl ApplicationEntry {
         Ok(LaunchDescriptor::Program {
             program: self.target_path.clone(),
             arguments,
-            working_directory: self.working_directory.clone(),
+            working_directory: None,
         })
     }
 

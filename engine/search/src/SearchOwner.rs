@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::AtomicU64;
+
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use crate::constants::SEARCH_QUEUE_CAPACITY;
 use crate::{
-    Candidate, PendingSearchQuery, SearchCommand, SearchEngine, SearchHandle, SearchSnapshot,
-    UsageMap,
+    CandidateCatalog, PendingSearchQuery, SearchCommand, SearchEngine, SearchHandle, UsageMap,
 };
 
 /// Named owner thread for aggregation, stale-generation rejection, and ranking.
@@ -18,6 +17,8 @@ pub struct SearchOwner {
 
 impl SearchOwner {
     pub fn spawn(mut initial_usage: UsageMap) -> std::io::Result<Self> {
+        let next_generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let owner_generation = Arc::clone(&next_generation);
         let (commands, receiver) = mpsc::sync_channel(SEARCH_QUEUE_CAPACITY);
         let pending_query = Arc::new(Mutex::new(None));
         let latest = Arc::new(Mutex::new(None));
@@ -31,8 +32,8 @@ impl SearchOwner {
                 let mut engine = SearchEngine::new();
                 let mut generation = 0;
                 let mut query = String::new();
-                let mut extension_results: HashMap<String, Arc<Vec<Candidate>>> = HashMap::new();
-                let mut static_catalog: HashMap<String, Arc<Vec<Candidate>>> = HashMap::new();
+                let mut extension_results: HashMap<String, CandidateCatalog> = HashMap::new();
+                let mut static_catalog: HashMap<String, CandidateCatalog> = HashMap::new();
                 let mut expected_extensions = HashSet::new();
 
                 while let Ok(command) = receiver.recv() {
@@ -40,17 +41,20 @@ impl SearchOwner {
                         generation = next_query.generation;
                         query = next_query.query;
                         expected_extensions = next_query.expected_extensions;
-                        extension_results.clone_from(&static_catalog);
+                        extension_results.clear();
                         expected_extensions.retain(|id| !static_catalog.contains_key(id));
                         if expected_extensions.is_empty() {
                             publish_current(
                                 &mut engine,
                                 generation,
                                 &query,
-                                &extension_results,
+                                (&extension_results, &static_catalog),
                                 &initial_usage,
-                                &owner_latest,
-                                &owner_notifier,
+                                crate::SearchPublication {
+                                    latest: &owner_latest,
+                                    notifier: &owner_notifier,
+                                    next_generation: &owner_generation,
+                                },
                             );
                         }
                     }
@@ -68,34 +72,75 @@ impl SearchOwner {
                                     &mut engine,
                                     generation,
                                     &query,
-                                    &extension_results,
+                                    (&extension_results, &static_catalog),
                                     &initial_usage,
-                                    &owner_latest,
-                                    &owner_notifier,
+                                    crate::SearchPublication {
+                                        latest: &owner_latest,
+                                        notifier: &owner_notifier,
+                                        next_generation: &owner_generation,
+                                    },
                                 );
                             }
                             let _ = completion.send(());
                         }
                         SearchCommand::RegisterStaticCatalog {
                             extension_id,
-                            mut candidates,
+                            candidates,
                         } => {
-                            for candidate in &mut candidates {
-                                candidate.set_extension_id(&extension_id);
-                            }
-                            let candidates = Arc::new(candidates);
-                            static_catalog.insert(extension_id.clone(), Arc::clone(&candidates));
+                            let candidates = CandidateCatalog::new(&extension_id, candidates);
+                            static_catalog.insert(extension_id.clone(), candidates);
                             expected_extensions.remove(&extension_id);
-                            extension_results.insert(extension_id, candidates);
                             if generation != 0 && expected_extensions.is_empty() {
                                 publish_current(
                                     &mut engine,
                                     generation,
                                     &query,
-                                    &extension_results,
+                                    (&extension_results, &static_catalog),
                                     &initial_usage,
-                                    &owner_latest,
-                                    &owner_notifier,
+                                    crate::SearchPublication {
+                                        latest: &owner_latest,
+                                        notifier: &owner_notifier,
+                                        next_generation: &owner_generation,
+                                    },
+                                );
+                            }
+                        }
+                        SearchCommand::CatalogCommit {
+                            extension_id,
+                            replace,
+                            candidates,
+                            removed,
+                            completion,
+                        } => {
+                            let changed = replace || !candidates.is_empty() || !removed.is_empty();
+                            let result =
+                                if let Some(catalog) = static_catalog.get_mut(&extension_id) {
+                                    if replace {
+                                        *catalog = CandidateCatalog::default();
+                                    }
+                                    catalog.update(&extension_id, candidates, removed);
+                                    Ok(())
+                                } else {
+                                    Err(crate::SearchQueueError::Closed)
+                                };
+                            let applied = result.is_ok();
+                            let _ = completion.send(result);
+                            if applied
+                                && changed
+                                && generation != 0
+                                && expected_extensions.is_empty()
+                            {
+                                publish_current(
+                                    &mut engine,
+                                    generation,
+                                    &query,
+                                    (&extension_results, &static_catalog),
+                                    &initial_usage,
+                                    crate::SearchPublication {
+                                        latest: &owner_latest,
+                                        notifier: &owner_notifier,
+                                        next_generation: &owner_generation,
+                                    },
                                 );
                             }
                         }
@@ -105,19 +150,8 @@ impl SearchOwner {
                             candidates,
                         } if snapshot_generation == generation => {
                             expected_extensions.remove(&extension_id);
-                            let mut unique = HashMap::with_capacity(candidates.len());
-                            for mut candidate in candidates {
-                                candidate.set_extension_id(&extension_id);
-                                unique.insert(
-                                    (
-                                        candidate.entry_id().to_owned(),
-                                        candidate.action_id().to_owned(),
-                                    ),
-                                    candidate,
-                                );
-                            }
-                            extension_results
-                                .insert(extension_id, Arc::new(unique.into_values().collect()));
+                            let catalog = CandidateCatalog::new(&extension_id, candidates);
+                            extension_results.insert(extension_id, catalog);
                             if !expected_extensions.is_empty() {
                                 continue;
                             }
@@ -125,12 +159,46 @@ impl SearchOwner {
                                 &mut engine,
                                 generation,
                                 &query,
-                                &extension_results,
+                                (&extension_results, &static_catalog),
                                 &initial_usage,
-                                &owner_latest,
-                                &owner_notifier,
+                                crate::SearchPublication {
+                                    latest: &owner_latest,
+                                    notifier: &owner_notifier,
+                                    next_generation: &owner_generation,
+                                },
                             );
                         }
+                        SearchCommand::ExtensionDelta {
+                            generation: update_generation,
+                            extension_id,
+                            candidates,
+                            removed,
+                        } if update_generation == generation => {
+                            // A patch cannot establish a generation's baseline or revive a removed extension.
+                            let Some(catalog) = extension_results.get_mut(&extension_id) else {
+                                continue;
+                            };
+                            if candidates.is_empty() && removed.is_empty() {
+                                continue;
+                            }
+                            catalog.update(&extension_id, candidates, removed);
+                            if !expected_extensions.is_empty() {
+                                continue;
+                            }
+                            publish_current(
+                                &mut engine,
+                                generation,
+                                &query,
+                                (&extension_results, &static_catalog),
+                                &initial_usage,
+                                crate::SearchPublication {
+                                    latest: &owner_latest,
+                                    notifier: &owner_notifier,
+                                    next_generation: &owner_generation,
+                                },
+                            );
+                        }
+                        SearchCommand::ExtensionDelta { .. } => {}
                         SearchCommand::ExtensionSnapshot { .. } => {}
                         SearchCommand::ApplyPersistedExecution { key, executed_at } => {
                             let stat = initial_usage.entry(key).or_default();
@@ -140,10 +208,13 @@ impl SearchOwner {
                                 &mut engine,
                                 generation,
                                 &query,
-                                &extension_results,
+                                (&extension_results, &static_catalog),
                                 &initial_usage,
-                                &owner_latest,
-                                &owner_notifier,
+                                crate::SearchPublication {
+                                    latest: &owner_latest,
+                                    notifier: &owner_notifier,
+                                    next_generation: &owner_generation,
+                                },
                             );
                         }
                         SearchCommand::ResetPersistedUsage => {
@@ -152,10 +223,13 @@ impl SearchOwner {
                                 &mut engine,
                                 generation,
                                 &query,
-                                &extension_results,
+                                (&extension_results, &static_catalog),
                                 &initial_usage,
-                                &owner_latest,
-                                &owner_notifier,
+                                crate::SearchPublication {
+                                    latest: &owner_latest,
+                                    notifier: &owner_notifier,
+                                    next_generation: &owner_generation,
+                                },
                             );
                         }
                         SearchCommand::Shutdown => break,
@@ -167,7 +241,7 @@ impl SearchOwner {
                 commands,
                 pending_query,
                 latest,
-                next_generation: Arc::new(AtomicU64::new(0)),
+                next_generation,
                 notifier,
             },
             thread: Some(thread),
@@ -216,17 +290,40 @@ fn publish_current(
     engine: &mut SearchEngine,
     generation: u64,
     query: &str,
-    extension_results: &HashMap<String, Arc<Vec<Candidate>>>,
+    catalogs: (
+        &HashMap<String, CandidateCatalog>,
+        &HashMap<String, CandidateCatalog>,
+    ),
     usage: &UsageMap,
-    latest: &Mutex<Option<Arc<SearchSnapshot>>>,
-    notifier: &Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    publication: crate::SearchPublication<'_>,
 ) {
-    let candidates = extension_results
+    let candidates = catalogs
+        .0
         .values()
+        .chain(catalogs.1.values())
         .flat_map(|entries| entries.iter());
-    let snapshot = Arc::new(engine.rank(generation, query, candidates, usage, unix_timestamp()));
-    *latest.lock().unwrap_or_else(|error| error.into_inner()) = Some(snapshot);
-    let notify = notifier
+    let Some(snapshot) = engine.rank(
+        generation,
+        query,
+        candidates,
+        usage,
+        unix_timestamp(),
+        || {
+            publication
+                .next_generation
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > generation
+        },
+    ) else {
+        return;
+    };
+    let snapshot = Arc::new(snapshot);
+    *publication
+        .latest
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = Some(snapshot);
+    let notify = publication
+        .notifier
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .clone();

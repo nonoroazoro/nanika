@@ -4,8 +4,6 @@ use std::time::Instant;
 
 use crate::{DesktopRuntime, RootSearchSnapshot, SearchPhase};
 
-const VISIBLE_ENTRY_PREPARATION_LIMIT: usize = 10;
-
 pub(crate) enum SearchDelivery {
     Wake,
     Shutdown,
@@ -19,7 +17,7 @@ pub(crate) fn run_delivery(
     settings: &Mutex<crate::SettingsApplications>,
 ) {
     run_delivery_with_preparation(shared, wakes, settings, |runtime, snapshot| {
-        runtime.prepare_visible_entries(snapshot, VISIBLE_ENTRY_PREPARATION_LIMIT);
+        runtime.prepare_visible_entries(snapshot, snapshot.results.len());
     });
 }
 
@@ -114,7 +112,10 @@ pub(crate) fn run_delivery_with_preparation(
                 (None, None) => true,
                 _ => false,
             };
-        if unchanged && session.delivered_navigation_revision == session.navigation.revision {
+        if unchanged
+            && session.delivered_range == Some(session.result_range)
+            && session.delivered_navigation_revision == session.navigation.revision
+        {
             continue;
         }
         let results_changed = session.phase.is_none()
@@ -123,6 +124,16 @@ pub(crate) fn run_delivery_with_preparation(
                 (None, None) => false,
                 _ => true,
             };
+        if results_changed {
+            session.result_revision += 1;
+        }
+        let range_changed =
+            results_changed || session.delivered_range != Some(session.result_range);
+        let total_results = latest.as_ref().map_or(0, |snapshot| snapshot.results.len());
+        let offset = session.result_range.0.min(total_results.saturating_sub(1));
+        let end = offset
+            .saturating_add(session.result_range.1)
+            .min(total_results);
         let route = session
             .navigation
             .stack
@@ -140,6 +151,9 @@ pub(crate) fn run_delivery_with_preparation(
             revision: session.revision,
             query: session.query.clone(),
             results: None,
+            result_revision: session.result_revision,
+            result_offset: offset,
+            total_results,
             phase,
             error: error.clone(),
             warnings: warnings.clone(),
@@ -153,6 +167,7 @@ pub(crate) fn run_delivery_with_preparation(
         session.error = error;
         session.warnings = warnings;
         session.delivered = latest.clone();
+        session.delivered_range = Some(session.result_range);
         session.delivered_navigation_revision = session.navigation.revision;
         session.delivered_route = route;
         let session_id = session.id;
@@ -160,13 +175,19 @@ pub(crate) fn run_delivery_with_preparation(
         drop(state);
         // Preparation completion wakes delivery too. Only a changed search
         // snapshot schedules preparation, never navigation or acknowledgements.
-        if results_changed && let (Some(runtime), Some(snapshot)) = (&runtime, &latest) {
-            prepare(runtime, snapshot);
+        if range_changed && let (Some(runtime), Some(snapshot)) = (&runtime, &latest) {
+            prepare(
+                runtime,
+                &nanika_search::SearchSnapshot {
+                    generation: snapshot.generation,
+                    normalized_query: snapshot.normalized_query.clone(),
+                    results: snapshot.results[offset..end].to_vec(),
+                },
+            );
         }
-        if results_changed {
+        if range_changed {
             update.results = Some(latest.as_ref().map_or_else(Vec::new, |snapshot| {
-                snapshot
-                    .results
+                snapshot.results[offset..end]
                     .iter()
                     .map(|ranked| {
                         crate::SearchResult::from_candidate(

@@ -11,6 +11,21 @@ pub(crate) fn toggle_launcher(app: &tauri::AppHandle) -> Result<(), String> {
     schedule_visibility(app, true)
 }
 
+pub(crate) fn hide_window(window: &tauri::Window) -> Result<(), String> {
+    let webview = window
+        .get_webview_window(window.label())
+        .ok_or_else(|| "window webview is unavailable".to_owned())?;
+    window.hide().map_err(|error| error.to_string())?;
+    // Window visibility alone does not update WebView2 document activity.
+    // Wry maps this to WebView2 IsVisible and WKWebView setHidden.
+    webview.as_ref().hide().map_err(|error| error.to_string())
+}
+
+pub(crate) fn show_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window.as_ref().show().map_err(|error| error.to_string())?;
+    window.show().map_err(|error| error.to_string())
+}
+
 fn schedule_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String> {
     let handle = app.clone();
     // Tray, hotkey, and single-instance callbacks have different thread origins.
@@ -28,7 +43,7 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
         .get_webview_window("launcher")
         .ok_or_else(|| "launcher window is unavailable".to_owned())?;
     if toggle && window.is_visible().map_err(|error| error.to_string())? {
-        return window.hide().map_err(|error| error.to_string());
+        return hide_window(&window.as_ref().window());
     }
     let scale_factor = window.scale_factor().map_err(|error| error.to_string())? as f32;
     let position =
@@ -40,8 +55,10 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
             position.y.round() as i32,
         ))
         .map_err(|error| error.to_string())?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    show_window(&window)?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    app.state::<crate::DesktopState>().launcher_opened();
+    Ok(())
 }
 
 pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -72,7 +89,7 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
             .state::<crate::host_settings::HostSettings>()
             .hide_on_blur
             .load(std::sync::atomic::Ordering::Acquire)
-        && let Err(error) = window.hide()
+        && let Err(error) = hide_window(window)
     {
         tracing::error!(%error, "launcher could not hide after losing focus");
     }

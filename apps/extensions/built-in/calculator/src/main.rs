@@ -9,8 +9,7 @@ use protocol_input::ProtocolInput;
 
 use nanika_extension_calculator::{COPY_ACTION_ID, CalculatorEngine};
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME,
-    write_extension_frame,
+    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, write_frame,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } if protocol == PROTOCOL_NAME => {
                 initialized = true;
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Initialized {
                         request_id,
@@ -52,6 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 query,
+                ..
             } => {
                 results.clear();
                 let entries = engine
@@ -70,9 +70,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     continue;
                 }
-                write_extension_frame(
+                write_frame(
                     &mut output,
                     &Message::Snapshot {
+                        replace: true,
+                        removed: Vec::new(),
                         request_id,
                         generation,
                         complete: true,
@@ -101,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Refresh {
                 request_id,
                 generation,
-            } => write_extension_frame(
+            } => write_frame(
                 &mut output,
                 &Message::Refreshed {
                     request_id,
@@ -129,7 +131,7 @@ fn invoke_host(
     value: String,
 ) -> Result<(), nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
-    write_extension_frame(
+    write_frame(
         output,
         &Message::HostRequest {
             request_id: service_request_id.clone(),
@@ -151,7 +153,7 @@ fn invoke_host(
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return write_extension_frame(
+                return write_frame(
                     output,
                     &Message::Result {
                         request_id,
@@ -179,7 +181,7 @@ fn write_error(
     code: &str,
     message: &str,
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_extension_frame(
+    write_frame(
         output,
         &Message::Error {
             request_id,
@@ -193,6 +195,8 @@ fn request_id(message: &Message) -> Option<String> {
     match message {
         Message::Initialize { request_id, .. }
         | Message::Initialized { request_id, .. }
+        | Message::CatalogRead { request_id }
+        | Message::CatalogBatch { request_id, .. }
         | Message::Query { request_id, .. }
         | Message::Snapshot { request_id, .. }
         | Message::Invoke { request_id, .. }
@@ -210,7 +214,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged
+        Message::CatalogApplied { .. }
+        | Message::CandidatesChanged
         | Message::ViewInvalidated { .. }
         | Message::PrepareEntries { .. } => None,
     }

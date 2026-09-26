@@ -63,3 +63,7 @@ pub use extension_activation::*;
 #[path = "ConfigurationPersistence.rs"]
 mod configuration_persistence;
 pub use configuration_persistence::*;
+
+#[path = "RootSearchMode.rs"]
+mod root_search_mode;
+pub use root_search_mode::RootSearchMode;

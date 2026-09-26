@@ -45,3 +45,33 @@ fn results_inherit_package_icons_and_allow_item_overrides() {
         assert!(result.icon_url.unwrap().ends_with(suffix));
     }
 }
+
+#[test]
+fn result_subtitles_preserve_declared_layout_semantics() {
+    for (subtitle, kind) in [
+        (
+            nanika_protocol::CandidateSubtitle::Label("Application".into()),
+            "label",
+        ),
+        (
+            nanika_protocol::CandidateSubtitle::Description("Application".into()),
+            "description",
+        ),
+    ] {
+        let candidate = Candidate::new(
+            CandidateKind::Action,
+            "test.extension",
+            "entry",
+            "Title",
+            "run",
+            vec![nanika_protocol::Action::primary("run", "Run")],
+            Vec::new(),
+        )
+        .with_subtitle(Some(subtitle));
+        let result = SearchResult::from_candidate(&candidate, None);
+        assert_eq!(
+            serde_json::to_value(result).unwrap()["subtitle"],
+            serde_json::json!({"kind": kind, "text": "Application"})
+        );
+    }
+}

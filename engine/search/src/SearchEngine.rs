@@ -26,7 +26,15 @@ impl SearchEngine {
         now: u64,
     ) -> SearchSnapshot {
         self.generation = self.generation.wrapping_add(1).max(1);
-        self.rank(self.generation, query, candidates.iter(), usage, now)
+        self.rank(
+            self.generation,
+            query,
+            candidates.iter(),
+            usage,
+            now,
+            || false,
+        )
+        .expect("uncancelled search")
     }
 
     pub(crate) fn rank<'a>(
@@ -36,8 +44,17 @@ impl SearchEngine {
         candidates: impl Iterator<Item = &'a Candidate>,
         usage: &UsageMap,
         now: u64,
-    ) -> SearchSnapshot {
-        ranking::rank(generation, query, candidates, usage, now, &mut self.context)
+        cancelled: impl Fn() -> bool,
+    ) -> Option<SearchSnapshot> {
+        ranking::rank(
+            generation,
+            query,
+            candidates,
+            usage,
+            now,
+            &mut self.context,
+            cancelled,
+        )
     }
 }
 
@@ -55,5 +72,7 @@ pub fn rank_candidates(
     usage: &UsageMap,
     now: u64,
 ) -> SearchSnapshot {
-    SearchEngine::new().rank(generation, query, candidates.iter(), usage, now)
+    SearchEngine::new()
+        .rank(generation, query, candidates.iter(), usage, now, || false)
+        .expect("uncancelled search")
 }

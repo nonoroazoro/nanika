@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 use nanika_search::UsageKey;
@@ -10,27 +9,26 @@ use crate::{
 };
 
 const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS extensions (
+CREATE TABLE extensions (
     extension_id TEXT PRIMARY KEY CHECK (extension_id <> ''),
     kind TEXT NOT NULL,
     version TEXT,
     install_path TEXT,
     package_digest TEXT,
-    updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
     CHECK (
         (kind = 'built-in' AND version IS NULL AND install_path IS NULL AND package_digest IS NULL)
         OR (kind = 'external' AND version IS NOT NULL AND version <> '' AND install_path IS NOT NULL AND install_path <> '' AND package_digest IS NOT NULL AND package_digest <> '')
     )
 ) STRICT;
-CREATE TABLE IF NOT EXISTS input_history (
+CREATE TABLE input_history (
     id INTEGER PRIMARY KEY,
     normalized_query TEXT NOT NULL UNIQUE CHECK (normalized_query <> ''),
     display_query TEXT NOT NULL CHECK (display_query <> ''),
     last_used_at INTEGER NOT NULL CHECK (last_used_at >= 0)
 ) STRICT;
-CREATE INDEX IF NOT EXISTS input_history_last_used
+CREATE INDEX input_history_last_used
 ON input_history(last_used_at DESC, id DESC);
-CREATE TABLE IF NOT EXISTS usage_stats (
+CREATE TABLE usage_stats (
     extension_id TEXT NOT NULL CHECK (extension_id <> ''),
     entry_id TEXT NOT NULL CHECK (entry_id <> ''),
     action_id TEXT NOT NULL CHECK (action_id <> ''),
@@ -49,35 +47,7 @@ pub struct HostDatabase {
 
 impl HostDatabase {
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
-        if let Some(parent) = path.as_ref().parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-        }
-        let connection = Connection::open(path)?;
-        connection.execute_batch(
-            "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=100;",
-        )?;
-        let columns = connection
-            .prepare("SELECT name FROM pragma_table_info('extensions') ORDER BY cid")?
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<SqlResult<Vec<_>>>()?;
-        if !columns.is_empty()
-            && columns
-                != [
-                    "extension_id",
-                    "kind",
-                    "version",
-                    "install_path",
-                    "package_digest",
-                    "updated_at",
-                ]
-        {
-            return Err(rusqlite::Error::InvalidParameterName(
-                "unsupported pre-release host database schema; existing data was not modified"
-                    .to_owned(),
-            ));
-        }
-        connection.execute_batch(SCHEMA)?;
+        let connection = nanika_database::open(path, SCHEMA)?;
         Ok(Self { connection })
     }
 
@@ -170,7 +140,6 @@ impl HostDatabase {
         version: &str,
         install_path: &Path,
         package_digest: &str,
-        updated_at: u64,
     ) -> SqlResult<()> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
@@ -179,20 +148,18 @@ impl HostDatabase {
         }
         self.connection.execute(
             "INSERT INTO extensions (
-                extension_id, kind, version, install_path, package_digest, updated_at
-             ) VALUES (?1, 'external', ?2, ?3, ?4, ?5)
+                extension_id, kind, version, install_path, package_digest
+             ) VALUES (?1, 'external', ?2, ?3, ?4)
              ON CONFLICT(extension_id) DO UPDATE SET
                 version = excluded.version,
                 install_path = excluded.install_path,
-                package_digest = excluded.package_digest,
-                updated_at = excluded.updated_at
+                package_digest = excluded.package_digest
              WHERE extensions.kind = 'external'",
             params![
                 extension_id,
                 version,
                 install_path.to_string_lossy(),
                 package_digest,
-                i64::try_from(updated_at).unwrap_or(i64::MAX),
             ],
         )?;
         Ok(())
@@ -298,11 +265,7 @@ impl HostDatabase {
         transaction.commit()
     }
 
-    pub(crate) fn register_builtin_extension(
-        &self,
-        extension_id: &str,
-        updated_at: u64,
-    ) -> SqlResult<()> {
+    pub(crate) fn register_builtin_extension(&self, extension_id: &str) -> SqlResult<()> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
                 "invalid extension id".to_owned(),
@@ -310,15 +273,15 @@ impl HostDatabase {
         }
         self.connection.execute(
             "INSERT INTO extensions (
-                extension_id, kind, updated_at
-             ) VALUES (?1, 'built-in', ?2)
+                extension_id, kind
+             ) VALUES (?1, 'built-in')
              ON CONFLICT(extension_id) DO UPDATE SET
                 kind = excluded.kind,
                 version = NULL,
                 install_path = NULL,
-                package_digest = NULL,
-                updated_at = excluded.updated_at",
-            params![extension_id, i64::try_from(updated_at).unwrap_or(i64::MAX),],
+                package_digest = NULL
+             WHERE extensions.kind <> 'built-in'",
+            params![extension_id],
         )?;
         Ok(())
     }

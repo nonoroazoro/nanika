@@ -1,5 +1,6 @@
 <script lang="ts">
 import Button from "./components/Button.svelte";
+import { RootSearchState } from "./logic/RootSearchState.svelte";
 import { onMount, tick } from "svelte";
 
 import { uiActivity } from "./ui/activity";
@@ -27,7 +28,6 @@ let invoking = $state(false);
 let contextMenu = $state.raw<ContextMenuPresentation | null>(null);
 let menuRequest = 0;
 let menuOpen = $state(false);
-let refreshing = $state(false);
 let operationFailure = $state<string | null>(null);
 // A completed empty view survives pending queries just like a completed list.
 let hasCompletedSearch = $state(false);
@@ -44,17 +44,21 @@ let viewOperation = 0;
 const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent, tauriBridge.invokeContextMenu);
 const viewInput = viewInputScheduler();
 const navigationError = $derived(navigation.error ? "The action could not be completed. Try again." : null);
-let rootSearch = $state.raw<RootSearchSnapshot>({
+const rootSearchState = new RootSearchState({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
     requestId: 0,
     revision: 0,
     query: "",
     results: [],
+    resultRevision: 0,
+    resultOffset: 0,
+    totalResults: 0,
     phase: "searching",
     error: null,
     warnings: []
 });
+const rootSearch = $derived(rootSearchState.snapshot);
 let latestRequestId = $state(0);
 let desiredQuery = "";
 let lastRevision = 0;
@@ -189,7 +193,7 @@ async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<
             }
             else
             {
-                if (invoking || refreshing || navigation.busy)
+                if (invoking || navigation.busy)
                 {
                     return;
                 }
@@ -308,33 +312,10 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
 }
 
-async function refreshSearch(): Promise<void>
-{
-    if (refreshing || invoking || navigation.busy || navigation.current || !application)
-    {
-        return;
-    }
-    refreshing = true;
-    operationFailure = null;
-    try
-    {
-        await tauriBridge.refreshSearch(application.sessionId);
-    }
-    catch (error)
-    {
-        console.error("Search could not be refreshed", error);
-        operationFailure = "Search could not be refreshed. Try again.";
-    }
-    finally
-    {
-        refreshing = false;
-    }
-}
-
 async function invokeCandidate(result: SearchResult): Promise<void>
 {
     if (
-        invoking || refreshing || navigation.busy || !application || rootSearch.requestId !== latestRequestId
+        invoking || navigation.busy || !application || rootSearch.requestId !== latestRequestId
         || rootSearch.phase !== "ready" || !result.allowDefaultExecution
     )
     {
@@ -347,6 +328,7 @@ async function invokeCandidate(result: SearchResult): Promise<void>
         await tauriBridge.invokeCandidate({
             sessionId: application.sessionId,
             requestId: rootSearch.requestId,
+            resultRevision: rootSearch.resultRevision,
             extensionId: result.extensionId,
             entryId: result.entryId,
             actionId: result.actionId
@@ -401,7 +383,7 @@ function updateRootSearch(next: RootSearchSnapshot): void
             observeSearch(next.requestId, "received");
         }
     }
-    rootSearch = next.phase === "searching" ? { ...next, results: rootSearch.results } : next;
+    rootSearchState.accept(next);
     if (import.meta.env.DEV && next.phase === "ready")
     {
         void tick().then(() =>
@@ -532,20 +514,6 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
         }
         return;
     }
-    // F5 has one owner and never reloads the WebView, including inside a menu.
-    if (event.key === "F5")
-    {
-        event.preventDefault();
-        if (
-            !menuOpen && !event.isComposing && !event.repeat
-            && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
-            && document.visibilityState === "visible" && document.hasFocus()
-        )
-        {
-            void refreshSearch();
-        }
-        return;
-    }
     // Bits owns menu navigation and Escape; preventing default suppresses its handlers.
     if (event.target instanceof Element && event.target.closest("[role=menu]"))
     {
@@ -592,19 +560,22 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
             {/key}
         {:else}
             <RootSearch
-                snapshot={rootSearch}
+                searchState={rootSearchState}
                 {hasCompletedSearch}
-                {refreshing}
                 appMenuOpen={menuOpen && contextMenu?.request === null}
                 onAppMenu={() =>
                 {
                     void showAppMenu();
                 }}
                 inputError={queryFailure}
-                busy={invoking || refreshing || navigation.busy || !application
+                busy={invoking || navigation.busy || !application
                 || rootSearch.requestId !== latestRequestId
                 || rootSearch.phase !== "ready"}
                 onQuery={publishQuery}
+                onRange={request =>
+                {
+                    void tauriBridge.readResults(request).catch(fail);
+                }}
                 onDismiss={() =>
                 {
                     tauriBridge.dismissLauncher().catch(fail);

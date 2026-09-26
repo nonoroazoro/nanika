@@ -11,6 +11,7 @@ members = [
     "apps/extensions/fixtures/acp",
     "apps/extensions/fixtures/protocol",
     "engine/configuration",
+    "engine/database",
     "engine/foundation",
     "engine/extension-management",
     "engine/extension-protocol",

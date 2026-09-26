@@ -147,13 +147,9 @@ fn apply_package(
         }
         return Err(ExtensionPackageError::Config(error));
     }
-    if let Err(error) = database.install_external_extension(
-        &manifest.id,
-        &manifest.version,
-        &version_root,
-        &digest,
-        unix_timestamp(),
-    ) {
+    if let Err(error) =
+        database.install_external_extension(&manifest.id, &manifest.version, &version_root, &digest)
+    {
         let config_rollback = registry.rollback();
         let artifact_rollback = rollback_version(&version_root, replaced_root.as_deref());
         if let Err(rollback) = config_rollback {
@@ -705,6 +701,15 @@ pub fn validate_extension_contributions(
             "command and view contributions require the Nanika protocol".to_owned(),
         ));
     }
+    if contributions
+        .root_search
+        .is_some_and(|root| root.mode == crate::RootSearchMode::Catalog)
+        && !matches!(protocol, ExtensionProtocol::Nanika { .. })
+    {
+        return Err(ExtensionPackageError::Manifest(
+            "catalog contributions require the Nanika protocol".into(),
+        ));
+    }
     validate_command_contributions(&contributions.commands)?;
     validate_view_contributions(&contributions.views)?;
     let command_ids = contributions
@@ -946,12 +951,6 @@ fn rollback_version(version_root: &Path, replaced_root: Option<&Path>) -> std::i
         fs::rename(replaced, version_root)?;
     }
     Ok(())
-}
-
-fn unix_timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
 }
 
 fn _validate_icon_path(path: &str) -> Result<(), ExtensionPackageError> {

@@ -1,4 +1,5 @@
 #![allow(unsafe_code)]
+use crate::ApplicationEntryData;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -112,23 +113,20 @@ pub(super) fn read_entry(
         ],
     );
     let arguments_json = ApplicationArguments::empty().to_json()?;
-    Ok(Some(ApplicationEntry {
+    Ok(Some(ApplicationEntry::new(ApplicationEntryData {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,
         normalized_name: normalized_name.clone(),
         normalized_tokens,
-        search_readings: Vec::new(),
         launch_kind: "macos-bundle".to_owned(),
         target_path: path.to_string_lossy().into_owned(),
-        working_directory: None,
         arguments_json,
-        bundle_id,
         icon_key: String::new(),
         icon_source: Some(path.to_path_buf()),
         icon_index: 0,
         priority,
-    }))
+    })))
 }
 
 fn localized_display_name(path: &Path, localizations: &[String]) -> Option<String> {

@@ -6,7 +6,7 @@ use crate::{ApplicationConfig, ApplicationEntry, RuntimeEvent};
 
 pub(crate) struct DiscoveryServices<'a> {
     pub(crate) config: &'a RwLock<ApplicationConfig>,
-    pub(crate) entries: &'a RwLock<Vec<ApplicationEntry>>,
+    pub(crate) entries: &'a RwLock<std::collections::HashMap<String, ApplicationEntry>>,
     pub(crate) events: &'a SyncSender<RuntimeEvent>,
     pub(crate) cancelled_through: &'a AtomicU64,
 }

@@ -9,7 +9,7 @@ use nanika_extension_clipboard::{
 };
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
-    PROTOCOL_NAME, ViewEvent, read_host_frame, write_extension_frame,
+    PROTOCOL_NAME, ViewEvent, read_frame, write_frame,
 };
 
 type SharedOutput = Arc<Mutex<BufWriter<std::io::Stdout>>>;
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = RuntimePaths::parse(std::env::args().skip(1))?;
     let mut input = BufReader::new(stdin().lock());
     let output = Arc::new(Mutex::new(BufWriter::new(stdout())));
-    let (initialize_request_id, configuration) = match read_host_frame(&mut input)? {
+    let (initialize_request_id, configuration) = match read_frame(&mut input)? {
         Some(Message::Initialize {
             request_id,
             protocol,
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join(nanika_extension_clipboard::EXTENSION_ID);
     let icon_worker = FileIconWorker::spawn(icon_root, view_invalidated)?;
     let mut view_state = None;
-    while let Some(message) = read_host_frame(&mut input)? {
+    while let Some(message) = read_frame(&mut input)? {
         match message {
             Message::Query {
                 request_id,
@@ -103,6 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => send_frame(
                 &output,
                 &Message::Snapshot {
+                    replace: true,
+                    removed: Vec::new(),
                     request_id,
                     generation,
                     complete: true,
@@ -393,7 +395,7 @@ fn write_clipboard(
         },
     )?;
     loop {
-        match read_host_frame(input)? {
+        match read_frame(input)? {
             Some(Message::HostResponse {
                 request_id: response_id,
                 parent_request_id,
@@ -436,7 +438,7 @@ fn send_error(
 }
 
 fn send_frame(output: &SharedOutput, message: &Message) -> Result<(), nanika_protocol::FrameError> {
-    write_extension_frame(
+    write_frame(
         &mut *output.lock().unwrap_or_else(|error| error.into_inner()),
         message,
     )
@@ -481,6 +483,8 @@ fn request_id(message: &Message) -> Option<String> {
     match message {
         Message::Initialize { request_id, .. }
         | Message::Initialized { request_id, .. }
+        | Message::CatalogRead { request_id }
+        | Message::CatalogBatch { request_id, .. }
         | Message::Query { request_id, .. }
         | Message::Snapshot { request_id, .. }
         | Message::Invoke { request_id, .. }
@@ -498,7 +502,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        Message::CandidatesChanged
+        Message::CatalogApplied { .. }
+        | Message::CandidatesChanged
         | Message::ViewInvalidated { .. }
         | Message::PrepareEntries { .. } => None,
     }

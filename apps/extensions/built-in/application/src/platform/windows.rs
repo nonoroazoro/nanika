@@ -1,4 +1,5 @@
 #![allow(unsafe_code)]
+use crate::ApplicationEntryData;
 
 use std::ffi::c_void;
 use std::os::windows::ffi::OsStringExt;
@@ -187,23 +188,20 @@ fn read_packaged_application(
     let icon_key = icon
         .as_ref()
         .map_or_else(String::new, |path| _icon_key_from_stamp(path, 0, 0, 0));
-    Ok(Some(ApplicationEntry {
+    Ok(Some(ApplicationEntry::new(ApplicationEntryData {
         entry_id: format!("app.{entry_id}"),
         source_key: path_key(package_root),
         display_name: display_name.clone(),
         normalized_name: normalize_name(&display_name),
         normalized_tokens: normalize_name(&display_name),
-        search_readings: Vec::new(),
         launch_kind: "windows-packaged".to_owned(),
         target_path: "explorer.exe".to_owned(),
-        working_directory: None,
         arguments_json,
-        bundle_id: Some(package_id),
         icon_key,
         icon_source: icon,
         icon_index: 0,
         priority,
-    }))
+    })))
 }
 
 fn xml_element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
@@ -285,7 +283,6 @@ fn read_shell_link(
     else {
         return Ok(None);
     };
-    let working_directory = effective_working_directory(&target, link.working_directory.as_deref());
     let Some((identity_target, arguments)) = super::scoop_shim::identity(&target, link.arguments)?
     else {
         return Ok(None);
@@ -334,25 +331,22 @@ fn read_shell_link(
         );
         crate::IconCache::fallback_key().to_owned()
     });
-    Ok(Some(ApplicationEntry {
+    Ok(Some(ApplicationEntry::new(ApplicationEntryData {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,
         normalized_name: normalized_name.clone(),
         normalized_tokens: normalized_name,
-        search_readings: Vec::new(),
         launch_kind: "windows-shell-link".to_owned(),
         target_path: path.to_string_lossy().into_owned(),
-        working_directory: working_directory.map(|path| path.to_string_lossy().into_owned()),
         arguments_json,
-        bundle_id: None,
         icon_key,
         // The Shell item resolves the shortcut's actual icon resource and index;
         // asking for the DLL itself can return its generic file-type icon.
         icon_source: Some(path.to_path_buf()),
         icon_index: 0,
         priority,
-    }))
+    })))
 }
 
 fn read_executable(
@@ -369,28 +363,24 @@ fn read_executable(
         return Ok(None);
     };
     let target_key = path_key(&identity_target);
-    let working_directory = effective_working_directory(&target, None);
     let arguments_json = arguments.to_json()?;
     let identity = stable_hash(&["windows", &target_key, &arguments_json]);
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
-    Ok(Some(ApplicationEntry {
+    Ok(Some(ApplicationEntry::new(ApplicationEntryData {
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,
         normalized_name: normalized_name.clone(),
         normalized_tokens: normalized_name,
-        search_readings: Vec::new(),
         launch_kind: "executable".to_owned(),
         target_path: target.to_string_lossy().into_owned(),
-        working_directory: working_directory.map(|path| path.to_string_lossy().into_owned()),
         arguments_json,
-        bundle_id: None,
         icon_key: _icon_key_from_stamp(&target, 0, executable_length, executable_modified),
         icon_source: Some(target),
         icon_index: 0,
         priority,
-    }))
+    })))
 }
 
 fn known_folder(id: &windows_sys::core::GUID) -> Result<PathBuf, ApplicationError> {
@@ -430,14 +420,6 @@ fn display_name(path: &Path) -> String {
     path.file_stem()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
-}
-
-fn effective_working_directory(target: &Path, value: Option<&str>) -> Option<PathBuf> {
-    let directory = value
-        .filter(|value| !value.trim().is_empty())
-        .map(expand_environment)
-        .or_else(|| target.parent().map(Path::to_path_buf))?;
-    Some(directory.canonicalize().unwrap_or(directory))
 }
 
 fn load_shell_link(path: &Path) -> Result<Option<ShellLinkMetadata>, ApplicationError> {
@@ -481,12 +463,6 @@ fn load_shell_link_initialized(path: &Path) -> Result<Option<ShellLinkMetadata>,
             .GetArguments(&mut arguments)
             .map_err(windows_error)?;
     }
-    let mut working_directory = vec![0_u16; 32_768];
-    unsafe {
-        shell_link
-            .GetWorkingDirectory(&mut working_directory)
-            .map_err(windows_error)?;
-    }
     let mut icon_source = vec![0_u16; 32_768];
     let mut icon_index = 0_i32;
     unsafe {
@@ -497,7 +473,6 @@ fn load_shell_link_initialized(path: &Path) -> Result<Option<ShellLinkMetadata>,
     Ok(Some(ShellLinkMetadata {
         target,
         arguments: wide_string(&arguments),
-        working_directory: wide_string(&working_directory),
         icon_source: wide_string(&icon_source),
         icon_index,
     }))

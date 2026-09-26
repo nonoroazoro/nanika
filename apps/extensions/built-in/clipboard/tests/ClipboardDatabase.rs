@@ -26,7 +26,6 @@ fn baseline_schema_is_the_only_initial_version() {
         [
             "entry_id",
             "content_kind",
-            "content_hash",
             "title",
             "text_payload",
             "files_json",
@@ -46,9 +45,9 @@ fn baseline_schema_is_the_only_initial_version() {
     let error = connection
         .execute(
             "INSERT INTO clipboard_entries (
-                entry_id, content_kind, content_hash, title, text_payload, files_json,
+                entry_id, content_kind, title, text_payload, files_json,
                 image_path, byte_size, captured_at
-             ) VALUES ('invalid', 'text', 'hash', 'invalid', 'text', '[]', NULL, 1, 1)",
+             ) VALUES ('invalid', 'text', 'invalid', 'text', '[]', NULL, 1, 1)",
             [],
         )
         .expect_err("mixed payload columns must be rejected");
@@ -65,7 +64,6 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
     let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
     let mut entry = ClipboardEntry {
         entry_id: "clipboard.hash".to_owned(),
-        content_hash: "hash".to_owned(),
         title: "first".to_owned(),
         content: ClipboardContent::Text {
             value: "payload".to_owned(),
@@ -161,7 +159,6 @@ fn clear_removes_requested_clipboard_history() {
     database
         .upsert(&ClipboardEntry {
             entry_id: "clipboard.one".to_owned(),
-            content_hash: "one".to_owned(),
             title: "one".to_owned(),
             content: ClipboardContent::Text {
                 value: "one".to_owned(),
@@ -181,7 +178,6 @@ fn clear_removes_requested_clipboard_history() {
 fn text_entry(index: u64, captured_at: u64) -> ClipboardEntry {
     ClipboardEntry {
         entry_id: format!("clipboard.{index}"),
-        content_hash: index.to_string(),
         title: format!("entry {index}"),
         content: ClipboardContent::Text {
             value: format!("entry {index}"),
@@ -281,7 +277,10 @@ fn clear_preserves_unmatched_entries_and_retained_image_paths() {
     let retained = database
         .clear(&[first.entry_id.clone(), "missing".to_owned()])
         .expect("clear one");
-    assert_eq!(retained, std::collections::HashSet::from([image_path]));
+    assert_eq!(
+        retained.retained_images,
+        std::collections::HashSet::from([image_path])
+    );
     let loaded = database.load().expect("history");
     assert_eq!(
         loaded
@@ -320,4 +319,57 @@ fn clear_rolls_back_the_entire_scope_on_database_failure() {
     drop(connection);
     drop(database);
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+#[test]
+fn committed_changes_match_database_order_and_keep_untouched_payloads() {
+    let root = std::env::temp_dir().join(format!(
+        "nanika-clipboard-incremental-{}",
+        std::process::id()
+    ));
+    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    let config = ClipboardConfig {
+        max_entries: Some(3),
+        max_age_days: None,
+    };
+    let mut entries = Vec::new();
+    for (id, time) in [(1, 10), (2, 20), (3, 20)] {
+        let entry = text_entry(id, time);
+        let change = database
+            .upsert_with_retention(&entry, time, &config)
+            .unwrap();
+        change.apply(&mut entries, Some(entry));
+        assert_eq!(entries, database.load().unwrap());
+    }
+    let untouched = |entries: &[ClipboardEntry]| match &entries
+        .iter()
+        .find(|entry| entry.entry_id == "clipboard.2")
+        .unwrap()
+        .content
+    {
+        ClipboardContent::Text { value } => value.as_ptr() as usize,
+        _ => unreachable!(),
+    };
+    let pointer = untouched(&entries);
+    for (id, time) in [(1, 30), (4, 40), (2, 50), (5, 1)] {
+        let entry = text_entry(id, time);
+        let change = database
+            .upsert_with_retention(&entry, time, &config)
+            .unwrap();
+        change.apply(&mut entries, Some(entry));
+        assert_eq!(entries, database.load().unwrap());
+        if id == 1 || id == 4 {
+            assert_eq!(untouched(&entries), pointer);
+        }
+    }
+    let change = database
+        .clear(&["clipboard.2".into(), "missing".into()])
+        .unwrap();
+    assert_eq!(
+        change.removed,
+        std::collections::HashSet::from(["clipboard.2".to_owned()])
+    );
+    change.apply(&mut entries, None);
+    assert_eq!(entries, database.load().unwrap());
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
 }

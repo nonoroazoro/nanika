@@ -7,7 +7,7 @@ const allowedCommands = new Set([
   'invoke_candidate',
   'open_session',
   'publish_query',
-  'refresh_search',
+  'read_results',
   'view_event',
   'open_settings',
   'read_settings',

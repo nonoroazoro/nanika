@@ -136,6 +136,9 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         revision: 2,
         query: "".to_owned(),
         results: Some(results),
+        result_revision: 1,
+        result_offset: 0,
+        total_results: 2000,
         phase: crate::SearchPhase::Ready,
         error: None,
         warnings: Vec::new(),
@@ -278,33 +281,60 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
 }
 
 #[test]
-fn refresh_requires_the_current_root_session_and_excludes_pending_operations() {
-    let mut session = SearchSession::new(2, tauri::ipc::Channel::new(|_| Ok(())));
-    session.query = "keep this query".to_owned();
-    assert!(session.begin_refresh(1).is_err());
-    assert!(!session.navigation.busy);
-    session.begin_refresh(2).expect("root session can refresh");
-    assert!(session.begin_refresh(2).is_err());
-    assert_eq!(session.query, "keep this query");
-    session.navigation.finish(Ok(()));
-    session.navigation.stack.push(crate::ExtensionViewSnapshot {
-        instance_id: 1,
-        route_id: 1,
-        extension_id: "test.extension".to_owned(),
-        generation: 1,
-        view_id: "test.view".to_owned(),
-        revision: 1,
-        view: Arc::new(nanika_protocol::View::Detail {
-            detail: nanika_protocol::DetailView {
-                title: None,
-                content: nanika_protocol::DetailContent::Text {
-                    value: "content".to_owned(),
-                },
-                metadata: Vec::new(),
-                actions: Vec::new(),
-            },
-        }),
-    });
-    assert!(session.begin_refresh(2).is_err());
-    assert!(!session.navigation.busy);
+fn result_ranges_reject_stale_queries_rankings_sessions_and_reordered_scrolls() {
+    let mut session = SearchSession::new(3, tauri::ipc::Channel::new(|_| Ok(())));
+    session.request_id = 4;
+    session.result_revision = 5;
+    let request = |session_id, request_id, result_revision, range_id, offset, count| {
+        crate::ReadResultsRequest {
+            session_id,
+            request_id,
+            result_revision,
+            range_id,
+            offset,
+            count,
+        }
+    };
+    session
+        .request_range(request(3, 4, 5, 2, 49_980, 20))
+        .unwrap();
+    assert_eq!(session.result_range, (49_980, 20));
+    session.request_range(request(3, 4, 5, 1, 0, 20)).unwrap();
+    session.request_range(request(3, 3, 5, 3, 0, 20)).unwrap();
+    session.request_range(request(3, 4, 4, 4, 0, 20)).unwrap();
+    assert_eq!(session.result_range, (49_980, 20));
+    assert!(session.request_range(request(2, 4, 5, 5, 0, 20)).is_err());
+    assert!(
+        session
+            .request_range(request(3, 4, 5, 6, usize::MAX, 20))
+            .is_err()
+    );
+    assert!(session.request_range(request(3, 4, 5, 7, 0, 0)).is_err());
+    session
+        .request_range(request(3, 4, 5, 8, 0, 100_000))
+        .unwrap();
+    assert_eq!(
+        session.result_range,
+        (0, 100_000),
+        "window size is not a total-catalog quota"
+    );
+}
+
+#[test]
+fn queued_replacement_does_not_authorize_an_action_from_the_previous_visible_result() {
+    let mut session = SearchSession::new(1, tauri::ipc::Channel::new(|_| Ok(())));
+    session.request_id = 3;
+    session.result_revision = 4;
+    assert!(session.authorize_result(3, 4).is_ok());
+    session.revision += 1;
+    assert!(
+        session.authorize_result(3, 4).is_ok(),
+        "viewport delivery keeps the same result authority"
+    );
+    session.result_revision += 1;
+    assert!(
+        session.authorize_result(3, 4).is_err(),
+        "same query does not authorize a superseded ranking"
+    );
+    assert!(session.authorize_result(2, 5).is_err());
 }

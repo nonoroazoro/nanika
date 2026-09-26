@@ -17,8 +17,18 @@ pub enum Message {
         request_id: String,
         protocol: String,
     },
-    /// The searchable catalog changed. The host re-queries its current input.
+    /// Invalidate the catalog or current query according to the declared Root Search mode.
     CandidatesChanged,
+    CatalogRead {
+        request_id: String,
+    },
+    CatalogBatch {
+        request_id: String,
+        batch: crate::CatalogBatch,
+    },
+    CatalogApplied {
+        transaction: u64,
+    },
     /// An open host-rendered view has newer extension-owned data.
     ViewInvalidated {
         view_id: String,
@@ -32,11 +42,15 @@ pub enum Message {
         request_id: String,
         generation: u64,
         query: String,
+        /// Permit a patch against the last completed snapshot for this generation.
+        incremental: bool,
     },
     Snapshot {
         request_id: String,
         generation: u64,
         complete: bool,
+        replace: bool,
+        removed: Vec<String>,
         entries: Vec<Candidate>,
     },
     Invoke {

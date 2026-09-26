@@ -483,7 +483,7 @@ fn stderr_is_drained_into_a_bounded_tail() {
 
 fn fixture_contributions() -> ExtensionContributions {
     ExtensionContributions {
-        root_search: Some(nanika_extension_package::RootSearchContribution {}),
+        root_search: Some(nanika_extension_package::RootSearchContribution::default()),
         ..ExtensionContributions::default()
     }
 }
@@ -794,4 +794,430 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
         last_result,
         Ok(Ok(nanika_host::ExtensionInvocationOutcome::Cancelled))
     ));
+}
+
+#[test]
+fn query_completes_while_refresh_is_waiting_for_its_terminal_acknowledgement() {
+    let marker = cancellation_marker("query-during-refresh");
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        [
+            "--defer-refresh-until-query".into(),
+            format!("--mark-refresh={}", marker.display()).into(),
+        ],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
+        .unwrap();
+    let completion = coordinator.refresh("fixture.extension", 1).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !marker.exists() && Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    let started = marker.exists();
+    let pending = completion.try_recv().is_err();
+    let generation = search.begin_query("during scan").unwrap();
+    coordinator.query(generation, "during scan");
+    let refreshed = completion.recv_timeout(Duration::from_secs(3));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut queried = false;
+    while Instant::now() < deadline {
+        if search.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == generation && snapshot.results.len() == 1
+        }) {
+            queried = true;
+            break;
+        }
+        std::thread::yield_now();
+    }
+    coordinator.shutdown();
+    owner.shutdown();
+    if marker.exists() {
+        std::fs::remove_file(marker).unwrap();
+    }
+    assert!(started && pending && queried);
+    refreshed.unwrap().unwrap();
+}
+
+#[test]
+fn refresh_requeries_the_same_generation_with_an_entry_patch() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--patch-query".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
+        .unwrap();
+    let generation = search.begin_query("").unwrap();
+    coordinator.query(generation, "");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !search
+        .latest_snapshot()
+        .is_some_and(|snapshot| snapshot.results.len() == 3)
+    {
+        assert!(Instant::now() < deadline, "baseline snapshot should arrive");
+        std::thread::yield_now();
+    }
+    coordinator
+        .refresh("fixture.extension", generation)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut updated = false;
+    while Instant::now() < deadline {
+        if let Some(snapshot) = search.latest_snapshot()
+            && snapshot.results.len() == 2
+            && snapshot
+                .results
+                .iter()
+                .any(|entry| entry.candidate.title() == "Updated")
+            && snapshot
+                .results
+                .iter()
+                .any(|entry| entry.candidate.title() == "Keep")
+        {
+            updated = true;
+            break;
+        }
+        std::thread::yield_now();
+    }
+    coordinator.shutdown();
+    owner.shutdown();
+    assert!(
+        updated,
+        "patch must keep unrelated entries and remove only named identities"
+    );
+}
+
+#[test]
+fn cancelled_patch_requires_a_new_baseline_in_the_same_generation() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--cancel-patch-once".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
+        .unwrap();
+    let generation = search.begin_query("").unwrap();
+    coordinator.query(generation, "");
+    wait_for_review_condition(|| {
+        search
+            .latest_snapshot()
+            .is_some_and(|s| s.results.iter().any(|e| e.candidate.title() == "Original"))
+    });
+    coordinator.query(generation, "");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut recovered = false;
+    while Instant::now() < deadline {
+        if search.latest_snapshot().is_some_and(|s| {
+            s.generation == generation && s.results.iter().any(|e| e.candidate.title() == "Updated")
+        }) {
+            recovered = true;
+            break;
+        }
+        std::thread::yield_now();
+    }
+    coordinator.shutdown();
+    owner.shutdown();
+    assert!(
+        recovered,
+        "discarded patches must be recovered before resuming incremental replies"
+    );
+}
+
+#[test]
+fn cumulative_catalog_patches_exceeding_eight_mib_remain_searchable() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let (sent, received) = std::sync::mpsc::channel();
+    search.set_notifier(Arc::new(move || {
+        let _ = sent.send(());
+    }));
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--large-catalog".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            fixture_contributions(),
+        )
+        .unwrap();
+    let generation = search.begin_query("").unwrap();
+    coordinator.query(generation, "");
+    for expected in [4000, 6001] {
+        loop {
+            received
+                .recv_timeout(Duration::from_secs(10))
+                .expect("complete catalog should arrive");
+            if search
+                .latest_snapshot()
+                .is_some_and(|snapshot| snapshot.results.len() == expected)
+            {
+                break;
+            }
+        }
+        if expected == 4000 {
+            coordinator.query(generation, "");
+        }
+    }
+    let snapshot = search.latest_snapshot().unwrap();
+    assert_eq!(
+        snapshot.results.first().unwrap().candidate.entry_id(),
+        "entry-0"
+    );
+    assert_eq!(
+        snapshot.results.last().unwrap().candidate.entry_id(),
+        "entry-6000"
+    );
+    coordinator.shutdown();
+    owner.shutdown();
+}
+
+#[test]
+fn manifest_contributions_do_not_replace_an_incremental_catalog() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--patch-query".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    let mut contributions = fixture_contributions();
+    contributions
+        .commands
+        .push(nanika_extension_package::CommandContribution {
+            command: "fixture.command".into(),
+            action: nanika_protocol::Action::primary(
+                nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                "Run",
+            ),
+            title: "Manifest command".into(),
+            description: "Static command".into(),
+            category: None,
+            keywords: Vec::new(),
+            icon: None,
+        });
+    contributions
+        .views
+        .push(nanika_extension_package::ViewContribution {
+            id: "fixture.view".into(),
+            title: "Manifest view".into(),
+            description: "Static view".into(),
+            category: None,
+            keywords: Vec::new(),
+            icon: None,
+        });
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            contributions,
+        )
+        .unwrap();
+    let generation = search.begin_query("").unwrap();
+    coordinator.query(generation, "");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !search
+        .latest_snapshot()
+        .is_some_and(|snapshot| snapshot.results.len() == 5)
+    {
+        assert!(Instant::now() < deadline, "baseline snapshot should arrive");
+        std::thread::yield_now();
+    }
+    coordinator
+        .refresh("fixture.extension", generation)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut updated = false;
+    while Instant::now() < deadline {
+        if let Some(snapshot) = search.latest_snapshot()
+            && snapshot.results.len() == 4
+            && snapshot
+                .results
+                .iter()
+                .any(|entry| entry.candidate.title() == "Updated")
+            && snapshot
+                .results
+                .iter()
+                .any(|entry| entry.candidate.title() == "Keep")
+        {
+            updated = true;
+            break;
+        }
+        std::thread::yield_now();
+    }
+    coordinator.shutdown();
+    owner.shutdown();
+    assert!(
+        updated,
+        "patch must keep unrelated entries and remove only named identities"
+    );
+}
+
+#[test]
+fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--patch-query".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    let mut contributions = fixture_contributions();
+    contributions
+        .commands
+        .push(nanika_extension_package::CommandContribution {
+            command: "fixture.entry".into(),
+            action: nanika_protocol::Action::primary(
+                nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                "Run",
+            ),
+            title: "Manifest command".into(),
+            description: "Static command".into(),
+            category: None,
+            keywords: Vec::new(),
+            icon: None,
+        });
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            contributions,
+        )
+        .unwrap();
+    let generation = search.begin_query("").unwrap();
+    coordinator.query(generation, "");
+    wait_for_review_condition(|| {
+        search.latest_snapshot().is_some_and(|snapshot| {
+            snapshot
+                .results
+                .iter()
+                .any(|row| row.candidate.title() == "Keep")
+        })
+    });
+    let baseline = search.latest_snapshot().unwrap();
+    coordinator
+        .refresh("fixture.extension", generation)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap();
+    wait_for_review_condition(|| {
+        search.latest_snapshot().is_some_and(|snapshot| {
+            !snapshot
+                .results
+                .iter()
+                .any(|row| row.candidate.entry_id() == "fixture.remove")
+        })
+    });
+    let updated = search.latest_snapshot().unwrap();
+    coordinator.shutdown();
+    owner.shutdown();
+    assert_eq!(
+        baseline.results.len(),
+        3,
+        "manifest identity must replace the conflicting dynamic identity"
+    );
+    assert_eq!(updated.results.len(), 2);
+    let command = updated
+        .results
+        .iter()
+        .find(|row| row.candidate.entry_id() == "fixture.entry")
+        .unwrap();
+    assert_eq!(command.candidate.title(), "Manifest command");
+    assert_eq!(
+        command.candidate.action_id(),
+        nanika_protocol::COMMAND_EXECUTE_ACTION_ID
+    );
+}
+
+#[test]
+fn catalog_extensions_publish_once_and_search_without_query_messages() {
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    let extension = ExtensionProcess::spawn_with(
+        fixture_path(),
+        ["--catalog-only".into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let coordinator = ExtensionSearchCoordinator::default();
+    coordinator
+        .register(
+            "fixture.extension",
+            extension,
+            search.clone(),
+            ExtensionContributions {
+                root_search: Some(nanika_extension_package::RootSearchContribution {
+                    mode: nanika_extension_package::RootSearchMode::Catalog,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    for query in ["", "catalog", "entry", ""] {
+        let generation = search
+            .begin_query_with_expected_extensions(query, ["fixture.extension".into()])
+            .unwrap();
+        coordinator.query(generation, query);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !search.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == generation && snapshot.results.len() == 1
+        }) {
+            assert!(
+                Instant::now() < deadline,
+                "catalog must remain searchable without extension queries"
+            );
+            std::thread::yield_now();
+        }
+    }
+    coordinator.shutdown();
+    owner.shutdown();
 }

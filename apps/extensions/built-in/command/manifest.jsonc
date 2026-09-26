@@ -13,5 +13,5 @@
   },
   "runtime": { "protocol": "nanika", "protocolVersion": 1 },
   "permissions": ["process.launch"],
-  "contributes": { "rootSearch": {} }
+  "contributes": { "rootSearch": {"mode": "query"} }
 }

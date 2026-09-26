@@ -7,7 +7,7 @@ pub struct Candidate {
     pub kind: CandidateKind,
     pub entry_id: String,
     pub title: String,
-    pub subtitle: Option<String>,
+    pub subtitle: Option<crate::CandidateSubtitle>,
     /// Preferred action. It may forbid default execution and remain menu-only.
     pub action_id: String,
     pub actions: Vec<crate::Action>,

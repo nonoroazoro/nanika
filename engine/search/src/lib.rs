@@ -57,3 +57,15 @@ pub use usage_stat::*;
 
 pub use constants::MAX_QUERY_CHARS;
 pub use normalization::{normalize_history_key, normalize_query};
+
+#[path = "CandidateCatalog.rs"]
+mod candidate_catalog;
+use candidate_catalog::CandidateCatalog;
+
+#[path = "CandidateData.rs"]
+mod candidate_data;
+use candidate_data::CandidateData;
+
+#[path = "SearchPublication.rs"]
+mod search_publication;
+use search_publication::SearchPublication;

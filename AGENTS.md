@@ -31,4 +31,4 @@
 - Validate affected Tauri flows on both platforms, including focus, input, DPI and rendered state. Measure performance changes under comparable workloads, including 60/120 Hz and hidden idle where relevant. Report unvalidated platforms; browser fixtures and cross-compilation do not prove native behavior.
 - Code and manifests define implementation. Update the existing documents, remove completed/history-only content, and keep optional candidates distinct from commitments. Original artwork belongs in docs/assets/icons; runtime and packaging exports stay with their consumers.
 
-References: [architecture](docs/platform-architecture.md), [extensions](docs/extension-lifecycle.md), [design system](docs/design-system.md), [unfinished candidates](docs/tasks.md).
+References: [architecture](docs/platform-architecture.md), [extensions](docs/extension-lifecycle.md), [design system](docs/design-system.md), [TODO](docs/tasks.md).

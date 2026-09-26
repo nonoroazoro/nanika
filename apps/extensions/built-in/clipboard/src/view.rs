@@ -109,11 +109,11 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
                     .collect(),
             },
             ClipboardContent::PngFile { .. }
-                if nanika_protocol::is_valid_content_hash(&entry.content_hash) =>
+                if nanika_protocol::is_valid_content_hash(&entry.entry_id) =>
             {
                 DetailContent::Image {
                     source: ImageSource::Resource {
-                        path: format!("{}.png", entry.content_hash),
+                        path: format!("{}.png", entry.entry_id),
                     },
                     alternative_text: entry.title.clone(),
                 }

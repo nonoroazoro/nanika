@@ -1,6 +1,8 @@
 //! Built-in local clipboard history extension.
 
 mod capture;
+#[path = "ClipboardChange.rs"]
+mod clipboard_change;
 #[path = "ClipboardCommand.rs"]
 mod clipboard_command;
 #[path = "ClipboardConfig.rs"]
@@ -26,6 +28,7 @@ mod runtime_paths;
 mod view;
 
 pub(crate) use capture::*;
+pub use clipboard_change::*;
 pub(crate) use clipboard_command::*;
 pub use clipboard_config::*;
 pub use clipboard_database::*;

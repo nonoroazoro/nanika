@@ -98,7 +98,7 @@ impl RuntimeService {
             }
             if let Some(storage) = &storage {
                 storage
-                    .register_builtin_extension(&manifest.id, unix_timestamp())
+                    .register_builtin_extension(&manifest.id)
                     .map_err(|error| {
                         format!(
                             "extension {} metadata could not be recorded: {error}",
@@ -259,7 +259,7 @@ impl RuntimeService {
         Ok(generation)
     }
 
-    /// Wait for explicit refresh completion from dynamic Root Search extensions.
+    /// Wait for catalog refresh completion from dynamic Root Search extensions.
     pub fn refresh_root_search(&self, generation: u64) -> Result<(), String> {
         self.extensions.refresh_root_search(generation)
     }

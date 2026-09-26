@@ -53,7 +53,7 @@ impl Fixture {
                 },
                 "runtime": { "protocol": "nanika", "protocolVersion": 1 },
                 "contributes": {
-                    "rootSearch": {},
+                    "rootSearch": {"mode": "query"},
                     "configuration": {
                         "title": "Fixture",
                         "properties": {
@@ -694,13 +694,16 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
             .is_err(),
         "the first close must release the live view"
     );
-    let stored = nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
-    assert!(stored.load_usage().unwrap().is_empty());
-    assert!(
-        stored.load_input_history().unwrap().is_empty(),
-        "recording must roll back atomically"
-    );
-    drop(stored);
+    // The fixture deliberately installed a trigger; inspect through its connection.
+    // Opening a new owner must reject schemas with additional objects.
+    for table in ["usage_stats", "input_history"] {
+        let rows: i64 = database
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0, "recording must roll back atomically");
+    }
     drop(database);
     fixture.stop(runtime);
 }
@@ -879,7 +882,7 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
                 std::fs::write(installed.join("manifest.jsonc"), manifest.to_string()).unwrap();
                 nanika_storage::HostDatabase::open(fixture.paths.host_database())
                     .unwrap()
-                    .install_external_extension(id, "0.1.0", &installed, "fixture-digest", 1)
+                    .install_external_extension(id, "0.1.0", &installed, "fixture-digest")
                     .unwrap();
                 fixture.manifests.clear();
             }
@@ -1132,10 +1135,7 @@ fn large_configuration_is_applied_persisted_and_reloaded_for_both_policies() {
         });
         fixture.manifests[0] = manifest.to_string();
         let payload = serde_json::json!(vec!["x".repeat(4000); 2400]);
-        assert!(
-            serde_json::to_vec(&payload).unwrap().len()
-                > nanika_protocol::MAX_EXTENSION_FRAME_BYTES
-        );
+        assert!(serde_json::to_vec(&payload).unwrap().len() > 8 * 1024 * 1024);
         let runtime = fixture.start();
         let generation = runtime.begin_query("ready").unwrap();
         wait_until(|| has_result(&runtime, generation, HEALTHY));

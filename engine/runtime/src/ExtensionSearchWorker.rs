@@ -47,12 +47,27 @@ impl ExtensionSearchWorker {
         let worker_contributions = Arc::clone(&contributions);
         let deferred = source.is_deferred();
         let live_configuration = source.supports_live_configuration();
-        let static_catalog = contributions.root_search.is_none();
+        let catalog_mode = contributions
+            .root_search
+            .is_some_and(|root| root.mode == nanika_extension_package::RootSearchMode::Catalog);
+        let static_catalog = contributions.root_search.is_none() || catalog_mode;
+        if static_catalog {
+            retained_search
+                .register_static_catalog(
+                    &extension_id,
+                    crate::search_candidates(
+                        &extension_id,
+                        contribution_candidates(&contributions),
+                    ),
+                )
+                .map_err(io::Error::other)?;
+        }
         let root_search = contributions.root_search.is_some();
         let notifier = Arc::clone(&context.notifier);
         let view_invalidations = Arc::clone(&context.view_invalidations);
         let state = Arc::new((
             Mutex::new(ExtensionSearchState {
+                catalog_pending: catalog_mode,
                 lifecycle: if deferred {
                     crate::RuntimeExtensionState::Dormant
                 } else {
@@ -122,7 +137,11 @@ impl ExtensionSearchWorker {
                         && !state.shutdown.load(Ordering::Acquire)
                         && state.query.is_none()
                     {
-                        state.query = state.latest_query.clone();
+                        if catalog_mode {
+                            state.catalog_pending = true;
+                        } else {
+                            state.query = state.latest_query.clone();
+                        }
                         ready.notify_one();
                     }
                 }));
@@ -167,6 +186,8 @@ impl ExtensionSearchWorker {
                     state: Arc::clone(&worker_state),
                     notifier: Arc::clone(&notifier),
                 };
+                let mut catalog_transfer = crate::CatalogTransfer::default();
+                let mut catalog_request = 0_u64;
                 let mut runtime = None;
                 let mut factory = Some(factory);
                 let mut configuration = configuration;
@@ -211,7 +232,10 @@ impl ExtensionSearchWorker {
                                     let _ = invocation.response.send(Err(message));
                                 }
                                 ExtensionWork::ViewEvent(request) => { let _ = request.completion.send(Err(message)); }
-                                ExtensionWork::Refresh(refresh) => { let _ = refresh.completion.send(Err(message)); }
+                                ExtensionWork::Refresh(refresh) => {
+                                    let _ = refresh.completion.send(Err(message));
+                                    worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).refresh_pending = false;
+                                }
                                 ExtensionWork::ApplyConfiguration(update) => {
                                     update.complete(Err(message));
                                     worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).configuration_pending = false;
@@ -225,6 +249,23 @@ impl ExtensionSearchWorker {
                         }
                     };
                     let result = match work {
+                        ExtensionWork::Catalog => {
+                            catalog_request += 1;
+                            let result = runtime.read_catalog(format!("catalog-{worker_extension_id}-{catalog_request}"))
+                                .and_then(|batch| catalog_transfer.accept(&worker_extension_id, batch));
+                            match result {
+                                Ok(true) => worker_instance.with_active(|| {
+                                    let transaction = catalog_transfer.commit(&search, &worker_extension_id, contribution_candidates(&worker_contributions))?;
+                                    runtime.acknowledge_catalog(transaction)?;
+                                    Ok(true)
+                                }).unwrap_or(Ok(false)),
+                                Ok(false) => {
+                                    worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).catalog_pending = true;
+                                    Ok(false)
+                                }
+                                Err(error) => Err(error),
+                            }
+                        }
                         ExtensionWork::Query(query) => {
                             let generation = query.generation;
                             let result = run_query(
@@ -306,19 +347,9 @@ impl ExtensionSearchWorker {
                             result.map(|_| true)
                         }
                         ExtensionWork::Refresh(refresh) => {
-                            let result = run_refresh(
-                                runtime,
-                                &worker_extension_id,
-                                &refresh,
-                                &worker_state,
-                            );
-                            let completion = match &result {
-                                Ok(true) => Ok(()),
-                                Ok(false) => Err("Extension refresh was cancelled.".to_owned()),
-                                Err(error) => Err(error.to_string()),
-                            };
-                            let _ = refresh.completion.send(completion);
-                            result
+                            run_refresh(runtime, &worker_extension_id, refresh,
+                                &worker_state, &worker_error, &notifier);
+                            Ok(false)
                         }
                         ExtensionWork::ApplyConfiguration(update) => {
                             run_configuration_update(runtime, update, &worker_extension_id,
@@ -368,6 +399,10 @@ impl ExtensionSearchWorker {
                     worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).stop_result = Some(Ok(()));
                     worker_state.1.notify_all();
                 }
+            }).inspect_err(|_| {
+                if static_catalog && let Err(cleanup) = retained_search.remove_extension(&extension_id) {
+                    tracing::error!(%extension_id, %cleanup, "failed to withdraw catalog after worker spawn failure");
+                }
             })?;
         let worker = Self {
             extension_id,
@@ -380,18 +415,6 @@ impl ExtensionSearchWorker {
             root_search: contributions.root_search.is_some(),
             thread: Mutex::new(Some(thread)),
         };
-        if static_catalog {
-            worker
-                .search
-                .register_static_catalog(
-                    &worker.extension_id,
-                    crate::search_candidates(
-                        &worker.extension_id,
-                        contribution_candidates(&contributions),
-                    ),
-                )
-                .map_err(io::Error::other)?;
-        }
         Ok(worker)
     }
 
@@ -651,10 +674,11 @@ pub(crate) fn next_work(
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     while state.query.is_none()
-        && (state.refreshes.is_empty() || state.configuration_pending)
+        && !state.catalog_pending
+        && (state.refreshes.is_empty() || state.configuration_pending || state.refresh_pending)
         && state.invocations.is_empty()
         && state.view_events.is_empty()
-        && (state.configurations.is_empty() || state.configuration_pending)
+        && (state.configurations.is_empty() || state.configuration_pending || state.refresh_pending)
         && state.entry_preparation.is_none()
         && !state.shutdown.load(Ordering::Acquire)
         && !state.closed
@@ -672,14 +696,19 @@ pub(crate) fn next_work(
     if let Some(event) = state.view_events.pop_front() {
         return Some(ExtensionWork::ViewEvent(event));
     }
-    if !state.configuration_pending {
+    if !state.configuration_pending && !state.refresh_pending {
         if let Some(update) = state.configurations.pop_front() {
             state.configuration_pending = true;
             return Some(ExtensionWork::ApplyConfiguration(update));
         }
         if let Some(refresh) = state.refreshes.pop_front() {
+            state.refresh_pending = true;
             return Some(ExtensionWork::Refresh(refresh));
         }
+    }
+    if state.catalog_pending {
+        state.catalog_pending = false;
+        return Some(ExtensionWork::Catalog);
     }
     state.query.take().map(ExtensionWork::Query).or_else(|| {
         state
@@ -782,19 +811,42 @@ fn run_configuration_update(
 fn run_refresh(
     runtime: &mut ExtensionRuntime,
     extension_id: &str,
-    refresh: &ExtensionRefresh,
+    refresh: ExtensionRefresh,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-) -> Result<bool, SupervisorError> {
-    runtime.ensure_running()?;
-    runtime.refresh_cancellable(
+    error: &Arc<Mutex<Option<HostDiagnostic>>>,
+    notifier: &ExtensionNotifier,
+) {
+    let state = Arc::clone(state);
+    let error = Arc::clone(error);
+    let notifier = Arc::clone(notifier);
+    let extension_id = extension_id.to_owned();
+    runtime.start_refresh(
         format!("refresh-{extension_id}-{}", refresh.request_id),
         refresh.generation,
-        || {
-            let (lock, _) = &**state;
-            let state = lock.lock().unwrap_or_else(|error| error.into_inner());
-            state.shutdown.load(Ordering::Acquire)
-        },
-    )
+        Box::new(move |result| {
+            let completion = result.as_ref().map(|_| ()).map_err(ToString::to_string);
+            match result {
+                Ok(()) => set_error(&error, None),
+                Err(cause) => set_error(
+                    &error,
+                    Some(extension_failure(
+                        &extension_id,
+                        "refresh catalog",
+                        "The catalog could not be refreshed.",
+                        cause,
+                    )),
+                ),
+            }
+            state
+                .0
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .refresh_pending = false;
+            state.1.notify_all();
+            let _ = refresh.completion.send(completion);
+            notify(&notifier);
+        }),
+    );
 }
 
 fn run_query(
@@ -814,22 +866,43 @@ fn run_query(
             })
             .unwrap_or(Ok(false));
     }
-    if !contributions.commands.is_empty() || !contributions.views.is_empty() {
-        instance
-            .with_active(|| {
-                publish_contributions(search, extension_id, query.generation, contributions)
-            })
-            .unwrap_or(Ok(false))?;
-    }
+    // Replies below include manifest entries. Publishing them separately would replace
+    // the dynamic baseline before a same-generation patch can preserve unchanged entries.
     runtime.query_incremental(
         format!("search-{extension_id}-{}", query.generation),
         query.generation,
         query.query.clone(),
-        |mut entries| {
-            entries.extend(contribution_candidates(contributions));
+        |mut update| {
+            let contributions = contribution_candidates(contributions);
+            let manifest_ids = contributions
+                .iter()
+                .map(|entry| entry.entry_id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            // Manifest identity owns all its actions, even if a dynamic entry changes action ID.
+            update
+                .removed
+                .retain(|id| !manifest_ids.contains(id.as_str()));
+            update
+                .entries
+                .retain(|entry| !manifest_ids.contains(entry.entry_id.as_str()));
+            update.entries.extend(contributions);
             instance
                 .with_active(|| {
-                    publish_extension_snapshot(search, extension_id, query.generation, entries)
+                    if update.replace {
+                        publish_extension_snapshot(
+                            search,
+                            extension_id,
+                            query.generation,
+                            update.entries,
+                        )
+                    } else {
+                        search.publish_extension_delta(
+                            extension_id,
+                            query.generation,
+                            crate::search_candidates(extension_id, update.entries),
+                            update.removed,
+                        )
+                    }
                 })
                 .unwrap_or(Ok(()))
                 .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
@@ -840,7 +913,9 @@ fn run_query(
             state.shutdown.load(Ordering::Acquire)
                 || state.closed
                 || state.query.is_some()
-                || (!state.configuration_pending && !state.refreshes.is_empty())
+                || (!state.configuration_pending
+                    && !state.refresh_pending
+                    && !state.refreshes.is_empty())
                 || !state.invocations.is_empty()
                 || !state.view_events.is_empty()
         },
@@ -879,7 +954,8 @@ pub(crate) fn contribution_candidates(
             subtitle: command
                 .category
                 .clone()
-                .or_else(|| Some("Command".to_owned())),
+                .or_else(|| Some("Command".to_owned()))
+                .map(nanika_protocol::CandidateSubtitle::Label),
             action_id: nanika_protocol::COMMAND_EXECUTE_ACTION_ID.to_owned(),
             actions: vec![command.action.clone()],
             aliases,
@@ -899,7 +975,11 @@ pub(crate) fn contribution_candidates(
             kind: nanika_protocol::CandidateKind::View,
             entry_id: view.id.clone(),
             title: view.title.clone(),
-            subtitle: view.category.clone().or_else(|| Some("View".to_owned())),
+            subtitle: view
+                .category
+                .clone()
+                .or_else(|| Some("View".to_owned()))
+                .map(nanika_protocol::CandidateSubtitle::Label),
             action_id: nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
             actions: vec![nanika_protocol::Action::primary(
                 nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),

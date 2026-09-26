@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_extension_frame,
-    write_host_frame,
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
 };
 
 #[test]
@@ -25,7 +24,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         .expect("script extension should spawn");
     let mut input = BufWriter::new(child.stdin.take().expect("child stdin"));
     let mut output = BufReader::new(child.stdout.take().expect("child stdout"));
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Initialize {
             request_id: "initialize".to_owned(),
@@ -35,26 +34,42 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .expect("initialize should write");
     assert!(matches!(
-        read_extension_frame(&mut output).expect("initialize response"),
+        read_frame(&mut output).expect("initialize response"),
         Some(Message::Initialized { .. })
     ));
-    write_host_frame(
+    write_frame(
         &mut input,
-        &Message::Query {
-            request_id: "query".to_owned(),
+        &Message::Refresh {
+            request_id: "startup".to_owned(),
             generation: 1,
-            query: "build".to_owned(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_reply(&mut output),
+        Some(Message::Refreshed { .. })
+    ));
+    write_frame(
+        &mut input,
+        &Message::CatalogRead {
+            request_id: "catalog".to_owned(),
         },
     )
     .expect("query should write");
-    let Some(Message::Snapshot { entries, .. }) =
-        read_extension_frame(&mut output).expect("query response")
-    else {
+    let Some(Message::CatalogBatch { batch, .. }) = read_reply(&mut output) else {
         panic!("script extension should return a snapshot");
     };
-    let entry = entries.into_iter().next().expect("script candidate");
+    assert!(batch.replace && batch.complete);
+    write_frame(
+        &mut input,
+        &Message::CatalogApplied {
+            transaction: batch.transaction,
+        },
+    )
+    .unwrap();
+    let entry = batch.entries.into_iter().next().expect("script candidate");
     assert_eq!(entry.title, "Build project");
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Invoke {
             request_id: "invoke".to_owned(),
@@ -69,7 +84,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
         parent_request_id,
         generation,
         request,
-    }) = read_extension_frame(&mut output).expect("host request")
+    }) = read_reply(&mut output)
     else {
         panic!("script extension should request host launch");
     };
@@ -93,7 +108,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
                 .unwrap()
         ]
     );
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::HostResponse {
             request_id,
@@ -104,10 +119,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .expect("host response should write");
     assert!(matches!(
-        read_extension_frame(&mut output).expect("action result"),
+        read_reply(&mut output),
         Some(Message::Result { .. })
     ));
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "bad-directory".to_owned(),
@@ -116,10 +131,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     assert!(
-        matches!(read_extension_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
+        matches!(read_reply(&mut output), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
     );
     std::fs::write(root.join("Second.py"), b"print(2)").unwrap();
-    write_host_frame(
+    write_frame(
         &mut input,
         &Message::Refresh {
             request_id: "refresh".to_owned(),
@@ -128,27 +143,72 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     assert!(matches!(
-        read_extension_frame(&mut output).unwrap(),
+        read_reply(&mut output),
         Some(Message::Refreshed { generation: 2, .. })
     ));
-    assert!(matches!(
-        read_extension_frame(&mut output).unwrap(),
-        Some(Message::CandidatesChanged)
-    ));
-    write_host_frame(
+    write_frame(
         &mut input,
-        &Message::Query {
-            request_id: "query-updated".to_owned(),
-            generation: 2,
-            query: String::new(),
+        &Message::CatalogRead {
+            request_id: "catalog".to_owned(),
         },
     )
     .unwrap();
-    let Some(Message::Snapshot { entries, .. }) = read_extension_frame(&mut output).unwrap() else {
+    let Some(Message::CatalogBatch { batch, .. }) = read_reply(&mut output) else {
         panic!("expected refreshed catalog");
     };
     // The rejected update retains the previous configured directory; refresh sees new files there.
-    assert_eq!(entries.len(), 2);
+    assert!(!batch.replace && batch.complete);
+    write_frame(
+        &mut input,
+        &Message::CatalogApplied {
+            transaction: batch.transaction,
+        },
+    )
+    .unwrap();
+    let entries = batch.entries;
+    assert_eq!(entries.len(), 1);
+    let removed_id = entries
+        .iter()
+        .find(|entry| entry.title == "Second")
+        .unwrap()
+        .entry_id
+        .clone();
+    std::fs::remove_file(root.join("Second.py")).unwrap();
+    write_frame(
+        &mut input,
+        &Message::Refresh {
+            request_id: "remove".to_owned(),
+            generation: 3,
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        read_reply(&mut output),
+        Some(Message::Refreshed { .. })
+    ));
+    write_frame(
+        &mut input,
+        &Message::CatalogRead {
+            request_id: "catalog".to_owned(),
+        },
+    )
+    .unwrap();
+    let Some(Message::CatalogBatch { batch, .. }) = read_reply(&mut output) else {
+        panic!("expected a patch");
+    };
+    assert!(!batch.replace);
+    assert_eq!(batch.removed, [removed_id]);
+    assert!(
+        batch.entries.is_empty(),
+        "an unrelated root entry must not be resent"
+    );
+    write_frame(
+        &mut input,
+        &Message::CatalogApplied {
+            transaction: batch.transaction,
+        },
+    )
+    .unwrap();
     drop(input);
     assert!(child.wait().expect("child should exit").success());
     let _ = std::fs::remove_dir_all(root);
@@ -163,4 +223,13 @@ fn script_configuration(root: &Path) -> ExtensionConfiguration {
 
 fn argument(name: &str, path: &Path) -> String {
     format!("--{name}={}", path.display())
+}
+
+fn read_reply(input: &mut impl std::io::Read) -> Option<Message> {
+    loop {
+        match read_frame(input).unwrap() {
+            Some(Message::CandidatesChanged) => continue,
+            message => return message,
+        }
+    }
 }

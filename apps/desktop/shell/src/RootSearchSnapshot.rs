@@ -10,6 +10,9 @@ pub(crate) struct RootSearchSnapshot {
     pub(crate) request_id: u64,
     pub(crate) revision: u64,
     pub(crate) query: String,
+    pub(crate) result_revision: u64,
+    pub(crate) result_offset: usize,
+    pub(crate) total_results: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) results: Option<Vec<SearchResult>>,
     pub(crate) phase: SearchPhase,

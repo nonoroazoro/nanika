@@ -1,186 +1,157 @@
 # Extension Lifecycle
 
-Built-in and external extensions share one live enable/disable contract. Settings
-changes desired enablement without restarting the host. Rust owns lifecycle and
-configuration transactions; the desktop shell owns sessions and route retirement.
+Built-in and external extensions share one live enable/disable contract. Rust owns
+lifecycle/configuration transactions; the shell owns sessions and route retirement.
+See [architecture](platform-architecture.md) for storage, scanning and catalog delivery.
 
 ## Installation and runtime identity
 
-Host inventory alone establishes built-in provenance. External packages cannot
-claim reserved IDs. Both resolve to the same InstalledExtension descriptor,
-permissions, configuration registry and RuntimeService registration path. Inventory
-parsing is not signature verification; release validation remains in [tasks](tasks.md).
+Host inventory alone establishes built-in provenance; external packages cannot claim
+reserved IDs. Both origins use the same installed descriptor, permission/configuration
+registry and RuntimeService path. Inventory parsing is not signature verification.
 
-The host database records installation identity and package provenance.
-`extensions.jsonc` is the sole durable enablement authority, enabled by default.
-Every writer, including offline package management, acquires the same OS file lock
-on `extensions.lock` before reading, changing or rolling back the registry. The
-lock is separate from the atomically replaced document. Package rollback retains
-this lock so it cannot restore a snapshot over another writer's committed choice.
-There are no pre-release compatibility paths, migrations or automatic data resets.
+The host DB records installation/provenance. `extensions.jsonc` is the sole durable
+enablement authority, enabled by default. All writers, including offline package
+management, hold the OS lock on `extensions.lock` while reading, changing or rolling
+back the registry. This lock is separate from the atomically replaced document and
+prevents rollback from overwriting another writer's committed choice.
 
-Installed descriptors outlive runtime instances. Disabled and configuration-free
-extensions remain listed. Configuration errors retain their concrete causes. Explicit enable re-reads an
-initially invalid configuration so a user correction can take effect.
-Invalid packages and missing executables remain resolution diagnostics rather than
-claiming a runnable Settings entry. Each new instance has a host-owned monotonic
-identity, independent of query generations and extension-owned request/view IDs.
+Installed descriptors outlive instances. Disabled and configuration-free extensions
+remain listed. Invalid configuration retains its concrete error; explicit enable
+re-reads it so manual corrections can take effect. Invalid packages/missing executables
+remain resolution diagnostics, not runnable Settings entries.
 
-An instance publication gate binds search, host-service admission and view updates
-to that lifetime. Retirement withdraws search contributions through an acknowledged
-search-owner barrier. Query admission shares the withdrawal barrier so a new query
-cannot wait for an already retired contributor. Routes and invalidations retain the
-instance identity; late replies cannot mutate replacement routes or permissions.
-Accepted action output remains coordinator-owned after a worker stops and carries
-its originating instance identity. Removing a retired route preserves other live
-extensions' routes and resources.
+Each instance receives a host-owned monotonic identity independent of query and
+extension-owned IDs. Its publication gate scopes search, host-service admission and
+view updates. Retirement withdraws contributions through an acknowledged search-owner
+barrier shared with query admission. Late replies cannot mutate replacement routes or
+permissions. Accepted action output remains coordinator-owned with its originating
+identity. Removing a retired route preserves unrelated live routes/resources.
 
 ## Desired state, admission and actual state
 
-`enabled` records durable intent. `pending` records an accepted lifecycle operation.
-Actual state is `disabled`, `dormant`, `starting`, `ready`, `stopping` or `failed`.
-The worker owns process state; request diagnostics do not redefine readiness.
-Startup and explicit enable use the same factory, owned by the worker. The factory
-receives the latest accepted initialization configuration when activation occurs.
-Transport termination notifies the worker even while idle. A worker that exits
-without a terminal stop result reports failure, including unwinding after a panic.
-An enabled on-demand extension can be dormant with a registered static catalog and
-no process. Saving intent is not proof of readiness or successful cleanup.
+`enabled` is durable intent; `pending` is an accepted lifecycle operation. Actual state
+is `disabled`, `dormant`, `starting`, `ready`, `stopping` or `failed`. The worker owns
+process state; operation diagnostics do not redefine readiness. An on-demand extension
+may be dormant with registered static entries and no process.
 
-Configuration and lifecycle share one reservation per extension. Conflicting
-requests fail explicitly. The reservation spans domain application, any required
-persistence, outcome reconciliation and transition completion. Other extensions
-remain usable. Neither hiding Settings nor dropping a receipt cancels accepted work.
-Application shutdown closes admission before settling operations. Catalog and UI
-locks are not held while waiting for process completion.
+Startup and explicit enable use the same worker-owned factory and latest accepted
+initialization configuration. Transport exit wakes even an idle worker. Worker exit
+without a terminal stop result, including panic, is failure.
 
-### Disable
+Configuration and lifecycle share one reservation per extension through application,
+persistence, reconciliation and completion. Conflicts fail explicitly; unrelated
+extensions remain usable. Hiding Settings/dropping receipts does not cancel accepted
+work. Shutdown closes admission before settling operations. Catalog/UI locks are not
+held while waiting for processes.
 
-1. Persist the choice. A persistence failure leaves the live instance admitted.
-2. Close admission and withdraw contributions and routes for the retiring instance.
-3. Settle accepted work. Cancel queued actions that have not started explicitly;
-   retain actual terminal outcomes of active actions and already submitted host services.
-4. Close process stdin after active work settles. Superseded searches may use their
-   protocol cancellation, whose terminal response must still be drained.
-5. Await extension cleanup, process exit, descendant exit and output draining.
-6. Publish disabled only after successful cleanup and release the instance.
+## Launcher catalog refresh
 
-Extensions stop producers before draining durable writes. Clipboard stops its
-monitor, joins its icon worker and drains its database owner; cleanup failures
-propagate through a nonzero exit and retained stderr diagnostics.
+Native opens coalesce into one queued/active `Refresh` / `Refreshed` exchange for
+dynamic contributors. Refresh completion acknowledges discovery; changed catalogs
+publish `CandidatesChanged`. Replies dispatch independently of queries/actions, while
+mutations serialize with configuration. Invocations retain worker priority.
 
-Pending or failed cleanup remains visible. Explicit disable has no timeout,
-forced kill or automatic retry. A failed stop retains ownership and prevents a
-replacement instance. Explicit application shutdown retains its existing process
-termination policy and can interrupt an indefinitely pending graceful stop.
+Catalog transactions belong to the instance, not the query. Staged batches are invisible
+until search-owner commit and `CatalogApplied`; retirement revokes publication authority.
+Query contributors retain generation-scoped responses. Neither mode changes navigation.
+See [publication and search](platform-architecture.md#catalog-publication-and-search).
 
-### Enable
+Built-in scanners publish each completed recursive root. Exit discards incomplete
+staging; restart scans from the beginning without checkpoints. One extension's refresh
+failure does not undo another's catalog. Shutdown interrupts waits before joining owners.
+
+## Disable
+
+1. Persist the choice. Persistence failure leaves the live instance admitted.
+2. Close admission and withdraw that instance's contributions/routes.
+3. Settle accepted work, explicitly cancelling queued actions not yet started and
+   retaining real outcomes for active actions/submitted host services.
+4. Close stdin after active work settles. Drain terminal responses for cancelled searches.
+5. Await cleanup, process/descendant exit and output draining.
+6. Publish disabled and release the instance only after successful cleanup.
+
+Extensions stop producers before draining durable writes. Clipboard stops its monitor,
+joins its icon worker and drains its DB owner; cleanup failures reach the host through
+nonzero exit and retained stderr. Pending/failed cleanup stays visible and retains
+ownership, preventing replacement. Explicit disable has no timeout, forced kill or
+automatic retry. Application shutdown retains its separate termination policy and can
+interrupt a pending graceful stop.
+
+## Enable
 
 1. Persist the choice for a resolved installed descriptor.
-2. Allocate a new identity with current durable configuration and manifest permissions.
+2. Allocate an identity with current saved configuration and manifest permissions.
 3. Start startup-activated extensions or register on-demand work.
-4. Feed the current query to registered contributors and publish readiness separately.
+4. Feed registered contributors the current query.
+5. Publish readiness independently of saved intent.
 
-Restart initialization uses saved values, never unpersisted effective values from
-a retired instance. `beforeApply` configuration may be saved while disabled;
-`afterApply` requires live confirmation and cannot save while disabled. See the
-[Settings operation contract](platform-architecture.md#settings-operations).
+Restart uses saved values, not unpersisted effective values from a retired instance.
+`beforeApply` can save while disabled; `afterApply` cannot. See
+[Settings operations](platform-architecture.md#settings-operations).
 
-### Unexpected failure and recovery
+## Unexpected failure and recovery
 
-A failed capture, copy, query or configuration operation reports only that operation's
-failure. It does not disable the extension, terminate its process or turn a later
-successful cleanup into a failed stop. Later work remains admitted while the
-transport is healthy.
+Capture, copy, query and configuration failures affect their operation while transport
+is healthy; they do not implicitly disable the extension or invalidate later cleanup.
 
-RuntimeService owns an event-driven supervisor independent of desktop visibility.
-An unexpected transport exit or failed activation gets one automatic restart per
-explicit enable cycle. This includes an idle disconnect. Recovery shares admission
-with configuration and explicit lifecycle operations, preserves durable enablement,
-withdraws the old instance and terminates its remaining containment before creating
-a new instance. It initializes with saved configuration and the current query;
-on-demand extensions that crashed are started immediately. Accepted actions and
-view requests retain terminal failures and are never automatically replayed.
+RuntimeService's event-driven supervisor allows one automatic restart per explicit
+enable cycle after transport exit or failed activation, including idle disconnect.
+Recovery shares configuration/lifecycle admission, preserves durable intent, withdraws
+the old instance and terminates remaining containment before replacement. It initializes
+saved configuration/current query and immediately starts crashed on-demand extensions.
+Accepted actions/view requests retain terminal failures and are never replayed.
 
-A second failure ends automatic recovery. Settings retains both the original cause
-and the restarted instance's failure, with an explicit disable/enable option to try
-again. Cleanup failure also prevents replacement and remains visible. Explicit
-application shutdown closes recovery admission and interrupts process waits. No
-polling, restart timer, crash loop or persisted restart counter is used.
+A second failure stops recovery; Settings retains both causes and permits explicit
+disable/enable. Cleanup failure also blocks replacement. Shutdown closes recovery
+admission and interrupts waits. There is no polling, restart timer or persisted counter.
 
 ## Protocol and native process contract
 
-Before Nanika 1.0, protocol redesigns directly replace the initial design while
-keeping all Nanika-owned internal versions at their initial values, including
-`protocolVersion: 1` and `nanika.extension.v1`. There is one current
-contract, with no compatibility branches or migrations.
+Pre-1.0 redesigns replace the current protocol directly, preserving
+`protocolVersion: 1` and `nanika.extension.v1`. No compatibility branches or migrations.
 
-EOF is the process lifetime boundary for both Nanika and ACP. Nanika has no
-Shutdown/ShutdownAck exchange: an acknowledgement cannot prove that producers,
-writes or descendants have finished. ACP uses ACP v1 and its native JSON-RPC
-session protocol.
+EOF is the process lifetime boundary for Nanika and ACP. Nanika has no shutdown
+acknowledgement that substitutes for completed writes/descendant exit. ACP uses v1
+JSON-RPC sessions. Neither transport adds an application-defined message byte quota.
 
-For ACP, `session/cancel` cancels a prompt, not a process. The host still awaits the
-prompt's terminal response before retiring its transport. Dropping the client
-connection closes stdin; the adapter drains stderr and waits for exit status.
-ACP does not gain a private Nanika shutdown request or a synthesized success reply.
-
-Native adapters expose containment observation without introducing lifecycle policy:
-
-- Windows starts the child suspended, assigns its Job Object, then resumes it.
-  Graceful completion requires zero active Job processes. Kill-on-close containment
-  remains a final ownership safeguard, not the implementation of graceful disable.
-- macOS creates the process group before launch. Graceful completion requires the
-  group to be absent, tested with signal zero. Application termination and unexpected
-  failure recovery use the group termination signal before releasing containment.
-
-A child remains responsible for its descendants' graceful cleanup. Descendants that
-hold pipes open or remain in the containment scope keep the transition pending.
-The supported platforms remain Windows 10+ and macOS 13+.
-
-The ACP contract follows the official
+ACP `session/cancel` cancels a prompt, not a process: await its terminal response before
+retiring transport. Dropping the connection closes stdin, drains stderr and waits for
+exit. Do not synthesize success or add a private shutdown request. References:
 [stdio transport](https://agentclientprotocol.com/protocol/transports) and
-[cancellation](https://agentclientprotocol.com/protocol/cancellation) rules.
-SDK-specific automatic termination deadlines are not adopted as product policy.
+[cancellation](https://agentclientprotocol.com/protocol/cancellation).
+SDK-specific termination deadlines are not product policy.
 
-## Settings and validation
+| Platform | Containment and graceful completion                                                                                                            |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows  | Start suspended, assign Job Object, resume; require zero active Job processes. Kill-on-close is an ownership safeguard, not graceful disable.  |
+| macOS    | Establish process group before launch; require group absence via signal zero. Shutdown/recovery signal the group before releasing containment. |
 
-Every resolved extension places Enable extension in its own first settings group,
-separate from the extension's domain configuration. Both groups use the same
-setting rows, Switch and pending feedback, with normal spacing between groups.
-Configuration pending feedback belongs to the edited field and does not disable or
-dim the enablement switch. The runtime admission gate rejects an actual overlapping
-lifecycle request before changing enablement; Settings reports the error and keeps
-the accepted configuration operation intact.
-The enablement group remains available for extensions without domain configuration. A revisioned Settings channel reports lifecycle and configuration
-observations even when no launcher session is open. Lifecycle delivery retains one
-unacknowledged snapshot and the authoritative latest value. Receipt IDs are shared
-with progress delivery and never reused across Settings subscriptions. Late snapshot replies cannot
-replace newer observations. Configuration snapshots and save outcomes also share
-a runtime-owned monotonic configuration revision, independent of lifecycle delivery
-revision and persisted format versions. Older configuration facts cannot overwrite
-newer save results; operation errors are still delivered. A corrected initially
-invalid configuration creates its edit state before fields become visible.
-Accepted edits settle before lifecycle reconciliation;
-uncommitted drafts remain owned by the user. Retiring a route changes navigation
-without hiding the launcher or moving native focus.
+Children own graceful descendant cleanup. Open pipes or surviving descendants keep
+retirement pending. Native adapters expose observations, not lifecycle policy.
 
-Tests cover live cycles for both origins and configuration shapes, zero-extension
-startup, registry writer serialization, rollback isolation, shared configuration
-admission, failed persistence, delayed/failed cleanup, new instance identities and
-continued queries from unrelated extensions. ACP tests execute real processes and
-check EOF cleanup, failure diagnostics and descendant completion. Additional
-coverage separates operation failures from process failures, detects idle transport
-exit and worker panic, and bounds delivery to slow Settings consumers. Native
-acceptance includes current-query reactivation and retirement of an open route.
-Windows execution does not establish macOS behavior; mixed-DPI, native focus/input,
-minimum-platform and timing acceptance remain validation gaps in [tasks](tasks.md).
+## Settings observations and validation
 
-Live install/uninstall remains a separate candidate. Installation would publish an
-inventory delta only after validation commits; uninstall would finish disable before
-removing registration and files. Built-in bundle files remain release-owned.
+Every resolved extension has a separate first enablement group, including extensions
+without configuration. Pending domain edits do not dim/disable enablement; the runtime
+rejects an actual conflicting lifecycle request without changing accepted work.
+
+The Settings Channel reports lifecycle/configuration even without a launcher session.
+Lifecycle retains one unacknowledged snapshot and the latest state. Receipt IDs share
+the progress sequence and never repeat across subscriptions. Configuration facts and
+save results use their own runtime revision, independent of lifecycle or schema version.
+Stale facts cannot overwrite newer saves; operation errors still arrive. Corrected
+configuration creates edit state before exposing fields. Accepted edits settle before
+lifecycle reconciliation, while uncommitted drafts remain user-owned. Route retirement
+does not hide the launcher or move native focus.
+
+Tests cover both origins, zero-extension startup, registry/rollback isolation, shared
+admission, persistence/cleanup failure, instance replacement, unrelated queries, idle
+exit, worker panic and slow Settings consumers. ACP tests use real child processes.
+Native platform/release gaps remain in [TODO](tasks.md); live install/uninstall is not
+part of this implemented contract.
 
 Source: [runtime](../engine/runtime/src/RuntimeService.rs),
 [registry transactions](../engine/configuration/src/ExtensionRegistryTransaction.rs),
-[process protocol](../engine/extension-protocol/src/Message.rs), and
+[protocol](../engine/extension-protocol/src/Message.rs),
 [lifecycle tests](../engine/runtime/tests/RuntimeService.rs).

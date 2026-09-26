@@ -249,3 +249,15 @@ pub use runtime_extension_state::*;
 #[path = "ExtensionConnectionExit.rs"]
 mod extension_connection_exit;
 pub(crate) use extension_connection_exit::ExtensionConnectionExit;
+
+#[path = "RefreshReply.rs"]
+mod refresh_reply;
+pub(crate) use refresh_reply::{RefreshCompletion, RefreshReply};
+
+#[path = "CatalogTransfer.rs"]
+mod catalog_transfer;
+use catalog_transfer::CatalogTransfer;
+
+#[cfg(test)]
+#[path = "../tests/CatalogTransfer.rs"]
+mod catalog_transfer_tests;

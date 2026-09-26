@@ -14,7 +14,7 @@
     "allow-open-session",
     "allow-open-settings",
     "allow-publish-query",
-    "allow-refresh-search",
+    "allow-read-results",
     "allow-view-event"
   ]
 }

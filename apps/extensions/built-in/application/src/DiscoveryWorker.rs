@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationIndex, DiscoveryCommand,
-    DiscoveryServices, IconCache, RuntimeEvent,
+    DiscoveryServices, EntryPriority, IconCache, RuntimeEvent,
 };
 
 const ICON_BATCH_SIZE: usize = 10;
@@ -19,19 +19,12 @@ pub struct DiscoveryWorker {
     thread: Option<JoinHandle<()>>,
 }
 
-#[derive(Default)]
-struct EntryPriority {
-    generation: u64,
-    entry_ids: Vec<String>,
-    wake_queued: bool,
-}
-
 impl DiscoveryWorker {
     pub fn spawn(
         database_path: PathBuf,
         icon_root: PathBuf,
         config: Arc<RwLock<ApplicationConfig>>,
-        entries: Arc<RwLock<Vec<ApplicationEntry>>>,
+        entries: Arc<RwLock<std::collections::HashMap<String, ApplicationEntry>>>,
         events: SyncSender<RuntimeEvent>,
     ) -> std::io::Result<Self> {
         let (commands, receiver) = mpsc::channel();
@@ -63,8 +56,8 @@ impl DiscoveryWorker {
                         return;
                     }
                 };
-                match index.load_presentable() {
-                    Ok(loaded) => replace_entries(&entries, loaded),
+                match index.load() {
+                    Ok(loaded) => publish_entries(&entries, &events, loaded, Vec::new()),
                     Err(error) => {
                         send_failure(&events, None, 1, &error);
                         return;
@@ -103,64 +96,34 @@ impl DiscoveryWorker {
                                 worker_priority
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner())
-                                    .wake_queued = false;
+                                    .finish(|_| false);
                                 continue;
                             }
                             let entry_ids = worker_priority
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
-                                .entry_ids
-                                .clone();
-                            index.prioritize_pending_icons(&entry_ids);
-                            let more_pending = match index.populate_icon_batch(
+                                .entries();
+                            let (icon_failures, updated) = index.populate_icon_batch(
                                 services.cancelled_through,
                                 scan_generation,
                                 ICON_BATCH_SIZE,
-                            ) {
-                                Ok((icon_failures, more_pending)) => {
-                                    for failure in icon_failures {
-                                        eprintln!("application icon extraction failed: {failure}");
-                                    }
-                                    match index.load_presentable() {
-                                        Ok(ready) => {
-                                            replace_entries(services.entries, ready);
-                                            if services
-                                                .events
-                                                .send(RuntimeEvent::CandidatesChanged)
-                                                .is_err()
-                                            {
-                                                return;
-                                            }
-                                            more_pending
-                                        }
-                                        Err(error) => {
-                                            eprintln!(
-                                                "application icon cache update failed: {error}"
-                                            );
-                                            false
-                                        }
-                                    }
-                                }
-                                Err(error) => {
-                                    eprintln!("application icon cache population failed: {error}");
-                                    false
-                                }
-                            };
+                                &entry_ids,
+                            );
+                            for failure in icon_failures {
+                                eprintln!("application icon extraction failed: {failure}");
+                            }
+                            publish_entries(services.entries, services.events, updated, Vec::new());
                             let mut priority = worker_priority
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner());
-                            priority.wake_queued = false;
-                            if more_pending
-                                && services.cancelled_through.load(Ordering::Acquire)
-                                    < scan_generation
-                            {
-                                priority.wake_queued = true;
-                                if worker_commands
-                                    .send(DiscoveryCommand::PopulateIcons)
-                                    .is_err()
-                                {
-                                    return;
-                                }
+                            // Recheck the latest viewport while holding its admission lock.
+                            // A request arriving during extraction must retain its wake even
+                            // when this batch produces no catalog changes.
+                            if priority.finish(|requested| {
+                                services.cancelled_through.load(Ordering::Acquire) < scan_generation
+                                    && index.has_pending_icons_for(requested)
+                            }) && worker_commands.send(DiscoveryCommand::PopulateIcons).is_err() {
+                                return;
                             }
                         }
                         DiscoveryCommand::Shutdown => break,
@@ -190,23 +153,14 @@ impl DiscoveryWorker {
     }
 
     pub fn prepare_entries(&self, generation: u64, entry_ids: Vec<String>) {
-        if entry_ids.is_empty() {
-            return;
-        }
         let mut priority = self
             .priority
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if generation >= priority.generation {
-            priority.generation = generation;
-            priority.entry_ids = entry_ids;
-        }
-        if priority.wake_queued {
-            return;
-        }
-        priority.wake_queued = true;
-        if self.commands.send(DiscoveryCommand::PopulateIcons).is_err() {
-            priority.wake_queued = false;
+        if priority.request(generation, entry_ids)
+            && self.commands.send(DiscoveryCommand::PopulateIcons).is_err()
+        {
+            priority.finish(|_| false);
         }
     }
 
@@ -283,10 +237,10 @@ fn run_scan(
                 });
             }
         },
+        |updated, removed| publish_entries(services.entries, services.events, updated, removed),
     );
     match result {
-        Ok((report, discovered)) => {
-            replace_entries(services.entries, discovered);
+        Ok(report) => {
             if services
                 .events
                 .send(RuntimeEvent::ScanFinished {
@@ -322,6 +276,25 @@ fn send_failure(
     }
 }
 
-fn replace_entries(entries: &RwLock<Vec<ApplicationEntry>>, replacement: Vec<ApplicationEntry>) {
-    *entries.write().unwrap_or_else(|error| error.into_inner()) = replacement;
+fn publish_entries(
+    entries: &RwLock<std::collections::HashMap<String, ApplicationEntry>>,
+    events: &SyncSender<RuntimeEvent>,
+    updated: Vec<ApplicationEntry>,
+    removed: Vec<String>,
+) {
+    let mut current = entries.write().unwrap_or_else(|error| error.into_inner());
+    let mut changed = removed.clone();
+    for entry in updated {
+        if current.get(&entry.entry_id) != Some(&entry) {
+            changed.push(entry.entry_id.clone());
+            current.insert(entry.entry_id.clone(), entry);
+        }
+    }
+    for id in removed {
+        current.remove(&id);
+    }
+    drop(current);
+    if !changed.is_empty() {
+        let _ = events.send(RuntimeEvent::CatalogUpdated { entry_ids: changed });
+    }
 }

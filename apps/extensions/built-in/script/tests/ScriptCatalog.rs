@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nanika_extension_script::{ScriptConfig, discover_scripts};
+use nanika_extension_script::{ScriptCatalog, ScriptConfig};
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -43,10 +43,10 @@ fn discovers_nested_scripts_deduplicates_roots_and_ignores_other_files() {
     std::fs::write(fixture.0.join("README.md"), b"documentation").unwrap();
     let mut config = fixture.config();
     config.roots.push(nested);
-    let entries = discover_scripts(&config).unwrap();
+    let entries = discover(&config).unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries.values().all(|entry| entry.title == "Build project"));
-    assert_eq!(entries, discover_scripts(&config).unwrap());
+    assert_eq!(entries, discover(&config).unwrap());
     assert!(
         entries
             .values()
@@ -59,7 +59,7 @@ fn launch_keeps_paths_with_spaces_and_metacharacters_in_one_argument() {
     let fixture = Fixture::new();
     let script = fixture.0.join("build & report.py");
     std::fs::write(&script, b"print(1)").unwrap();
-    let entry = discover_scripts(&fixture.config())
+    let entry = discover(&fixture.config())
         .unwrap()
         .into_values()
         .next()
@@ -95,10 +95,139 @@ fn failed_root_is_an_error_and_empty_configuration_is_an_empty_catalog() {
     let config = ScriptConfig {
         roots: vec![fixture.0.join("missing")],
     };
-    assert!(discover_scripts(&config).unwrap_err().contains("missing"));
+    assert!(discover(&config).unwrap_err().contains("missing"));
     assert!(
-        discover_scripts(&ScriptConfig { roots: Vec::new() })
+        discover(&ScriptConfig { roots: Vec::new() })
             .unwrap()
             .is_empty()
     );
+}
+
+fn discover(
+    config: &ScriptConfig,
+) -> Result<std::collections::BTreeMap<String, nanika_extension_script::ScriptEntry>, String> {
+    let mut catalog = ScriptCatalog::default();
+    catalog.scan(config, || false, |_, _| {})?;
+    Ok(catalog.entries())
+}
+
+#[test]
+fn cancellation_preserves_unvisited_roots_and_failure_does_not_block_other_roots() {
+    use std::sync::atomic::AtomicBool;
+    let fixture = Fixture::new();
+    let first = fixture.0.join("a");
+    let second = fixture.0.join("b");
+    std::fs::create_dir_all(first.join("nested")).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("nested/old-a.py"), "").unwrap();
+    std::fs::write(second.join("old-b.py"), "").unwrap();
+    let config = ScriptConfig {
+        roots: vec![first.clone(), second.clone()],
+    };
+    let mut catalog = ScriptCatalog::default();
+    catalog.scan(&config, || false, |_, _| {}).unwrap();
+    std::fs::remove_file(first.join("nested/old-a.py")).unwrap();
+    std::fs::remove_file(second.join("old-b.py")).unwrap();
+    std::fs::write(first.join("nested/new-a.py"), "").unwrap();
+    std::fs::write(second.join("new-b.py"), "").unwrap();
+    let cancelled = AtomicBool::new(false);
+    assert!(
+        catalog
+            .scan(
+                &config,
+                || cancelled.load(Ordering::Acquire),
+                |entries, _| {
+                    assert!(entries.iter().any(|entry| entry.title == "new-a"));
+
+                    assert!(!entries.iter().any(|entry| entry.title == "new-b"));
+                    cancelled.store(true, Ordering::Release);
+                }
+            )
+            .is_err()
+    );
+    std::fs::remove_dir_all(&first).unwrap();
+    assert!(catalog.scan(&config, || false, |_, _| {}).is_err());
+    let entries = catalog.entries();
+    assert!(entries.values().any(|entry| entry.title == "new-a"));
+    assert!(entries.values().any(|entry| entry.title == "new-b"));
+    assert!(!entries.values().any(|entry| entry.title == "old-b"));
+}
+
+#[test]
+fn unchanged_script_catalog_does_not_publish_and_root_deletion_is_local() {
+    let fixture = Fixture::new();
+    let first = fixture.0.join("a");
+    let second = fixture.0.join("b");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(first.join("a.py"), "").unwrap();
+    std::fs::write(second.join("b.py"), "").unwrap();
+    let mut config = ScriptConfig {
+        roots: vec![first, second],
+    };
+    let mut catalog = ScriptCatalog::default();
+    catalog.scan(&config, || false, |_, _| {}).unwrap();
+    catalog
+        .scan(
+            &config,
+            || false,
+            |_, _| panic!("unchanged roots must not publish"),
+        )
+        .unwrap();
+    config.roots.pop();
+    let mut patches = 0;
+    catalog
+        .scan(
+            &config,
+            || false,
+            |updated, removed| {
+                patches += 1;
+                assert!(updated.is_empty());
+                assert_eq!(removed.len(), 1);
+            },
+        )
+        .unwrap();
+    assert_eq!(patches, 1);
+    assert_eq!(catalog.entries().len(), 1);
+}
+
+#[test]
+fn large_roots_are_complete_and_can_be_replaced_by_a_different_directory() {
+    let fixture = Fixture::new();
+    let large = fixture.0.join("large");
+    let small = fixture.0.join("small");
+    std::fs::create_dir_all(&large).unwrap();
+    std::fs::create_dir_all(&small).unwrap();
+    for index in 0..5001 {
+        std::fs::write(large.join(format!("script-{index}.py")), "").unwrap();
+    }
+    std::fs::write(small.join("replacement.py"), "").unwrap();
+    let mut catalog = ScriptCatalog::default();
+    let mut published = 0;
+    catalog
+        .scan(
+            &ScriptConfig { roots: vec![large] },
+            || false,
+            |updated, removed| {
+                published += updated.len();
+                assert!(removed.is_empty());
+            },
+        )
+        .unwrap();
+    assert_eq!(published, 5001);
+    assert_eq!(catalog.entries().len(), 5001);
+    let mut removed_count = 0;
+    catalog
+        .scan(
+            &ScriptConfig { roots: vec![small] },
+            || false,
+            |_, removed| {
+                removed_count += removed.len();
+            },
+        )
+        .unwrap();
+    assert_eq!(removed_count, 5001);
+    let entries = catalog.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries.values().next().unwrap().title, "replacement");
 }

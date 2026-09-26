@@ -1,34 +1,38 @@
 <script lang="ts">
+import type { ReadResultsRequest } from "../types/ReadResultsRequest";
+import { uiActivity } from "../ui/activity";
+import ScrollArea from "./ScrollArea.svelte";
 import Input from "./Input.svelte";
 import { onMount, tick } from "svelte";
 
-import type { RootSearchSnapshot, SearchResult } from "../types";
+import { RootSearchState } from "../logic/RootSearchState.svelte";
+import type { SearchResult } from "../types";
 import { clampIndex } from "../logic";
 import StatusBar from "./StatusBar.svelte";
 import ResultRow from "./ResultRow.svelte";
 
 interface Props
 {
-    snapshot: RootSearchSnapshot;
+    searchState: RootSearchState;
     hasCompletedSearch: boolean;
     busy?: boolean;
-    refreshing?: boolean;
     appMenuOpen: boolean;
     onAppMenu: () => void;
     inputError?: string | null;
     onQuery: (query: string) => void;
+    onRange: (request: ReadResultsRequest) => void;
     onDismiss: () => void;
     onInvoke: (result: SearchResult) => void;
     onContextMenu: (result: SearchResult, position: [number, number] | null) => Promise<void>;
 }
 
 const {
-    snapshot,
+    searchState,
     hasCompletedSearch,
     busy = false,
-    refreshing = false,
     inputError = null,
     onQuery,
+    onRange,
     onDismiss,
     onInvoke,
     onContextMenu,
@@ -36,31 +40,76 @@ const {
     onAppMenu
 }: Props = $props();
 let query = $state("");
-let requestedActiveId = $state<string | null>(null);
 let input = $state<HTMLInputElement>();
-let list = $state<HTMLUListElement>();
+let list = $state<HTMLDivElement | null>(null);
 let selectOnNextFocus = false;
 
-// Transport metadata changes during submission without changing the visible list.
+let viewportHeight = $state(520);
+let rowHeight = $state(52);
+let lastRange = "";
+const snapshot = $derived(searchState.snapshot);
 const results = $derived(snapshot.results);
 const warning = $derived(snapshot.warnings.join("\n"));
-const activeIndex = $derived(
-    results.length === 0
-        ? -1
-        : Math.max(0, results.findIndex(result => `${result.extensionId}:${result.entryId}` === requestedActiveId))
-);
-const activeResult = $derived(results[activeIndex] ?? null);
-const activeId = $derived(
-    activeResult ? `result-${activeResult.extensionId}-${activeResult.entryId}` : undefined
-);
-const statusEntries = $derived([{
-    id: "refresh",
-    title: "Refresh",
-    interactive: false,
-    keys: ["F5"],
-    ariaShortcut: "F5",
-    pending: { title: "Refreshing", active: refreshing }
-}]);
+const activeIndex = $derived(searchState.selectedIndex);
+const activeResult = $derived(searchState.selectedResult);
+const activeId = $derived(activeResult ? `result-${activeIndex + 1}` : undefined);
+const overscan = 6;
+const start = $derived(Math.max(0, Math.floor(searchState.scrollTop / rowHeight) - overscan));
+const count = $derived(Math.ceil(viewportHeight / rowHeight) + overscan * 2);
+
+// Keep the native viewport synchronized with the displayed result window.
+// Only a completed new query resets the model's scroll position.
+$effect.pre(() =>
+{
+    if (list && list.scrollTop !== searchState.scrollTop)
+    {
+        list.scrollTop = searchState.scrollTop;
+    }
+});
+
+// ResizeObserver owns viewport synchronization; ranking and rows remain host-owned.
+$effect(() =>
+{
+    if (!list)
+    {
+        return;
+    }
+    const element = list;
+    const observer = new ResizeObserver(() =>
+    {
+        if (element.clientHeight > 0)
+        {
+            viewportHeight = element.clientHeight;
+            const measured = element.querySelector("[role=option]")?.getBoundingClientRect().height;
+            if (measured && measured > 0)
+            {
+                rowHeight = measured;
+            }
+        }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+});
+
+$effect(() =>
+{
+    if (!$uiActivity.visible || busy || snapshot.totalResults === 0)
+    {
+        return;
+    }
+    const key = `${snapshot.requestId}:${snapshot.resultRevision}:${start}:${count}`;
+    if (key !== lastRange)
+    {
+        lastRange = key;
+        onRange({
+            sessionId: snapshot.sessionId,
+            requestId: snapshot.requestId,
+            resultRevision: snapshot.resultRevision,
+            offset: start,
+            count
+        });
+    }
+});
 
 onMount(() =>
 {
@@ -150,15 +199,21 @@ function handleWindowKeydown(event: KeyboardEvent): void
 
 function moveSelection(delta: number): void
 {
-    const next = clampIndex(activeIndex + delta, results.length);
-    const result = results[next];
-    requestedActiveId = result ? `${result.extensionId}:${result.entryId}` : null;
-    // aria-activedescendant does not scroll; reveal the nearest edge during keyboard navigation.
-    list?.children.item(next)?.scrollIntoView({
-        block: "nearest",
-        inline: "nearest",
-        behavior: "instant"
-    });
+    const next = clampIndex(activeIndex + delta, snapshot.totalResults);
+    searchState.select(next);
+    if (list)
+    {
+        const top = next * rowHeight;
+        if (top < list.scrollTop)
+        {
+            list.scrollTop = top;
+        }
+        else if (top + rowHeight > list.scrollTop + list.clientHeight)
+        {
+            list.scrollTop = top + rowHeight - list.clientHeight;
+        }
+        searchState.scrollTop = list.scrollTop;
+    }
 }
 
 function _openContextMenu(result: SearchResult, event: MouseEvent): void
@@ -168,14 +223,14 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
     {
         return;
     }
-    requestedActiveId = `${result.extensionId}:${result.entryId}`;
+    searchState.select(snapshot.resultOffset + results.indexOf(result));
     void onContextMenu(result, [event.clientX, event.clientY]);
 }
 </script>
 
 <svelte:window onfocus={handleWindowFocus} onkeydown={handleWindowKeydown} />
 
-<main class="launcher" aria-label="Nanika launcher" aria-keyshortcuts="F5">
+<main class="launcher" aria-label="Nanika launcher">
     <div class="search-shell">
         <span class="search-icon" aria-hidden="true"></span>
         <Input
@@ -196,7 +251,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             oninput={(event =>
             {
                 selectOnNextFocus = false;
-                requestedActiveId = null;
                 onQuery(event.currentTarget.value);
             })}
             onkeydown={handleKeydown}
@@ -213,29 +267,51 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             </div>
         {/if}
         {#if results.length > 0}
-            <ul bind:this={list} id="root-results" role="listbox">
-                {#each results as result, index (`${result.extensionId}:${result.entryId}`)}
-                    <ResultRow
-                        {result}
-                        onContextMenu={event =>
-                        {
-                            void _openContextMenu(result, event);
-                        }}
-                        active={index === activeIndex}
-                        onActivate={() =>
-                        {
-                            requestedActiveId = `${result.extensionId}:${result.entryId}`;
-                        }}
-                        onInvoke={() =>
-                        {
-                            if (!busy)
+            <ScrollArea
+                bind:viewport={list}
+                viewportClass="root-viewport"
+                onscroll={() =>
+                {
+                    searchState.scrollTop = list?.scrollTop ?? 0;
+                }}
+            >
+                <ul
+                    id="root-results"
+                    role="listbox"
+                >
+                    <li role="presentation" aria-hidden="true" style:height={`${snapshot.resultOffset * rowHeight}px`}>
+                    </li>
+                    {#each results as result, index (RootSearchState.identity(result))}
+                        <ResultRow
+                            {result}
+                            position={snapshot.resultOffset + index + 1}
+                            total={snapshot.totalResults}
+                            onContextMenu={event =>
                             {
-                                invoke(result);
-                            }
-                        }}
-                    />
-                {/each}
-            </ul>
+                                void _openContextMenu(result, event);
+                            }}
+                            active={activeResult !== null && snapshot.resultOffset + index === activeIndex}
+                            onActivate={() =>
+                            {
+                                searchState.select(snapshot.resultOffset + index);
+                            }}
+                            onInvoke={() =>
+                            {
+                                if (!busy)
+                                {
+                                    invoke(result);
+                                }
+                            }}
+                        />
+                    {/each}
+                    <li
+                        role="presentation"
+                        aria-hidden="true"
+                        style:height={`${Math.max(0, snapshot.totalResults - snapshot.resultOffset - results.length) * rowHeight}px`}
+                    >
+                    </li>
+                </ul>
+            </ScrollArea>
         {:else if hasCompletedSearch}
             <div class="empty" role="status">
                 <span>No results</span>
@@ -251,7 +327,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             iconOnly: true,
             menu: { controls: "context-menu", expanded: appMenuOpen }
         }]}
-        trailingEntries={statusEntries}
         onInvoke={onAppMenu}
     />
 </main>
@@ -306,15 +381,14 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
   padding: var(--space-2);
 }
 
+:global(.root-viewport) { overflow-anchor: none; }
+
 ul {
   flex: 1;
   min-height: 0;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
   list-style: none;
-  scrollbar-width: thin;
 }
 
 .empty {

@@ -12,6 +12,8 @@ mod action_style;
 mod candidate;
 #[path = "CandidateKind.rs"]
 mod candidate_kind;
+#[path = "CandidateSubtitle.rs"]
+mod candidate_subtitle;
 #[path = "ClipboardContent.rs"]
 mod clipboard_content;
 mod constants;
@@ -71,6 +73,7 @@ pub use action_invocation::*;
 pub use action_style::*;
 pub use candidate::*;
 pub use candidate_kind::*;
+pub use candidate_subtitle::*;
 pub use clipboard_content::*;
 pub use constants::*;
 pub use detail_content::*;
@@ -101,3 +104,17 @@ pub use view_metadata::*;
 #[path = "OperationProgress.rs"]
 mod operation_progress;
 pub use operation_progress::*;
+
+#[path = "CandidateUpdate.rs"]
+mod candidate_update;
+pub use candidate_update::CandidateUpdate;
+
+#[path = "CatalogBatch.rs"]
+mod catalog_batch;
+pub use catalog_batch::CatalogBatch;
+#[path = "CatalogPublisher.rs"]
+mod catalog_publisher;
+pub use catalog_publisher::CatalogPublisher;
+#[path = "CatalogPublication.rs"]
+mod catalog_publication;
+use catalog_publication::CatalogPublication;
