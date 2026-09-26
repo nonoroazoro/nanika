@@ -1,4 +1,5 @@
 <script lang="ts">
+import ScrollArea from "./ScrollArea.svelte";
 import Button from "./Button.svelte";
 import Input from "./Input.svelte";
 import { onMount } from "svelte";
@@ -65,8 +66,8 @@ const trailingStatusEntries = $derived(
 let query = $state("");
 let input = $state<HTMLInputElement>();
 let options = $state<HTMLUListElement>();
-let listPane = $state<HTMLDivElement>();
-let detailPane = $state<HTMLDivElement>();
+let listPane = $state<HTMLDivElement | null>(null);
+let detailPane = $state<HTMLDivElement | null>(null);
 let previousDetailItem: string | null | undefined;
 let loadMoreSentinel = $state<HTMLDivElement>();
 let requestedCursor = $state<string | null>(null);
@@ -442,89 +443,92 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
     {#if error}<div class="error" role="alert">{error}</div>{/if}
     <div class="content" class:split={list?.layout === "split"} aria-busy={busy}>
         {#if list}
-            <div class="list-pane" bind:this={listPane}>
-                <ul bind:this={options} id="extension-items" role="listbox" aria-label={list.title}>
-                    {#each list.sections as section (section.id)}
-                        <li role="presentation">
-                            {#if section.title}<h2>{section.title}</h2>{/if}
-                            <ul role="group" aria-label={section.title ?? "Items"}>
-                                {#each section.items as item (item.id)}
-                                    <li
-                                        id={`view-item-${snapshot.routeId}-${item.id}`}
-                                        role="option"
-                                        aria-selected={item.id === selected?.id}
-                                        aria-disabled={busy}
-                                        oncontextmenu={event =>
-                                        {
-                                            void _openContextMenu(item.id, event);
-                                        }}
-                                        onmousedown={(event => event.preventDefault())}
-                                        onclick={() =>
-                                        {
-                                            cancelConfirmation();
-                                            focusSearch();
-                                            if (!busy && item.id !== selected?.id)
+            <div class="list-pane">
+                <ScrollArea bind:viewport={listPane}>
+                    <ul bind:this={options} id="extension-items" role="listbox" aria-label={list.title}>
+                        {#each list.sections as section (section.id)}
+                            <li role="presentation">
+                                {#if section.title}<h2>{section.title}</h2>{/if}
+                                <ul role="group" aria-label={section.title ?? "Items"}>
+                                    {#each section.items as item (item.id)}
+                                        <li
+                                            id={`view-item-${snapshot.routeId}-${item.id}`}
+                                            role="option"
+                                            aria-selected={item.id === selected?.id}
+                                            aria-disabled={busy}
+                                            oncontextmenu={event =>
                                             {
-                                                selectItem(item.id);
-                                            }
-                                        }}
-                                        ondblclick={() => activateItem(item)}
-                                        onkeydown={(event =>
-                                        {
-                                            if (event.key === "Enter" || event.key === " ")
+                                                void _openContextMenu(item.id, event);
+                                            }}
+                                            onmousedown={(event => event.preventDefault())}
+                                            onclick={() =>
                                             {
-                                                event.preventDefault();
-                                                activateItem(item);
-                                            }
-                                        })}
-                                    >
-                                        <div class="collection-row option-surface">
-                                            {#if item.icon}<span class="item-icon" aria-hidden="true">
-                                                    {#if typeof item.icon === "string"}
-                                                        <SemanticContentIcon kind={item.icon} />
-                                                    {:else}
-                                                        <CachedFileIcon
-                                                            reference={item.icon.native}
-                                                            {resourceOrigin}
-                                                            extensionId={snapshot.extensionId}
-                                                        />
-                                                    {/if}
-                                                </span>{/if}
-                                            {#if item.subtitle}
-                                                <span class="item-copy"><span>{item.title}</span><small>{
-                                                        item.subtitle
-                                                    }</small></span>
-                                            {:else}
-                                                <span class="item-title">{item.title}</span>
-                                            {/if}
-                                        </div>
-                                    </li>
-                                {/each}
-                            </ul>
-                        </li>
-                    {/each}
-                </ul>
-                {#if !items.length}<p class="empty">No items</p>{/if}
-                {#if list.next_cursor}<div
-                        class="load-more-sentinel"
-                        bind:this={loadMoreSentinel}
-                        aria-hidden="true"
-                    >
-                    </div>{/if}
+                                                cancelConfirmation();
+                                                focusSearch();
+                                                if (!busy && item.id !== selected?.id)
+                                                {
+                                                    selectItem(item.id);
+                                                }
+                                            }}
+                                            ondblclick={() => activateItem(item)}
+                                            onkeydown={(event =>
+                                            {
+                                                if (event.key === "Enter" || event.key === " ")
+                                                {
+                                                    event.preventDefault();
+                                                    activateItem(item);
+                                                }
+                                            })}
+                                        >
+                                            <div class="collection-row option-surface">
+                                                {#if item.icon}<span class="item-icon" aria-hidden="true">
+                                                        {#if typeof item.icon === "string"}
+                                                            <SemanticContentIcon kind={item.icon} />
+                                                        {:else}
+                                                            <CachedFileIcon
+                                                                reference={item.icon.native}
+                                                                {resourceOrigin}
+                                                                extensionId={snapshot.extensionId}
+                                                            />
+                                                        {/if}
+                                                    </span>{/if}
+                                                {#if item.subtitle}
+                                                    <span class="item-copy"><span>{item.title}</span><small>{
+                                                            item.subtitle
+                                                        }</small></span>
+                                                {:else}
+                                                    <span class="item-title">{item.title}</span>
+                                                {/if}
+                                            </div>
+                                        </li>
+                                    {/each}
+                                </ul>
+                            </li>
+                        {/each}
+                    </ul>
+                    {#if !items.length}<p class="empty">No items</p>{/if}
+                    {#if list.next_cursor}<div
+                            class="load-more-sentinel"
+                            bind:this={loadMoreSentinel}
+                            aria-hidden="true"
+                        >
+                        </div>{/if}
+                </ScrollArea>
             </div>
         {/if}
         {#if !list || list.layout === "split"}<div
                 class="detail-pane"
-                bind:this={detailPane}
                 aria-busy={detailPending}
             >
-                {#if detail}
-                    <ViewDetail
-                        {detail}
-                        resourceOrigin={resourceOrigin}
-                        extensionId={snapshot.extensionId}
-                    />
-                {/if}
+                <ScrollArea bind:viewport={detailPane}>
+                    {#if detail}
+                        <ViewDetail
+                            {detail}
+                            resourceOrigin={resourceOrigin}
+                            extensionId={snapshot.extensionId}
+                        />
+                    {/if}
+                </ScrollArea>
             </div>{/if}
     </div>
     <StatusBar
@@ -545,7 +549,7 @@ header :global(button:disabled) { opacity: 1; }
 header :global(.back) { display: grid; justify-self: center; width: 2rem; height: 2rem; place-items: center; padding: 0; background: transparent; border: 0; }
 header :global(.back svg) { width: 1rem; height: 1rem; }
 .content { display: flex; flex: 1; min-height: 0; }
-.list-pane, .detail-pane { min-width: 0; flex: 1; overflow: auto; }
+.list-pane, .detail-pane { display: flex; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
 .split .list-pane { flex: 0 1 38%; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }

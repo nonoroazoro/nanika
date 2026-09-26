@@ -35,13 +35,32 @@ let body = $state<HTMLTextAreaElement>();
 $effect(() =>
 {
     const value = text;
-    if (!body || value === null)
+    const element = body;
+    if (!element || value === null)
     {
         return;
     }
-    body.style.height = "0";
-    body.style.height = `${body.scrollHeight}px`;
+    _resizeText(element);
+    let width = element.getBoundingClientRect().width;
+    // Wrapping changes with viewport width, even when the text stays identical.
+    const observer = new ResizeObserver(entries =>
+    {
+        const nextWidth = entries[0]?.contentRect.width;
+        if (nextWidth !== undefined && nextWidth !== width)
+        {
+            width = nextWidth;
+            _resizeText(element);
+        }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
 });
+
+function _resizeText(element: HTMLTextAreaElement): void
+{
+    element.style.height = "0";
+    element.style.height = `${element.scrollHeight}px`;
+}
 </script>
 
 <article class:image-detail={detail.content.kind === "image"} aria-label={detail.title ?? "Details"}>

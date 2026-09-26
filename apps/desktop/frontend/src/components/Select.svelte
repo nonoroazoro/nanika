@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Select } from "bits-ui";
+import ScrollArea from "./ScrollArea.svelte";
 import { onMount } from "svelte";
 import { uiActivity } from "../ui/activity";
 
@@ -57,29 +58,38 @@ onMount(() =>
                 preventScroll={false}
                 style="min-width: var(--bits-select-anchor-width); max-height: min(var(--bits-select-content-available-height), calc(100vh - 16px));"
             >
-                {#each options as option (option.value)}
-                    <Select.Item
-                        class="popup-item"
-                        value={option.value}
-                        label={option.label}
-                        disabled={option.disabled}
-                    >
-                        <span>{option.label}</span>
-                        {#if option.value === value}
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                aria-hidden="true"
-                            >
-                                <path d="m5 12 4 4L19 6" />
-                            </svg>
-                        {/if}
-                    </Select.Item>
-                {/each}
+                <Select.Viewport>
+                    {#snippet child({ props })}
+                        <ScrollArea
+                            viewportProps={props}
+                            style="max-height: min(calc(var(--bits-select-content-available-height) - 2 * var(--popup-padding) - 2px), calc(100vh - 16px - 2 * var(--popup-padding) - 2px)); flex: none;"
+                        >
+                            {#each options as option (option.value)}
+                                <Select.Item
+                                    class="popup-item"
+                                    value={option.value}
+                                    label={option.label}
+                                    disabled={option.disabled}
+                                >
+                                    <span>{option.label}</span>
+                                    {#if option.value === value}
+                                        <svg
+                                            width="14"
+                                            height="14"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="m5 12 4 4L19 6" />
+                                        </svg>
+                                    {/if}
+                                </Select.Item>
+                            {/each}
+                        </ScrollArea>
+                    {/snippet}
+                </Select.Viewport>
             </Select.Content>
         </Select.Portal>
     {/if}

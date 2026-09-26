@@ -1,4 +1,5 @@
 <script lang="ts">
+import ScrollArea from "../components/ScrollArea.svelte";
 import Button from "../components/Button.svelte";
 import { onDestroy } from "svelte";
 
@@ -83,28 +84,9 @@ async function add(): Promise<void>
             Add folder
         </Button>
     </div>
-    {#if paths.length > 0}<div class="directory-items">
-            {#each paths as path, index (index)}
-                <div class="directory">
-                    <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        aria-hidden="true"
-                    >
-                        <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
-                    </svg>
-                    <span class="path" title={path}>{path}</span>
-                    <Button
-                        class="remove-folder"
-                        aria-label={`Remove folder ${path}`}
-                        title="Remove folder"
-                        disabled={picking}
-                        onclick={() => onChange(paths.filter((_, position) => position !== index))}
-                    >
+    {#if paths.length > 0}<ScrollArea style="max-height: 320px; flex: none;"><div class="directory-items">
+                {#each paths as path, index (index)}
+                    <div class="directory">
                         <svg
                             width="18"
                             height="18"
@@ -114,13 +96,32 @@ async function add(): Promise<void>
                             stroke-width="1.6"
                             aria-hidden="true"
                         >
-                            <circle cx="12" cy="12" r="8.5" />
-                            <path d="M8 12h8" />
+                            <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
                         </svg>
-                    </Button>
-                </div>
-            {/each}
-        </div>{/if}
+                        <span class="path" title={path}>{path}</span>
+                        <Button
+                            class="remove-folder"
+                            aria-label={`Remove folder ${path}`}
+                            title="Remove folder"
+                            disabled={picking}
+                            onclick={() => onChange(paths.filter((_, position) => position !== index))}
+                        >
+                            <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.6"
+                                aria-hidden="true"
+                            >
+                                <circle cx="12" cy="12" r="8.5" />
+                                <path d="M8 12h8" />
+                            </svg>
+                        </Button>
+                    </div>
+                {/each}
+            </div></ScrollArea>{/if}
 
     {#if error}<p role="alert">{error}</p>{/if}
 </div>
@@ -132,7 +133,7 @@ async function add(): Promise<void>
 h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
 .copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
 .directories :global(.add-folder) { flex-shrink: 0; }
-.directory-items { display: grid; gap: var(--space-2); max-height: 320px; overflow-y: auto; scrollbar-gutter: stable; border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
+.directory-items { display: grid; gap: var(--space-2); border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
 .directory { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .directory > svg { flex-shrink: 0; color: var(--text-secondary); }
 .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }

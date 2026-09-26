@@ -1,4 +1,5 @@
 <script lang="ts">
+import ScrollArea from "./components/ScrollArea.svelte";
 import "./styles/settings.css";
 import Switch from "./components/Switch.svelte";
 import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
@@ -286,175 +287,175 @@ function _windowAction(action: SettingsWindowAction): void
     {#if windowError}<div class="window-error" role="alert">{windowError}</div>{/if}
     <main class="settings">
         <aside class="sidebar" aria-label="Settings navigation">
-            <nav aria-label="Settings sections">
-                <Button
-                    class={{ active: selection === "general" }}
-                    aria-current={selection === "general" ? "page" : undefined}
-                    onclick={() =>
-                    {
-                        selectedState?.commitEdits();
-                        selection = "general";
-                        void _loadStartup();
-                    }}
-                >
-                    <span class="nav-icon" aria-hidden="true"><svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 20 20"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.25"
-                        >
-                            <rect x="1.5" y="1.5" width="17" height="17" rx="3" />
-                            <path d="M1.5 6.5h17M7 6.5v12" />
-                        </svg></span>General
-                </Button>
-                <h2>Extensions</h2>
-                {#each extensions as extension (extension.id)}
+            <ScrollArea><nav aria-label="Settings sections">
                     <Button
-                        class={{ active: selection === extension.id }}
-                        aria-current={selection === extension.id ? "page" : undefined}
+                        class={{ active: selection === "general" }}
+                        aria-current={selection === "general" ? "page" : undefined}
                         onclick={() =>
                         {
                             selectedState?.commitEdits();
-                            selection = extension.id;
+                            selection = "general";
+                            void _loadStartup();
                         }}
                     >
-                        <span class="nav-icon" aria-hidden="true"><ExtensionIcon src={extension.iconUrl} /></span>
-                        <span class="nav-title">{extension.name}</span>
+                        <span class="nav-icon" aria-hidden="true"><svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 20 20"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.25"
+                            >
+                                <rect x="1.5" y="1.5" width="17" height="17" rx="3" />
+                                <path d="M1.5 6.5h17M7 6.5v12" />
+                            </svg></span>General
                     </Button>
-                {/each}
-            </nav>
-            <div class="sidebar-footer">Nanika {snapshot?.version ?? ""}</div>
-        </aside>
-        <section class="content" aria-label="Settings content" aria-busy={loading}>
-            {#if loading}
-                <div class="empty-state" role="status">Loading settings…</div>
-            {:else if loadError}
-                <div class="empty-state" role="alert">
-                    <h1>Settings could not load</h1>
-                    <Button
-                        onclick={() =>
-                        {
-                            void _load();
-                        }}
-                    >
-                        Try again
-                    </Button>
-                </div>
-            {:else if selection === "general" && host}
-                <GeneralSettings
-                    settings={host}
-                    startup={startup.status === null ? null : startup.settings}
-                    startupStatus={startup.status}
-                />
-            {:else if selected}
-                <div class="extension-page">
-                    <header>
-                        <div class="extension-heading">
-                            <span class="heading-icon"><ExtensionIcon src={selected.iconUrl} /></span><div>
-                                <h1>{selected.name}</h1>
-                                {#key selected.id}<ExtensionStatus lifecycleState={selected.state} />{/key}
-                            </div>
-                        </div>
-                    </header>
-                    {#if selected.lifecycleError}<p role="alert">{selected.lifecycleError}</p>{/if}
-                    {#key selected.id}
-                        <form
-                            onsubmit={event =>
+                    <h2>Extensions</h2>
+                    {#each extensions as extension (extension.id)}
+                        <Button
+                            class={{ active: selection === extension.id }}
+                            aria-current={selection === extension.id ? "page" : undefined}
+                            onclick={() =>
                             {
-                                event.preventDefault();
                                 selectedState?.commitEdits();
+                                selection = extension.id;
                             }}
                         >
-                            <div class="fields">
-                                <section class="property scalar" aria-labelledby="extension-enabled-title">
-                                    <div class="property-copy">
-                                        <h2 id="extension-enabled-title">Enable extension</h2>
-                                    </div>
-                                    <div class="property-control">
-                                        <SettingsField
-                                            busy={selected.pending || toggling.has(selected.id)}
-                                            label={`Enable ${selected.name}`}
-                                            startedAt={toggling.get(selected.id)}
-                                        >
-                                            <Switch
-                                                checked={selected.enabled}
-                                                label={`Enable ${selected.name}`}
-                                                onChange={enabled =>
-                                                {
-                                                    if (selected)
-                                                    {
-                                                        void _setEnabled(selected.id, enabled);
-                                                    }
-                                                }}
-                                            />
-                                        </SettingsField>
-                                    </div>
-                                </section>
-                            </div>
-                            {#if !selected.configurationError && properties.length > 0}
-                                <div class="fields">
-                                    {#each properties as [key, property] (key)}
-                                        <section
-                                            class="property"
-                                            class:directory={property.type === "array" && property.items?.format === "directory"}
-                                            class:scalar={property.type === "boolean" || property.type === "integer"}
-                                            aria-labelledby={`title-${key}`}
-                                        >
-                                            {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
-                                                    <h2 id={`title-${key}`}>{property.title}</h2>
-                                                    {#if property.description}<p>{property.description}</p>{/if}
-                                                </div>{/if}
-                                            <div class="property-control">
-                                                <SettingsField
-                                                    busy={selectedState?.phase.get(key) !== undefined}
-                                                    label={property.title}
-                                                    startedAt={selectedState?.startedAt.get(key)}
-                                                    progress={selectedState?.progress.get(key)}
-                                                    onCommit={() =>
-                                                    {
-                                                        void selectedState?.commit(key);
-                                                    }}
-                                                >
-                                                    {#if property.type === "array" && property.items?.format === "directory"}
-                                                        <DirectoryList
-                                                            paths={values[key] as string[]}
-                                                            maximum={property.maxItems ?? 0}
-                                                            label={property.title}
-                                                            titleId={`title-${key}`}
-                                                            description={property.description}
-                                                            onPick={() => settingsBridge.pickDirectory(selection, key)}
-                                                            onChange={paths =>
-                                                            {
-                                                                void selectedState?.change(key, paths);
-                                                            }}
-                                                        />
-                                                    {:else}
-                                                        <SettingsValue
-                                                            schema={property}
-                                                            value={values[key]}
-                                                            label={property.title}
-                                                            id={`setting-${key}`}
-                                                            onChange={value => selectedState?.edit(key, value)}
-                                                            onCommit={() =>
-                                                            {
-                                                                void selectedState?.commit(key);
-                                                            }}
-                                                        />
-                                                    {/if}
-                                                </SettingsField>
-                                            </div>
-                                        </section>
-                                    {/each}
+                            <span class="nav-icon" aria-hidden="true"><ExtensionIcon src={extension.iconUrl} /></span>
+                            <span class="nav-title">{extension.name}</span>
+                        </Button>
+                    {/each}
+                </nav></ScrollArea>
+            <div class="sidebar-footer">Nanika {snapshot?.version ?? ""}</div>
+        </aside>
+        <ScrollArea><section class="content" aria-label="Settings content" aria-busy={loading}>
+                {#if loading}
+                    <div class="empty-state" role="status">Loading settings…</div>
+                {:else if loadError}
+                    <div class="empty-state" role="alert">
+                        <h1>Settings could not load</h1>
+                        <Button
+                            onclick={() =>
+                            {
+                                void _load();
+                            }}
+                        >
+                            Try again
+                        </Button>
+                    </div>
+                {:else if selection === "general" && host}
+                    <GeneralSettings
+                        settings={host}
+                        startup={startup.status === null ? null : startup.settings}
+                        startupStatus={startup.status}
+                    />
+                {:else if selected}
+                    <div class="extension-page">
+                        <header>
+                            <div class="extension-heading">
+                                <span class="heading-icon"><ExtensionIcon src={selected.iconUrl} /></span><div>
+                                    <h1>{selected.name}</h1>
+                                    {#key selected.id}<ExtensionStatus lifecycleState={selected.state} />{/key}
                                 </div>
-                            {/if}
-                            {#if selected.configurationError}<p role="alert">{selected.configurationError}</p>{/if}
-                        </form>
-                    {/key}
-                </div>
-            {/if}
-        </section>
+                            </div>
+                        </header>
+                        {#if selected.lifecycleError}<p role="alert">{selected.lifecycleError}</p>{/if}
+                        {#key selected.id}
+                            <form
+                                onsubmit={event =>
+                                {
+                                    event.preventDefault();
+                                    selectedState?.commitEdits();
+                                }}
+                            >
+                                <div class="fields">
+                                    <section class="property scalar" aria-labelledby="extension-enabled-title">
+                                        <div class="property-copy">
+                                            <h2 id="extension-enabled-title">Enable extension</h2>
+                                        </div>
+                                        <div class="property-control">
+                                            <SettingsField
+                                                busy={selected.pending || toggling.has(selected.id)}
+                                                label={`Enable ${selected.name}`}
+                                                startedAt={toggling.get(selected.id)}
+                                            >
+                                                <Switch
+                                                    checked={selected.enabled}
+                                                    label={`Enable ${selected.name}`}
+                                                    onChange={enabled =>
+                                                    {
+                                                        if (selected)
+                                                        {
+                                                            void _setEnabled(selected.id, enabled);
+                                                        }
+                                                    }}
+                                                />
+                                            </SettingsField>
+                                        </div>
+                                    </section>
+                                </div>
+                                {#if !selected.configurationError && properties.length > 0}
+                                    <div class="fields">
+                                        {#each properties as [key, property] (key)}
+                                            <section
+                                                class="property"
+                                                class:directory={property.type === "array" && property.items?.format === "directory"}
+                                                class:scalar={property.type === "boolean" || property.type === "integer"}
+                                                aria-labelledby={`title-${key}`}
+                                            >
+                                                {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
+                                                        <h2 id={`title-${key}`}>{property.title}</h2>
+                                                        {#if property.description}<p>{property.description}</p>{/if}
+                                                    </div>{/if}
+                                                <div class="property-control">
+                                                    <SettingsField
+                                                        busy={selectedState?.phase.get(key) !== undefined}
+                                                        label={property.title}
+                                                        startedAt={selectedState?.startedAt.get(key)}
+                                                        progress={selectedState?.progress.get(key)}
+                                                        onCommit={() =>
+                                                        {
+                                                            void selectedState?.commit(key);
+                                                        }}
+                                                    >
+                                                        {#if property.type === "array" && property.items?.format === "directory"}
+                                                            <DirectoryList
+                                                                paths={values[key] as string[]}
+                                                                maximum={property.maxItems ?? 0}
+                                                                label={property.title}
+                                                                titleId={`title-${key}`}
+                                                                description={property.description}
+                                                                onPick={() => settingsBridge.pickDirectory(selection, key)}
+                                                                onChange={paths =>
+                                                                {
+                                                                    void selectedState?.change(key, paths);
+                                                                }}
+                                                            />
+                                                        {:else}
+                                                            <SettingsValue
+                                                                schema={property}
+                                                                value={values[key]}
+                                                                label={property.title}
+                                                                id={`setting-${key}`}
+                                                                onChange={value => selectedState?.edit(key, value)}
+                                                                onCommit={() =>
+                                                                {
+                                                                    void selectedState?.commit(key);
+                                                                }}
+                                                            />
+                                                        {/if}
+                                                    </SettingsField>
+                                                </div>
+                                            </section>
+                                        {/each}
+                                    </div>
+                                {/if}
+                                {#if selected.configurationError}<p role="alert">{selected.configurationError}</p>{/if}
+                            </form>
+                        {/key}
+                    </div>
+                {/if}
+            </section></ScrollArea>
     </main>
 </div>
 
@@ -465,7 +466,7 @@ function _windowAction(action: SettingsWindowAction): void
 
 .settings { display: grid; min-height: 0; flex: 1; grid-template-columns: 13rem minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
 .sidebar { display: flex; flex-direction: column; min-height: 0; gap: var(--space-4); padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--surface-hovered); }
-nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; overflow-y: auto; }
+nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; }
 nav :global(button) { justify-content: flex-start; gap: var(--space-2); flex: 0 0 auto; width: 100%; min-height: var(--settings-nav-height); border: 0; border-radius: var(--control-radius); padding: 6px 10px; background: transparent; text-align: left; font-size: var(--font-control); line-height: 20px; }
 nav :global(button.active) { background: var(--surface-selected); font-weight: var(--settings-heading-weight); }
 .extension-heading { display: flex; align-items: center; gap: 12px; }
@@ -474,7 +475,7 @@ nav :global(button.active) { background: var(--surface-selected); font-weight: v
 .nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 nav h2 { display: flex; justify-content: space-between; margin: var(--space-5) 10px var(--space-2); color: var(--text-secondary); font-size: 12px; font-weight: var(--settings-heading-weight); }
 .sidebar-footer { padding: 8px 10px; color: var(--text-tertiary); font-size: 12px; }
-.content { min-width: 0; min-height: 0; overflow-y: auto; }
+.content { min-width: 0; min-height: 100%; }
 .extension-page { max-width: 52rem; margin: 0 auto; padding: var(--space-4) var(--space-6) 0; }
 .extension-page { display: flex; flex-direction: column; min-height: 100%; }
 header { margin-bottom: var(--settings-group-gap); }

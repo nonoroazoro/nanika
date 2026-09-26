@@ -10,6 +10,12 @@
   --search-height: 4.25rem;
   --row-height: 3.25rem;
   --icon-size: 1.625rem;
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: rgba(100, 100, 100, 0.4);
+  --scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+  --scrollbar-thumb-active: rgba(0, 0, 0, 0.6);
+  --motion-scrollbar-show: 100ms;
+  --motion-scrollbar-hide: 800ms;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -80,6 +86,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --scrollbar-thumb: rgba(121, 121, 121, 0.4);
+    --scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+    --scrollbar-thumb-active: rgba(191, 191, 191, 0.4);
     --accent: #8ab4ff;
     --accent-foreground: #111827;
     --text-danger: #e5a39c;
@@ -194,6 +203,8 @@ button:focus-visible {
 /* Zero durations settle current transitions; names remove active animations. */
 :root[data-ui-active="false"] {
   --motion-control: 0ms;
+  --motion-scrollbar-show: 0ms;
+  --motion-scrollbar-hide: 0ms;
   --motion-switch: 0ms;
   --motion-enter: 0ms;
   --motion-exit: 0ms;
@@ -205,6 +216,8 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-control: 0ms;
+    --motion-scrollbar-show: 0ms;
+    --motion-scrollbar-hide: 0ms;
     --motion-switch: 0ms;
     --motion-enter: 0ms;
     --motion-exit: 0ms;
@@ -237,7 +250,7 @@ button:focus-visible {
   z-index: 10;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
-  overflow-y: auto;
+  overflow: hidden;
   padding: var(--popup-padding);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-row);

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { ContextMenu as Menu } from "bits-ui";
+import ScrollArea from "./ScrollArea.svelte";
 import { uiActivity } from "../ui/activity";
 import type { Action } from "../types/Action";
 import ShortcutKeys from "./ShortcutKeys.svelte";
@@ -45,10 +46,6 @@ function _keydown(event: KeyboardEvent): void
         return;
     }
     event.stopPropagation();
-    if (event.key === "F5")
-    {
-        event.preventDefault();
-    }
     if (event.key === "Tab")
     {
         event.preventDefault();
@@ -107,27 +104,31 @@ function _keydown(event: KeyboardEvent): void
                 oncontextmenu={event => event.preventDefault()}
                 style="width: 16rem; max-height: min(var(--bits-context-menu-content-available-height), calc(100vh - 16px));"
             >
-                <Menu.Group>
-                    {#if heading}<Menu.GroupHeading class="popup-heading">{heading}</Menu.GroupHeading>{/if}
-                    {#each ordered as action, index (action.id)}
-                        {#if index > 0 && (action.group !== ordered[index - 1]?.group
+                <ScrollArea
+                    style="max-height: min(calc(var(--bits-context-menu-content-available-height) - 2 * var(--popup-padding) - 2px), calc(100vh - 16px - 2 * var(--popup-padding) - 2px)); flex: none;"
+                >
+                    <Menu.Group>
+                        {#if heading}<Menu.GroupHeading class="popup-heading">{heading}</Menu.GroupHeading>{/if}
+                        {#each ordered as action, index (action.id)}
+                            {#if index > 0 && (action.group !== ordered[index - 1]?.group
     || (action.style === "destructive") !== (ordered[index - 1]?.style === "destructive"))}
-                            <Menu.Separator class="popup-separator" />
-                        {/if}
-                        {@const keys = shortcuts[action.id]}
-                        <Menu.Item
-                            class="popup-item"
-                            disabled={!action.enabled}
-                            data-destructive={action.style === "destructive" ? "" : undefined}
-                            data-confirming={confirmation === action ? "" : undefined}
-                            closeOnSelect={false}
-                            onSelect={() => _activate(action)}
-                        >
-                            <span>{confirmation === action ? action.confirmation_title : action.title}</span>
-                            {#if keys}<ShortcutKeys {keys} />{/if}
-                        </Menu.Item>
-                    {/each}
-                </Menu.Group>
+                                <Menu.Separator class="popup-separator" />
+                            {/if}
+                            {@const keys = shortcuts[action.id]}
+                            <Menu.Item
+                                class="popup-item"
+                                disabled={!action.enabled}
+                                data-destructive={action.style === "destructive" ? "" : undefined}
+                                data-confirming={confirmation === action ? "" : undefined}
+                                closeOnSelect={false}
+                                onSelect={() => _activate(action)}
+                            >
+                                <span>{confirmation === action ? action.confirmation_title : action.title}</span>
+                                {#if keys}<ShortcutKeys {keys} />{/if}
+                            </Menu.Item>
+                        {/each}
+                    </Menu.Group>
+                </ScrollArea>
             </Menu.Content>
         </Menu.Portal>
     {/if}

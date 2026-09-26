@@ -1,6 +1,9 @@
 /* Settings-specific visual tokens.
    Keep the scope on the document so portaled controls inherit the same tokens. */
 :root[data-surface="settings"] {
+  --settings-caption-hover: rgb(0 0 0 / 10%);
+  --settings-caption-close-hover: rgb(232 17 35 / 90%);
+  --settings-caption-close-foreground: #ffffff;
   --text-primary: #3b4048;
   --surface-selected: rgb(30 45 70 / 5%);
   --text-secondary: #646b76;
@@ -40,6 +43,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root[data-surface="settings"] {
+    --settings-caption-hover: rgb(255 255 255 / 10%);
     --text-primary: #dce0e7;
     --surface-selected: rgb(210 222 245 / 9%);
     --text-secondary: #a4abb7;
