@@ -2,6 +2,10 @@
 
 ## Lucide Icons
 
+Shared icon components in `apps/desktop/frontend/src/components/icons` are adapted
+from https://github.com/lucide-icons/lucide/tree/66d8f9fc394b8530377e5f6112f0b8908ba01280/icons.
+Only the selected paths are compiled as Svelte markup; no icon runtime is required.
+
 ISC License
 
 Copyright (c) 2026 Lucide Icons and Contributors

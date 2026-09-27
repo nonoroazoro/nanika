@@ -1,4 +1,7 @@
 <script lang="ts">
+import PlusIcon from "../components/icons/PlusIcon.svelte";
+import FolderIcon from "../components/icons/FolderIcon.svelte";
+import CircleMinusIcon from "../components/icons/CircleMinusIcon.svelte";
 import ScrollArea from "../components/ScrollArea.svelte";
 import Button from "../components/Button.svelte";
 import { onDestroy } from "svelte";
@@ -70,34 +73,14 @@ async function add(): Promise<void>
                 void add();
             }}
         >
-            <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                aria-hidden="true"
-            >
-                <path d="M12 5v14M5 12h14" />
-            </svg>
+            <PlusIcon size={16} strokeWidth={1.6} />
             Add folder
         </Button>
     </div>
     {#if paths.length > 0}<ScrollArea style="max-height: 320px; flex: none;"><div class="directory-items">
                 {#each paths as path, index (index)}
                     <div class="directory">
-                        <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            aria-hidden="true"
-                        >
-                            <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
-                        </svg>
+                        <FolderIcon size={18} strokeWidth={1.6} />
                         <span class="path" title={path}>{path}</span>
                         <Button
                             class="remove-folder"
@@ -106,18 +89,7 @@ async function add(): Promise<void>
                             disabled={picking}
                             onclick={() => onChange(paths.filter((_, position) => position !== index))}
                         >
-                            <svg
-                                width="18"
-                                height="18"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.6"
-                                aria-hidden="true"
-                            >
-                                <circle cx="12" cy="12" r="8.5" />
-                                <path d="M8 12h8" />
-                            </svg>
+                            <CircleMinusIcon size={18} strokeWidth={1.6} />
                         </Button>
                     </div>
                 {/each}
@@ -135,7 +107,7 @@ h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settin
 .directories :global(.add-folder) { flex-shrink: 0; }
 .directory-items { display: grid; gap: var(--space-2); border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
 .directory { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.directory > svg { flex-shrink: 0; color: var(--text-secondary); }
+.directory > :global(svg) { flex-shrink: 0; color: var(--text-secondary); }
 .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; -webkit-user-select: text; user-select: text; }
 .directory :global(button) { flex-shrink: 0; }
 .directories :global(.remove-folder) { width: 32px; height: 32px; padding: 7px; border-radius: var(--control-radius); color: var(--text-danger); }

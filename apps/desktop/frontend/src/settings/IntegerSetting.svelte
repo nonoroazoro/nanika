@@ -1,4 +1,5 @@
 <script lang="ts">
+import InfinityIcon from "../components/icons/InfinityIcon.svelte";
 import Button from "../components/Button.svelte";
 import Input from "../components/Input.svelte";
 import { integerError } from "./integerValue";
@@ -70,18 +71,7 @@ $effect(() =>
                 onCommit();
             }}
         >
-            <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                aria-hidden="true"
-            >
-                <path d="M12 12c-2-3-3.2-4.5-5.5-4.5a4.5 4.5 0 1 0 0 9c2.3 0 3.5-1.5 5.5-4.5s3.2-4.5 5.5-4.5a4.5 4.5 0 1 1 0 9c-2.3 0-3.5-1.5-5.5-4.5Z" />
-            </svg>
+            <InfinityIcon size={18} strokeWidth={1.7} />
         </Button>
     {/if}
 </div>

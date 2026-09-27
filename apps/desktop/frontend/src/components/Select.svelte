@@ -1,4 +1,6 @@
 <script lang="ts">
+import ChevronDownIcon from "./icons/ChevronDownIcon.svelte";
+import CheckIcon from "./icons/CheckIcon.svelte";
 import { Select } from "bits-ui";
 import ScrollArea from "./ScrollArea.svelte";
 import { onMount } from "svelte";
@@ -34,17 +36,7 @@ onMount(() =>
         aria-controls={open ? contentId : undefined}
     >
         <span>{selected?.label ?? value}</span>
-        <svg
-            width="16"
-            height="16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            aria-hidden="true"
-        >
-            <path d="m4 6 4 4 4-4" />
-        </svg>
+        <ChevronDownIcon size={16} />
     </Select.Trigger>
     {#if $uiActivity.visible && $uiActivity.focused}
         <Select.Portal>
@@ -73,17 +65,7 @@ onMount(() =>
                                 >
                                     <span>{option.label}</span>
                                     {#if option.value === value}
-                                        <svg
-                                            width="14"
-                                            height="14"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="1.8"
-                                            aria-hidden="true"
-                                        >
-                                            <path d="m5 12 4 4L19 6" />
-                                        </svg>
+                                        <CheckIcon size={14} strokeWidth={1.8} />
                                     {/if}
                                 </Select.Item>
                             {/each}
