@@ -16,6 +16,14 @@ See [architecture](platform-architecture.md), [lifecycle](extension-lifecycle.md
 
 ## Native acceptance
 
+- [ ] Validate System handoff on macOS hardware, including native Accessibility/
+      Automation prompts, Finder trash across mounted volumes and OS-owned cancellation.
+      The launcher must dismiss after submission without execution-result or progress
+      notifications. Cross-compilation does not validate these.
+- [ ] Validate disruptive System actions on disposable Windows/macOS sessions:
+      lock, sleep/resume, display power, logout/restart/shutdown and permanent trash
+      deletion. Keep destructive operations out of automated developer-machine tests.
+
 - [ ] Validate macOS 13 WKWebView: launcher focus/input/IME, Settings, menus, Finder
       reveal, shared scrollbars, reduced motion and hidden-state settling.
 - [ ] Validate macOS live enable/disable/recovery, current-query reactivation and open
@@ -28,8 +36,11 @@ See [architecture](platform-architecture.md), [lifecycle](extension-lifecycle.md
       monitor placement and shutdown on both platforms.
 - [ ] Validate process containment, atomic replacement failures, package permissions,
       diagnostics opening and directory picker ownership/cancellation on both platforms.
-- [ ] Validate native app discovery/activation, icon reuse, clipboard revisions/file
-      thumbnails and search with pinyin, initials, polyphonic and mixed-script inputs.
+- [ ] Validate Windows registered-app install/update/removal and macOS app discovery/
+      activation on native systems. Check localized names, icon invalidation and
+      disabled-source withdrawal.
+- [ ] Validate clipboard revisions/file thumbnails and search with pinyin, initials,
+      polyphonic and mixed-script inputs on both supported platforms.
 - [ ] Validate release-equivalent Isolation rejection/acceptance and small/large/small
       Channel delivery on both WebViews, including transport failures and delayed discovery.
 - [ ] Measure comparable cold start, summon/focus/readiness, search, IPC/view commits,
@@ -50,7 +61,5 @@ See [architecture](platform-architecture.md), [lifecycle](extension-lifecycle.md
       finish disable before unregistering/deleting files. Built-in files remain release-owned.
 - [ ] Design typed localization catalogs when localization is scheduled, using OS
       locale and a deterministic English fallback.
-- [ ] Define session-bound streaming output/diagnostics when an extension surface
-      requires it, including launched-process output ownership and cancellation.
 - [ ] Design paste-to-foreground only for an approved workflow, with Windows/macOS
       adapters and explicit focus/clipboard ownership.

@@ -35,6 +35,12 @@ build dependencies. Cite commits for implementation-specific values; do not mirr
 
 - Button, Switch, Select and ContextMenu wrap Bits UI; native Input/Textarea preserve
   editing, IME, selection, validation and typed refs. Feature surfaces compose them.
+- Generic UI symbols use reusable Lucide atoms in `components/icons`. `Icon.svelte`
+  owns SVG presentation; callers import only the atoms they need. `ActionSymbol`
+  maps the closed protocol enum to those components. Paths are compiled host markup,
+  with no runtime SVG parsing or image fetch. Provenance is in `THIRD_PARTY_NOTICES.md`.
+  Keep original app/extension artwork, image failure placeholders and native caption
+  glyphs with their owning components.
 - Semantic tokens own light/dark colors, system fonts, spacing, geometry and motion,
   including portaled popups. Keep the CSS baseline legible without native effects.
 - Preserve roles, keyboard operation, caret and fill feedback. No focus rings or
@@ -57,7 +63,7 @@ build dependencies. Cite commits for implementation-specific values; do not mirr
   Settings manifest icons use content-fingerprinted URLs with immutable browser caching;
   the resource handler verifies the fingerprint before serving bytes. Mutable package
   paths remain uncached. Fingerprints are read once by the runtime startup worker,
-  using the same bounded PNG validation for built-in and external extensions.
+  using the same bounded static-PNG validation for built-in and external extensions.
 
 ## Settings
 
@@ -108,7 +114,7 @@ Nanika choices; the transparent dot border preserves forced-color visibility.
 ## Root Search
 
 Fixed-height virtual rows use `--row-height`; top/bottom spacers preserve full scroll
-range. Only the delivered viewport/overscan creates rows and images. Arrow navigation
+range. Only the delivered viewport/overscan creates rows and images. Unmodified Up/Down navigation
 uses absolute positions and revision-bound range requests. ARIA exposes absolute row
 position/full count; native input/IME remains intact. No stagger or animated reordering.
 Disable browser scroll anchoring because the list owns spacer geometry.
@@ -120,6 +126,7 @@ while retaining the preceding page's spacer. Same-ranking page changes preserve
 offscreen identity, but unloaded rows cannot execute. New rankings retain selection
 when present in the delivered window, otherwise choose its nearest available row.
 Empty results clear selection; keyboard targets become actionable when their page arrives.
+Modified Up/Down keys retain native text editing and selection behavior.
 Reconciliation scans the delivered window, not the full catalog.
 
 Candidate `subtitle` is optional `{ "kind": "label" | "description", "text": string }`.
@@ -130,6 +137,33 @@ The host preserves its declared kind instead of inferring it from extension iden
 - Descriptions, including script paths, yield space to titles and may ellipsize.
 - Native text hints expose full titles/descriptions.
 
+Root activation uses the result's declared policy. Ordinary actions execute on
+Enter. Confirmation-required root actions display their confirmation label beside
+the selected row title on first Enter and execute on second Enter. The label replaces
+the subtitle/path while armed, preserving row height and keyboard focus; cancellation
+restores the subtitle. Text and keycaps center independently so confirmation cannot
+shift the title or metadata vertically. A polite live region announces the confirmation and cancel key.
+Repeated keydown events cannot confirm. Escape cancels without dismissing the launcher. Other non-modifier keys,
+query edits, IME composition, selection/ranking changes, list scrolling, pointer
+presses outside the reviewed row, context menus and focus/visibility loss cancel
+confirmation. Only an unmodified Enter or another click on the same row confirms;
+there is no expiry timer. Activation never opens the context menu. The host excludes the
+action bound to Enter or row click/double-click by ID when composing context menus. Menus appear only when additional
+actions remain, uniformly across extensions; action count and labels do not define
+primary activation. A standalone Detail exposes its primary action as an actual button
+in the trailing status bar, while list views retain row activation. Selecting detail
+text keeps native keyboard semantics; the primary button remains available to a mouse.
+System commands declare bundled Lucide symbols. All collection
+icons, including root symbols and Clipboard content/file icons, use the shared
+`--icon-size` (26 px) slot and dimensions. Normal symbols inherit semantic text colors; the
+inline confirmation label uses the danger color. Open Trash uses `folder-open`,
+while Empty Trash uses `trash`. Native application artwork uses the shared image
+loading and failure presentation.
+
+App, Scripts and System commands dismiss the launcher after submission or launch.
+The launcher does not display execution results or track subsequent progress.
+Failures before handoff use `role=alert`; new work clears them.
+
 ## Shared scroll areas
 
 All collection, Settings, directory, menu and Select scrolling uses `ScrollArea.svelte`.
@@ -137,7 +171,13 @@ Bits owns geometry, pointer capture and drag mapping; content uses native WebVie
 scrolling without a second momentum/wheel engine. Select composes its Viewport with
 the shared viewport via `viewportProps`, retaining both ref attachments so keyboard
 highlighting scrolls the real element. Read-only detail text recomputes height on
-content/width changes and keeps native selection.
+content/width changes and keeps native selection. List and text pagination use shared
+Previous/Next controls with a range label. Pages replace their bounded content; no
+intersection observer appends an ever-growing list or automatically retries failed pages.
+Detail page controls are disabled while a new selection awaits its authoritative detail.
+Clipboard copy always operates on the full original entry, including when showing one
+text page. Pending Root Search contributors appear as passive status while available
+results remain actionable; an incomplete empty snapshot is not announced as No results.
 
 The visual reference is VS Code **Source Control and Extensions lists**, not editor
 scrollbars, at commit `529ee19061e6723e0a640fe432e57c69d50a4f4f`:
@@ -184,8 +224,8 @@ poll or animate. DOM activity controls visuals only; Tauri owns launcher hiding.
 
 Use one controlled menu presenter for bounded actions, groups, disabled/destructive
 states, confirmation and existing shortcut hints. Callers supply target/position.
-Search rows, list rows and standalone details retain an explicit context-menu action
-entry, including when default execution is forbidden. Detail targets have no item ID;
+Search rows, list rows and standalone details expose a context menu only when their
+target has actions beyond its Enter action. Detail targets have no item ID;
 split previews belong to their list route.
 
 Bits owns navigation, typeahead, placement and dismissal. Escape closes the menu before
@@ -212,14 +252,10 @@ from current values. Neutral hover is black/white at 10%; close hover is
 `rgb(232 17 35 / 90%)` with white foreground. Hidden/reduced-motion states settle
 immediately; focus changes do not alter durations.
 
-### Rendering constraint and regression check
+### Rendering validation
 
-Windows user testing exposed a stale painted background frame at completion of a
-`background-color` transition, despite disjoint geometry and stable hover/computed-color
-traces. Fixed-color layer opacity resolved the reported flicker. This does not prove
-an internal WebView2/Chromium cause or a confirmed Tauri bug. Preserve this animation
-structure; do not substitute hit insets, gaps, pointer debouncing, forced repaints,
-permanent `will-change` or GPU-disable flags.
+Keep background animation on the fixed-color opacity layer. Do not add hit insets,
+gaps, pointer debouncing, forced repaints, permanent `will-change` or GPU-disable flags.
 
 Move slowly across adjacent buttons and the bottom separator, reversing mid-transition.
 Check rendered pixels as well as hover state, hidden settling and live reduced motion.
@@ -241,7 +277,7 @@ extension permissions. Auxiliary actions do not count as app launches.
 Default permission and confirmation cannot combine. Restricted candidates remain
 searchable and explicitly actionable when allowed. Menus/confirmation expire with
 the reviewed target; queued input must not retarget or predict revisions. Selection
-is nonblocking; blocking feedback waits for RPC completion and correlated state.
+is nonblocking; blocking view input waits for RPC completion and correlated state.
 See [execution authority](platform-architecture.md#ipc-and-execution-authority).
 
 ## Validation and artwork

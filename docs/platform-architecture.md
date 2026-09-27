@@ -20,7 +20,7 @@ no compatibility paths, migrations or automatic data resets.
 | apps/desktop/frontend | One Svelte renderer for host and declarative extension surfaces                                |
 | tooling               | Development, build and validation; never an installed-app dependency                           |
 
-The built-in inventory contains Applications, Scripts, Calculator and Clipboard History.
+The built-in inventory contains Applications, Scripts, Calculator, Clipboard History and System.
 Static command contributions and typed process-launch services are shared extension
 contracts, independent of the built-in inventory.
 
@@ -37,16 +37,23 @@ code or DOM/WebView access.
 
 Invoke replies acknowledge submission. Authoritative search/navigation and Settings
 state arrive through separate session Channels; queued delivery is not receipt.
-Root execution binds to the immutable delivered search snapshot. Its replacement
-invalidates reviewed targets even within one query. Menus and confirmation bind to
-exact revisions. Ordinary queued view input retains stable IDs and is revalidated
+Root execution binds to the delivered query generation, result revision and originating
+instance. A newly admitted query or changed ranked result set invalidates reviewed
+targets. Progress, off-query updates, score changes that preserve ordering, and icon-only
+updates preserve execution authority. Menus and confirmation
+bind to exact result revisions. Root context-menu targets carry that same result revision,
+never the transport revision and never a rebased current revision. Ordinary queued view
+input retains stable IDs and is revalidated
 under the shared operation/invalidation lock. Never retarget stale actions.
 
 The view-input FIFO coalesces only adjacent unsent selections for the same route.
 Actions are barriers. Overflow, replaced routes and unavailable targets fail
 explicitly. Blocking input waits for RPC completion and the correlated Channel
-revision in either order; selection remains nonblocking. Preserve accepted work,
-concrete failures and backpressure.
+revision in either order; selection remains nonblocking. The view-input scheduler
+owns query drafts and the component renders its value. Newer and invalid drafts
+survive older publications; settled input yields to authoritative `search_text`,
+and changing routes discards the previous draft. Failed submissions are not retried.
+Preserve accepted work, concrete failures and backpressure.
 
 Nanika frames use a 32-bit byte length with no additional application byte quota.
 Receivers grow buffers with received bytes, not the claimed header size. Encoding,
@@ -58,7 +65,8 @@ Schema validation, image bounds and bounded queues remain independent constraint
 
 Settings submits one property key and value. Rust validates schema and visibility,
 merges it into authoritative configuration and reserves one configuration/lifecycle
-operation per extension. Other extensions remain independent. The frontend admits
+operation per extension. Other extensions remain independent. Configuration persistence owns only the per-extension
+reservation during file I/O; the global registry lock covers snapshot reads and publication. The frontend admits
 one edit per field and serializes distinct fields in that extension's domain.
 
 Commit preparation validates and converts the complete field before no-op detection;
@@ -95,6 +103,51 @@ Windows startup and macOS login items remain native-service-owned. Reads and wri
 share one serial domain; returning to Settings/General refreshes OS state. Failed
 writes query actual state, and stale reads cannot overwrite queued edits.
 
+## System actions
+
+System contributes eight static commands with `activation: onDemand`. Search reads
+host-owned manifest candidates without starting its process or sending query IPC.
+The extension owns command IDs and labels. It invokes the shared
+`SystemAction` host service, available to external extensions under the same
+instance, parent-request and per-action permission checks. No arbitrary command or
+path is accepted by that service.
+
+`system.lock`, `system.sleep`, `system.displays`, `system.logout`, `system.restart`,
+`system.shutdown`, `system.trash.open` and `system.trash.empty` each authorize only
+their corresponding operation. Permissions are checked before lazily creating one
+blocking worker. Its queue holds at most 16 pending requests; overflow is rejected
+before admission. It sleeps when idle, drains admitted work on shutdown and never
+replays an action after failure or cancellation. Admission returns a single
+`SystemActionSubmitted` receipt, meaning the host owns the command, not that the OS
+completed it. The extension immediately returns `Dismiss`. Native dispatch failures
+are diagnostic logs only; no completion or progress is sent back to the launcher.
+
+| Operation | Windows 10+ | macOS 13+ |
+| --- | --- | --- |
+| Lock | `LockWorkStation` | Public Control-Command-Q CGEvents; Accessibility permission |
+| Sleep | `SetSuspendState` | `/usr/bin/pmset sleepnow` |
+| Displays | Asynchronous `SC_MONITORPOWER` broadcast | `/usr/bin/pmset displaysleepnow` |
+| Log out / restart / shut down | `ExitWindowsEx`, without force flags | Fixed System Events AppleScripts; Automation permission |
+| Open Trash | Shell Recycle Bin namespace | `NSWorkspace` opens the current user's Trash |
+| Empty Trash | `SHEmptyRecycleBinW` across drives; Shell owns native progress | Finder's empty operation; Automation permission |
+
+Windows shutdown privilege is enabled only on an impersonating short-lived thread;
+thread exit releases it without modifying the host process token. Fixed AppleScripts run
+through `/usr/bin/osascript`, whose process owns the scripting main thread. The system
+adapter uses `ProcessLauncher` to start interpreters and power utilities without
+capturing output or interpreting exit status. Child reaping only releases process
+resources; it does not report execution results. No in-process `NSAppleScript`
+crosses the main-thread contract. The host bundle declares
+its Automation purpose and the Hardened Runtime Apple Events entitlement
+`com.apple.security.automation.apple-events`. Native Automation attribution and denial
+require macOS acceptance.
+The OS owns the operation after dispatch, including any native UI. Nanika does not
+query whether Trash was empty or whether a session/power operation completed.
+
+Log out, restart, shut down and empty Trash require the shared revision-bound action
+confirmation. All submitted System commands return `Dismiss`. No execution-result
+notification or completion state is retained. System has no database or catalog scanner.
+
 ## Persistent storage
 
 Host and extensions own separate databases on background workers. `engine/database`
@@ -106,7 +159,7 @@ consistency but may lose recent commits after OS/power failure.
 | Database                    | Durable data                                                   |
 | --------------------------- | -------------------------------------------------------------- |
 | `nanika.db`                 | Extension inventory/provenance, input history and action usage |
-| `com.nanika.application.db` | Source records keyed by `(root_key, entry_id)`                 |
+| `com.nanika.application.db` | Source records keyed by `(source_id, entry_id)`                 |
 | `com.nanika.clipboard.db`   | Clipboard entries and references to owned image files          |
 
 An empty DB receives its schema atomically. Existing DBs must match the full declared
@@ -114,16 +167,35 @@ schema, including indexes, constraints and triggers, and `user_version=1`. Misma
 are rejected without modifying records. Development data is reset only on request.
 
 - Host: unchanged built-in registration does not rewrite rows. History and usage
-  commit together after execution; usage references inventory through a foreign key.
-- Application: retain lower-priority sources so removing a preferred root still
-  selects the correct winner after restart. Derive normalized display names in
-  memory; persist launch metadata and icon extraction source/index. Scan progress
-  and resume cursors are not stored.
+  commit together after the extension action returns; usage references inventory through
+  a foreign key. App, Scripts and System record the launch/submission, never the
+  eventual outcome of the launched operation.
+- Application: retain lower-priority sources so removing a preferred source still
+  selects the correct winner after restart. Filesystem roots and native inventories
+  share source-based transactions. Derive normalized display names in memory; persist
+  launch metadata and a typed icon source: file path/resource index or Windows AUMID/
+  full package identity. Scan progress and resume cursors are not stored.
 - Clipboard: a kind-aware content hash provides identity and deduplication. An
   ordering index serves history/retention; a partial image index avoids reading text
-  payloads. Capture and configured retention commit together, then publish changed
-  and removed entries. Load history once at startup and preserve untouched payloads.
-  Later image cleanup failure is reported separately from the successful DB commit.
+  payloads. One storage owner holds the connection and an incremental query cache
+  of matching IDs and ordering metadata. A changed query streams payloads once; selection, pagination and
+  icon scheduling reuse those IDs. Read only current-page summaries and the selected
+  original payload. Full history bodies are never resident together. Capture and
+  configured retention commit together and update the active query incrementally. Capture,
+  retention and clear publish an instance-scoped view change after every successful
+  commit. Clear uses the reviewed matching IDs, including off-page entries, without
+  deleting newly captured entries absent from the confirmed scope. Later image cleanup failure
+  is reported separately from the successful DB commit, without suppressing publication.
+  Transactions return removed entry IDs and final ownership only for affected image paths;
+  indexed ownership checks preserve shared paths and replacements. Capture does not scan
+  unrelated image rows or payload files. Startup alone reconciles all retained paths with
+  owned files. That temporary path set is released; runtime resource bookkeeping retains
+  only active copy readers and their current committed ownership.
+  Copy acquires a storage-owned image lease before returning its content. Retention
+  and clear still commit immediately, but reclaim the image only after the final copy
+  reader releases it. A recaptured image remains owned by its new row. The caller holds
+  the lease through the host-service outcome; response handoff is synchronous and the
+  lease borrows the worker so normal shutdown cannot overtake an active reader.
 - Scripts: no durable catalog; rediscover on process start.
 
 Tooling uses empty SQLite files under `target/.build-locks` for exclusive locks.
@@ -147,14 +219,30 @@ on the next open or configuration apply.
 
 | Platform | Built-in application sources                                                                                |
 | -------- | ----------------------------------------------------------------------------------------------------------- |
-| Windows  | Known Folders for Start Menu/packaged apps; SCOOP/SCOOP_GLOBAL or profile/ProgramData roots for Scoop shims |
+| Windows  | Known Folders for Start Menu; PackageManager registered application inventory; SCOOP/SCOOP_GLOBAL or profile/ProgramData roots for Scoop shims |
 | macOS    | /Applications, /System/Applications, current HOME/Applications                                              |
 
 Built-in sources default to enabled. Settings shows current-platform switches before
 custom folders and preserves other-platform values. Do not embed usernames/drives or
 silently replace invalid overrides. Scoop visits shims, not versioned apps/caches.
 
-Windows identity uses canonical target plus arguments; activation keeps the original
+Windows packaged applications come from the current user's registered packages and
+all entries returned by GetAppListEntriesAsync. The OS supplies localized names and
+AUMIDs. One packaged-app setting owns this native inventory; protected installation
+folders and package manifests are not scanned. A complete inventory commits atomically;
+a failed read preserves its previous contribution while filesystem sources continue.
+Disabling the source commits an empty inventory even if another source fails.
+Native icon identities store the AUMID and full package identity; Shell resolves the
+artwork, and a package update changes its cache identity. These are not filesystem paths.
+Typed WindowsPackagedApplication host requests validate AUMIDs with the native parser
+and use IApplicationActivationManager. Built-in and external callers use the same
+process.launch permission and admission contract. macOS rejects these Windows requests.
+Native API contracts: [current-user packages](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.findpackagesforuser),
+[application entries](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.package.getapplistentriesasync),
+[AUMID parsing](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-parseapplicationusermodelid),
+[native activation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-iapplicationactivationmanager-activateapplication).
+
+Windows filesystem identity uses canonical target plus arguments; activation keeps the original
 shortcut/wrapper. Paired `.shim` metadata can resolve identity, with bounded reads
 and concrete malformed/missing-target outcomes. Wrappers with extra environment,
 working-directory, elevation or variable semantics stay distinct. Matching names do
@@ -178,6 +266,52 @@ Source: [application index](../apps/extensions/built-in/application/src/Applicat
 [platform adapters](../apps/extensions/built-in/application/src/platform.rs),
 [script discovery](../apps/extensions/built-in/script/src/ScriptDiscovery.rs).
 
+## Host effects and resource ownership
+
+Extensions own domain behavior, catalogs, history, retention and views. Host services
+provide permission-checked native primitives, identically for built-in and external
+extensions. Preparing a request does not admit its effect. The runtime rechecks explicit
+interruption and originating-instance admission after preparation. Once admitted, the
+host owns the stable input and result even if the producer exits.
+
+All extension PNG resources are static images; the shared reader rejects APNG before
+pixel decoding. Clipboard preparation reads bytes within the extension payload root,
+decodes each row with cancellation checks, and validates terminal chunks before native admission;
+queued native writes never reopen a producer pathname. Preparation, queueing and execution
+share eight request credits and one PNG credit, preserving a single encoded image's
+resident-byte ceiling. Waiting for a credit observes cancellation; there is no expiry.
+The existing canvas pixel limit therefore bounds the entire decoded image. Text/profile
+metadata is not decompressed during validation; encoded bytes remain unchanged.
+Text/files retain their request-owned strings. No history or retention policy
+moves into the host.
+
+The native adapter returns a revision causally tied to its own write:
+
+| Platform | Write and receipt contract |
+| --- | --- |
+| Windows | A message-only owner writes immediate formats, then closes the clipboard to finalize synthesized formats. A second read-only lock verifies ownership and samples the finalized sequence. Lock failure or ownership loss is a concrete receipt error. No foreground activation, delayed renderer or retry. |
+| macOS | Prepare NSPasteboardWriting objects, retain the ownership count returned by clearContents, check writeObjects and verify the same ownership. PNG bytes are submitted directly, without decode/re-encode. |
+
+A replacement owner's write cannot become the receipt for Nanika's write. Ownership
+loss on either platform is a concrete error. Native validation remains platform-specific; cross-compilation
+does not establish OS behavior. References: [OpenClipboard](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-openclipboard),
+[SetClipboardData](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setclipboarddata),
+[NSPasteboard changeCount](https://developer.apple.com/documentation/appkit/nspasteboard/changecount).
+
+Search-related storage accepts writes through one bounded queue. Submission returns an
+`StorageCommit` handle that callers may choose to await; it acknowledges only the durable database
+transaction. Launcher invocation submits usage and immediately returns its navigation
+outcome without awaiting persistence. Initialization explicitly awaits required inventory
+writes. The storage owner retains accepted writes even when the receipt is dropped and
+drains them before search shutdown. Full queues apply backpressure without dropping work.
+
+The owner sends the durable receipt before admitting the ordered search projection.
+Projection failure cannot change a committed write into failure, and storage or projection
+errors remain in owner diagnostics rather than action outcomes or search readiness.
+A retained diagnostic does not put the launcher into a fatal state; initialization failures
+remain fatal. No automatic replay,
+additional worker, unbounded queue or completion notification is introduced.
+
 ## Catalog publication and search
 
 Manifest `contributes.rootSearch.mode` is required. `catalog` supplies query-independent
@@ -187,13 +321,38 @@ per input; Calculator uses it. External extensions use the same contracts.
 `CandidatesChanged` schedules `CatalogRead`. Ordered `CatalogBatch` replies carry
 transaction/index, replace/complete flags, upserts and removed IDs. The publisher
 targets 256 entries per reply to yield, not to limit catalog size. Host preparation
-runs off the search owner; staged changes become visible atomically under the instance
-publication gate. `CatalogApplied` follows search-owner commit. Pending publication
+runs off the search owner; the search owner accepts staged changes atomically through
+an instance-bound publication capability. Retirement removes that registration; old
+capabilities cannot publish into or retire a replacement. `CatalogApplied` follows
+search-owner commit outside instance/query gates. Pending publication
 is immutable; concurrent changes form the next transaction. Only initial publication
 replaces the catalog; later deltas touch affected entries and empty deltas do not rerank.
 Actions/configuration retain priority between batches. Query changes do not cancel
 catalog transactions; instance retirement withdraws their authority. Query-mode
 responses remain generation-bound and do not own discovery cancellation.
+
+Each query immediately publishes available static matches. Query contributors publish
+independently; `pendingExtensions` identifies contributors without a completed response.
+Partial snapshots retain pending status until `complete=true`, including an empty
+terminal delta. Same-generation query admission restores pending without removing
+available results; cancellation clears pending while retaining published results.
+Manifest command/view entries belong to each replacement baseline. Incremental frames
+can only alter dynamic identities; they neither reinsert nor remove manifest entries.
+SearchOwner assigns execution authority as query generation plus result revision and
+retains the contributing instance identities. Runtime, shell delivery, menus and action
+confirmation use this semantic authority; pointer sharing is only a memory optimization.
+Authority compares ordered visible targets, their originating instances, titles/subtitles
+and action invocation metadata. Icons and matching/ranking implementation data are excluded;
+changes to them still deliver updated presentation when necessary. Unchanged ranked payloads
+reuse their shared allocation. Delivery detects payload changes independently of authority,
+so loading an icon cannot cancel an already reviewed action or leave the icon invisible.
+Instance maps are shared between snapshots and copied only when registration changes.
+Progress-only publications share the immutable ranked results. They neither rerank
+candidates nor advance result authority, resend rows, prepare icons or cancel a
+reviewed action confirmation.
+An empty or slow contributor never gates another contributor's results. Each publication
+is immutable and retains current-generation and delivered-revision execution authority.
+Pending status does not disable available results and uses no timer or fallback query.
 
 The host retains all lightweight entries and the complete ranking in memory. Catalogs
 and ranked snapshots share immutable payloads; ranking adds references/scores. Titles,
@@ -219,8 +378,8 @@ return icon references; only the icon worker publishes presentation state. Compl
 before native extraction begins, and each native completion publishes independently
 through the existing bounded catalog transport. The worker rechecks the latest viewport
 between items; discovery commits wake pending requests for newly available entries.
-Completion changes presentation only and must still match the entry's icon key, source
-and resource index. Removed or replaced sources reject stale completions, while unchanged
+Completion changes presentation only and must still match the entry's icon key and
+typed extraction source. Removed or replaced sources reject stale completions, while unchanged
 sources retain prepared icons across metadata updates. Failed extraction keeps its cache set marked incomplete and uses one shared fallback
 reference instead of copying fallback files into each failed cache directory. Cache failures remain explicit
 and do not turn repeated viewport requests into automatic retries. An admitted refresh
@@ -228,11 +387,13 @@ re-admits failed icons, including a failure completing during that refresh; succ
 icons remain prepared and offscreen failures wait for a viewport request. Hidden UI schedules
 no viewport requests, and the worker sleeps without polling when there is no work.
 Shutdown stops admission, finishes an active native call and drains bounded publications
-before joining both workers. Windows retains per-size native extraction for 32/64/128 px;
-macOS retains its existing single 256 px NSWorkspace extraction and normalization.
+before joining both workers. Windows file sources use per-size native extraction for
+32/64/128 px. Registered Windows applications render once at 256 px and derive all
+three sizes. macOS renders once at 256 px through NSWorkspace and normalizes each size.
 
-The opt-in `application` `icons` benchmark compares separate extraction with single
-128/256 px extraction without changing production policy. Set
+The opt-in `application` `icons` benchmark compares filesystem icon extraction at
+separate sizes with single 128/256 px extraction. It does not exercise registered
+Windows application identities. Set
 `NANIKA_ICON_BENCH_SOURCES` to a JSON array of absolute source paths,
 `NANIKA_ICON_BENCH_OUTPUT` to an isolated directory under `target`, and
 `NANIKA_ICON_BENCH_MODE` to `separate`, `single128` or `single256`, then run
@@ -240,26 +401,75 @@ The opt-in `application` `icons` benchmark compares separate extraction with sin
 rounds including PNG encoding/writes. `NANIKA_ICON_BENCH_HANDSHAKE=1` pauses before
 and after work for an external process-memory sampler. Compare modes in alternating
 order with the same sources; process-cold measurements do not imply a cold OS cache.
-Single-extraction modes are evaluation candidates, not the Windows runtime contract.
+Single-extraction modes remain evaluation candidates for Windows file sources; the
+registered-application path already uses one 256 px render.
+
+## Declarative extension views
+
+List snapshots contain at most 500 items with unique section and item identities.
+`pagination` carries an informational label and opaque adjacent cursors; `PageChanged`
+identifies the list or detail surface. The shell requires the exact delivered view
+revision and validates the cursor against the current surface before dispatch.
+Clipboard also checks the storage revision before applying a page request. A page replaces the bounded snapshot; it never appends
+all preceding pages. Clipboard renders ten history rows per page, preserves selected
+identity through captures, and reconciles removed selections after retention.
+
+Plain-text detail pages preserve Unicode and control characters, with at most 16,384
+characters per page. Clipboard retains the full original payload for copy and search;
+all text remains reachable through adjacent pages. Display bounds neither truncate
+stored content nor change capture/retention policy. Search text is plain user data,
+including controls, bounded to 4,096 characters. File paths preserve native characters
+and reject NUL; display labels escape controls. Extensions validate each proposed view
+before committing its protocol revision; failure leaves the accepted state usable.
+
+The clipboard storage owner retains only the active query's matching IDs and ordering
+metadata. Committed captures match the changed payload once; retention and clear
+remove committed IDs from that collection. Published clear scopes remain immutable.
+Changing query text or content type rebuilds the collection from SQLite; ordinary
+mutations do not rescan retained payloads. Page authority still tracks data changes.
+
+Clipboard file-icon refreshes revalidate source metadata on their blocking worker.
+Both persistent artifacts and in-process outcomes use the same native metadata
+identity: Windows creation/write times, size and attributes; macOS device/inode,
+size, modification/change timestamps. An unchanged source retains its
+success or settled failure. A changed source is acquired on an existing view refresh,
+including resume, without polling or retries of unchanged failures.
+
+`ViewsChanged` is a requestless dirty signal for the sending process instance. The host
+coalesces one signal per extension and refreshes that instance's current authorized
+route. It carries no view ID, so background-view changes cannot overwrite a different
+visible view's pending refresh. Resuming a stacked route reads current data.
 
 ## Extension image resources
 
 Manifests require a package-relative PNG icon. Commands/views may declare package
 icons; candidates accept `{ "kind": "package", "path": "assets/item.png" }` or
 `{ "kind": "cache", "key": "file-icon" }`. `{ "kind": "empty" }` reserves a transparent
-icon slot without an image URL. Omitted icons inherit the extension icon.
-The frontend receives resolved URLs through a shared renderer, without domain artwork.
+icon slot without an image URL and suppresses package inheritance. Native images
+retain precedence and their existing cache/extraction lifecycle.
+
+Actions may declare a closed `ActionIcon` identity. Root results without an explicit
+item icon use the designated action symbol before inheriting the extension icon.
+The shell publishes a discriminated image URL or symbol payload for root results.
+System uses these symbols. Host-owned Lucide paths are compiled into the frontend,
+with no extension markup, remote URLs, icon font or extra runtime dependency.
 
 Paths contain slash-separated ASCII letters, digits, dots, underscores and hyphens,
 with no empty/dot/parent segments and at most 512 bytes. PNG byte/dimension limits and
 canonical resource-root containment apply. Remote URLs, SVG and arbitrary host paths
 are rejected. Image failures produce a neutral placeholder, not lifecycle failure.
 
+Detail images contain only `{ "path": "<hash>.png" }` under the owning extension's
+payload root. Inline data URLs are not part of the protocol; CSP remains restricted
+to the existing resource origins.
+
 The resource protocol exposes `/{extensionId}/package/{path}`,
 `/{extensionId}/cache/{key}/{size}.png` and `/{extensionId}/payload/{hash}.png`.
-Settings reads package images only; launcher also reads cache/payload images. Package
-responses are uncached because updates may replace a path; content-addressed responses
-are immutable. Disabled extensions retain registered package roots.
+Settings reads package images only; launcher also reads cache/payload images. Mutable
+package URLs are uncached because updates may replace a path. Settings appends a
+content fingerprint, which the handler verifies before serving an immutable response.
+Content-addressed cache/payload responses are immutable. Disabled extensions retain
+registered package roots.
 
 External roots come from installed metadata. Built-in exports derive from
 `bundle.externalBin` and manifests into `extensions/{extensionId}/assets`. The shell

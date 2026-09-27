@@ -22,10 +22,12 @@ re-reads it so manual corrections can take effect. Invalid packages/missing exec
 remain resolution diagnostics, not runnable Settings entries.
 
 Each instance receives a host-owned monotonic identity independent of query and
-extension-owned IDs. Its publication gate scopes search, host-service admission and
-view updates. Retirement withdraws contributions through an acknowledged search-owner
-barrier shared with query admission. Late replies cannot mutate replacement routes or
-permissions. Accepted action output remains coordinator-owned with its originating
+extension-owned IDs. Search registration creates an instance-bound publication capability;
+the search owner serializes publication and retirement and rejects old capabilities,
+including late snapshots, pending-status updates and retirement of a replacement.
+Retirement withdraws contributions through an acknowledged search-owner barrier shared
+with query admission. Instance gates cover only local admission/view transitions, never
+peer I/O or search queue waits. Late replies cannot mutate replacement routes or permissions. Accepted action output remains coordinator-owned with its originating
 identity. Removing a retired route preserves unrelated live routes/resources.
 
 ## Desired state, admission and actual state
@@ -54,11 +56,14 @@ mutations serialize with configuration. Invocations retain worker priority.
 
 Catalog transactions belong to the instance, not the query. Staged batches are invisible
 until search-owner commit and `CatalogApplied`; retirement revokes publication authority.
-Query contributors retain generation-scoped responses. Neither mode changes navigation.
+Query contributors retain generation-scoped responses. Partial results remain pending
+until a terminal response; same-generation request admission and cancellation update
+pending status without withdrawing published results. Neither mode changes navigation.
 See [publication and search](platform-architecture.md#catalog-publication-and-search).
 
-Built-in scanners publish each completed recursive root. Exit discards incomplete
-staging; restart scans from the beginning without checkpoints. One extension's refresh
+Built-in filesystem scanners publish each completed recursive root. Windows packaged
+applications publish one complete current-user native inventory. Exit discards
+incomplete source staging; restart scans from the beginning without checkpoints. One extension's refresh
 failure does not undo another's catalog. Shutdown interrupts waits before joining owners.
 
 ## Disable
@@ -66,7 +71,7 @@ failure does not undo another's catalog. Shutdown interrupts waits before joinin
 1. Persist the choice. Persistence failure leaves the live instance admitted.
 2. Close admission and withdraw that instance's contributions/routes.
 3. Settle accepted work, explicitly cancelling queued actions not yet started and
-   retaining real outcomes for active actions/submitted host services.
+   retaining the contract-defined receipts for active actions/submitted host services.
 4. Close stdin after active work settles. Drain terminal responses for cancelled searches.
 5. Await cleanup, process/descendant exit and output draining.
 6. Publish disabled and release the instance only after successful cleanup.
@@ -108,6 +113,25 @@ A second failure stops recovery; Settings retains both causes and permits explic
 disable/enable. Cleanup failure also blocks replacement. Shutdown closes recovery
 admission and interrupts waits. There is no polling, restart timer or persisted counter.
 
+System uses the same on-demand activation and EOF boundary. Static search does not
+activate its process. Root actions, view events and ACP prompts use the same explicit
+interruption contract. Host requests prepare validated, stable inputs before final
+instance/interruption admission. Cancellation or termination observed before admission
+rejects the native effect. Preparation capacity waits observe interruption without an
+expiry or retry policy. PNG inputs must be static; APNG is rejected at the shared resource
+boundary, and row decoding observes interruption before native admission.
+
+After admission, the host owns the input and native operation. Cancel preserves the
+service's defined terminal response; graceful disable waits for that response before EOF. Forced process termination
+is a distinct error, never proof that an accepted native effect was cancelled. Native
+service shutdown drains accepted work independently of extension termination, including
+clipboard writes, launches/reveals and system actions. No origin receives a shortcut.
+System actions acknowledge host ownership with `SystemActionSubmitted` and dismiss
+the launcher immediately. That receipt is terminal for the extension request; native
+execution has no subsequent result or progress channel. The host still dispatches
+accepted commands after extension EOF. App and Scripts acknowledge launch only,
+without interpreting the launched process exit status.
+
 ## Protocol and native process contract
 
 Pre-1.0 redesigns replace the current protocol directly, preserving
@@ -116,6 +140,13 @@ Pre-1.0 redesigns replace the current protocol directly, preserving
 EOF is the process lifetime boundary for Nanika and ACP. Nanika has no shutdown
 acknowledgement that substitutes for completed writes/descendant exit. ACP uses v1
 JSON-RPC sessions. Neither transport adds an application-defined message byte quota.
+
+Nanika input uses one joined writer and a bounded single-message queue. The process
+owner waits for actual write completion before admitting another frame. Application
+shutdown remains observable while a child refuses input: the owner terminates native
+containment before joining the writer. Graceful disable closes the writer only after
+accepted work settles, delivering EOF without a timeout or forced termination. Partial
+failed frames are never retried during writer destruction.
 
 ACP `session/cancel` cancels a prompt, not a process: await its terminal response before
 retiring transport. Dropping the connection closes stdin, drains stderr and waits for

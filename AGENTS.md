@@ -12,6 +12,7 @@
 
 - Support Windows 10+ and macOS 13+ only. Keep native mechanisms in their owning adapters, document the shared contract and both implementations, and reject other platforms explicitly.
 - Rust owns search, supervision, storage, configuration and platform services. Keep engine independent of Tauri; commands, channels, windows and capabilities belong in the desktop shell. Callers own lifecycle and transaction policy.
+- The launcher only initiates App, Scripts and System commands, then dismisses after submission or launch. Do not track their subsequent execution, interpret exit results, query completion or display outcome/progress notifications. System operations belong to the OS; host submission receipts are not completion claims. Keep permission validation and admission failures distinct from post-handoff execution.
 - Extensions provide all domain capabilities. Built-in and external extensions share process, permission, configuration, view, lifecycle and failure contracts. Only host inventory establishes built-in identity; provenance grants no runtime shortcut.
 - One Svelte frontend renders bounded declarative extension data. No extension-supplied frontend code or DOM/WebView access; never render application or extension data with {@html}.
 - Route frontend Tauri access through the typed bridge. Preserve Isolation, explicit permissions, Rust validation and session-bound channels. Search invoke replies acknowledge submission; authoritative state arrives through the Channel. Queued delivery is not receipt.
