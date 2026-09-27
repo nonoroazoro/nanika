@@ -1,11 +1,10 @@
 use std::io::{BufReader, BufWriter, stdin, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use nanika_extension_clipboard::{
-    CLEAR_ACTION_ID, CLIPBOARD_PAGE_SIZE, COPY_ACTION_ID, ClipboardConfig, ClipboardEntry,
-    ClipboardMonitor, ClipboardViewState, ClipboardWorker, FILE_COLLECTION_PREVIEW_LIMIT,
-    FileIconWorker, RuntimePaths, VIEW_ID, matching_entries, render_clipboard_view,
+    CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardConfig, ClipboardMonitor, ClipboardPresentation,
+    ClipboardViewState, ClipboardWorker, FileIconWorker, RuntimePaths, VIEW_ID,
 };
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
@@ -56,7 +55,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    let entries = Arc::new(RwLock::new(Vec::<ClipboardEntry>::new()));
     let notifications_enabled = Arc::new(AtomicBool::new(true));
     let callback_enabled = Arc::clone(&notifications_enabled);
     let invalidation_output = Arc::clone(&output);
@@ -64,12 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !callback_enabled.load(Ordering::Acquire) {
             return;
         }
-        if let Err(error) = send_frame(
-            &invalidation_output,
-            &Message::ViewInvalidated {
-                view_id: VIEW_ID.to_owned(),
-            },
-        ) {
+        if let Err(error) = send_frame(&invalidation_output, &Message::ViewsChanged) {
             eprintln!("clipboard view invalidation failed: {error}");
         }
     });
@@ -77,7 +70,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         paths.database_path(),
         paths.payload_root(),
         config,
-        Arc::clone(&entries),
         Arc::clone(&view_invalidated),
     )?;
     send_frame(
@@ -126,12 +118,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     continue;
                 }
-                let mut state = ClipboardViewState::new();
-                // First paint uses memory only; filesystem and native icon work stay on the worker.
-                let view = render_clipboard_view(&mut state, &entries, &|path| {
-                    icon_worker.resolution(path)
-                });
-                view_state = Some(state);
+                let mut presentation = match worker.present(ClipboardViewState::new(), None) {
+                    Ok(presentation) => presentation,
+                    Err(error) => {
+                        send_error(&output, Some(request_id), "view_failed", &error)?;
+                        continue;
+                    }
+                };
+                presentation.decorate_icons(&|path| icon_worker.resolution(path));
+                if let Err(message) = presentation.view.validate() {
+                    send_error(&output, Some(request_id), "view_failed", &message)?;
+                    continue;
+                }
                 send_frame(
                     &output,
                     &Message::Result {
@@ -140,13 +138,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         effect: NavigationEffect::Push {
                             view_id: VIEW_ID.to_owned(),
                             revision: 1,
-                            view: Box::new(view),
+                            view: Box::new(presentation.view.clone()),
                         },
                     },
                 )?;
-                if let Some(state) = &view_state {
-                    schedule_visible_icons(&icon_worker, state, &entries);
-                }
+                icon_worker.schedule(presentation.icon_paths());
+                view_state = Some(presentation);
             }
             Message::ViewEvent {
                 request_id,
@@ -160,7 +157,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &worker,
                 &monitor,
                 &icon_worker,
-                &entries,
                 &mut view_state,
                 request_id,
                 generation,
@@ -236,14 +232,13 @@ fn handle_view_event(
     worker: &ClipboardWorker,
     monitor: &ClipboardMonitor,
     icon_worker: &FileIconWorker,
-    entries: &Arc<RwLock<Vec<ClipboardEntry>>>,
-    view_state: &mut Option<ClipboardViewState>,
+    view_state: &mut Option<ClipboardPresentation>,
     request_id: String,
     generation: u64,
     revision: u64,
     event: ViewEvent,
 ) -> Result<(), nanika_protocol::FrameError> {
-    let Some(state) = view_state.as_mut() else {
+    let Some(current) = view_state.as_ref() else {
         return send_error(
             output,
             Some(request_id),
@@ -251,7 +246,7 @@ fn handle_view_event(
             "clipboard view is not open",
         );
     };
-    if state.revision != revision {
+    if current.state.revision != revision {
         return send_error(
             output,
             Some(request_id),
@@ -259,18 +254,14 @@ fn handle_view_event(
             "clipboard view revision is stale",
         );
     }
+    let mut proposed = current.state.clone();
+    let state = &mut proposed;
+    let mut expected_data_revision = None;
     match event {
         ViewEvent::Resumed => {}
         ViewEvent::Invalidated => {}
         ViewEvent::ActionInvoked { action_id, .. } if action_id == CLEAR_ACTION_ID => {
-            // Freeze the matching IDs before queueing; later captures are outside this request.
-            let entry_ids = {
-                let current = entries.read().unwrap_or_else(|error| error.into_inner());
-                matching_entries(state, &current)
-                    .into_iter()
-                    .map(|entry| entry.entry_id.clone())
-                    .collect()
-            };
+            let entry_ids = Arc::clone(&current.matching_ids);
             if let Err(message) = worker.clear(entry_ids) {
                 return send_error(
                     output,
@@ -283,40 +274,54 @@ fn handle_view_event(
         }
         ViewEvent::SearchChanged { text } => {
             state.query = text;
-            state.visible_limit = CLIPBOARD_PAGE_SIZE;
+            state.page_offset = 0;
+            state.selected_item_id = None;
+            state.text_offset = 0;
         }
-        ViewEvent::SelectionChanged { item_id } => state.selected_item_id = item_id,
+        ViewEvent::SelectionChanged { item_id } => {
+            if state.selected_item_id != item_id {
+                state.text_offset = 0;
+            }
+            state.selected_item_id = item_id;
+        }
         ViewEvent::FilterChanged { filter_id, value }
             if filter_id == "contentType"
                 && matches!(value.as_str(), "all" | "text" | "files" | "images") =>
         {
             state.content_type = value;
-            state.visible_limit = CLIPBOARD_PAGE_SIZE;
+            state.page_offset = 0;
+            state.selected_item_id = None;
+            state.text_offset = 0;
         }
-        ViewEvent::LoadMore { cursor } if cursor == state.visible_limit.to_string() => {
-            state.visible_limit = state.visible_limit.saturating_add(CLIPBOARD_PAGE_SIZE);
+        ViewEvent::PageChanged { target, cursor } => {
+            if let Err(message) =
+                nanika_extension_clipboard::change_page(state, &current.view, target, &cursor)
+            {
+                return send_error(output, Some(request_id), "invalid_view_page", &message);
+            }
+            expected_data_revision = Some(current.data_revision);
         }
+
         ViewEvent::ActionInvoked {
             item_id, action_id, ..
         } if action_id == COPY_ACTION_ID => {
-            let content = item_id.as_deref().and_then(|item_id| {
-                entries
-                    .read()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .iter()
-                    .find(|entry| entry.entry_id == item_id)
-                    .map(|entry| entry.content.clone())
-            });
-            let Some(content) = content else {
-                return send_error(
-                    output,
-                    Some(request_id),
-                    "unknown_action",
-                    "clipboard entry or action does not exist",
-                );
+            let content = match item_id
+                .ok_or_else(|| "Clipboard item is missing.".to_owned())
+                .and_then(|id| worker.content(id))
+            {
+                Ok(content) => content,
+                Err(message) => {
+                    return send_error(output, Some(request_id), "unknown_action", &message);
+                }
             };
             monitor.begin_internal_write();
-            let copied = match write_clipboard(input, output, &request_id, generation, content) {
+            let copied = match write_clipboard(
+                input,
+                output,
+                &request_id,
+                generation,
+                content.content().clone(),
+            ) {
                 Ok(copied) => copied,
                 Err(error) => {
                     if let Err(message) = monitor.cancel_internal_write() {
@@ -361,20 +366,38 @@ fn handle_view_event(
             );
         }
     }
-    state.revision = state.revision.saturating_add(1);
-    schedule_visible_icons(icon_worker, state, entries);
-    let view = render_clipboard_view(state, entries, &|path| icon_worker.resolution(path));
+    let Some(next_revision) = state.revision.checked_add(1) else {
+        return send_error(
+            output,
+            Some(request_id),
+            "view_revision_exhausted",
+            "Reopen the view before continuing.",
+        );
+    };
+    state.revision = next_revision;
+    let mut presentation = match worker.present(proposed, expected_data_revision) {
+        Ok(presentation) => presentation,
+        Err(message) => return send_error(output, Some(request_id), "view_failed", &message),
+    };
+    presentation.decorate_icons(&|path| icon_worker.resolution(path));
+    // Only a fully validated proposal that was sent becomes the protocol's current revision.
+    if let Err(message) = presentation.view.validate() {
+        return send_error(output, Some(request_id), "view_failed", &message);
+    }
     send_frame(
         output,
         &Message::ViewUpdated {
             request_id,
             generation,
             view_id: VIEW_ID.to_owned(),
-            revision: state.revision,
+            revision: next_revision,
             effect: NavigationEffect::None,
-            view: Some(view),
+            view: Some(presentation.view.clone()),
         },
-    )
+    )?;
+    icon_worker.schedule(presentation.icon_paths());
+    *view_state = Some(presentation);
+    Ok(())
 }
 
 fn write_clipboard(
@@ -444,41 +467,6 @@ fn send_frame(output: &SharedOutput, message: &Message) -> Result<(), nanika_pro
     )
 }
 
-fn schedule_visible_icons(
-    worker: &FileIconWorker,
-    state: &ClipboardViewState,
-    entries: &RwLock<Vec<ClipboardEntry>>,
-) {
-    let entries = entries.read().unwrap_or_else(|error| error.into_inner());
-    let visible = matching_entries(state, &entries)
-        .into_iter()
-        .take(state.visible_limit)
-        .collect::<Vec<_>>();
-    let selected = state.selected_item_id.as_deref();
-    let selected_paths = visible
-        .iter()
-        .filter(|entry| Some(entry.entry_id.as_str()) == selected)
-        .flat_map(|entry| match &entry.content {
-            ClipboardContent::Files { paths } => {
-                paths[..paths.len().min(FILE_COLLECTION_PREVIEW_LIMIT)].iter()
-            }
-            _ => [].iter(),
-        });
-    let other_paths = visible
-        .iter()
-        .filter(|entry| Some(entry.entry_id.as_str()) != selected)
-        .filter_map(|entry| match &entry.content {
-            ClipboardContent::Files { paths } => paths.first(),
-            _ => None,
-        });
-    // Bound detail icons and request one icon per row to keep work proportional to the visible page.
-    worker.schedule(
-        selected_paths
-            .chain(other_paths)
-            .map(std::path::PathBuf::from),
-    );
-}
-
 fn request_id(message: &Message) -> Option<String> {
     match message {
         Message::Initialize { request_id, .. }
@@ -504,7 +492,7 @@ fn request_id(message: &Message) -> Option<String> {
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CatalogApplied { .. }
         | Message::CandidatesChanged
-        | Message::ViewInvalidated { .. }
+        | Message::ViewsChanged
         | Message::PrepareEntries { .. } => None,
     }
 }

@@ -5,7 +5,8 @@ pub struct ClipboardViewState {
     pub query: String,
     pub selected_item_id: Option<String>,
     pub content_type: String,
-    pub visible_limit: usize,
+    pub page_offset: usize,
+    pub text_offset: usize,
     pub revision: u64,
 }
 
@@ -15,7 +16,8 @@ impl ClipboardViewState {
             query: String::new(),
             selected_item_id: None,
             content_type: "all".to_owned(),
-            visible_limit: CLIPBOARD_PAGE_SIZE,
+            page_offset: 0,
+            text_offset: 0,
             revision: 1,
         }
     }

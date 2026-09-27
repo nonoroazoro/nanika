@@ -10,6 +10,7 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
+                pagination: None,
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
@@ -59,6 +60,7 @@ fn resumed_events_are_authorized_for_every_host_rendered_view() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
+                pagination: None,
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
@@ -75,6 +77,7 @@ fn text_view(value: &str) -> View {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
+                pagination: None,
                 value: value.to_owned(),
             },
             metadata: Vec::new(),
@@ -397,7 +400,7 @@ fn _input_navigation() -> crate::NavigationState {
                         selected_item_id: Some("one".to_owned()),
                         detail: None,
                         filter: None,
-                        next_cursor: None,
+                        pagination: None,
                     }),
                 }),
             },
@@ -471,5 +474,103 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
             .authorize_input(&request(ActionInvocation::Confirmed), None)
             .unwrap_err()
             .contains("Confirm the action again")
+    );
+}
+
+#[test]
+fn page_cursors_are_authorized_for_their_exact_surface() {
+    use nanika_protocol::{ViewPageTarget, ViewPagination};
+    let mut navigation = _input_navigation();
+    let view = std::sync::Arc::make_mut(&mut navigation.stack.last_mut().unwrap().view);
+    let View::List { list } = view else {
+        unreachable!()
+    };
+    list.pagination = Some(ViewPagination {
+        label: "1-10 of 20".into(),
+        previous_cursor: None,
+        next_cursor: Some("rows-next".into()),
+    });
+    list.detail = Some(DetailView {
+        title: None,
+        content: DetailContent::Text {
+            value: "page".into(),
+            pagination: Some(Box::new(ViewPagination {
+                label: "1-4 of 8".into(),
+                previous_cursor: None,
+                next_cursor: Some("text-next".into()),
+            })),
+        },
+        metadata: vec![],
+        actions: vec![],
+    });
+    for (target, cursor, allowed) in [
+        (ViewPageTarget::List, "rows-next", true),
+        (ViewPageTarget::Detail, "text-next", true),
+        (ViewPageTarget::List, "text-next", false),
+        (ViewPageTarget::Detail, "rows-next", false),
+        (ViewPageTarget::List, "invented", false),
+    ] {
+        assert_eq!(
+            authorize_view_event(
+                view,
+                &ViewEvent::PageChanged {
+                    target,
+                    cursor: cursor.into()
+                }
+            )
+            .is_ok(),
+            allowed
+        );
+    }
+}
+
+#[test]
+fn page_request_from_an_older_revision_cannot_apply_to_a_new_selection() {
+    let mut navigation = _input_navigation();
+    let route = navigation.stack.last_mut().unwrap();
+    route.revision = 2;
+    let View::List { list } = std::sync::Arc::make_mut(&mut route.view) else {
+        unreachable!()
+    };
+    list.selected_item_id = Some("two".into());
+    list.detail = Some(DetailView {
+        title: None,
+        content: DetailContent::Text {
+            value: "second item".into(),
+            pagination: Some(Box::new(nanika_protocol::ViewPagination {
+                label: "1-10 of 20".into(),
+                previous_cursor: None,
+                next_cursor: Some("10".into()),
+            })),
+        },
+        metadata: vec![],
+        actions: vec![],
+    });
+    let event = ViewEvent::PageChanged {
+        target: nanika_protocol::ViewPageTarget::Detail,
+        cursor: "10".into(),
+    };
+    assert!(
+        navigation
+            .authorize_input(&_input_request(1, event.clone()), None)
+            .is_err()
+    );
+    assert!(
+        navigation
+            .authorize_input(&_input_request(2, event), None)
+            .is_ok()
+    );
+}
+
+#[test]
+fn pasted_control_characters_have_the_same_search_contract_as_view_state() {
+    let navigation = _input_navigation();
+    let event = ViewEvent::SearchChanged {
+        text: "\u{1b}[31m".into(),
+    };
+    assert!(
+        navigation
+            .authorize_input(&_input_request(1, event), None)
+            .is_ok()
     );
 }

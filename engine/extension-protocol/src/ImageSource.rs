@@ -5,15 +5,10 @@ pub const MAX_PNG_DIMENSION: u32 = 8_192;
 pub const MAX_PNG_PIXELS: u64 = 16_777_216;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ImageSource {
-    DataUrl {
-        value: String,
-    },
-    /// An immutable, content-addressed PNG in the owning extension's payload directory.
-    Resource {
-        path: String,
-    },
+#[serde(deny_unknown_fields)]
+pub struct ImageSource {
+    /// An immutable, content-addressed static PNG in the owning extension's payload directory.
+    pub path: String,
 }
 
 pub fn is_valid_resource_path(path: &str) -> bool {

@@ -10,34 +10,22 @@ use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState}
 
 pub const FILE_COLLECTION_PREVIEW_LIMIT: usize = 3;
 
-pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]) -> View {
-    let matching = matching_entries(state, entries);
-    let visible = matching
-        .iter()
-        .copied()
-        .take(state.visible_limit)
-        .collect::<Vec<_>>();
-    if state
-        .selected_item_id
-        .as_ref()
-        .is_none_or(|selected| !visible.iter().any(|entry| entry.entry_id == *selected))
-    {
-        state.selected_item_id = visible.first().map(|entry| entry.entry_id.clone());
-    }
-    let selected = state
-        .selected_item_id
-        .as_deref()
-        .and_then(|selected| visible.iter().find(|entry| entry.entry_id == selected))
-        .copied();
+pub(crate) fn clipboard_view(
+    state: &mut ClipboardViewState,
+    visible: &[crate::ClipboardItem],
+    selected: Option<&ClipboardEntry>,
+    total: usize,
+) -> Result<View, String> {
+    let items = visible.iter().map(list_item).collect::<Result<_, _>>()?;
     let sections = (!visible.is_empty())
         .then(|| ListSection {
             id: "all".to_owned(),
             title: None,
-            items: visible.iter().map(|entry| list_item(entry)).collect(),
+            items,
         })
         .into_iter()
         .collect();
-    View::List {
+    Ok(View::List {
         list: Box::new(ListView {
             title: "Clipboard History".to_owned(),
             search_placeholder: "Search for entries".to_owned(),
@@ -45,7 +33,9 @@ pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]
             layout: ListLayout::Split,
             sections,
             selected_item_id: state.selected_item_id.clone(),
-            detail: selected.map(detail_view),
+            detail: selected
+                .map(|entry| detail_view(entry, state.text_offset))
+                .transpose()?,
             filter: Some(ViewFilter {
                 id: "contentType".to_owned(),
                 selected_value: state.content_type.clone(),
@@ -56,71 +46,66 @@ pub fn clipboard_view(state: &mut ClipboardViewState, entries: &[ClipboardEntry]
                     filter_option("images", "Images"),
                 ],
             }),
-            next_cursor: (matching.len() > visible.len()).then(|| visible.len().to_string()),
+            pagination: _pagination(state.page_offset, crate::CLIPBOARD_PAGE_SIZE, total),
         }),
-    }
+    })
 }
-
-/// Listing and clearing share the same scope, before pagination is applied.
-pub fn matching_entries<'a>(
-    state: &ClipboardViewState,
-    entries: &'a [ClipboardEntry],
-) -> Vec<&'a ClipboardEntry> {
-    entries
-        .iter()
-        .filter(|entry| matches_content_type(entry, &state.content_type))
-        .filter(|entry| matches_query(entry, &state.query))
-        .collect()
-}
-
-fn list_item(entry: &ClipboardEntry) -> ListItem {
-    ListItem {
+fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
+    Ok(ListItem {
         id: entry.entry_id.clone(),
-        title: entry.title.clone(),
+        title: crate::labels::display_label(&entry.title, 128),
         subtitle: None,
-        icon: Some(match &entry.content {
-            ClipboardContent::Text { .. } => ViewItemIcon::Text,
-            ClipboardContent::Files { .. } => ViewItemIcon::Files,
-            ClipboardContent::PngFile { .. } => ViewItemIcon::Image,
+        icon: Some(match entry.kind.as_str() {
+            "text" => ViewItemIcon::Text,
+            "files" => ViewItemIcon::Files,
+            "image" => ViewItemIcon::Image,
+            _ => return Err("invalid clipboard content kind".into()),
         }),
         actions: vec![clear_action(), copy_action()],
-    }
+    })
 }
 
-fn detail_view(entry: &ClipboardEntry) -> DetailView {
-    DetailView {
+fn detail_view(entry: &ClipboardEntry, text_offset: usize) -> Result<DetailView, String> {
+    Ok(DetailView {
         title: None,
         content: match &entry.content {
-            ClipboardContent::Text { value } => DetailContent::Text {
-                value: value.clone(),
-            },
+            ClipboardContent::Text { value } => {
+                const TEXT_PAGE_SIZE: usize = nanika_protocol::MAX_DETAIL_TEXT_CHARS;
+                let total = value.chars().count();
+                let offset =
+                    text_offset.min(total.saturating_sub(1) / TEXT_PAGE_SIZE * TEXT_PAGE_SIZE);
+                DetailContent::Text {
+                    value: value.chars().skip(offset).take(TEXT_PAGE_SIZE).collect(),
+                    pagination: _pagination(offset, TEXT_PAGE_SIZE, total).map(Box::new),
+                }
+            }
             ClipboardContent::Files { paths } => DetailContent::Files {
                 files: paths
                     .iter()
                     .map(|path| ViewFile {
                         path: path.clone(),
                         icon: None,
-                        name: Path::new(path)
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or(path)
-                            .to_owned(),
+                        name: crate::labels::display_label(
+                            Path::new(path)
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or(path),
+                            128,
+                        ),
                     })
                     .collect(),
             },
-            ClipboardContent::PngFile { .. }
-                if nanika_protocol::is_valid_content_hash(&entry.entry_id) =>
-            {
+            ClipboardContent::PngFile { .. } => {
+                if !nanika_protocol::is_valid_content_hash(&entry.entry_id) {
+                    return Err("clipboard image identity is invalid".into());
+                }
                 DetailContent::Image {
-                    source: ImageSource::Resource {
+                    source: ImageSource {
                         path: format!("{}.png", entry.entry_id),
                     },
-                    alternative_text: entry.title.clone(),
+                    alternative_text: crate::labels::display_label(&entry.title, 128),
                 }
             }
-            ClipboardContent::PngFile { .. } => DetailContent::Text {
-                value: "Image preview unavailable".to_owned(),
-            },
         },
         metadata: vec![
             ViewMetadata {
@@ -133,7 +118,7 @@ fn detail_view(entry: &ClipboardEntry) -> DetailView {
             },
         ],
         actions: Vec::new(),
-    }
+    })
 }
 
 fn copy_action() -> Action {
@@ -167,33 +152,6 @@ fn filter_option(value: &str, title: &str) -> ViewFilterOption {
     }
 }
 
-fn matches_query(entry: &ClipboardEntry, query: &str) -> bool {
-    let query = query.trim().to_lowercase();
-    query.is_empty()
-        || contains_query(&entry.title, &query)
-        || match &entry.content {
-            ClipboardContent::Text { value } => contains_query(value, &query),
-            ClipboardContent::Files { paths } => {
-                paths.iter().any(|path| contains_query(path, &query))
-            }
-            ClipboardContent::PngFile { .. } => false,
-        }
-}
-
-fn contains_query(value: &str, query: &str) -> bool {
-    value.to_lowercase().contains(query)
-}
-
-fn matches_content_type(entry: &ClipboardEntry, selected: &str) -> bool {
-    selected == "all"
-        || matches!(
-            (&entry.content, selected),
-            (ClipboardContent::Text { .. }, "text")
-                | (ClipboardContent::Files { .. }, "files")
-                | (ClipboardContent::PngFile { .. }, "images")
-        )
-}
-
 fn content_type(entry: &ClipboardEntry) -> &'static str {
     match entry.content {
         ClipboardContent::Text { .. } => "Text",
@@ -212,79 +170,50 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Native icon work happens after releasing the clipboard owner's shared snapshot lock.
-pub fn render_clipboard_view(
-    state: &mut ClipboardViewState,
-    entries: &std::sync::RwLock<Vec<ClipboardEntry>>,
-    icon_for_path: &impl Fn(&Path) -> Option<Option<nanika_protocol::IconReference>>,
-) -> View {
-    let (mut view, paths) = {
-        let entries = entries.read().unwrap_or_else(|error| error.into_inner());
-        let view = clipboard_view(state, &entries);
-        let View::List { list } = &view else {
-            unreachable!()
-        };
-        let visible_ids = list
-            .sections
-            .iter()
-            .flat_map(|section| &section.items)
-            .map(|item| item.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        let paths = entries
-            .iter()
-            .filter_map(|entry| {
-                if !visible_ids.contains(entry.entry_id.as_str()) {
-                    return None;
-                }
-                let ClipboardContent::Files { paths } = &entry.content else {
-                    return None;
-                };
-                Some((entry.entry_id.clone(), paths.clone()))
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        (view, paths)
-    };
-    let View::List { list } = &mut view else {
-        unreachable!()
-    };
+fn _pagination(
+    offset: usize,
+    size: usize,
+    total: usize,
+) -> Option<nanika_protocol::ViewPagination> {
+    (total > size).then(|| nanika_protocol::ViewPagination {
+        label: format!("{}-{} of {}", offset + 1, (offset + size).min(total), total),
+        previous_cursor: offset.checked_sub(size).map(|offset| offset.to_string()),
+        next_cursor: (offset + size < total).then(|| (offset + size).to_string()),
+    })
+}
 
-    // Render only complete cached artifacts; native acquisition stays on the icon worker.
-    let selected = list.selected_item_id.clone();
-    let mut selected_references = Vec::new();
-    if let Some(paths) = selected.as_ref().and_then(|selected| paths.get(selected)) {
-        for path in paths.iter().take(FILE_COLLECTION_PREVIEW_LIMIT) {
-            let path = Path::new(path);
-            selected_references.push(icon_for_path(path));
+/// Accept only an adjacent cursor from the currently rendered data scope.
+pub fn change_page(
+    state: &mut ClipboardViewState,
+    current: &View,
+    target: nanika_protocol::ViewPageTarget,
+    cursor: &str,
+) -> Result<(), String> {
+    let View::List { list } = current else {
+        return Err("Clipboard view is not a list.".into());
+    };
+    let pagination = match target {
+        nanika_protocol::ViewPageTarget::List => list.pagination.as_ref(),
+        nanika_protocol::ViewPageTarget::Detail => {
+            list.detail
+                .as_ref()
+                .and_then(|detail| match &detail.content {
+                    DetailContent::Text { pagination, .. } => pagination.as_deref(),
+                    _ => None,
+                })
         }
+    };
+    if !pagination.is_some_and(|page| page.allows(cursor)) {
+        return Err("The requested page is no longer available.".to_owned());
     }
-    for item in list
-        .sections
-        .iter_mut()
-        .flat_map(|section| &mut section.items)
-    {
-        let reference = if selected.as_ref() == Some(&item.id) {
-            selected_references.first().cloned().flatten().flatten()
-        } else {
-            paths
-                .get(&item.id)
-                .and_then(|paths| paths.first())
-                .and_then(|path| icon_for_path(Path::new(path)))
-                .flatten()
-        };
-        if let Some(reference) = reference {
-            item.icon = Some(ViewItemIcon::Native(reference));
+    let offset = cursor.parse::<usize>().map_err(|error| error.to_string())?;
+    match target {
+        nanika_protocol::ViewPageTarget::List => {
+            state.page_offset = offset;
+            state.selected_item_id = None;
+            state.text_offset = 0;
         }
+        nanika_protocol::ViewPageTarget::Detail => state.text_offset = offset,
     }
-    if let Some(DetailView {
-        content: DetailContent::Files { files },
-        ..
-    }) = &mut list.detail
-        && selected_references.iter().all(Option::is_some)
-    {
-        // Publish the stack together, settling failures with semantic icons; list icons remain progressive.
-        for (file, reference) in files.iter_mut().zip(selected_references) {
-            file.icon = reference.flatten();
-        }
-    }
-    view
+    Ok(())
 }

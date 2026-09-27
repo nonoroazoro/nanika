@@ -3,5 +3,4 @@
 pub struct RuntimeViewInvalidation {
     pub instance_id: u64,
     pub extension_id: String,
-    pub view_id: String,
 }

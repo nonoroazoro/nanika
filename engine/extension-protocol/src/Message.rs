@@ -29,10 +29,8 @@ pub enum Message {
     CatalogApplied {
         transaction: u64,
     },
-    /// An open host-rendered view has newer extension-owned data.
-    ViewInvalidated {
-        view_id: String,
-    },
+    /// Extension-owned view data changed. The host refreshes the visible route of this instance.
+    ViewsChanged,
     /// Best-effort hint for entries that are about to be visible in the host UI.
     PrepareEntries {
         generation: u64,

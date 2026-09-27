@@ -12,17 +12,15 @@ use crate::{
 };
 
 #[test]
-fn view_invalidations_keep_only_the_latest_identity_per_extension() {
+fn view_invalidations_coalesce_all_view_changes_per_instance() {
     let pending = Mutex::new(std::collections::HashMap::new());
-
-    queue_view_invalidation(&pending, "extension.one", 1, "view.old".to_owned());
-    queue_view_invalidation(&pending, "extension.one", 1, "view.current".to_owned());
-    queue_view_invalidation(&pending, "extension.two", 1, "view.other".to_owned());
-
+    queue_view_invalidation(&pending, "extension.one", 1);
+    queue_view_invalidation(&pending, "extension.one", 1);
+    queue_view_invalidation(&pending, "extension.two", 2);
     let pending = pending.lock().unwrap();
     assert_eq!(pending.len(), 2);
-    assert_eq!(pending["extension.one"].view_id, "view.current");
-    assert_eq!(pending["extension.two"].view_id, "view.other");
+    assert_eq!(pending["extension.one"].instance_id, 1);
+    assert_eq!(pending["extension.two"].instance_id, 2);
 }
 
 #[test]

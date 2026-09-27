@@ -278,9 +278,10 @@ fn clear_preserves_unmatched_entries_and_retained_image_paths() {
         .clear(&[first.entry_id.clone(), "missing".to_owned()])
         .expect("clear one");
     assert_eq!(
-        retained.retained_images,
+        database.retained_images().unwrap(),
         std::collections::HashSet::from([image_path])
     );
+    assert!(retained.image_ownership.is_empty());
     let loaded = database.load().expect("history");
     assert_eq!(
         loaded
@@ -320,56 +321,35 @@ fn clear_rolls_back_the_entire_scope_on_database_failure() {
     drop(database);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
 #[test]
-fn committed_changes_match_database_order_and_keep_untouched_payloads() {
-    let root = std::env::temp_dir().join(format!(
-        "nanika-clipboard-incremental-{}",
-        std::process::id()
-    ));
+fn image_ownership_delta_tracks_replacement_and_shared_paths() {
+    let root = std::env::temp_dir().join(format!("nanika-image-delta-{}", std::process::id()));
     let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
     let config = ClipboardConfig {
-        max_entries: Some(3),
+        max_entries: None,
         max_age_days: None,
     };
-    let mut entries = Vec::new();
-    for (id, time) in [(1, 10), (2, 20), (3, 20)] {
-        let entry = text_entry(id, time);
-        let change = database
-            .upsert_with_retention(&entry, time, &config)
-            .unwrap();
-        change.apply(&mut entries, Some(entry));
-        assert_eq!(entries, database.load().unwrap());
-    }
-    let untouched = |entries: &[ClipboardEntry]| match &entries
-        .iter()
-        .find(|entry| entry.entry_id == "clipboard.2")
-        .unwrap()
-        .content
-    {
-        ClipboardContent::Text { value } => value.as_ptr() as usize,
-        _ => unreachable!(),
+    let image = root.join("image.png");
+    let mut first = text_entry(1, 1);
+    first.content = ClipboardContent::PngFile {
+        path: image.to_string_lossy().into(),
     };
-    let pointer = untouched(&entries);
-    for (id, time) in [(1, 30), (4, 40), (2, 50), (5, 1)] {
-        let entry = text_entry(id, time);
-        let change = database
-            .upsert_with_retention(&entry, time, &config)
-            .unwrap();
-        change.apply(&mut entries, Some(entry));
-        assert_eq!(entries, database.load().unwrap());
-        if id == 1 || id == 4 {
-            assert_eq!(untouched(&entries), pointer);
-        }
-    }
-    let change = database
-        .clear(&["clipboard.2".into(), "missing".into()])
+    let inserted = database.upsert_with_retention(&first, 1, &config).unwrap();
+    assert_eq!(inserted.image_ownership.get(&image), Some(&true));
+    let mut second = first.clone();
+    second.entry_id = "second".into();
+    database.upsert_with_retention(&second, 2, &config).unwrap();
+    let replaced = database
+        .upsert_with_retention(&text_entry(1, 3), 3, &config)
         .unwrap();
-    assert_eq!(
-        change.removed,
-        std::collections::HashSet::from(["clipboard.2".to_owned()])
-    );
-    change.apply(&mut entries, None);
-    assert_eq!(entries, database.load().unwrap());
+    assert_eq!(replaced.image_ownership.get(&image), Some(&true));
+    let cleared = database.clear(&[second.entry_id]).unwrap();
+    assert_eq!(cleared.image_ownership.get(&image), Some(&false));
+    let text = database
+        .upsert_with_retention(&text_entry(4, 4), 4, &config)
+        .unwrap();
+    assert!(text.image_ownership.is_empty());
     drop(database);
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -14,7 +14,7 @@ pub struct FileIconWorker {
 struct State {
     pending: VecDeque<PathBuf>,
     known: HashSet<PathBuf>,
-    resolved: HashMap<PathBuf, Option<nanika_protocol::IconReference>>,
+    resolved: HashMap<PathBuf, crate::FileIconResolution>,
     ready_order: VecDeque<PathBuf>,
     shutdown: bool,
 }
@@ -45,9 +45,23 @@ impl FileIconWorker {
                     let Some(path) = path else {
                         continue;
                     };
-                    let reference = match cache.cached(&path) {
-                        Ok(Some(reference)) => Some(reference),
-                        Ok(None) => match cache.get(&path) {
+                    let source = cache.reference(&path).map_err(|error| error.kind());
+                    {
+                        let mut state = worker_state
+                            .0
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner());
+                        if state
+                            .resolved
+                            .get(&path)
+                            .is_some_and(|previous| previous.source == source)
+                        {
+                            state.known.remove(&path);
+                            continue;
+                        }
+                    }
+                    let reference = match &source {
+                        Ok(_) => match cache.get(&path) {
                             Ok(reference) => Some(reference),
                             Err(error) => {
                                 eprintln!(
@@ -70,9 +84,17 @@ impl FileIconWorker {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner());
                     state.known.remove(&path);
-                    publish_resolution(&mut state, path, reference);
+                    _publish_resolution(
+                        &mut state,
+                        path,
+                        crate::FileIconResolution {
+                            source,
+                            icon: reference,
+                        },
+                    );
                     drop(state);
-                    // Settle failed paths so view refreshes neither retry them nor stall scheduling.
+                    // Only a new source outcome invalidates the view. Its refresh can revalidate
+                    // metadata without creating a notification loop or retrying a settled failure.
                     invalidated();
                 }
             })
@@ -83,6 +105,7 @@ impl FileIconWorker {
         })
     }
 
+    /// Revalidate requested sources on the owner thread; unchanged outcomes remain settled.
     pub fn schedule(&self, paths: impl IntoIterator<Item = PathBuf>) -> usize {
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
@@ -90,11 +113,7 @@ impl FileIconWorker {
         let available = MAX_PENDING_PATHS.saturating_sub(state.known.len());
         let pending = paths
             .into_iter()
-            .filter(|path| {
-                !state.known.contains(path)
-                    && !state.resolved.contains_key(path)
-                    && unique.insert(path.clone())
-            })
+            .filter(|path| !state.known.contains(path) && unique.insert(path.clone()))
             .take(available)
             .collect::<Vec<_>>();
         let scheduled = pending.len();
@@ -117,7 +136,7 @@ impl FileIconWorker {
             .unwrap_or_else(|error| error.into_inner())
             .resolved
             .get(path)
-            .cloned()
+            .map(|resolution| resolution.icon.clone())
     }
 
     pub fn shutdown(mut self) -> Result<(), String> {
@@ -140,18 +159,16 @@ impl FileIconWorker {
     }
 }
 
-fn publish_resolution(
-    state: &mut State,
-    path: PathBuf,
-    reference: Option<nanika_protocol::IconReference>,
-) {
-    if state.resolved.len() == MAX_PENDING_PATHS
+fn _publish_resolution(state: &mut State, path: PathBuf, resolution: crate::FileIconResolution) {
+    state.ready_order.retain(|previous| previous != &path);
+    if !state.resolved.contains_key(&path)
+        && state.resolved.len() == MAX_PENDING_PATHS
         && let Some(expired) = state.ready_order.pop_front()
     {
         state.resolved.remove(&expired);
     }
     state.ready_order.push_back(path.clone());
-    state.resolved.insert(path, reference);
+    state.resolved.insert(path, resolution);
 }
 
 impl Drop for FileIconWorker {

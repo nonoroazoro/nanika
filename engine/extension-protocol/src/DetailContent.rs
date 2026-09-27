@@ -7,6 +7,7 @@ use crate::ImageSource;
 pub enum DetailContent {
     Text {
         value: String,
+        pagination: Option<Box<crate::ViewPagination>>,
     },
     Files {
         files: Vec<crate::ViewFile>,

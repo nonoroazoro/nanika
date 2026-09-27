@@ -92,10 +92,7 @@ impl ExtensionRuntime {
         }
     }
 
-    pub(crate) fn set_view_invalidation_notifier(
-        &mut self,
-        notify: Arc<dyn Fn(String) + Send + Sync>,
-    ) {
+    pub(crate) fn set_view_invalidation_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
         if let Self::Nanika(process) = self {
             process.set_view_invalidation_notifier(notify);
         }

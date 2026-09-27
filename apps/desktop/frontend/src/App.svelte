@@ -39,11 +39,12 @@ let navigation = $state.raw<NavigationSnapshot>({
     dismissCount: 0
 });
 let viewPending = $state(false);
+let viewQuery = $state("");
 let viewInputError = $state<string | null>(null);
 let viewOperation = 0;
 const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent, tauriBridge.invokeContextMenu);
 const viewInput = viewInputScheduler();
-const navigationError = $derived(navigation.error ? "The action could not be completed. Try again." : null);
+const navigationError = $derived(navigation.error);
 const rootSearchState = new RootSearchState({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
@@ -432,6 +433,7 @@ function reconcileViewInput(): void
 {
     viewPending = viewInput.busy;
     viewInputError = viewInput.inputError;
+    viewQuery = viewInput.queryText;
     if (disposed || !application)
     {
         return;
@@ -540,6 +542,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 <ExtensionView
                     snapshot={navigation.current}
                     resourceOrigin={application?.resourceOrigin ?? ""}
+                    query={viewQuery}
                     busy={viewPending || viewInputError !== null}
                     error={viewInputError ?? operationFailure ?? navigationError}
                     onQuery={changeViewQuery}

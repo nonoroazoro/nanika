@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::{Action, ActionStyle, DetailContent, DetailView, ImageSource, ListView};
+use crate::{Action, ActionStyle, DetailContent, DetailView, ListView};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -28,14 +28,18 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         256,
         true,
     )?;
-    validate_text("view search text", &list.search_text, 4_096, true)?;
+    validate_view_search_text(&list.search_text)?;
     if list.sections.len() > 32 {
         return Err("view has too many list sections".to_owned());
     }
+    let mut section_ids = HashSet::new();
     let mut item_ids = HashSet::new();
     let mut item_count = 0_usize;
     for section in &list.sections {
         validate_id("list section id", &section.id)?;
+        if !section_ids.insert(section.id.as_str()) {
+            return Err("view list section ids must be unique".to_owned());
+        }
         if let Some(title) = &section.title {
             validate_text("list section title", title, 256, false)?;
         }
@@ -90,9 +94,7 @@ fn validate_list(list: &ListView) -> Result<(), String> {
             return Err("view filter selection is invalid".to_owned());
         }
     }
-    if let Some(cursor) = &list.next_cursor {
-        validate_text("view pagination cursor", cursor, 512, false)?;
-    }
+    validate_pagination(list.pagination.as_ref())?;
     Ok(())
 }
 
@@ -101,8 +103,12 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
         validate_text("detail title", title, 512, true)?;
     }
     match &detail.content {
-        DetailContent::Text { value } => {
-            validate_text("detail text", value, 262_144, true)?;
+        DetailContent::Text { value, pagination } => {
+            // Content is plain text, not a label: preserve control characters and original text.
+            if value.chars().count() > crate::MAX_DETAIL_TEXT_CHARS {
+                return Err("detail text exceeds the page size".to_owned());
+            }
+            validate_pagination(pagination.as_deref())?;
         }
         DetailContent::Files { files } => {
             if files.is_empty() || files.len() > 256 {
@@ -113,7 +119,10 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
             }
             for file in files {
                 validate_text("detail file name", &file.name, 512, false)?;
-                validate_text("detail file path", &file.path, 1024 * 1024, false)?;
+                if file.path.is_empty() || file.path.len() > 1024 * 1024 || file.path.contains('\0')
+                {
+                    return Err("detail file path is invalid".to_owned());
+                }
                 if file
                     .icon
                     .as_ref()
@@ -133,21 +142,8 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
                 512,
                 false,
             )?;
-            match source {
-                ImageSource::DataUrl { value } => {
-                    const MAX_IMAGE_DATA_URL_CHARS: usize = 24 * 1024 * 1024;
-                    if value.chars().count() > MAX_IMAGE_DATA_URL_CHARS
-                        || !value.starts_with("data:image/")
-                        || !value.contains(";base64,")
-                    {
-                        return Err("detail image data is invalid or too large".to_owned());
-                    }
-                }
-                ImageSource::Resource { path } => {
-                    if !crate::is_valid_resource_path(path) {
-                        return Err("detail image resource path is invalid".to_owned());
-                    }
-                }
+            if !crate::is_valid_resource_path(&source.path) {
+                return Err("detail image resource path is invalid".to_owned());
             }
         }
     }
@@ -215,6 +211,32 @@ fn validate_text(
             .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
     {
         return Err(format!("{field} is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_pagination(pagination: Option<&crate::ViewPagination>) -> Result<(), String> {
+    let Some(pagination) = pagination else {
+        return Ok(());
+    };
+    validate_text("view page label", &pagination.label, 128, false)?;
+    for cursor in [&pagination.previous_cursor, &pagination.next_cursor]
+        .into_iter()
+        .flatten()
+    {
+        validate_text("view pagination cursor", cursor, 512, false)?;
+    }
+    if pagination.previous_cursor.is_some() && pagination.previous_cursor == pagination.next_cursor
+    {
+        return Err("view page cursors must be distinct".to_owned());
+    }
+    Ok(())
+}
+
+/// Search input is plain user data; control characters do not become markup or labels.
+pub fn validate_view_search_text(value: &str) -> Result<(), String> {
+    if value.chars().count() > 4096 {
+        return Err("view search text exceeds the supported size".to_owned());
     }
     Ok(())
 }

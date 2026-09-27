@@ -1,4 +1,4 @@
-import type { DetailView, ViewFilter, ViewSection } from "./index";
+import type { DetailView, ViewFilter, ViewPagination, ViewSection } from "./index";
 export interface ListView
 {
     title: string;
@@ -9,5 +9,5 @@ export interface ListView
     selected_item_id: string | null;
     detail: DetailView | null;
     filter: ViewFilter | null;
-    next_cursor: string | null;
+    pagination: ViewPagination | null;
 }

@@ -16,7 +16,8 @@ pub enum ViewEvent {
         filter_id: String,
         value: String,
     },
-    LoadMore {
+    PageChanged {
+        target: crate::ViewPageTarget,
         cursor: String,
     },
     ActionInvoked {

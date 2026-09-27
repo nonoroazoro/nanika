@@ -66,6 +66,15 @@ impl NavigationState {
         if menu_revision.is_some_and(|revision| revision != route.revision) {
             return Err("The view changed. Reopen the menu.".to_owned());
         }
+        if matches!(
+            &request.operation,
+            crate::ViewOperation::Event {
+                event: ViewEvent::PageChanged { .. }
+            }
+        ) && request.revision != route.revision
+        {
+            return Err("The page changed. Use its current navigation controls.".to_owned());
+        }
         if request.revision > route.revision {
             return Err("The extension view revision is ahead of the current state.".to_owned());
         }
@@ -144,7 +153,9 @@ impl NavigationState {
 pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(), String> {
     let valid = match (view, event) {
         (_, ViewEvent::Resumed) => true,
-        (View::List { .. }, ViewEvent::SearchChanged { text }) => text.chars().count() <= 4096,
+        (View::List { .. }, ViewEvent::SearchChanged { text }) => {
+            nanika_protocol::validate_view_search_text(text).is_ok()
+        }
         (View::List { list }, ViewEvent::SelectionChanged { item_id }) => {
             item_id.as_ref().is_none_or(|id| {
                 list.sections
@@ -159,8 +170,26 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
                     && filter.options.iter().any(|option| &option.value == value)
             })
         }
-        (View::List { list }, ViewEvent::LoadMore { cursor }) => {
-            list.next_cursor.as_ref() == Some(cursor)
+        (_, ViewEvent::PageChanged { target, cursor }) => {
+            let pagination = match (view, target) {
+                (View::List { list }, nanika_protocol::ViewPageTarget::List) => {
+                    list.pagination.as_ref()
+                }
+                (_, nanika_protocol::ViewPageTarget::Detail) => {
+                    let detail = match view {
+                        View::List { list } => list.detail.as_ref(),
+                        View::Detail { detail } => Some(detail),
+                    };
+                    detail.and_then(|detail| match &detail.content {
+                        nanika_protocol::DetailContent::Text { pagination, .. } => {
+                            pagination.as_deref()
+                        }
+                        _ => None,
+                    })
+                }
+                _ => None,
+            };
+            pagination.is_some_and(|page| page.allows(cursor))
         }
         (
             View::List { list },

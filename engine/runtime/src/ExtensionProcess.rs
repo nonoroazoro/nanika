@@ -21,12 +21,11 @@ use crate::{
 };
 
 type ReceivePoll = Option<Option<Message>>;
-type ViewInvalidationNotifier = Arc<Mutex<Option<Arc<dyn Fn(String) + Send + Sync>>>>;
 
 pub struct ExtensionProcess {
     connection_exit: Arc<crate::ExtensionConnectionExit>,
     candidate_changes: ExtensionNotifier,
-    view_invalidations: ViewInvalidationNotifier,
+    view_invalidations: ExtensionNotifier,
     configuration_reply: Arc<crate::ConfigurationReply>,
     refresh_reply: Arc<crate::RefreshReply>,
     initialized: bool,
@@ -99,7 +98,7 @@ impl ExtensionProcess {
         };
 
         let (sender, receiver) = mpsc::sync_channel(limits.frame_queue_capacity.max(1));
-        let view_invalidations = Arc::new(Mutex::new(None::<Arc<dyn Fn(String) + Send + Sync>>));
+        let view_invalidations = Arc::new(Mutex::new(None::<Arc<dyn Fn() + Send + Sync>>));
         let changes = Arc::clone(&candidate_changes);
         let invalidations = Arc::clone(&view_invalidations);
         let configuration_reply = Arc::new(crate::ConfigurationReply::default());
@@ -127,13 +126,13 @@ impl ExtensionProcess {
                         }
                         continue;
                     }
-                    if let Ok(Some(Message::ViewInvalidated { view_id })) = &frame {
+                    if let Ok(Some(Message::ViewsChanged)) = &frame {
                         let notify = invalidations
                             .lock()
                             .unwrap_or_else(|error| error.into_inner())
                             .clone();
                         if let Some(notify) = notify {
-                            notify(view_id.clone());
+                            notify();
                         }
                         continue;
                     }
@@ -207,10 +206,7 @@ impl ExtensionProcess {
             .unwrap_or_else(|error| error.into_inner()) = Some(notify);
     }
 
-    pub(crate) fn set_view_invalidation_notifier(
-        &mut self,
-        notify: Arc<dyn Fn(String) + Send + Sync>,
-    ) {
+    pub(crate) fn set_view_invalidation_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
         *self
             .view_invalidations
             .lock()

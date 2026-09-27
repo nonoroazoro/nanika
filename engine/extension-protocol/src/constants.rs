@@ -5,3 +5,6 @@ pub const COMMAND_EXECUTE_ACTION_ID: &str = "command.execute";
 
 /// Host-defined activation action for a static view contribution.
 pub const VIEW_OPEN_ACTION_ID: &str = "view.open";
+
+/// Maximum Unicode scalar values in one host-rendered plain-text page.
+pub const MAX_DETAIL_TEXT_CHARS: usize = 16_384;

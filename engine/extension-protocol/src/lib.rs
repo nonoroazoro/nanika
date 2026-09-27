@@ -118,3 +118,10 @@ pub use catalog_publisher::CatalogPublisher;
 #[path = "CatalogPublication.rs"]
 mod catalog_publication;
 use catalog_publication::CatalogPublication;
+
+#[path = "ViewPagination.rs"]
+mod view_pagination;
+pub use view_pagination::*;
+#[path = "ViewPageTarget.rs"]
+mod view_page_target;
+pub use view_page_target::*;

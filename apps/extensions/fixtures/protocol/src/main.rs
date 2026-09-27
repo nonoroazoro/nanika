@@ -344,6 +344,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 detail: nanika_protocol::DetailView {
                                     title: None,
                                     content: nanika_protocol::DetailContent::Text {
+                                        pagination: None,
                                         value: "Fixture view".to_owned(),
                                     },
                                     metadata: Vec::new(),
@@ -522,7 +523,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::PrepareEntries { .. } => {}
             Message::Snapshot { .. }
             | Message::CandidatesChanged
-            | Message::ViewInvalidated { .. }
+            | Message::ViewsChanged
             | Message::Result { .. }
             | Message::ViewEvent { .. }
             | Message::ViewUpdated { .. }

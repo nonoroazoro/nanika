@@ -357,7 +357,7 @@ fn request_id(message: &Message) -> Option<String> {
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CatalogApplied { .. }
         | Message::CandidatesChanged
-        | Message::ViewInvalidated { .. }
+        | Message::ViewsChanged
         | Message::PrepareEntries { .. } => None,
     }
 }

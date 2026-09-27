@@ -111,16 +111,12 @@ fn stable_hash(kind: &str, payload: &[u8]) -> String {
     encoded
 }
 
-fn text_title(value: &str) -> String {
+pub(crate) fn text_title(value: &str) -> String {
     let line = value
         .lines()
         .find(|line| !line.trim().is_empty())
         .unwrap_or(value);
-    let mut title = line.trim().chars().take(96).collect::<String>();
-    if line.trim().chars().count() > 96 {
-        title.push_str("...");
-    }
-    title
+    crate::labels::display_label(line.trim(), 96)
 }
 
 fn file_title(paths: &[String]) -> String {

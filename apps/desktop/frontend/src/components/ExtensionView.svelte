@@ -1,4 +1,5 @@
 <script lang="ts">
+import ChevronLeftIcon from "./icons/ChevronLeftIcon.svelte";
 import ScrollArea from "./ScrollArea.svelte";
 import Button from "./Button.svelte";
 import Input from "./Input.svelte";
@@ -8,9 +9,11 @@ import CachedFileIcon from "./CachedFileIcon.svelte";
 import StatusBar from "./StatusBar.svelte";
 import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
+import ViewPager from "./ViewPager.svelte";
 
-const { snapshot, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBack, onContextMenu }: {
+const { snapshot, query, resourceOrigin, busy, error, onQuery, onEvent, onResume, onBack, onContextMenu }: {
     snapshot: ExtensionViewSnapshot;
+    query: string;
     resourceOrigin: string;
     busy: boolean;
     error: string | null;
@@ -57,23 +60,18 @@ const trailingStatusEntries = $derived(
         ? [{
             id: primaryAction.id,
             title: primaryAction.title,
-            interactive: false,
+            interactive: list === null,
+            disabled: busy,
             keys: ["↵"],
             ariaShortcut: "Enter"
         }]
         : []
 );
-let query = $state("");
 let input = $state<HTMLInputElement>();
 let options = $state<HTMLUListElement>();
 let listPane = $state<HTMLDivElement | null>(null);
 let detailPane = $state<HTMLDivElement | null>(null);
 let previousDetailItem: string | null | undefined;
-let loadMoreSentinel = $state<HTMLDivElement>();
-let requestedCursor = $state<string | null>(null);
-let acknowledgedCursor = $state<string | null>(null);
-let failedCursor = $state<string | null>(null);
-let paginationScope = $state("");
 let surface: HTMLElement;
 
 $effect(() =>
@@ -100,6 +98,22 @@ $effect(() =>
     }
 });
 
+function _changePage(target: "list" | "detail", cursor: string): void
+{
+    cancelConfirmation();
+    void onEvent({ kind: "pageChanged", target, cursor }).then(revision =>
+    {
+        if (revision !== null)
+        {
+            const pane = target === "list" ? listPane : detailPane;
+            if (pane)
+            {
+                pane.scrollTop = 0;
+            }
+        }
+    });
+}
+
 function selectItem(id: string): void
 {
     cancelConfirmation();
@@ -125,73 +139,8 @@ $effect(() =>
     }
 });
 
-$effect(() =>
-{
-    const scope = `${list?.search_text ?? ""}\u0000${list?.filter?.selected_value ?? ""}`;
-    if (scope !== paginationScope)
-    {
-        paginationScope = scope;
-        requestedCursor = null;
-        acknowledgedCursor = null;
-        failedCursor = null;
-    }
-});
-
-$effect(() =>
-{
-    if (error && requestedCursor !== null && list?.next_cursor === requestedCursor)
-    {
-        failedCursor = requestedCursor;
-        requestedCursor = null;
-    }
-});
-
-$effect(() =>
-{
-    const cursor = list?.next_cursor ?? null;
-    if (requestedCursor !== null && cursor !== requestedCursor)
-    {
-        acknowledgedCursor = requestedCursor;
-        requestedCursor = null;
-    }
-});
-
-$effect(() =>
-{
-    const cursor = list?.next_cursor ?? null;
-    const root = listPane;
-    const target = loadMoreSentinel;
-    if (!cursor || !root || !target || busy || requestedCursor === cursor || acknowledgedCursor === cursor)
-    {
-        return;
-    }
-    const observer = new IntersectionObserver(entries =>
-    {
-        const intersecting = entries.some(entry => entry.isIntersecting);
-        if (!intersecting && failedCursor === cursor)
-        {
-            failedCursor = null;
-            return;
-        }
-        if (
-            intersecting && !busy && requestedCursor !== cursor
-            && acknowledgedCursor !== cursor && failedCursor !== cursor
-        )
-        {
-            requestedCursor = cursor;
-            onEvent({ kind: "loadMore", cursor });
-        }
-    }, {
-        root,
-        rootMargin: "0px 0px 160px 0px"
-    });
-    observer.observe(target);
-    return () => observer.disconnect();
-});
-
 onMount(() =>
 {
-    query = list?.search_text ?? "";
     focusSearch();
     onResume();
 });
@@ -308,10 +257,8 @@ function handleKeydown(event: KeyboardEvent): void
     }
     const verticalNavigation = (event.key === "ArrowDown" || event.key === "ArrowUp")
         && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
-    const fromPreview = list !== null && event.target instanceof HTMLTextAreaElement
-        && event.target.readOnly && surface.contains(event.target);
     const fromDetail = list === null && event.target === document.body;
-    if (event.target !== input && !fromDetail && !(fromPreview && verticalNavigation))
+    if (event.target !== input && !fromDetail)
     {
         return;
     }
@@ -340,12 +287,19 @@ function handleKeydown(event: KeyboardEvent): void
             selectItem(item.id);
         }
     }
-    if (event.key === "Enter" && !busy)
+    if (
+        event.key === "Enter" && !busy
+        && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+    )
     {
         const action = primaryAction;
         if (action)
         {
             event.preventDefault();
+            if (event.repeat)
+            {
+                return;
+            }
             onEvent({
                 kind: "actionInvoked",
                 item_id: selected?.id ?? null,
@@ -383,23 +337,13 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
 >
     <header class:has-filter={Boolean(list?.filter)}>
         <Button class="back" onclick={onBack} disabled={busy} aria-label="Back to previous view">
-            <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-            >
-                <path d="m14.5 5-7 7 7 7" />
-            </svg>
+            <ChevronLeftIcon size={16} />
         </Button>
         {#if list}
             <Input
                 variant="search"
                 bind:ref={input}
-                bind:value={query}
+                value={query}
                 role="combobox"
                 aria-label={list.search_placeholder || "Search this view"}
                 placeholder={list.search_placeholder}
@@ -507,13 +451,13 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                         {/each}
                     </ul>
                     {#if !items.length}<p class="empty">No items</p>{/if}
-                    {#if list.next_cursor}<div
-                            class="load-more-sentinel"
-                            bind:this={loadMoreSentinel}
-                            aria-hidden="true"
-                        >
-                        </div>{/if}
                 </ScrollArea>
+                {#if list.pagination}<ViewPager
+                        pagination={list.pagination}
+                        {busy}
+                        label="List pages"
+                        onPage={cursor => _changePage("list", cursor)}
+                    />{/if}
             </div>
         {/if}
         {#if !list || list.layout === "split"}<div
@@ -524,6 +468,8 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                     {#if detail}
                         <ViewDetail
                             {detail}
+                            busy={busy || detailPending}
+                            onPage={cursor => _changePage("detail", cursor)}
                             resourceOrigin={resourceOrigin}
                             extensionId={snapshot.extensionId}
                         />
@@ -554,7 +500,7 @@ header :global(.back svg) { width: 1rem; height: 1rem; }
 .split .detail-pane { flex: 1 1 62%; border-left: 1px solid var(--border-subtle); }
 ul { list-style: none; margin: 0; padding: 0; }
 .list-pane [role='group'] { display: grid; grid-template-columns: minmax(0, 1fr); }
-.list-pane { padding: var(--space-2); overflow-x: hidden; }
+.list-pane { flex-direction: column; padding: var(--space-2); overflow-x: hidden; }
 h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
 [role='option'] { min-width: 0; padding-top: var(--space-1); }
 [role='option']:first-child { padding-top: 0; }
@@ -567,7 +513,6 @@ h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 
 .item-copy > span, .item-copy > small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: var(--space-1); }
 .empty { color: var(--text-secondary); text-align: center; padding: var(--space-5); }
-.load-more-sentinel { height: 1px; pointer-events: none; }
 .filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); white-space: nowrap; }
 .filter :global(button) { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
 .filter :global(button:hover:not(:disabled, [aria-disabled="true"])) { border-color: transparent; background: var(--surface-hovered); }

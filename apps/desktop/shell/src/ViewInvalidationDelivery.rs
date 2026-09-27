@@ -61,7 +61,6 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
                     .filter(|route| {
                         route.instance_id == invalidation.instance_id
                             && route.extension_id == invalidation.extension_id
-                            && route.view_id == invalidation.view_id
                     })
                     .cloned()
                     .map(|route| (Arc::clone(runtime), route))
@@ -86,7 +85,7 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
         let Ok(completion) = result else {
             tracing::warn!(
                 extension_id = invalidation.extension_id,
-                view_id = invalidation.view_id,
+                view_id = route.view_id,
                 error = %result.expect_err("failed invalidation"),
                 "extension view invalidation failed"
             );
@@ -95,7 +94,7 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
         if completion.effect != nanika_protocol::NavigationEffect::None {
             tracing::warn!(
                 extension_id = invalidation.extension_id,
-                view_id = invalidation.view_id,
+                view_id = route.view_id,
                 "extension view invalidation returned a navigation effect"
             );
             continue;

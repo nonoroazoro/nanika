@@ -150,13 +150,12 @@ impl ExtensionSearchWorker {
             let invalidation_queue = Arc::clone(&view_invalidations);
             let invalidation_notifier = Arc::clone(&notifier);
             let invalidation_instance = Arc::clone(&factory_instance);
-            runtime.set_view_invalidation_notifier(Arc::new(move |view_id| {
+            runtime.set_view_invalidation_notifier(Arc::new(move || {
                 invalidation_instance.with_active(|| {
                     queue_view_invalidation(
                         &invalidation_queue,
                         &invalidation_extension_id,
                         invalidation_instance.id,
-                        view_id,
                     );
                     notify(&invalidation_notifier);
                 });
@@ -646,9 +645,8 @@ pub(crate) fn queue_view_invalidation(
     pending: &Mutex<std::collections::HashMap<String, crate::RuntimeViewInvalidation>>,
     extension_id: &str,
     instance_id: u64,
-    view_id: String,
 ) {
-    // One worker owns one visible route; replacing its pending signal bounds the queue.
+    // All views of an instance share one dirty signal; distinct view changes cannot overwrite each other.
     pending
         .lock()
         .unwrap_or_else(|error| error.into_inner())
@@ -657,7 +655,6 @@ pub(crate) fn queue_view_invalidation(
             crate::RuntimeViewInvalidation {
                 instance_id,
                 extension_id: extension_id.to_owned(),
-                view_id,
             },
         );
 }

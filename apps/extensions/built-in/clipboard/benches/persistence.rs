@@ -1,5 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use nanika_extension_clipboard::{ClipboardConfig, ClipboardDatabase, ClipboardEntry};
+use nanika_extension_clipboard::{
+    ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore, ClipboardViewState,
+};
 use nanika_protocol::ClipboardContent;
 
 fn persistence(criterion: &mut Criterion) {
@@ -22,8 +24,12 @@ fn persistence(criterion: &mut Criterion) {
             database.upsert(&item).expect("entry should persist")
         });
     });
-    criterion.bench_function("clipboard_load_500", |bencher| {
-        bencher.iter(|| database.load().expect("history should load"));
+    criterion.bench_function("clipboard_query_ids_500", |bencher| {
+        bencher.iter(|| {
+            database
+                .matching_ids("", "all")
+                .expect("history should load")
+        });
     });
     for count in [500, 5000] {
         let history = ClipboardDatabase::open(root.join(format!("capture-{count}.db"))).unwrap();
@@ -35,7 +41,18 @@ fn persistence(criterion: &mut Criterion) {
             item.byte_size = 4096;
             history.upsert(&item).unwrap();
         }
-        let mut entries = history.load().unwrap();
+        drop(history);
+        let mut store = ClipboardStore::open(root.join(format!("capture-{count}.db"))).unwrap();
+        let mut query = ClipboardViewState::new();
+        query.query = "xxx".into();
+        let current = store.present(query, None).unwrap();
+        criterion.bench_function(&format!("clipboard_cached_query_view_{count}"), |bencher| {
+            bencher.iter(|| {
+                let presentation = store.present(current.state.clone(), None).unwrap();
+                std::hint::black_box(presentation.icon_paths());
+                std::hint::black_box(presentation);
+            });
+        });
         let config = ClipboardConfig {
             max_entries: None,
             max_age_days: None,
@@ -44,11 +61,8 @@ fn persistence(criterion: &mut Criterion) {
             let mut item = entry(42, count as u64);
             bencher.iter(|| {
                 item.captured_at += 1;
-                let change = history
-                    .upsert_with_retention(&item, item.captured_at, &config)
-                    .unwrap();
-                change.apply(&mut entries, Some(item.clone()));
-                std::hint::black_box(&entries);
+                let _change = store.capture(&item, item.captured_at, &config).unwrap();
+                std::hint::black_box(store.present(ClipboardViewState::new(), None).unwrap());
             });
         });
     }

@@ -6,12 +6,19 @@ import type { ViewEventReceipt } from "../types/ViewEventReceipt.ts";
 // both, including the exact completed navigation revision rather than any update.
 export function viewInputScheduler()
 {
-    let navigation: NavigationSnapshot = { revision: 0, current: null, busy: false, error: null, dismissCount: 0 };
+    let navigation: NavigationSnapshot = {
+        revision: 0,
+        current: null,
+        busy: false,
+        error: null,
+        dismissCount: 0
+    };
     let pending = 0;
     let blocking = 0;
     let requiredRevision = 0;
     let blockingRevision = 0;
     let query: string | null = null;
+    let draft: string | null = null;
     let resumeRequested = false;
     let inputError: string | null = null;
 
@@ -19,6 +26,14 @@ export function viewInputScheduler()
         get busy(): boolean
         {
             return blocking > 0 || navigation.revision < blockingRevision || (pending === 0 && navigation.busy);
+        },
+        get queryText(): string
+        {
+            const current = navigation.current;
+            const authoritative = current?.view.kind === "list" ? current.view.list.search_text : "";
+            // A draft owns the input until both transports settle its submission.
+            // A newer queued intent (including invalid input) outlives that submission.
+            return draft ?? authoritative;
         },
         get inputError(): string | null
         {
@@ -33,14 +48,17 @@ export function viewInputScheduler()
             if (next.current?.routeId !== navigation.current?.routeId)
             {
                 query = null;
+                draft = null;
                 resumeRequested = false;
                 inputError = null;
             }
             navigation = next;
+            _settleDraft();
         },
         query(text: string): void
         {
             query = text;
+            draft = text;
             // Match the Rust protocol's Unicode scalar count, not grapheme count.
             inputError = Array.from(text).length > 4096
                 ? "View search supports up to 4096 characters. Edit the input to continue."
@@ -75,6 +93,7 @@ export function viewInputScheduler()
                     blockingRevision = Math.max(blockingRevision, receipt.navigationRevision);
                 }
             }
+            _settleDraft();
         },
         takeNext(): ViewEvent | null
         {
@@ -92,6 +111,7 @@ export function viewInputScheduler()
                 {
                     return { kind: "searchChanged", text };
                 }
+                _settleDraft();
             }
             if (resumeRequested)
             {
@@ -101,4 +121,12 @@ export function viewInputScheduler()
             return null;
         }
     };
+
+    function _settleDraft(): void
+    {
+        if (query === null && pending === 0 && !navigation.busy && navigation.revision >= requiredRevision)
+        {
+            draft = null;
+        }
+    }
 }

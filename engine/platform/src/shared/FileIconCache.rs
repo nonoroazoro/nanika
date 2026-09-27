@@ -51,7 +51,9 @@ impl FileIconCache {
         Ok(variants_exist(&self.root, &reference).then_some(reference))
     }
 
-    fn reference(&self, path: &Path) -> std::io::Result<IconReference> {
+    /// Source identity shared by persistent artifacts and worker memoization.
+    /// Call on a blocking worker because native metadata access can block.
+    pub fn reference(&self, path: &Path) -> std::io::Result<IconReference> {
         let stamp = crate::adapter::file_icon::stamp(&path.metadata()?);
         let mut hash = Sha256::new();
         hash.update(RENDER_VERSION.as_bytes());

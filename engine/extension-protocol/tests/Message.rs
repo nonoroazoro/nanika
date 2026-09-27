@@ -93,13 +93,14 @@ fn pushed_views_are_bounded_host_rendered_documents() {
             detail: Some(DetailView {
                 title: Some("Example".to_owned()),
                 content: DetailContent::Text {
+                    pagination: None,
                     value: "Content".to_owned(),
                 },
                 metadata: Vec::new(),
                 actions: Vec::new(),
             }),
             filter: None,
-            next_cursor: None,
+            pagination: None,
         }),
     };
     let effect = NavigationEffect::Push {
@@ -145,6 +146,7 @@ fn view_action_confirmation_titles_are_validated() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
+                pagination: None,
                 value: "Example".to_owned(),
             },
             metadata: Vec::new(),
@@ -173,6 +175,7 @@ fn view_action_confirmation_is_limited_to_destructive_actions() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
+                pagination: None,
                 value: "Example".to_owned(),
             },
             metadata: Vec::new(),
@@ -202,7 +205,7 @@ fn detail_resource_images_use_relative_png_paths() {
         detail: DetailView {
             title: None,
             content: DetailContent::Image {
-                source: ImageSource::Resource {
+                source: ImageSource {
                     path: resource_path,
                 },
                 alternative_text: "Image".to_owned(),
@@ -218,7 +221,7 @@ fn detail_resource_images_use_relative_png_paths() {
         detail: DetailView {
             title: None,
             content: DetailContent::Image {
-                source: ImageSource::Resource {
+                source: ImageSource {
                     path: "../outside.png".to_owned(),
                 },
                 alternative_text: "Image".to_owned(),
@@ -233,7 +236,7 @@ fn detail_resource_images_use_relative_png_paths() {
         detail: DetailView {
             title: None,
             content: DetailContent::Image {
-                source: ImageSource::Resource {
+                source: ImageSource {
                     path: "preview.png".to_owned(),
                 },
                 alternative_text: "Image".to_owned(),
@@ -270,7 +273,7 @@ fn view_validation_rejects_an_unbounded_list() {
             selected_item_id: None,
             detail: None,
             filter: None,
-            next_cursor: None,
+            pagination: None,
         }),
     };
     assert_eq!(
@@ -302,6 +305,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
             detail: Some(DetailView {
                 title: None,
                 content: DetailContent::Text {
+                    pagination: None,
                     value: "Example".to_owned(),
                 },
                 metadata: Vec::new(),
@@ -316,7 +320,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 }],
             }),
             filter: None,
-            next_cursor: None,
+            pagination: None,
         }),
     };
 
@@ -437,7 +441,7 @@ fn native_view_icons_are_opaque_and_validated() {
             selected_item_id: None,
             detail: None,
             filter: None,
-            next_cursor: None,
+            pagination: None,
         }),
     };
     assert!(view.validate().is_err());
@@ -489,4 +493,78 @@ fn configuration_progress_requires_real_bounded_work_units() {
     ] {
         assert!(progress.validate().is_err());
     }
+}
+
+#[test]
+fn repeated_section_identities_are_rejected_before_rendering() {
+    let view = View::List {
+        list: Box::new(ListView {
+            title: "Sections".into(),
+            search_placeholder: String::new(),
+            search_text: String::new(),
+            layout: ListLayout::Plain,
+            sections: vec![
+                ListSection {
+                    id: "same".into(),
+                    title: None,
+                    items: Vec::new(),
+                },
+                ListSection {
+                    id: "same".into(),
+                    title: None,
+                    items: Vec::new(),
+                },
+            ],
+            selected_item_id: None,
+            detail: None,
+            filter: None,
+            pagination: None,
+        }),
+    };
+    assert_eq!(
+        view.validate().unwrap_err(),
+        "view list section ids must be unique"
+    );
+}
+
+#[test]
+fn image_sources_accept_only_immutable_resource_paths() {
+    assert!(
+        serde_json::from_str::<ImageSource>(
+            r#"{"kind":"dataUrl","value":"data:image/png;base64,AA=="}"#
+        )
+        .is_err()
+    );
+    let source: ImageSource =
+        serde_json::from_value(serde_json::json!({"path": format!("{}.png", "a".repeat(64))}))
+            .unwrap();
+    assert!(nanika_protocol::is_valid_resource_path(&source.path));
+}
+
+#[test]
+fn view_changes_are_instance_scoped_and_plain_text_is_bounded_without_losing_controls() {
+    assert_eq!(
+        serde_json::to_value(Message::ViewsChanged).unwrap(),
+        serde_json::json!({"type":"viewsChanged"})
+    );
+    let mut view = View::Detail {
+        detail: DetailView {
+            title: None,
+            content: DetailContent::Text {
+                value: "\0\u{b}\n原文".into(),
+                pagination: None,
+            },
+            metadata: vec![],
+            actions: vec![],
+        },
+    };
+    view.validate().unwrap();
+    let View::Detail { detail } = &mut view else {
+        unreachable!()
+    };
+    detail.content = DetailContent::Text {
+        value: "x".repeat(16_385),
+        pagination: None,
+    };
+    assert!(view.validate().is_err());
 }

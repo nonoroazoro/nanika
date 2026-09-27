@@ -12,5 +12,5 @@ pub struct ListView {
     pub selected_item_id: Option<String>,
     pub detail: Option<DetailView>,
     pub filter: Option<ViewFilter>,
-    pub next_cursor: Option<String>,
+    pub pagination: Option<crate::ViewPagination>,
 }

@@ -1,11 +1,14 @@
 <script lang="ts">
 import Textarea from "./Textarea.svelte";
+import ViewPager from "./ViewPager.svelte";
 import type { DetailView } from "../types";
 import CachedFileIcon from "./CachedFileIcon.svelte";
 import FileCollectionPreview from "./FileCollectionPreview.svelte";
 const COLLECTION_PREVIEW_LIMIT = 3;
 const FILE_PATH_PREVIEW_LIMIT = 5;
-const { detail, resourceOrigin, extensionId }: {
+const { detail, resourceOrigin, extensionId, busy, onPage }: {
+    busy: boolean;
+    onPage: (cursor: string) => void;
     detail: DetailView;
     resourceOrigin: string;
     extensionId: string;
@@ -17,9 +20,7 @@ function resolveImageSource(): string | null
     {
         return null;
     }
-    return detail.content.source.kind === "dataUrl"
-        ? detail.content.source.value
-        : `${resourceOrigin}/${extensionId}/payload/${detail.content.source.path}`;
+    return `${resourceOrigin}/${extensionId}/payload/${detail.content.source.path}`;
 }
 
 const text = $derived(detail.content.kind === "text" ? detail.content.value : null);
@@ -84,6 +85,12 @@ function _resizeText(element: HTMLTextAreaElement): void
             readonly
             spellcheck="false"
         ></Textarea>
+        {#if detail.content.pagination}<ViewPager
+                pagination={detail.content.pagination}
+                {busy}
+                label="Text pages"
+                {onPage}
+            />{/if}
     {:else if detail.content.kind === "files"}
         {#if detail.content.files.length === 1}
             <div class="file-preview">

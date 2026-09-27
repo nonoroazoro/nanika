@@ -2,7 +2,7 @@ import type { ActionInvocation } from "./ActionInvocation";
 
 export type ViewEvent =
     | { action_id: string; invocation: ActionInvocation; item_id: string | null; kind: "actionInvoked"; }
-    | { cursor: string; kind: "loadMore"; }
+    | { cursor: string; kind: "pageChanged"; target: "detail" | "list"; }
     | { filter_id: string; kind: "filterChanged"; value: string; }
     | { item_id: string | null; kind: "selectionChanged"; }
     | { kind: "resumed"; }
