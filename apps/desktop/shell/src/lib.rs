@@ -190,6 +190,7 @@ pub fn run() -> Result<(), String> {
                         include_str!("../../../extensions/built-in/script/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/system/manifest.jsonc"),
                     ];
                     match nanika_host::RuntimeService::start(
                         &runtime_paths,

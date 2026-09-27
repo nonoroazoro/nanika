@@ -1,0 +1,205 @@
+{
+  "format": "nanika-extension",
+  "manifestVersion": 1,
+  "id": "com.nanika.system",
+  "name": "System",
+  "icon": "assets/icon.png",
+  "version": "0.1.0",
+  "hostApi": "^0.1",
+  "activation": "onDemand",
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-system.exe"
+    },
+    "aarch64-apple-darwin": {
+      "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-system"
+    },
+    "x86_64-apple-darwin": {
+      "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-system"
+    }
+  },
+  "runtime": {
+    "protocol": "nanika",
+    "protocolVersion": 1
+  },
+  "permissions": [
+    "system.lock",
+    "system.sleep",
+    "system.displays",
+    "system.logout",
+    "system.restart",
+    "system.shutdown",
+    "system.trash.open",
+    "system.trash.empty"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "lock",
+        "action": {
+          "id": "command.execute",
+          "title": "Lock Screen",
+          "style": "primary",
+          "enabled": true,
+          "allow_default_execution": true,
+          "group": null,
+          "icon": "lock-keyhole"
+        },
+        "title": "Lock Screen",
+        "description": "Lock your current session",
+        "category": "System",
+        "keywords": [
+          "lock",
+          "screen",
+          "锁屏"
+        ]
+      },
+      {
+        "command": "sleep",
+        "action": {
+          "id": "command.execute",
+          "title": "Sleep",
+          "style": "primary",
+          "enabled": true,
+          "allow_default_execution": true,
+          "group": null,
+          "icon": "moon"
+        },
+        "title": "Sleep",
+        "description": "Put the computer to sleep",
+        "category": "System",
+        "keywords": [
+          "sleep",
+          "suspend",
+          "睡眠"
+        ]
+      },
+      {
+        "command": "displays",
+        "action": {
+          "id": "command.execute",
+          "title": "Turn Off Displays",
+          "style": "primary",
+          "enabled": true,
+          "allow_default_execution": true,
+          "group": null,
+          "icon": "monitor-off"
+        },
+        "title": "Turn Off Displays",
+        "description": "Put connected displays to sleep",
+        "category": "System",
+        "keywords": [
+          "display",
+          "monitor",
+          "screen",
+          "关闭显示器"
+        ]
+      },
+      {
+        "command": "logout",
+        "action": {
+          "id": "command.execute",
+          "title": "Log Out",
+          "style": "destructive",
+          "enabled": true,
+          "allow_default_execution": false,
+          "group": null,
+          "confirmation_title": "Confirm Log Out",
+          "icon": "log-out"
+        },
+        "title": "Log Out",
+        "description": "End your current user session",
+        "category": "System",
+        "keywords": [
+          "logout",
+          "sign out",
+          "注销"
+        ]
+      },
+      {
+        "command": "restart",
+        "action": {
+          "id": "command.execute",
+          "title": "Restart",
+          "style": "destructive",
+          "enabled": true,
+          "allow_default_execution": false,
+          "group": null,
+          "confirmation_title": "Confirm Restart",
+          "icon": "rotate-cw"
+        },
+        "title": "Restart",
+        "description": "Restart this computer",
+        "category": "System",
+        "keywords": [
+          "reboot",
+          "restart",
+          "重启"
+        ]
+      },
+      {
+        "command": "shutdown",
+        "action": {
+          "id": "command.execute",
+          "title": "Shut Down",
+          "style": "destructive",
+          "enabled": true,
+          "allow_default_execution": false,
+          "group": null,
+          "confirmation_title": "Confirm Shut Down",
+          "icon": "power"
+        },
+        "title": "Shut Down",
+        "description": "Shut down this computer",
+        "category": "System",
+        "keywords": [
+          "shutdown",
+          "power off",
+          "关机"
+        ]
+      },
+      {
+        "command": "trash.open",
+        "action": {
+          "id": "command.execute",
+          "title": "Open Trash / Recycle Bin",
+          "style": "primary",
+          "enabled": true,
+          "allow_default_execution": true,
+          "group": null,
+          "icon": "folder-open"
+        },
+        "title": "Open Trash / Recycle Bin",
+        "description": "Open deleted items in the system file manager",
+        "category": "System",
+        "keywords": [
+          "trash",
+          "recycle bin",
+          "回收站"
+        ]
+      },
+      {
+        "command": "trash.empty",
+        "action": {
+          "id": "command.execute",
+          "title": "Empty Trash / Recycle Bin",
+          "style": "destructive",
+          "enabled": true,
+          "allow_default_execution": false,
+          "group": null,
+          "confirmation_title": "Confirm Permanent Deletion",
+          "icon": "trash"
+        },
+        "title": "Empty Trash / Recycle Bin",
+        "description": "Permanently delete all items in Trash or Recycle Bin",
+        "category": "System",
+        "keywords": [
+          "trash",
+          "recycle bin",
+          "delete",
+          "清空回收站"
+        ]
+      }
+    ]
+  }
+}

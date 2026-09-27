@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
-use nanika_platform::{ClipboardService, ProcessLauncher};
+use nanika_platform::{ClipboardService, ProcessLauncher, SystemActionService};
 use nanika_protocol::{ClipboardContent, HostServiceRequest};
 use nanika_storage::is_valid_extension_id;
 
 use crate::{DiagnosticCode, HostDiagnostic, HostServiceHandler};
 
 pub struct HostServiceRouter {
+    system: OnceLock<Result<SystemActionService, String>>,
     launcher: Result<ProcessLauncher, String>,
     clipboard: Result<ClipboardService, String>,
     payload_root: Result<PathBuf, String>,
@@ -37,6 +38,7 @@ impl HostServiceRouter {
         }
         (
             Self {
+                system: OnceLock::new(),
                 launcher,
                 clipboard,
                 payload_root,
@@ -114,6 +116,20 @@ impl HostServiceHandler for HostServiceRouter {
             return Err("host service request has an invalid extension id".to_owned());
         }
         match request {
+            HostServiceRequest::SystemAction { action } => {
+                self.require_permission(extension_id, action.permission())?;
+                let service = self
+                    .system
+                    .get_or_init(|| {
+                        SystemActionService::spawn()
+                            .map_err(|error| format!("System service is unavailable: {error}"))
+                    })
+                    .as_ref()
+                    .map_err(Clone::clone)?;
+                Ok(crate::PreparedHostService::new(move || {
+                    service.submit(action)
+                }))
+            }
             HostServiceRequest::RevealPath { path } => {
                 self.require_permission(extension_id, "files.reveal")?;
                 let service = self.launcher()?;

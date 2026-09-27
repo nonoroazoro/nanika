@@ -2639,6 +2639,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanika-extension-system"
+version = "0.1.0"
+dependencies = [
+ "nanika-extension-package",
+ "nanika-protocol",
+ "serde_json",
+]
+
+[[package]]
 name = "nanika-foundation"
 version = "0.1.0"
 dependencies = [

@@ -86,10 +86,13 @@
       "nanika-extension-application",
       "nanika-extension-script",
       "nanika-extension-calculator",
-      "nanika-extension-clipboard"
+      "nanika-extension-clipboard",
+      "nanika-extension-system"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "infoPlist": "Info.plist",
+      "entitlements": "Entitlements.plist"
     }
   }
 }

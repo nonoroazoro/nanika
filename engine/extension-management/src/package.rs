@@ -630,7 +630,17 @@ pub fn validate_extension_manifest(
     for permission in &manifest.permissions {
         if !matches!(
             permission.as_str(),
-            "process.launch" | "clipboard.write" | "files.reveal"
+            "process.launch"
+                | "clipboard.write"
+                | "files.reveal"
+                | "system.lock"
+                | "system.sleep"
+                | "system.displays"
+                | "system.logout"
+                | "system.restart"
+                | "system.shutdown"
+                | "system.trash.open"
+                | "system.trash.empty"
         ) {
             return Err(ExtensionPackageError::Manifest(format!(
                 "unsupported extension permission: {permission}"

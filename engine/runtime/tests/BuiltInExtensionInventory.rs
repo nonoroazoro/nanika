@@ -9,9 +9,10 @@ fn every_built_in_uses_the_ordinary_manifest_contract() {
         include_str!("../../../apps/extensions/built-in/script/manifest.jsonc"),
         include_str!("../../../apps/extensions/built-in/calculator/manifest.jsonc"),
         include_str!("../../../apps/extensions/built-in/clipboard/manifest.jsonc"),
+        include_str!("../../../apps/extensions/built-in/system/manifest.jsonc"),
     ];
     let inventory = BuiltInExtensionInventory::parse(&sources).expect("built-in manifests");
-    assert_eq!(inventory.extensions.len(), 4);
+    assert_eq!(inventory.extensions.len(), 5);
     let identifiers = inventory
         .extensions
         .iter()

@@ -5,6 +5,7 @@ use crate::{ClipboardContent, LaunchDescriptor};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "service", rename_all = "camelCase")]
 pub enum HostServiceRequest {
+    SystemAction { action: crate::SystemAction },
     RevealPath { path: String },
     Launch { descriptor: LaunchDescriptor },
     WriteClipboard { content: ClipboardContent },

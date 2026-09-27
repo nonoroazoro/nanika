@@ -20,6 +20,9 @@ mod candidate_subtitle;
 #[path = "ClipboardContent.rs"]
 mod clipboard_content;
 mod constants;
+#[path = "SystemAction.rs"]
+mod system_action;
+pub use system_action::*;
 #[path = "DetailContent.rs"]
 mod detail_content;
 #[path = "DetailView.rs"]

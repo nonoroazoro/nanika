@@ -11,10 +11,13 @@ pub const SCRIPT_EXTENSION_ID: &str = "com.nanika.script";
 pub const CALCULATOR_EXTENSION_ID: &str = "com.nanika.calculator";
 pub const CLIPBOARD_EXTENSION_ID: &str = "com.nanika.clipboard";
 
+pub const SYSTEM_EXTENSION_ID: &str = "com.nanika.system";
+
 /// Extension IDs reserved for the default distribution.
-pub const BUILTIN_EXTENSION_IDS: [&str; 4] = [
+pub const BUILTIN_EXTENSION_IDS: [&str; 5] = [
     APPLICATION_EXTENSION_ID,
     SCRIPT_EXTENSION_ID,
     CALCULATOR_EXTENSION_ID,
     CLIPBOARD_EXTENSION_ID,
+    SYSTEM_EXTENSION_ID,
 ];

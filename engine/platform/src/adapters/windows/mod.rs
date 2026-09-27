@@ -13,6 +13,7 @@ mod reveal;
 #[path = "SingleInstance.rs"]
 mod single_instance;
 pub(crate) mod startup;
+pub(crate) mod system_action;
 
 pub use extension_process_tree::{ExtensionProcessTree, configure_extension_command};
 pub use fatal_error::report as report_fatal_error;

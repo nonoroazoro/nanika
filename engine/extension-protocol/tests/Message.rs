@@ -500,6 +500,40 @@ fn configuration_progress_requires_real_bounded_work_units() {
 }
 
 #[test]
+fn system_service_rejects_unknown_operations_and_round_trips_submission_receipt() {
+    use nanika_protocol::SystemAction;
+    for action in [
+        SystemAction::Lock,
+        SystemAction::Sleep,
+        SystemAction::TurnOffDisplays,
+        SystemAction::LogOut,
+        SystemAction::Restart,
+        SystemAction::ShutDown,
+        SystemAction::OpenTrash,
+        SystemAction::EmptyTrash,
+    ] {
+        let request = HostServiceRequest::SystemAction { action };
+        assert_eq!(
+            serde_json::from_str::<HostServiceRequest>(&serde_json::to_string(&request).unwrap())
+                .unwrap(),
+            request
+        );
+    }
+    assert!(
+        serde_json::from_str::<HostServiceRequest>(
+            r#"{"service":"systemAction","action":"shell"}"#
+        )
+        .is_err()
+    );
+    let response = HostServiceResponse::SystemActionSubmitted;
+    assert_eq!(
+        serde_json::from_str::<HostServiceResponse>(&serde_json::to_string(&response).unwrap())
+            .unwrap(),
+        response
+    );
+}
+
+#[test]
 fn repeated_section_identities_are_rejected_before_rendering() {
     let view = View::List {
         list: Box::new(ListView {

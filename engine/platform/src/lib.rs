@@ -47,6 +47,9 @@ pub use clipboard_service::*;
 #[path = "shared/ClipboardServiceCommand.rs"]
 mod clipboard_service_command;
 pub(crate) use clipboard_service_command::*;
+#[path = "shared/SystemActionService.rs"]
+mod system_action_service;
+pub use system_action_service::SystemActionService;
 #[path = "shared/StartupCommand.rs"]
 mod startup_command;
 pub(crate) use startup_command::*;
