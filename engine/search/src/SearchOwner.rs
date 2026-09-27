@@ -35,6 +35,7 @@ impl SearchOwner {
                 let mut extension_results: HashMap<String, CandidateCatalog> = HashMap::new();
                 let mut static_catalog: HashMap<String, CandidateCatalog> = HashMap::new();
                 let mut expected_extensions = HashSet::new();
+                let mut instances = Arc::new(HashMap::new());
 
                 while let Ok(command) = receiver.recv() {
                     if let Some(next_query) = take_pending_query(&owner_pending_query) {
@@ -43,27 +44,75 @@ impl SearchOwner {
                         expected_extensions = next_query.expected_extensions;
                         extension_results.clear();
                         expected_extensions.retain(|id| !static_catalog.contains_key(id));
-                        if expected_extensions.is_empty() {
-                            publish_current(
-                                &mut engine,
-                                generation,
-                                &query,
-                                (&extension_results, &static_catalog),
-                                &initial_usage,
-                                crate::SearchPublication {
-                                    latest: &owner_latest,
-                                    notifier: &owner_notifier,
-                                    next_generation: &owner_generation,
-                                },
-                            );
-                        }
+                        publish_current(
+                            &mut engine,
+                            generation,
+                            &query,
+                            (&extension_results, &static_catalog),
+                            &initial_usage,
+                            crate::SearchPublication {
+                                instances: &instances,
+                                pending: &expected_extensions,
+                                latest: &owner_latest,
+                                notifier: &owner_notifier,
+                                next_generation: &owner_generation,
+                            },
+                        );
                     }
                     match command {
                         SearchCommand::WakeQuery => {}
-                        SearchCommand::RemoveExtension {
+                        SearchCommand::RegisterExtension {
                             extension_id,
+                            instance_id,
                             completion,
                         } => {
+                            let result = match Arc::make_mut(&mut instances).entry(extension_id) {
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    entry.insert(instance_id);
+                                    Ok(())
+                                }
+                                std::collections::hash_map::Entry::Occupied(_) => {
+                                    Err(crate::SearchQueueError::AlreadyRegistered)
+                                }
+                            };
+                            let _ = completion.send(result);
+                        }
+                        SearchCommand::ExtensionQueryPending {
+                            generation: started,
+                            extension_id,
+                            instance_id,
+                            pending,
+                        } if started == generation
+                            && instances.get(&extension_id) == Some(&instance_id) =>
+                        {
+                            let changed = if pending {
+                                expected_extensions.insert(extension_id)
+                            } else {
+                                expected_extensions.remove(&extension_id)
+                            };
+                            if changed {
+                                _publish_progress(
+                                    generation,
+                                    crate::SearchPublication {
+                                        instances: &instances,
+                                        pending: &expected_extensions,
+                                        latest: &owner_latest,
+                                        notifier: &owner_notifier,
+                                        next_generation: &owner_generation,
+                                    },
+                                );
+                            }
+                        }
+                        SearchCommand::RemoveExtension {
+                            extension_id,
+                            instance_id,
+                            completion,
+                        } => {
+                            if instances.get(&extension_id) != Some(&instance_id) {
+                                let _ = completion.send(());
+                                continue;
+                            }
+                            Arc::make_mut(&mut instances).remove(&extension_id);
                             static_catalog.remove(&extension_id);
                             extension_results.remove(&extension_id);
                             expected_extensions.remove(&extension_id);
@@ -75,6 +124,8 @@ impl SearchOwner {
                                     (&extension_results, &static_catalog),
                                     &initial_usage,
                                     crate::SearchPublication {
+                                        instances: &instances,
+                                        pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
                                         next_generation: &owner_generation,
@@ -85,12 +136,16 @@ impl SearchOwner {
                         }
                         SearchCommand::RegisterStaticCatalog {
                             extension_id,
+                            instance_id,
                             candidates,
                         } => {
+                            if instances.get(&extension_id) != Some(&instance_id) {
+                                continue;
+                            }
                             let candidates = CandidateCatalog::new(&extension_id, candidates);
                             static_catalog.insert(extension_id.clone(), candidates);
                             expected_extensions.remove(&extension_id);
-                            if generation != 0 && expected_extensions.is_empty() {
+                            if generation != 0 {
                                 publish_current(
                                     &mut engine,
                                     generation,
@@ -98,6 +153,8 @@ impl SearchOwner {
                                     (&extension_results, &static_catalog),
                                     &initial_usage,
                                     crate::SearchPublication {
+                                        instances: &instances,
+                                        pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
                                         next_generation: &owner_generation,
@@ -107,11 +164,16 @@ impl SearchOwner {
                         }
                         SearchCommand::CatalogCommit {
                             extension_id,
+                            instance_id,
                             replace,
                             candidates,
                             removed,
                             completion,
                         } => {
+                            if instances.get(&extension_id) != Some(&instance_id) {
+                                let _ = completion.send(Err(crate::SearchQueueError::Retired));
+                                continue;
+                            }
                             let changed = replace || !candidates.is_empty() || !removed.is_empty();
                             let result =
                                 if let Some(catalog) = static_catalog.get_mut(&extension_id) {
@@ -125,11 +187,7 @@ impl SearchOwner {
                                 };
                             let applied = result.is_ok();
                             let _ = completion.send(result);
-                            if applied
-                                && changed
-                                && generation != 0
-                                && expected_extensions.is_empty()
-                            {
+                            if applied && changed && generation != 0 {
                                 publish_current(
                                     &mut engine,
                                     generation,
@@ -137,6 +195,8 @@ impl SearchOwner {
                                     (&extension_results, &static_catalog),
                                     &initial_usage,
                                     crate::SearchPublication {
+                                        instances: &instances,
+                                        pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
                                         next_generation: &owner_generation,
@@ -145,14 +205,36 @@ impl SearchOwner {
                             }
                         }
                         SearchCommand::ExtensionSnapshot {
+                            complete,
                             generation: snapshot_generation,
                             extension_id,
+                            instance_id,
                             candidates,
-                        } if snapshot_generation == generation => {
-                            expected_extensions.remove(&extension_id);
+                        } if snapshot_generation == generation
+                            && instances.get(&extension_id) == Some(&instance_id) =>
+                        {
+                            if complete {
+                                expected_extensions.remove(&extension_id);
+                            } else {
+                                expected_extensions.insert(extension_id.clone());
+                            }
                             let catalog = CandidateCatalog::new(&extension_id, candidates);
+                            let results_changed = extension_results.get(&extension_id).map_or_else(
+                                || catalog.iter().next().is_some(),
+                                |previous| previous != &catalog,
+                            );
                             extension_results.insert(extension_id, catalog);
-                            if !expected_extensions.is_empty() {
+                            if !results_changed {
+                                _publish_progress(
+                                    generation,
+                                    crate::SearchPublication {
+                                        instances: &instances,
+                                        pending: &expected_extensions,
+                                        latest: &owner_latest,
+                                        notifier: &owner_notifier,
+                                        next_generation: &owner_generation,
+                                    },
+                                );
                                 continue;
                             }
                             publish_current(
@@ -162,6 +244,8 @@ impl SearchOwner {
                                 (&extension_results, &static_catalog),
                                 &initial_usage,
                                 crate::SearchPublication {
+                                    instances: &instances,
+                                    pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
                                     next_generation: &owner_generation,
@@ -169,22 +253,40 @@ impl SearchOwner {
                             );
                         }
                         SearchCommand::ExtensionDelta {
+                            complete,
                             generation: update_generation,
                             extension_id,
+                            instance_id,
                             candidates,
                             removed,
-                        } if update_generation == generation => {
+                        } if update_generation == generation
+                            && instances.get(&extension_id) == Some(&instance_id) =>
+                        {
                             // A patch cannot establish a generation's baseline or revive a removed extension.
                             let Some(catalog) = extension_results.get_mut(&extension_id) else {
                                 continue;
                             };
+                            let pending_changed = if complete {
+                                expected_extensions.remove(&extension_id)
+                            } else {
+                                expected_extensions.insert(extension_id.clone())
+                            };
                             if candidates.is_empty() && removed.is_empty() {
+                                if pending_changed {
+                                    _publish_progress(
+                                        generation,
+                                        crate::SearchPublication {
+                                            instances: &instances,
+                                            pending: &expected_extensions,
+                                            latest: &owner_latest,
+                                            notifier: &owner_notifier,
+                                            next_generation: &owner_generation,
+                                        },
+                                    );
+                                }
                                 continue;
                             }
                             catalog.update(&extension_id, candidates, removed);
-                            if !expected_extensions.is_empty() {
-                                continue;
-                            }
                             publish_current(
                                 &mut engine,
                                 generation,
@@ -192,13 +294,16 @@ impl SearchOwner {
                                 (&extension_results, &static_catalog),
                                 &initial_usage,
                                 crate::SearchPublication {
+                                    instances: &instances,
+                                    pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
                                     next_generation: &owner_generation,
                                 },
                             );
                         }
-                        SearchCommand::ExtensionDelta { .. } => {}
+                        SearchCommand::ExtensionQueryPending { .. }
+                        | SearchCommand::ExtensionDelta { .. } => {}
                         SearchCommand::ExtensionSnapshot { .. } => {}
                         SearchCommand::ApplyPersistedExecution { key, executed_at } => {
                             let stat = initial_usage.entry(key).or_default();
@@ -211,6 +316,8 @@ impl SearchOwner {
                                 (&extension_results, &static_catalog),
                                 &initial_usage,
                                 crate::SearchPublication {
+                                    instances: &instances,
+                                    pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
                                     next_generation: &owner_generation,
@@ -226,6 +333,8 @@ impl SearchOwner {
                                 (&extension_results, &static_catalog),
                                 &initial_usage,
                                 crate::SearchPublication {
+                                    instances: &instances,
+                                    pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
                                     next_generation: &owner_generation,
@@ -317,11 +426,73 @@ fn publish_current(
     ) else {
         return;
     };
-    let snapshot = Arc::new(snapshot);
+    _publish_snapshot(snapshot, publication);
+}
+
+fn _publish_progress(generation: u64, publication: crate::SearchPublication<'_>) {
+    if publication
+        .next_generation
+        .load(std::sync::atomic::Ordering::Relaxed)
+        > generation
+    {
+        return;
+    }
+    let current = publication
+        .latest
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    if let Some(current) = current.filter(|snapshot| snapshot.generation == generation) {
+        _publish_snapshot((*current).clone(), publication);
+    }
+}
+
+fn _publish_snapshot(
+    mut snapshot: crate::SearchSnapshot,
+    publication: crate::SearchPublication<'_>,
+) {
+    snapshot.instances = Arc::clone(publication.instances);
+    snapshot.pending_extensions = publication.pending.iter().cloned().collect();
+    snapshot.pending_extensions.sort();
+    let previous = publication
+        .latest
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    // This owner is the sole writer. Compare outside the lock so readers never
+    // wait for a full result-set comparison.
+    snapshot.result_revision = match previous.as_ref() {
+        Some(previous) => {
+            if previous.results == snapshot.results {
+                // Identical rerankings reuse the delivered payload and comparison below.
+                snapshot.results = Arc::clone(&previous.results);
+            }
+            let same_instances = Arc::ptr_eq(&previous.instances, &snapshot.instances);
+            let same_authority = previous.generation == snapshot.generation
+                && ((Arc::ptr_eq(&previous.results, &snapshot.results) && same_instances)
+                    || (previous.results.len() == snapshot.results.len()
+                        && previous
+                            .results
+                            .iter()
+                            .zip(snapshot.results.iter())
+                            .all(|(a, b)| {
+                                a.candidate.same_execution_target(&b.candidate)
+                                    && (same_instances
+                                        || previous.instances.get(a.candidate.extension_id())
+                                            == snapshot.instances.get(b.candidate.extension_id()))
+                            })));
+            if same_authority {
+                previous.result_revision
+            } else {
+                previous.result_revision + 1
+            }
+        }
+        None => 1,
+    };
     *publication
         .latest
         .lock()
-        .unwrap_or_else(|error| error.into_inner()) = Some(snapshot);
+        .unwrap_or_else(|error| error.into_inner()) = Some(Arc::new(snapshot));
     let notify = publication
         .notifier
         .lock()

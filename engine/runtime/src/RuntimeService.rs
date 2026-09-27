@@ -99,6 +99,7 @@ impl RuntimeService {
             if let Some(storage) = &storage {
                 storage
                     .register_builtin_extension(&manifest.id)
+                    .and_then(nanika_storage::StorageCommit::wait)
                     .map_err(|error| {
                         format!(
                             "extension {} metadata could not be recorded: {error}",
@@ -310,10 +311,7 @@ impl RuntimeService {
         query_context: &str,
         invocation: nanika_protocol::ActionInvocation,
     ) -> Result<std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, String>>, String> {
-        if !self
-            .latest_snapshot()
-            .is_some_and(|current| Arc::ptr_eq(&current, snapshot))
-        {
+        if !self.search.is_current(snapshot.authority()) {
             return Err("Search changed. Select a current result.".to_owned());
         }
         let candidate = snapshot
@@ -330,13 +328,14 @@ impl RuntimeService {
                     })
             })
             .ok_or_else(|| "the selected candidate is no longer available".to_owned())?;
-        let instance_id = self
-            .instance_id(extension_id)
-            .ok_or("The extension is disabled.")?;
-        if !self
-            .latest_snapshot()
-            .is_some_and(|current| Arc::ptr_eq(&current, snapshot))
-        {
+        let instance_id = *snapshot
+            .instances
+            .get(extension_id)
+            .ok_or("The result has no live extension authority.")?;
+        if self.instance_id(extension_id) != Some(instance_id) {
+            return Err("The result belongs to a retired extension instance.".into());
+        }
+        if !self.search.is_current(snapshot.authority()) {
             return Err("Search changed. Select a current result.".into());
         }
         self.extensions
@@ -351,9 +350,9 @@ impl RuntimeService {
             .map_err(|error| error.to_string())
     }
 
-    /// Complete an accepted action and report recording independently of its outcome.
-    /// A recording failure must not discard an already created extension view.
-    pub fn invoke_recorded(
+    /// Complete an accepted action and submit its usage to the bounded storage owner.
+    /// Storage owns persistence and diagnostics; navigation never waits for its commit.
+    pub fn invoke_with_usage(
         &self,
         snapshot: &Arc<SearchSnapshot>,
         extension_id: &str,
@@ -382,17 +381,16 @@ impl RuntimeService {
             )?
             .recv()
             .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
-        let recording_error =
-            if is_default && matches!(outcome, ExtensionInvocationOutcome::Completed { .. }) {
+        if is_default
+            && matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
+            && let Err(error) =
                 self.record_execution(extension_id, entry_id, action_id, query_context)
-                    .err()
-            } else {
-                None
-            };
+        {
+            tracing::error!(%error, "could not submit action usage");
+        }
         Ok(crate::RuntimeInvocationCompletion {
             instance_id,
             outcome,
-            recording_error,
         })
     }
 
@@ -402,7 +400,7 @@ impl RuntimeService {
         entry_id: &str,
         action_id: &str,
         query_context: &str,
-    ) -> Result<(), String> {
+    ) -> Result<nanika_storage::StorageCommit, String> {
         let storage = self
             .storage
             .as_ref()
@@ -610,16 +608,11 @@ impl RuntimeService {
         warnings
     }
 
-    pub fn active_error(&self) -> Option<String> {
+    /// Historical storage diagnostics do not define runtime or search readiness.
+    pub fn storage_failure(&self) -> Option<nanika_storage::SearchStorageFailure> {
         self.storage
             .as_ref()
             .and_then(SearchStorageWorker::last_failure)
-            .map(|failure| {
-                format!(
-                    "Host storage failed while trying to {}. Open diagnostics for details.",
-                    failure.operation()
-                )
-            })
     }
 
     pub fn view_event(

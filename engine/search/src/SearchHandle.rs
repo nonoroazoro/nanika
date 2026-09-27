@@ -3,8 +3,8 @@ use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    Candidate, MAX_QUERY_CHARS, PendingSearchQuery, SearchCommand, SearchNotifier,
-    SearchQueueError, SearchSnapshot, UsageKey,
+    MAX_QUERY_CHARS, PendingSearchQuery, SearchCommand, SearchNotifier, SearchQueueError,
+    SearchSnapshot, UsageKey,
 };
 
 /// Cloneable boundary used by UI, extension workers, and the storage owner.
@@ -54,75 +54,25 @@ impl SearchHandle {
         }
     }
 
-    pub fn publish_extension_snapshot(
+    /// Register one process lifetime before accepting any of its publications.
+    pub fn register_extension(
         &self,
         extension_id: impl Into<String>,
-        generation: u64,
-        candidates: Vec<Candidate>,
-    ) -> Result<(), SearchQueueError> {
-        self.send(SearchCommand::ExtensionSnapshot {
-            generation,
-            extension_id: extension_id.into(),
-            candidates,
-        })
-    }
-
-    pub fn publish_extension_delta(
-        &self,
-        extension_id: impl Into<String>,
-        generation: u64,
-        candidates: Vec<Candidate>,
-        removed: Vec<String>,
-    ) -> Result<(), SearchQueueError> {
-        self.send(SearchCommand::ExtensionDelta {
-            generation,
-            extension_id: extension_id.into(),
-            candidates,
-            removed,
-        })
-    }
-
-    /// Register immutable contributions once, outside the interactive query path.
-    pub fn register_static_catalog(
-        &self,
-        extension_id: impl Into<String>,
-        candidates: Vec<Candidate>,
-    ) -> Result<(), SearchQueueError> {
-        self.send(SearchCommand::RegisterStaticCatalog {
-            extension_id: extension_id.into(),
-            candidates,
-        })
-    }
-
-    /// Completion means the search owner applied the complete transaction.
-    pub fn commit_catalog(
-        &self,
-        extension_id: &str,
-        replace: bool,
-        candidates: Vec<Candidate>,
-        removed: Vec<String>,
-    ) -> Result<(), SearchQueueError> {
+        instance_id: u64,
+    ) -> Result<crate::SearchContributor, SearchQueueError> {
+        let extension_id = extension_id.into();
         let (completion, receipt) = std::sync::mpsc::sync_channel(1);
-        self.send(SearchCommand::CatalogCommit {
-            extension_id: extension_id.to_owned(),
-            replace,
-            candidates,
-            removed,
+        self.send(SearchCommand::RegisterExtension {
+            extension_id: extension_id.clone(),
+            instance_id,
             completion,
         })?;
-        receipt.recv().map_err(|_| SearchQueueError::Closed)?
-    }
-
-    pub fn remove_extension(
-        &self,
-        extension_id: impl Into<String>,
-    ) -> Result<(), SearchQueueError> {
-        let (completion, receipt) = std::sync::mpsc::sync_channel(1);
-        self.send(SearchCommand::RemoveExtension {
-            extension_id: extension_id.into(),
-            completion,
-        })?;
-        receipt.recv().map_err(|_| SearchQueueError::Closed)
+        receipt.recv().map_err(|_| SearchQueueError::Closed)??;
+        Ok(crate::SearchContributor::new(
+            extension_id,
+            instance_id,
+            self.commands.clone(),
+        ))
     }
 
     pub fn apply_persisted_execution(
@@ -135,6 +85,17 @@ impl SearchHandle {
 
     pub fn reset_persisted_usage(&self) -> Result<(), SearchQueueError> {
         self.send(SearchCommand::ResetPersistedUsage)
+    }
+
+    /// A newly admitted query revokes the previous authority before ranking finishes.
+    pub fn is_current(&self, authority: crate::SearchAuthority) -> bool {
+        self.next_generation.load(Ordering::Acquire) == authority.generation
+            && self
+                .latest
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.authority() == authority)
     }
 
     pub fn latest_snapshot(&self) -> Option<Arc<SearchSnapshot>> {

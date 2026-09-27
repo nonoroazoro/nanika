@@ -41,62 +41,7 @@ impl DesktopState {
             .session
             .as_ref()
             .ok_or("The window session is not open.")?;
-        session.authorize(request.session_id)?;
-        if session.navigation.busy {
-            return Err("An action is still running.".to_owned());
-        }
-        let actions = match &request.target {
-            crate::MenuTarget::Search {
-                request_id,
-                revision,
-                extension_id,
-                entry_id,
-            } => {
-                if session.request_id != *request_id
-                    || session.revision != *revision
-                    || !session.navigation.stack.is_empty()
-                {
-                    return Err("Search changed. Reopen the menu.".to_owned());
-                }
-                session
-                    .delivered
-                    .as_ref()
-                    .and_then(|snapshot| {
-                        snapshot.results.iter().find(|result| {
-                            result.candidate.extension_id() == extension_id
-                                && result.candidate.entry_id() == entry_id
-                        })
-                    })
-                    .ok_or("The result is no longer available.")?
-                    .candidate
-                    .actions()
-                    .to_vec()
-            }
-            crate::MenuTarget::View {
-                route_id,
-                revision,
-                item_id,
-            } => {
-                let route = session.navigation.authorize_route(*route_id)?;
-                if route.revision != *revision {
-                    return Err("The view changed. Reopen the menu.".to_owned());
-                }
-                match (&*route.view, item_id) {
-                    (nanika_protocol::View::List { list }, Some(id)) => list
-                        .sections
-                        .iter()
-                        .flat_map(|section| &section.items)
-                        .find(|item| &item.id == id)
-                        .ok_or("The item is no longer available.")?
-                        .actions
-                        .clone(),
-                    (nanika_protocol::View::Detail { detail }, None) => detail.actions.clone(),
-                    _ => return Err("The menu target is unavailable.".to_owned()),
-                }
-            }
-        };
-        nanika_protocol::validate_actions(&actions)?;
-        Ok(actions)
+        session.menu_actions(request)
     }
 
     pub(crate) fn invoke_menu_action(
@@ -122,30 +67,21 @@ impl DesktopState {
                 request_id,
                 extension_id,
                 entry_id,
-                revision,
-            } => {
-                let result_revision = self
-                    .shared
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .session
-                    .as_ref()
-                    .ok_or("The window session is not open.")?
-                    .result_revision;
-                self.run_invocation(
+                result_revision,
+            } => self
+                .run_invocation(
                     &InvokeCandidateRequest {
                         session_id: request.session_id,
                         request_id: *request_id,
-                        result_revision,
+                        result_revision: *result_revision,
                         extension_id: extension_id.clone(),
                         entry_id: entry_id.clone(),
                         action_id,
+                        confirmed,
                     },
-                    Some(*revision),
                     invocation,
                 )
-                .map(|()| None)
-            }
+                .map(|()| None),
             crate::MenuTarget::View {
                 route_id,
                 revision,
@@ -312,6 +248,7 @@ impl DesktopState {
         }
         session.request_id = request.request_id;
         session.query = request.query;
+        session.navigation.clear_error();
         session.delivered = None;
         session.result_range.0 = 0;
         session.delivered_range = None;
@@ -388,7 +325,6 @@ impl DesktopState {
     pub(crate) fn run_invocation(
         &self,
         request: &InvokeCandidateRequest,
-        menu_revision: Option<u64>,
         invocation: nanika_protocol::ActionInvocation,
     ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
@@ -404,10 +340,7 @@ impl DesktopState {
                 .ok_or("The window session is not open.")?;
             session.authorize(request.session_id)?;
             session.authorize_result(request.request_id, request.result_revision)?;
-            // Recheck a menu's revision under the same lock that starts the action.
-            if menu_revision.is_some_and(|revision| revision != session.revision)
-                || !session.navigation.stack.is_empty()
-            {
+            if !session.navigation.stack.is_empty() {
                 return Err("Search changed. Select a current result.".to_owned());
             }
             let snapshot = session
@@ -421,7 +354,7 @@ impl DesktopState {
         self.wake();
         let generation = snapshot.generation;
         let result = (|| {
-            let completion = runtime.invoke_recorded(
+            let completion = runtime.invoke_with_usage(
                 &snapshot,
                 &request.extension_id,
                 &request.entry_id,
@@ -1057,13 +990,7 @@ pub(crate) fn apply_invocation_completion(
     else {
         return Err("The action was cancelled before it completed.".to_owned());
     };
-    // Let navigation adopt or dispose of the new view before reporting recording errors.
-    let navigation = apply(effect);
-    match (navigation, completion.recording_error) {
-        (result, None) => result,
-        (Ok(()), Some(error)) => Err(error),
-        (Err(navigation), Some(recording)) => Err(format!("{navigation}; {recording}")),
-    }
+    apply(effect)
 }
 
 fn close_runtime_view(

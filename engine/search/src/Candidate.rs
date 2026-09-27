@@ -106,6 +106,29 @@ impl Candidate {
         self._data._icon.as_ref()
     }
 
+    /// Compares the reviewed target. Search aliases and icons cannot retarget an action.
+    pub(crate) fn same_execution_target(&self, other: &Self) -> bool {
+        if std::sync::Arc::ptr_eq(&self._data, &other._data) {
+            return true;
+        }
+        self.kind() == other.kind()
+            && self.extension_id() == other.extension_id()
+            && self.entry_id() == other.entry_id()
+            && self.title() == other.title()
+            && self.subtitle() == other.subtitle()
+            && self.action_id() == other.action_id()
+            && self.actions().len() == other.actions().len()
+            && self.actions().iter().zip(other.actions()).all(|(a, b)| {
+                a.id == b.id
+                    && a.title == b.title
+                    && a.confirmation_title == b.confirmation_title
+                    && a.style == b.style
+                    && a.enabled == b.enabled
+                    && a.allow_default_execution == b.allow_default_execution
+                    && a.group == b.group
+            })
+    }
+
     pub(crate) fn set_extension_id(&mut self, extension_id: &str) {
         if self.extension_id() != extension_id {
             let data = std::sync::Arc::make_mut(&mut self._data);

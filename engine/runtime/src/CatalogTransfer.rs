@@ -62,15 +62,15 @@ impl CatalogTransfer {
 
     pub(crate) fn commit(
         &mut self,
-        search: &nanika_search::SearchHandle,
-        extension_id: &str,
+        search: &nanika_search::SearchContributor,
         contributions: Vec<nanika_protocol::Candidate>,
-    ) -> Result<u64, SupervisorError> {
+    ) -> Result<Option<u64>, SupervisorError> {
         if !self._complete {
             return Err(SupervisorError::UnexpectedMessage(
                 "incomplete catalog transaction".into(),
             ));
         }
+        let extension_id = search.extension_id();
         let reserved = contributions
             .iter()
             .map(|entry| entry.entry_id.as_str())
@@ -82,17 +82,19 @@ impl CatalogTransfer {
             self._entries
                 .extend(crate::search_candidates(extension_id, contributions));
         }
-        search
-            .commit_catalog(
-                extension_id,
-                self._replace,
-                std::mem::take(&mut self._entries),
-                std::mem::take(&mut self._removed),
-            )
-            .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
+        let committed = search.commit_catalog(
+            self._replace,
+            std::mem::take(&mut self._entries),
+            std::mem::take(&mut self._removed),
+        );
+        match committed {
+            Err(nanika_search::SearchQueueError::Retired) => return Ok(None),
+            Err(error) => return Err(SupervisorError::UnexpectedMessage(error.to_string())),
+            Ok(()) => {}
+        }
         self._index = 0;
         self._complete = false;
         self._established = true;
-        Ok(self._transaction)
+        Ok(Some(self._transaction))
     }
 }

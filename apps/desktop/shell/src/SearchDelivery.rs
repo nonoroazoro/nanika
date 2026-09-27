@@ -88,19 +88,16 @@ pub(crate) fn run_delivery_with_preparation(
         if session.in_flight.is_some() {
             continue;
         }
-        let active_error = runtime.as_ref().and_then(|runtime| runtime.active_error());
-        let phase = if startup_error.is_some() || active_error.is_some() {
+        let phase = if startup_error.is_some() {
             SearchPhase::Error
         } else if latest.is_some() {
             SearchPhase::Ready
         } else {
             SearchPhase::Searching
         };
-        let error = if startup_error.is_some() {
-            Some("Nanika could not start. Open diagnostics for details.".to_owned())
-        } else {
-            active_error
-        };
+        let error = startup_error
+            .as_ref()
+            .map(|_| "Nanika could not start. Open diagnostics for details.".to_owned());
         let warnings = runtime
             .as_ref()
             .map_or_else(Vec::new, |runtime| runtime.search_warnings());
@@ -120,12 +117,17 @@ pub(crate) fn run_delivery_with_preparation(
         }
         let results_changed = session.phase.is_none()
             || match (&latest, &session.delivered) {
-                (Some(next), Some(previous)) => !Arc::ptr_eq(next, previous),
+                (Some(next), Some(previous)) => {
+                    next.authority() != previous.authority()
+                        || !Arc::ptr_eq(&next.results, &previous.results)
+                }
                 (None, None) => false,
                 _ => true,
             };
         if results_changed {
-            session.result_revision += 1;
+            session.result_revision = latest
+                .as_ref()
+                .map_or(0, |snapshot| snapshot.result_revision);
         }
         let range_changed =
             results_changed || session.delivered_range != Some(session.result_range);
@@ -157,6 +159,9 @@ pub(crate) fn run_delivery_with_preparation(
             phase,
             error: error.clone(),
             warnings: warnings.clone(),
+            pending_extensions: latest
+                .as_ref()
+                .map_or_else(Vec::new, |snapshot| snapshot.pending_extensions.clone()),
         };
         let updates = session.updates.clone();
         let runtime = runtime.clone();
@@ -180,8 +185,11 @@ pub(crate) fn run_delivery_with_preparation(
                 runtime,
                 &nanika_search::SearchSnapshot {
                     generation: snapshot.generation,
+                    result_revision: snapshot.result_revision,
+                    instances: Arc::clone(&snapshot.instances),
                     normalized_query: snapshot.normalized_query.clone(),
-                    results: snapshot.results[offset..end].to_vec(),
+                    pending_extensions: snapshot.pending_extensions.clone(),
+                    results: snapshot.results[offset..end].into(),
                 },
             );
         }

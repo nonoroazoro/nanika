@@ -53,3 +53,10 @@ mod nanika_paths_tests;
 #[cfg(test)]
 #[path = "../tests/SearchStorageWorker.rs"]
 mod search_storage_worker_tests;
+
+#[path = "StorageCommit.rs"]
+mod storage_commit;
+pub use storage_commit::StorageCommit;
+#[path = "PersistedUsageChange.rs"]
+mod persisted_usage_change;
+pub(crate) use persisted_usage_change::PersistedUsageChange;

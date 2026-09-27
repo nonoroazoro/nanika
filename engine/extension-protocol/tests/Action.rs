@@ -60,3 +60,24 @@ fn wire_policy_and_invocation_intent_are_required() {
     event["invocation"] = serde_json::json!("unknown");
     assert!(serde_json::from_value::<nanika_protocol::ViewEvent>(event).is_err());
 }
+
+#[test]
+fn semantic_icons_are_closed_data_not_paths_or_markup() {
+    let mut action = Action::primary("open", "Open");
+    action.icon = Some(nanika_protocol::ActionIcon::Power);
+    let mut value = serde_json::to_value(&action).unwrap();
+    assert_eq!(value["icon"], "power");
+    assert_eq!(
+        serde_json::from_value::<Action>(value.clone()).unwrap(),
+        action
+    );
+    for invalid in [
+        "https://example.com/icon.svg",
+        "../icon.svg",
+        "<svg/>",
+        "unknown",
+    ] {
+        value["icon"] = serde_json::json!(invalid);
+        assert!(serde_json::from_value::<Action>(value.clone()).is_err());
+    }
+}

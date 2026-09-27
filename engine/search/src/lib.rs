@@ -69,3 +69,11 @@ use candidate_data::CandidateData;
 #[path = "SearchPublication.rs"]
 mod search_publication;
 use search_publication::SearchPublication;
+
+#[path = "SearchContributor.rs"]
+mod search_contributor;
+pub use search_contributor::SearchContributor;
+
+#[path = "SearchAuthority.rs"]
+mod search_authority;
+pub use search_authority::SearchAuthority;

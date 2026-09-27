@@ -12,9 +12,10 @@ function _result(id: string): SearchResult
         entryId: id,
         actionId: "open",
         allowDefaultExecution: true,
+        confirmationTitle: null,
         title: id,
         subtitle: null,
-        iconUrl: null,
+        icon: null,
         kind: "Extension",
         entryType: "action"
     };
@@ -34,6 +35,7 @@ function _snapshot(ids: string[], update: Partial<RootSearchSnapshot> = {}): Roo
         totalResults: ids.length,
         results: ids.map(_result),
         error: null,
+        pendingExtensions: [],
         warnings: [],
         ...update
     };
@@ -119,7 +121,121 @@ test("selection identity includes the action, and an empty query result still re
     assert.deepEqual(state.selectedResult, null);
 });
 
+test("ordinary activation is immediate and dangerous activation requires two deliberate entries", () =>
+{
+    const ordinary = _result("app");
+    const dangerous = _dangerous();
+    const state = new RootSearchState(_snapshot([], { results: [ordinary, dangerous], totalResults: 2 }));
+    assert.equal(state.activate(ordinary), "default");
+    assert.equal(state.activate(dangerous), null);
+    assert.equal(state.confirmationTitle, "Confirm Shut Down");
+    assert.equal(state.activate(dangerous), "confirmed");
+    assert.equal(state.confirmationTitle, null);
+    assert.equal(state.activate(dangerous), null, "completion never arms the next invocation");
+});
+
+test("confirmation cannot survive selection, explicit cancellation, pending query or a new result revision", () =>
+{
+    for (
+        const invalidate of [
+            (state: RootSearchState) =>
+            {
+                state.select(1);
+                state.select(0);
+            },
+            (state: RootSearchState) =>
+            {
+                state.cancelConfirmation();
+            },
+            (state: RootSearchState) =>
+            {
+                state.accept({ ...state.snapshot, resultRevision: 2 });
+            },
+            (state: RootSearchState) =>
+            {
+                state.accept({ ...state.snapshot, phase: "searching", requestId: 2 });
+                state.accept({ ...state.snapshot, phase: "ready" });
+            }
+        ]
+    )
+    {
+        const dangerous = _dangerous();
+        const state = new RootSearchState(_snapshot([], { results: [dangerous, _result("other")], totalResults: 2 }));
+        assert.equal(state.activate(dangerous), null);
+        invalidate(state);
+        assert.equal(state.confirmationTitle, null);
+        assert.equal(state.activate(dangerous), null);
+        assert.equal(state.confirmationTitle, "Confirm Shut Down");
+    }
+});
+
+test("hidden, unavailable and stale result objects cannot be confirmed", () =>
+{
+    const dangerous = _dangerous();
+    const disabled = { ..._result("disabled"), allowDefaultExecution: false };
+    const state = new RootSearchState(_snapshot([], { results: [dangerous, disabled], totalResults: 2 }));
+    assert.equal(state.activate(dangerous), null);
+    assert.equal(state.activate({ ...dangerous }), null);
+    assert.equal(state.confirmationTitle, null);
+    assert.equal(state.activate(disabled), null);
+    assert.equal(state.confirmationTitle, null);
+    state.accept({ ...state.snapshot, phase: "searching" });
+    assert.equal(state.activate(dangerous), null);
+});
+
+test("returning to a replaced page or reviewed label cannot restore confirmation", () =>
+{
+    const dangerous = _dangerous();
+    const first = _snapshot([], { results: [dangerous], totalResults: 2 });
+    for (
+        const replacement of [
+            { ...first, results: [_result("other")], resultOffset: 1 },
+            { ...first, results: [{ ...dangerous, title: "Changed target" }] },
+            { ...first, results: [{ ...dangerous, confirmationTitle: "Changed confirmation" }] },
+            { ...first, sessionId: 2 }
+        ]
+    )
+    {
+        const state = new RootSearchState(first);
+        assert.equal(state.activate(dangerous), null);
+        state.accept(replacement);
+        assert.equal(state.confirmationTitle, null);
+        state.accept(first);
+        assert.equal(state.confirmationTitle, null);
+        assert.equal(state.activate(dangerous), null, "returning requires a new first activation");
+        assert.equal(state.activate(dangerous), "confirmed");
+    }
+});
+
 function _selectedEntry(state: RootSearchState): string | undefined
 {
     return state.selectedResult?.entryId;
 }
+
+function _dangerous(): SearchResult
+{
+    return { ..._result("shutdown"), allowDefaultExecution: false, confirmationTitle: "Confirm Shut Down" };
+}
+
+test("progress-only updates preserve reviewed confirmation authority", () =>
+{
+    const result = { ..._result("power"), allowDefaultExecution: false, confirmationTitle: "Shut down?" };
+    const state = new RootSearchState(_snapshot(["power"], { results: [result] }));
+    assert.equal(state.activate(result), null);
+    assert.equal(state.confirmationTitle, "Shut down?");
+    state.accept(_snapshot(["power"], { results: [result], revision: 2, pendingExtensions: ["slow"] }));
+    assert.equal(state.confirmationTitle, "Shut down?");
+    assert.equal(state.activate(result), "confirmed");
+});
+
+test("icon delivery replaces presentation without cancelling reviewed confirmation", () =>
+{
+    const result = _dangerous();
+    const state = new RootSearchState(_snapshot([], { results: [result], totalResults: 1 }));
+    assert.equal(state.activate(result), null);
+    const decorated: SearchResult = { ...result, icon: { kind: "symbol", name: "power" } };
+    state.accept({ ...state.snapshot, revision: 2, results: [decorated] });
+    assert.equal(state.selectedResult, decorated);
+    assert.equal(state.confirmationTitle, "Confirm Shut Down");
+    assert.equal(state.activate(decorated), "confirmed");
+});

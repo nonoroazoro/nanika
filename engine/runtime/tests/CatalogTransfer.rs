@@ -25,14 +25,15 @@ fn batch(transaction: u64, index: u64, complete: bool, id: &str) -> CatalogBatch
 fn partial_catalogs_cannot_commit_or_cross_transaction_boundaries() {
     let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
     let handle = owner.handle();
-    handle.register_static_catalog("test", Vec::new()).unwrap();
+    let source = handle.register_extension("test", 1).unwrap();
+    source.register_static_catalog(Vec::new()).unwrap();
     let mut transfer = CatalogTransfer::default();
     assert!(!transfer.accept("test", batch(1, 0, false, "a")).unwrap());
-    assert!(transfer.commit(&handle, "test", Vec::new()).is_err());
+    assert!(transfer.commit(&source, Vec::new()).is_err());
     assert!(transfer.accept("test", batch(2, 1, true, "wrong")).is_err());
     assert!(transfer.accept("test", batch(1, 2, true, "gap")).is_err());
     assert!(transfer.accept("test", batch(1, 1, true, "b")).unwrap());
-    assert_eq!(transfer.commit(&handle, "test", Vec::new()).unwrap(), 1);
+    assert_eq!(transfer.commit(&source, Vec::new()).unwrap(), Some(1));
     let generation = handle.begin_query("").unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {

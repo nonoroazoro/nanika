@@ -14,4 +14,5 @@ export interface RootSearchSnapshot
     phase: SearchPhase;
     error: string | null;
     warnings: string[];
+    pendingExtensions: string[];
 }

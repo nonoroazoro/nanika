@@ -3,8 +3,14 @@ use crate::{Candidate, UsageKey};
 #[derive(Debug)]
 pub(crate) enum SearchCommand {
     WakeQuery,
+    RegisterExtension {
+        extension_id: String,
+        instance_id: u64,
+        completion: std::sync::mpsc::SyncSender<Result<(), crate::SearchQueueError>>,
+    },
     CatalogCommit {
         extension_id: String,
+        instance_id: u64,
         replace: bool,
         candidates: Vec<Candidate>,
         removed: Vec<String>,
@@ -12,20 +18,32 @@ pub(crate) enum SearchCommand {
     },
     RemoveExtension {
         extension_id: String,
+        instance_id: u64,
         completion: std::sync::mpsc::SyncSender<()>,
     },
     RegisterStaticCatalog {
         extension_id: String,
+        instance_id: u64,
         candidates: Vec<Candidate>,
     },
-    ExtensionSnapshot {
+    ExtensionQueryPending {
         generation: u64,
         extension_id: String,
+        instance_id: u64,
+        pending: bool,
+    },
+    ExtensionSnapshot {
+        complete: bool,
+        generation: u64,
+        extension_id: String,
+        instance_id: u64,
         candidates: Vec<Candidate>,
     },
     ExtensionDelta {
+        complete: bool,
         generation: u64,
         extension_id: String,
+        instance_id: u64,
         candidates: Vec<Candidate>,
         removed: Vec<String>,
     },

@@ -10,7 +10,7 @@ use serde::Deserialize;
 pub(crate) enum MenuTarget {
     Search {
         request_id: u64,
-        revision: u64,
+        result_revision: u64,
         extension_id: String,
         entry_id: String,
     },

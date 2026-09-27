@@ -87,7 +87,7 @@ fn text_view(value: &str) -> View {
 }
 
 #[test]
-fn completed_view_is_presented_even_when_execution_recording_failed() {
+fn completed_view_is_presented() {
     let mut navigation = crate::NavigationState::default();
     let completion = nanika_host::RuntimeInvocationCompletion {
         instance_id: 1,
@@ -99,18 +99,16 @@ fn completed_view_is_presented_even_when_execution_recording_failed() {
             },
             has_output: false,
         },
-        recording_error: Some("could not record completed action: disk full".to_owned()),
     };
-    let error = crate::apply_invocation_completion(completion, |effect| {
+    crate::apply_invocation_completion(completion, |effect| {
         navigation.apply("test.extension", 1, 1, effect)
     })
-    .unwrap_err();
+    .unwrap();
     assert_eq!(navigation.stack.last().unwrap().view_id, "created-view");
-    assert!(error.contains("disk full"));
 }
 
 #[test]
-fn recording_failure_does_not_skip_retired_view_cleanup_or_hide_its_error() {
+fn completed_view_cleanup_failure_is_preserved() {
     let mut cleanup_attempted = false;
     let completion = nanika_host::RuntimeInvocationCompletion {
         instance_id: 1,
@@ -122,7 +120,6 @@ fn recording_failure_does_not_skip_retired_view_cleanup_or_hide_its_error() {
             },
             has_output: false,
         },
-        recording_error: Some("recording failed: disk full".to_owned()),
     };
     let error = crate::apply_invocation_completion(completion, |effect| {
         assert!(matches!(
@@ -135,7 +132,6 @@ fn recording_failure_does_not_skip_retired_view_cleanup_or_hide_its_error() {
     .unwrap_err();
     assert!(cleanup_attempted);
     assert!(error.contains("extension disconnected"));
-    assert!(error.contains("disk full"));
 }
 
 #[test]
@@ -475,6 +471,17 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
             .unwrap_err()
             .contains("Confirm the action again")
     );
+}
+
+#[test]
+fn new_search_clears_action_errors() {
+    let mut state = crate::NavigationState::default();
+    state.begin().unwrap();
+    state.finish(Err("Permission denied".into()));
+    let revision = state.snapshot().revision;
+    state.clear_error();
+    assert!(state.snapshot().error.is_none());
+    assert!(state.snapshot().revision > revision);
 }
 
 #[test]

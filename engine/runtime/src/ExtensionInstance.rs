@@ -34,19 +34,10 @@ impl ExtensionInstance {
             .unwrap_or_else(|error| error.into_inner())
     }
 
-    pub(crate) fn retire(
-        &self,
-        search: &nanika_search::SearchHandle,
-        extension_id: &str,
-    ) -> Result<(), String> {
-        let mut active = self
+    pub(crate) fn retire(&self) {
+        *self
             ._active
             .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        *active = false;
-        // Every earlier publication is queued before withdrawal; none can follow it.
-        search
-            .remove_extension(extension_id)
-            .map_err(|error| error.to_string())
+            .unwrap_or_else(|error| error.into_inner()) = false;
     }
 }

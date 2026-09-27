@@ -53,6 +53,83 @@ impl SearchSession {
         }
     }
 
+    /// Resolve menu entries from the session-authorized target, excluding row activation.
+    pub(crate) fn menu_actions(
+        &self,
+        request: &crate::ContextMenuRequest,
+    ) -> Result<Vec<nanika_protocol::Action>, String> {
+        self.authorize(request.session_id)?;
+        if self.navigation.busy {
+            return Err("An action is still running.".to_owned());
+        }
+        let (actions, primary_action_id) = match &request.target {
+            crate::MenuTarget::Search {
+                request_id,
+                result_revision,
+                extension_id,
+                entry_id,
+            } => {
+                self.authorize_result(*request_id, *result_revision)?;
+                if !self.navigation.stack.is_empty() {
+                    return Err("Search changed. Reopen the menu.".to_owned());
+                }
+                let candidate = &self
+                    .delivered
+                    .as_ref()
+                    .and_then(|snapshot| {
+                        snapshot.results.iter().find(|result| {
+                            result.candidate.extension_id() == extension_id
+                                && result.candidate.entry_id() == entry_id
+                        })
+                    })
+                    .ok_or("The result is no longer available.")?
+                    .candidate;
+                let primary = candidate.actions().iter().find(|action| {
+                    action.id == candidate.action_id()
+                        && (action.allow_default_execution || action.confirmation_title.is_some())
+                });
+                (
+                    candidate.actions(),
+                    primary.map(|action| action.id.as_str()),
+                )
+            }
+            crate::MenuTarget::View {
+                route_id,
+                revision,
+                item_id,
+            } => {
+                let route = self.navigation.authorize_route(*route_id)?;
+                if route.revision != *revision {
+                    return Err("The view changed. Reopen the menu.".to_owned());
+                }
+                let actions = match (&*route.view, item_id) {
+                    (nanika_protocol::View::List { list }, Some(id)) => list
+                        .sections
+                        .iter()
+                        .flat_map(|section| &section.items)
+                        .find(|item| &item.id == id)
+                        .ok_or("The item is no longer available.")?
+                        .actions
+                        .as_slice(),
+                    (nanika_protocol::View::Detail { detail }, None) => detail.actions.as_slice(),
+                    _ => return Err("The menu target is unavailable.".to_owned()),
+                };
+                let primary = actions.iter().find(|action| {
+                    action.style == nanika_protocol::ActionStyle::Primary
+                        && action.allows_invocation(nanika_protocol::ActionInvocation::Default)
+                });
+                (actions, primary.map(|action| action.id.as_str()))
+            }
+        };
+        nanika_protocol::validate_actions(actions)?;
+        // Keyboard and row activation own the primary action; menus expose additional actions.
+        Ok(actions
+            .iter()
+            .filter(|action| Some(action.id.as_str()) != primary_action_id)
+            .cloned()
+            .collect())
+    }
+
     pub(crate) fn request_range(
         &mut self,
         request: crate::ReadResultsRequest,
@@ -98,3 +175,7 @@ impl SearchSession {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/SearchSession.rs"]
+mod tests;

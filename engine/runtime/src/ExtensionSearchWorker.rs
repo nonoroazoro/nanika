@@ -19,7 +19,7 @@ use crate::{
 pub(crate) struct ExtensionSearchWorker {
     extension_id: String,
     pub(crate) instance: Arc<crate::ExtensionInstance>,
-    search: SearchHandle,
+    search: nanika_search::SearchContributor,
     static_catalog: bool,
     state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
@@ -41,6 +41,9 @@ impl ExtensionSearchWorker {
         let instance = Arc::new(crate::ExtensionInstance::new());
         let worker_instance = Arc::clone(&instance);
         let factory_instance = Arc::clone(&instance);
+        let search = search
+            .register_extension(&extension_id, instance.id)
+            .map_err(io::Error::other)?;
         let retained_search = search.clone();
         let worker_extension_id = extension_id.clone();
         let contributions = Arc::new(contributions);
@@ -53,13 +56,10 @@ impl ExtensionSearchWorker {
         let static_catalog = contributions.root_search.is_none() || catalog_mode;
         if static_catalog {
             retained_search
-                .register_static_catalog(
+                .register_static_catalog(crate::search_candidates(
                     &extension_id,
-                    crate::search_candidates(
-                        &extension_id,
-                        contribution_candidates(&contributions),
-                    ),
-                )
+                    contribution_candidates(&contributions),
+                ))
                 .map_err(io::Error::other)?;
         }
         let root_search = contributions.root_search.is_some();
@@ -253,11 +253,15 @@ impl ExtensionSearchWorker {
                             let result = runtime.read_catalog(format!("catalog-{worker_extension_id}-{catalog_request}"))
                                 .and_then(|batch| catalog_transfer.accept(&worker_extension_id, batch));
                             match result {
-                                Ok(true) => worker_instance.with_active(|| {
-                                    let transaction = catalog_transfer.commit(&search, &worker_extension_id, contribution_candidates(&worker_contributions))?;
-                                    runtime.acknowledge_catalog(transaction)?;
-                                    Ok(true)
-                                }).unwrap_or(Ok(false)),
+                                Ok(true) => {
+                                    // The search owner serializes publication with retirement. Peer I/O
+                                    // must never hold an instance or query-admission barrier.
+                                    match catalog_transfer.commit(&search, contribution_candidates(&worker_contributions)) {
+                                        Ok(Some(transaction)) => runtime.acknowledge_catalog(transaction).map(|()| true),
+                                        Ok(None) => Ok(false),
+                                        Err(error) => Err(error),
+                                    }
+                                },
                                 Ok(false) => {
                                     worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).catalog_pending = true;
                                     Ok(false)
@@ -274,18 +278,21 @@ impl ExtensionSearchWorker {
                                 &search,
                                 &worker_state,
                                 &worker_contributions,
-                                &worker_instance,
                             );
                             match result {
-                                Ok(completed) => Ok(completed),
+                                Ok(completed) => {
+                                    if !completed {
+                                        search.set_extension_query_pending(generation, false).map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
+                                            .map(|()| false)
+                                    } else { Ok(true) }
+                                },
                                 Err(query_error) => {
-                                    // Complete the barrier slot on failure so the launcher cannot remain pending.
-                                    match worker_instance.with_active(|| publish_extension_snapshot(
+                                    // Publish terminal query failure without leaving the contributor pending.
+                                    match publish_extension_snapshot(
                                         &search,
-                                        &worker_extension_id,
                                         generation,
-                                        contribution_candidates(&worker_contributions),
-                                    )).unwrap_or(Ok(())) {
+                                        contribution_candidates(&worker_contributions), true,
+                                    ) {
                                         Ok(()) => Err(query_error),
                                         Err(publish_error) => {
                                             Err(SupervisorError::UnexpectedMessage(format!(
@@ -399,7 +406,7 @@ impl ExtensionSearchWorker {
                     worker_state.1.notify_all();
                 }
             }).inspect_err(|_| {
-                if static_catalog && let Err(cleanup) = retained_search.remove_extension(&extension_id) {
+                if let Err(cleanup) = retained_search.retire() {
                     tracing::error!(%extension_id, %cleanup, "failed to withdraw catalog after worker spawn failure");
                 }
             })?;
@@ -637,7 +644,8 @@ impl ExtensionSearchWorker {
                 .unwrap_or("Extension disabled before refresh started.")
                 .into()));
         }
-        self.instance.retire(&self.search, &self.extension_id)
+        self.instance.retire();
+        self.search.retire().map_err(|error| error.to_string())
     }
 }
 
@@ -856,31 +864,29 @@ fn run_query(
     runtime: &mut ExtensionRuntime,
     extension_id: &str,
     query: ExtensionSearchQuery,
-    search: &SearchHandle,
+    search: &nanika_search::SearchContributor,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     contributions: &ExtensionContributions,
-    instance: &crate::ExtensionInstance,
 ) -> Result<bool, SupervisorError> {
     runtime.ensure_running()?;
     if contributions.root_search.is_none() {
-        return instance
-            .with_active(|| {
-                publish_contributions(search, extension_id, query.generation, contributions)
-            })
-            .unwrap_or(Ok(false));
+        return publish_contributions(search, query.generation, contributions);
     }
-    // Replies below include manifest entries. Publishing them separately would replace
-    // the dynamic baseline before a same-generation patch can preserve unchanged entries.
+    search
+        .set_extension_query_pending(query.generation, true)
+        .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
+    // Manifest entries belong to the replacement baseline. Incremental frames may
+    // change only dynamic identities, preserving both the baseline and progress-only updates.
+    let manifest_entries = contribution_candidates(contributions);
+    let manifest_ids = manifest_entries
+        .iter()
+        .map(|entry| entry.entry_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
     runtime.query_incremental(
         format!("search-{extension_id}-{}", query.generation),
         query.generation,
         query.query.clone(),
         |mut update| {
-            let contributions = contribution_candidates(contributions);
-            let manifest_ids = contributions
-                .iter()
-                .map(|entry| entry.entry_id.as_str())
-                .collect::<std::collections::HashSet<_>>();
             // Manifest identity owns all its actions, even if a dynamic entry changes action ID.
             update
                 .removed
@@ -888,27 +894,25 @@ fn run_query(
             update
                 .entries
                 .retain(|entry| !manifest_ids.contains(entry.entry_id.as_str()));
-            update.entries.extend(contributions);
-            instance
-                .with_active(|| {
-                    if update.replace {
-                        publish_extension_snapshot(
-                            search,
-                            extension_id,
-                            query.generation,
-                            update.entries,
-                        )
-                    } else {
-                        search.publish_extension_delta(
-                            extension_id,
-                            query.generation,
-                            crate::search_candidates(extension_id, update.entries),
-                            update.removed,
-                        )
-                    }
-                })
-                .unwrap_or(Ok(()))
-                .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
+            if update.replace {
+                update.entries.extend(manifest_entries.iter().cloned());
+            }
+            if update.replace {
+                publish_extension_snapshot(
+                    search,
+                    query.generation,
+                    update.entries,
+                    update.complete,
+                )
+            } else {
+                search.publish_extension_delta(
+                    query.generation,
+                    crate::search_candidates(extension_id, update.entries),
+                    update.removed,
+                    update.complete,
+                )
+            }
+            .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
         },
         || {
             let (lock, _) = &**state;
@@ -926,16 +930,15 @@ fn run_query(
 }
 
 fn publish_contributions(
-    search: &SearchHandle,
-    extension_id: &str,
+    search: &nanika_search::SearchContributor,
     generation: u64,
     contributions: &ExtensionContributions,
 ) -> Result<bool, SupervisorError> {
     publish_extension_snapshot(
         search,
-        extension_id,
         generation,
         contribution_candidates(contributions),
+        true,
     )
     .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
     Ok(true)

@@ -96,6 +96,7 @@ impl ApplicationEntry {
                 _ => "Open file location",
             };
             actions.push(nanika_protocol::Action {
+                icon: None,
                 id: "application.reveal".to_owned(),
                 title: title.to_owned(),
                 allow_default_execution: false,
@@ -106,6 +107,7 @@ impl ApplicationEntry {
             });
             if self.launch_kind == "windows-shell-link" {
                 actions.push(nanika_protocol::Action {
+                    icon: None,
                     id: "application.revealTarget".to_owned(),
                     title: "Open target location".to_owned(),
                     allow_default_execution: false,

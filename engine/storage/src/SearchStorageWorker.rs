@@ -58,7 +58,7 @@ impl SearchStorageWorker {
 
                 let mut failure_sequence = 0_u64;
                 while let Ok(command) = receiver.recv() {
-                    let (operation, result, response) = match command {
+                    let (operation, result, response, projection) = match command {
                         SearchStorageCommand::RegisterBuiltInExtension {
                             extension_id,
                             response,
@@ -66,6 +66,7 @@ impl SearchStorageWorker {
                             "register built-in extension metadata",
                             database.register_builtin_extension(&extension_id),
                             response,
+                            None,
                         ),
                         SearchStorageCommand::RecordHistory {
                             history_key,
@@ -76,6 +77,7 @@ impl SearchStorageWorker {
                             "record input history",
                             database.record_input_history(&history_key, &display_query, used_at),
                             response,
+                            None,
                         ),
                         SearchStorageCommand::RecordUsage {
                             extension_id,
@@ -86,39 +88,23 @@ impl SearchStorageWorker {
                             response,
                         } => (
                             "record action usage",
-                            database
-                                .record_usage(
+                            database.record_usage(
+                                &extension_id,
+                                &entry_id,
+                                &action_id,
+                                &query_context,
+                                executed_at,
+                            ),
+                            response,
+                            Some(crate::PersistedUsageChange::Execution {
+                                key: UsageKey::new(
                                     &extension_id,
                                     &entry_id,
                                     &action_id,
                                     &query_context,
-                                    executed_at,
-                                )
-                                .and_then(|()| {
-                                    if let Some(search) = owner_search
-                                        .lock()
-                                        .unwrap_or_else(|error| error.into_inner())
-                                        .clone()
-                                    {
-                                        search
-                                            .apply_persisted_execution(
-                                                UsageKey::new(
-                                                    &extension_id,
-                                                    &entry_id,
-                                                    &action_id,
-                                                    &query_context,
-                                                ),
-                                                executed_at,
-                                            )
-                                            .map_err(|error| {
-                                                rusqlite::Error::ToSqlConversionFailure(Box::new(
-                                                    error,
-                                                ))
-                                            })?;
-                                    }
-                                    Ok(())
-                                }),
-                            response,
+                                ),
+                                executed_at,
+                            }),
                         ),
                         SearchStorageCommand::RecordExecution {
                             history_key,
@@ -129,49 +115,49 @@ impl SearchStorageWorker {
                             response,
                         } => (
                             "record completed action",
-                            database
-                                .record_execution(
-                                    &history_key,
-                                    &display_query,
-                                    &usage,
-                                    history_used_at,
-                                    executed_at,
-                                )
-                                .and_then(|()| notify_search(&owner_search, &usage, executed_at)),
+                            database.record_execution(
+                                &history_key,
+                                &display_query,
+                                &usage,
+                                history_used_at,
+                                executed_at,
+                            ),
                             response,
+                            Some(crate::PersistedUsageChange::Execution {
+                                key: usage,
+                                executed_at,
+                            }),
                         ),
                         SearchStorageCommand::ResetUsage { response } => (
                             "reset action usage",
-                            database.reset_usage().and_then(|()| {
-                                if let Some(search) = owner_search
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner())
-                                    .clone()
-                                {
-                                    search.reset_persisted_usage().map_err(|error| {
-                                        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-                                    })?;
-                                }
-                                Ok(())
-                            }),
+                            database.reset_usage(),
                             response,
+                            Some(crate::PersistedUsageChange::Reset),
                         ),
                         SearchStorageCommand::Shutdown => break,
                     };
                     let result = result.map_err(|error| error.to_string());
-                    if let Some(error) = result.as_ref().err() {
-                        failure_sequence = failure_sequence.saturating_add(1);
-                        *owner_failure
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner()) = Some(
-                            SearchStorageFailure::new(failure_sequence, operation, error.clone()),
-                        );
-                        tracing::error!(operation, source = error, "storage operation failed");
-                    }
-                    if response.send(result).is_err() {
-                        tracing::warn!(
+                    let committed = result.is_ok();
+                    if let Err(error) = &result {
+                        _record_failure(
+                            &owner_failure,
+                            &mut failure_sequence,
                             operation,
-                            "storage requester closed before receiving result"
+                            error.clone(),
+                        );
+                    }
+                    // The database owns accepted work even when the caller does not await it.
+                    // A durable receipt precedes projection backpressure and never claims ranking delivery.
+                    let _ = response.send(result);
+                    if committed
+                        && let Some(change) = projection
+                        && let Err(error) = _notify_search(&owner_search, change)
+                    {
+                        _record_failure(
+                            &owner_failure,
+                            &mut failure_sequence,
+                            "publish committed storage change",
+                            error,
                         );
                     }
                 }
@@ -201,7 +187,7 @@ impl SearchStorageWorker {
     pub fn register_builtin_extension(
         &self,
         extension_id: impl Into<String>,
-    ) -> Result<(), StorageQueueError> {
+    ) -> Result<crate::StorageCommit, StorageQueueError> {
         let extension_id = extension_id.into();
         if !is_valid_extension_id(&extension_id) {
             return Err(StorageQueueError::InvalidExtensionId);
@@ -221,7 +207,7 @@ impl SearchStorageWorker {
         history_key: impl Into<String>,
         display_query: impl Into<String>,
         used_at: u64,
-    ) -> Result<(), StorageQueueError> {
+    ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
             SearchStorageCommand::RecordHistory {
@@ -241,7 +227,7 @@ impl SearchStorageWorker {
         action_id: impl Into<String>,
         query_context: impl Into<String>,
         executed_at: u64,
-    ) -> Result<(), StorageQueueError> {
+    ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
             SearchStorageCommand::RecordUsage {
@@ -256,7 +242,7 @@ impl SearchStorageWorker {
         )
     }
 
-    pub fn reset_usage(&self) -> Result<(), StorageQueueError> {
+    pub fn reset_usage(&self) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(SearchStorageCommand::ResetUsage { response }, result)
     }
@@ -268,7 +254,7 @@ impl SearchStorageWorker {
         usage: UsageKey,
         history_used_at: u64,
         executed_at: u64,
-    ) -> Result<(), StorageQueueError> {
+    ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
             SearchStorageCommand::RecordExecution {
@@ -298,14 +284,11 @@ impl SearchStorageWorker {
         &self,
         command: SearchStorageCommand,
         response: Receiver<Result<(), String>>,
-    ) -> Result<(), StorageQueueError> {
+    ) -> Result<crate::StorageCommit, StorageQueueError> {
         self.commands
             .send(command)
             .map_err(|_| StorageQueueError::Closed)?;
-        response
-            .recv()
-            .map_err(|_| StorageQueueError::Closed)?
-            .map_err(StorageQueueError::Operation)
+        Ok(crate::StorageCommit::new(response))
     }
 
     fn stop(&self) {
@@ -327,21 +310,36 @@ impl SearchStorageWorker {
     }
 }
 
-fn notify_search(
+fn _record_failure(
+    failure: &Mutex<Option<SearchStorageFailure>>,
+    sequence: &mut u64,
+    operation: &'static str,
+    source: String,
+) {
+    *sequence = sequence.saturating_add(1);
+    tracing::error!(operation, source, "storage operation failed");
+    *failure.lock().unwrap_or_else(|error| error.into_inner()) =
+        Some(SearchStorageFailure::new(*sequence, operation, source));
+}
+
+fn _notify_search(
     search: &Mutex<Option<SearchHandle>>,
-    usage: &UsageKey,
-    executed_at: u64,
-) -> rusqlite::Result<()> {
-    if let Some(search) = search
+    change: crate::PersistedUsageChange,
+) -> Result<(), String> {
+    let search = search
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .clone()
-    {
-        search
-            .apply_persisted_execution(usage.clone(), executed_at)
-            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        .clone();
+    let Some(search) = search else {
+        return Ok(());
+    };
+    match change {
+        crate::PersistedUsageChange::Execution { key, executed_at } => {
+            search.apply_persisted_execution(key, executed_at)
+        }
+        crate::PersistedUsageChange::Reset => search.reset_persisted_usage(),
     }
-    Ok(())
+    .map_err(|error| error.to_string())
 }
 
 impl Drop for SearchStorageWorker {

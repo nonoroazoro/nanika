@@ -83,8 +83,11 @@ pub(crate) async fn invoke_candidate(
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<DesktopState>().run_invocation(
             &request,
-            None,
-            nanika_protocol::ActionInvocation::Default,
+            if request.confirmed {
+                nanika_protocol::ActionInvocation::Confirmed
+            } else {
+                nanika_protocol::ActionInvocation::Default
+            },
         )
     })
     .await

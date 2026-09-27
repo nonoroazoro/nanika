@@ -1,7 +1,7 @@
 use crate::Candidate;
 use std::collections::HashMap;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct CandidateCatalog {
     _entries: HashMap<String, HashMap<String, Candidate>>,
 }

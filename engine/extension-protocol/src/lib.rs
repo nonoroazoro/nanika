@@ -4,6 +4,9 @@
 
 #[path = "Action.rs"]
 mod action;
+#[path = "ActionIcon.rs"]
+mod action_icon;
+pub use action_icon::*;
 #[path = "ActionInvocation.rs"]
 mod action_invocation;
 #[path = "ActionStyle.rs"]

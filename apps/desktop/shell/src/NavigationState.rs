@@ -25,6 +25,12 @@ impl NavigationState {
         }
     }
 
+    pub(crate) fn clear_error(&mut self) {
+        if self.error.take().is_some() {
+            self.revision += 1;
+        }
+    }
+
     pub(crate) fn begin(&mut self) -> Result<(), String> {
         if self.busy {
             return Err("An extension operation is still pending.".to_owned());

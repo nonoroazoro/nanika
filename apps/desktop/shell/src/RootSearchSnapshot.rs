@@ -18,4 +18,5 @@ pub(crate) struct RootSearchSnapshot {
     pub(crate) phase: SearchPhase,
     pub(crate) error: Option<String>,
     pub(crate) warnings: Vec<String>,
+    pub(crate) pending_extensions: Vec<String>,
 }

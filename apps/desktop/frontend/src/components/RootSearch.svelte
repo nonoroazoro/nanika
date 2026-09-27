@@ -1,4 +1,5 @@
 <script lang="ts">
+import SearchIcon from "./icons/SearchIcon.svelte";
 import type { ReadResultsRequest } from "../types/ReadResultsRequest";
 import { uiActivity } from "../ui/activity";
 import ScrollArea from "./ScrollArea.svelte";
@@ -22,7 +23,7 @@ interface Props
     onQuery: (query: string) => void;
     onRange: (request: ReadResultsRequest) => void;
     onDismiss: () => void;
-    onInvoke: (result: SearchResult) => void;
+    onInvoke: (result: SearchResult, confirmed: boolean) => void;
     onContextMenu: (result: SearchResult, position: [number, number] | null) => Promise<void>;
 }
 
@@ -115,6 +116,20 @@ onMount(() =>
 {
     query = snapshot.query;
     void tick().then(() => focusQuery(true));
+    const cancel = (): void => searchState.cancelConfirmation();
+    window.addEventListener("blur", cancel);
+    window.addEventListener("pointerdown", _cancelOutsideConfirmation, true);
+    window.addEventListener("keydown", _cancelOnOtherKey, true);
+    document.addEventListener("visibilitychange", cancel);
+    document.addEventListener("compositionstart", cancel);
+    return () =>
+    {
+        window.removeEventListener("blur", cancel);
+        window.removeEventListener("pointerdown", _cancelOutsideConfirmation, true);
+        window.removeEventListener("keydown", _cancelOnOtherKey, true);
+        document.removeEventListener("visibilitychange", cancel);
+        document.removeEventListener("compositionstart", cancel);
+    };
 });
 
 function focusQuery(selectAll = false): void
@@ -135,13 +150,22 @@ function handleWindowFocus(): void
 
 function invoke(result: SearchResult): void
 {
+    const invocation = searchState.activate(result);
+    if (invocation === null)
+    {
+        return;
+    }
     selectOnNextFocus = true;
-    onInvoke(result);
+    onInvoke(result, invocation === "confirmed");
 }
 
 function handleKeydown(event: KeyboardEvent): void
 {
-    if (event.isComposing)
+    if (
+        event.isComposing
+        || (["Enter", "ArrowUp", "ArrowDown"].includes(event.key)
+            && (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey))
+    )
     {
         return;
     }
@@ -164,7 +188,10 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Enter" && activeResult && !busy)
     {
         event.preventDefault();
-        invoke(activeResult);
+        if (!event.repeat)
+        {
+            invoke(activeResult);
+        }
         return;
     }
     if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey)
@@ -179,6 +206,11 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Escape")
     {
         event.preventDefault();
+        if (searchState.confirmationTitle)
+        {
+            searchState.cancelConfirmation();
+            return;
+        }
         onDismiss();
     }
 }
@@ -192,6 +224,11 @@ function handleWindowKeydown(event: KeyboardEvent): void
     if (event.key === "Escape")
     {
         event.preventDefault();
+        if (searchState.confirmationTitle)
+        {
+            searchState.cancelConfirmation();
+            return;
+        }
         onDismiss();
         return;
     }
@@ -216,6 +253,32 @@ function moveSelection(delta: number): void
     }
 }
 
+function _cancelOutsideConfirmation(event: PointerEvent): void
+{
+    if (!searchState.confirmationTitle)
+    {
+        return;
+    }
+    const row = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+    // Keep the second click on the reviewed row; every other pointer press abandons it.
+    if (event.button !== 0 || row?.id !== activeId || !list?.contains(row))
+    {
+        searchState.cancelConfirmation();
+    }
+}
+
+function _cancelOnOtherKey(event: KeyboardEvent): void
+{
+    if (event.key === "Escape" || ["Shift", "Control", "Alt", "Meta"].includes(event.key))
+    {
+        return;
+    }
+    if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey)
+    {
+        searchState.cancelConfirmation();
+    }
+}
+
 function _openContextMenu(result: SearchResult, event: MouseEvent): void
 {
     event.preventDefault();
@@ -223,6 +286,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
     {
         return;
     }
+    searchState.cancelConfirmation();
     searchState.select(snapshot.resultOffset + results.indexOf(result));
     void onContextMenu(result, [event.clientX, event.clientY]);
 }
@@ -232,7 +296,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
 
 <main class="launcher" aria-label="Nanika launcher">
     <div class="search-shell">
-        <span class="search-icon" aria-hidden="true"></span>
+        <span class="search-icon"><SearchIcon size={16} /></span>
         <Input
             variant="search"
             bind:ref={input}
@@ -251,6 +315,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             oninput={(event =>
             {
                 selectOnNextFocus = false;
+                searchState.cancelConfirmation();
                 onQuery(event.currentTarget.value);
             })}
             onkeydown={handleKeydown}
@@ -272,6 +337,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                 viewportClass="root-viewport"
                 onscroll={() =>
                 {
+                    searchState.cancelConfirmation();
                     searchState.scrollTop = list?.scrollTop ?? 0;
                 }}
             >
@@ -284,6 +350,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                     {#each results as result, index (RootSearchState.identity(result))}
                         <ResultRow
                             {result}
+                            confirmationTitle={activeResult === result ? searchState.confirmationTitle : null}
                             position={snapshot.resultOffset + index + 1}
                             total={snapshot.totalResults}
                             onContextMenu={event =>
@@ -312,6 +379,8 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                     </li>
                 </ul>
             </ScrollArea>
+        {:else if snapshot.pendingExtensions.length > 0}
+            <div class="empty" role="status"><span>Searching extensions…</span></div>
         {:else if hasCompletedSearch}
             <div class="empty" role="status">
                 <span>No results</span>
@@ -319,7 +388,21 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             </div>
         {/if}
     </section>
+    <span class="confirmation-announcement" role="status" aria-live="polite" aria-atomic="true">
+        {
+            searchState.confirmationTitle ? `${searchState.confirmationTitle}. Press Enter to confirm or Escape to cancel.` : ""
+        }
+    </span>
     <StatusBar
+        trailingEntries={snapshot.pendingExtensions.length
+        ? [{
+            id: "pending-search",
+            title: `Searching ${snapshot.pendingExtensions.length} extension${
+                snapshot.pendingExtensions.length === 1 ? "" : "s"
+            }…`,
+            interactive: false
+        }]
+        : []}
         leadingEntries={[{
             id: "app-menu",
             title: "Nanika menu",
@@ -327,11 +410,20 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             iconOnly: true,
             menu: { controls: "context-menu", expanded: appMenuOpen }
         }]}
-        onInvoke={onAppMenu}
+        onInvoke={id =>
+        {
+            if (id === "app-menu")
+            {
+                searchState.cancelConfirmation();
+                onAppMenu();
+            }
+        }}
     />
 </main>
 
 <style>
+.confirmation-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 .launcher {
   position: relative;
   display: grid;
@@ -353,25 +445,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.search-icon {
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 1.5px solid var(--text-tertiary);
-  border-radius: 50%;
-  position: relative;
-}
-
-.search-icon::after {
-  position: absolute;
-  right: -0.28rem;
-  bottom: -0.2rem;
-  width: 0.36rem;
-  height: 1.5px;
-  border-radius: 1px;
-  background: var(--text-tertiary);
-  content: '';
-  transform: rotate(45deg);
-}
+.search-icon { color: var(--text-tertiary); }
 
 .results {
   position: relative;

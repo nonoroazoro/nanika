@@ -1,11 +1,14 @@
 <script lang="ts">
 import type { SearchResult } from "../types";
 import ExtensionIcon from "./ExtensionIcon.svelte";
+import ActionSymbol from "./ActionSymbol.svelte";
+import ShortcutKeys from "./ShortcutKeys.svelte";
 
 interface Props
 {
     result: SearchResult;
     active: boolean;
+    confirmationTitle?: string | null;
     position: number;
     total: number;
     onActivate: () => void;
@@ -13,7 +16,8 @@ interface Props
     onContextMenu: (event: MouseEvent) => void;
 }
 
-const { result, active, position, total, onActivate, onInvoke, onContextMenu }: Props = $props();
+const { result, active, confirmationTitle = null, position, total, onActivate, onInvoke, onContextMenu }: Props =
+    $props();
 </script>
 
 <li
@@ -30,17 +34,39 @@ const { result, active, position, total, onActivate, onInvoke, onContextMenu }: 
     oncontextmenu={onContextMenu}
     onkeydown={(event =>
     {
+        if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey)
+        {
+            return;
+        }
         if (event.key === "Enter" || event.key === " ")
         {
             event.preventDefault();
-            onInvoke();
+            if (!event.repeat && !event.isComposing)
+            {
+                onInvoke();
+            }
         }
     })}
 >
-    <span class="icon" aria-hidden="true"><ExtensionIcon src={result.iconUrl} /></span>
-    <span class="copy" class:description={result.subtitle?.kind === "description"}>
+    <span class="icon" aria-hidden="true">
+        {#if result.icon?.kind === "symbol"}
+            <span class="result-symbol"><ActionSymbol name={result.icon.name} /></span>
+        {:else}
+            <ExtensionIcon src={result.icon?.url ?? null} />
+        {/if}
+    </span>
+    <span
+        class="copy"
+        class:confirming={Boolean(confirmationTitle)}
+        class:description={!confirmationTitle && result.subtitle?.kind === "description"}
+    >
         <span class="title" title={result.title}>{result.title}</span>
-        {#if result.subtitle}
+        {#if confirmationTitle}
+            <span class="confirmation" title={confirmationTitle}>
+                <span class="confirmation-label">{confirmationTitle}</span>
+                <span class="confirmation-key"><ShortcutKeys keys={["↵"]} /></span>
+            </span>
+        {:else if result.subtitle}
             <span class="subtitle" class:label={result.subtitle.kind === "label"} title={result.subtitle.text}>{
                 result.subtitle.text
             }</span>
@@ -63,15 +89,19 @@ li.active {
 
 .icon { display: grid; width: var(--icon-size); height: var(--icon-size); place-items: center; }
 
+.result-symbol { display: block; width: 100%; height: 100%; color: var(--text-secondary); }
+
 .copy {
   display: flex;
   min-width: 0;
-  align-items: baseline;
+  /* The confirmation keycap must not shift text by changing the shared baseline group. */
+  align-items: center;
   gap: var(--space-2);
 }
 
 .title,
-.subtitle {
+.subtitle,
+.confirmation-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -86,6 +116,10 @@ li.active {
 .subtitle {
   min-width: 0;
 }
+
+.confirming .title { max-width: 45%; }
+.confirmation { display: inline-flex; min-width: 0; align-items: center; gap: var(--space-2); color: var(--text-danger); font-size: var(--font-meta); font-weight: 500; }
+.confirmation-key { flex: 0 0 auto; }
 
 .subtitle.label,
 .kind {

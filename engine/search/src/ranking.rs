@@ -80,8 +80,11 @@ pub(crate) fn rank<'a>(
     }
 
     Some(SearchSnapshot {
+        result_revision: 0,
+        instances: Default::default(),
         generation,
         normalized_query,
+        pending_extensions: Vec::new(),
         results: scored
             .into_iter()
             .map(

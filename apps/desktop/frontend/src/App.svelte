@@ -57,6 +57,7 @@ const rootSearchState = new RootSearchState({
     totalResults: 0,
     phase: "searching",
     error: null,
+    pendingExtensions: [],
     warnings: []
 });
 const rootSearch = $derived(rootSearchState.snapshot);
@@ -313,11 +314,11 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
 }
 
-async function invokeCandidate(result: SearchResult): Promise<void>
+async function invokeCandidate(result: SearchResult, confirmed: boolean): Promise<void>
 {
     if (
         invoking || navigation.busy || !application || rootSearch.requestId !== latestRequestId
-        || rootSearch.phase !== "ready" || !result.allowDefaultExecution
+        || rootSearch.phase !== "ready" || (confirmed ? !result.confirmationTitle : !result.allowDefaultExecution)
     )
     {
         return;
@@ -332,13 +333,14 @@ async function invokeCandidate(result: SearchResult): Promise<void>
             resultRevision: rootSearch.resultRevision,
             extensionId: result.extensionId,
             entryId: result.entryId,
-            actionId: result.actionId
+            actionId: result.actionId,
+            confirmed
         });
     }
     catch (error)
     {
         console.error("Action failed", error);
-        operationFailure = "The action could not be completed. Try again.";
+        operationFailure = String(error);
     }
     finally
     {
@@ -588,14 +590,14 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 showContextMenu({
                     kind: "search",
                     requestId: rootSearch.requestId,
-                    revision: rootSearch.revision,
+                    resultRevision: rootSearch.resultRevision,
                     extensionId: result.extensionId,
                     entryId: result.entryId
                 }, position)}
             />
         {/if}
-        {#if operationFailure && !navigation.current}
-            <div class="operation-failure" role="alert">{operationFailure}</div>
+        {#if (operationFailure || navigationError) && !navigation.current}
+            <div class="operation-failure" role="alert">{operationFailure ?? navigationError}</div>
         {/if}
         {#snippet failed()}
             <main class="fatal" role="alert">Search could not be displayed.</main>

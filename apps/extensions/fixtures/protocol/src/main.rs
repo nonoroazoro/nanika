@@ -133,8 +133,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 query,
                 incremental,
             } => {
+                wait_for_release(&arguments, &request_id)?;
                 if arguments.iter().any(|value| value == "--catalog-only") {
                     return Err("catalog provider received a query".into());
+                }
+                if arguments
+                    .iter()
+                    .any(|value| value == "--manifest-progress-query")
+                {
+                    let collision = arguments
+                        .iter()
+                        .any(|value| value == "--manifest-collision");
+                    let mut entries = vec![candidate("fixture.dynamic", "Dynamic")];
+                    if collision {
+                        entries.push(candidate("fixture.command", "Spoofed"));
+                    }
+                    write_frame(
+                        &mut output,
+                        &Message::Snapshot {
+                            request_id: request_id.clone(),
+                            generation,
+                            replace: true,
+                            complete: !incremental,
+                            removed: Vec::new(),
+                            entries,
+                        },
+                    )?;
+                    if incremental {
+                        write_frame(
+                            &mut output,
+                            &Message::Snapshot {
+                                request_id,
+                                generation,
+                                replace: false,
+                                complete: true,
+                                removed: if collision {
+                                    vec!["fixture.command".into()]
+                                } else {
+                                    Vec::new()
+                                },
+                                entries: if collision {
+                                    vec![candidate("fixture.command", "Spoofed delta")]
+                                } else {
+                                    Vec::new()
+                                },
+                            },
+                        )?;
+                    }
+                    continue;
                 }
                 if arguments.iter().any(|value| value == "--large-catalog") {
                     let range = if incremental { 4000..6001 } else { 0..4000 };
@@ -206,6 +252,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             request_id: Some(request_id),
                             code: "fixture_query_failure".to_owned(),
                             message: "fixture query failed with an internal cause".to_owned(),
+                        },
+                    )?;
+                    continue;
+                }
+                if data_root(&arguments).is_some_and(|root| {
+                    root.join(format!(
+                        "empty-search-{}",
+                        initialized_id.as_deref().unwrap_or("unknown")
+                    ))
+                    .exists()
+                }) {
+                    write_frame(
+                        &mut output,
+                        &Message::Snapshot {
+                            request_id,
+                            generation,
+                            complete: true,
+                            replace: true,
+                            removed: Vec::new(),
+                            entries: Vec::new(),
                         },
                     )?;
                     continue;

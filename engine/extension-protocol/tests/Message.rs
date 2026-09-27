@@ -79,6 +79,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     subtitle: Some("Text".to_owned()),
                     icon: Some(ViewItemIcon::Text),
                     actions: vec![Action {
+                        icon: None,
                         id: "paste".to_owned(),
                         title: "Paste".to_owned(),
                         confirmation_title: None,
@@ -151,6 +152,7 @@ fn view_action_confirmation_titles_are_validated() {
             },
             metadata: Vec::new(),
             actions: vec![Action {
+                icon: None,
                 id: "example.clear".to_owned(),
                 title: "Clear".to_owned(),
                 confirmation_title: Some(" ".to_owned()),
@@ -180,6 +182,7 @@ fn view_action_confirmation_is_limited_to_destructive_actions() {
             },
             metadata: Vec::new(),
             actions: vec![Action {
+                icon: None,
                 id: "example.open".to_owned(),
                 title: "Open".to_owned(),
                 confirmation_title: Some("Open now".to_owned()),
@@ -310,6 +313,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 },
                 metadata: Vec::new(),
                 actions: vec![Action {
+                    icon: None,
                     id: "example.open".to_owned(),
                     title: "Open".to_owned(),
                     confirmation_title: None,

@@ -230,7 +230,7 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
                 .iter()
                 .any(|warning| warning.contains(DELAYED))
     });
-    assert!(runtime.active_error().is_none());
+    assert!(runtime.storage_failure().is_none());
     assert!(!has_result(&runtime, generation, DELAYED));
     assert!(
         runtime
@@ -553,7 +553,7 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
             );
         }
         let completion = runtime
-            .invoke_recorded(
+            .invoke_with_usage(
                 &runtime.latest_snapshot().unwrap(),
                 HEALTHY,
                 "fixture.entry",
@@ -566,7 +566,6 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
             completion.outcome,
             nanika_host::ExtensionInvocationOutcome::Completed { .. }
         ));
-        assert!(completion.recording_error.is_none());
         assert!(fixture.entered(&initializing));
         // Explicit shutdown must work while another owner still holds the runtime.
         let other_owner = std::sync::Arc::clone(&runtime);
@@ -641,20 +640,39 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
          BEGIN SELECT RAISE(ABORT, 'fixture recording failure'); END;",
         )
         .unwrap();
-    let completion = runtime
-        .invoke_recorded(
-            &runtime.latest_snapshot().unwrap(),
+    let invoking = format!("invoke-{HEALTHY}-1");
+    fixture.block(&invoking);
+    database.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let action_runtime = std::sync::Arc::clone(&runtime);
+    let (sent, received) = mpsc::sync_channel(1);
+    let action = std::thread::spawn(move || {
+        sent.send(action_runtime.invoke_with_usage(
+            &action_runtime.latest_snapshot().unwrap(),
             HEALTHY,
             "fixture.view",
             nanika_protocol::VIEW_OPEN_ACTION_ID,
             "fixture",
             nanika_protocol::ActionInvocation::Default,
-        )
+        ))
         .unwrap();
+    });
+    // Static views can be listed before process initialization. Start the measured
+    // interval only after the extension has received this invocation.
+    wait_until(|| fixture.entered(&invoking));
+    fixture.release(&invoking);
+    let completion = received.recv_timeout(Duration::from_secs(1));
+    // Always unlock before asserting so a regression cannot hang fixture shutdown.
+    database.execute_batch("ROLLBACK").unwrap();
+    action.join().unwrap();
+    let completion = completion
+        .expect("navigation completion must not await the database writer")
+        .unwrap();
+    wait_until(|| runtime.storage_failure().is_some());
     assert!(
-        completion
-            .recording_error
+        runtime
+            .storage_failure()
             .unwrap()
+            .source()
             .contains("fixture recording failure")
     );
     let nanika_host::ExtensionInvocationOutcome::Completed {
@@ -814,7 +832,7 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
     let current = runtime.latest_snapshot().unwrap();
     assert_eq!(reviewed.generation, current.generation);
     assert!(!std::sync::Arc::ptr_eq(&reviewed, &current));
-    let rejected = runtime.invoke_recorded(
+    let rejected = runtime.invoke_with_usage(
         &reviewed,
         HEALTHY,
         "fixture.entry",
@@ -828,7 +846,7 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
     drop(stored);
 
     let completion = runtime
-        .invoke_recorded(
+        .invoke_with_usage(
             &current,
             HEALTHY,
             "fixture.entry",
@@ -1603,5 +1621,53 @@ fn initialization_failure_retries_once_without_blocking_other_extensions() {
         .count(),
         2
     );
+    fixture.stop(runtime);
+}
+
+#[test]
+fn progress_only_publication_preserves_runtime_action_authority() {
+    let fixture = Fixture::new();
+    fixture.block(&format!("search-{DELAYED}-1"));
+    std::fs::write(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("empty-search-{DELAYED}")),
+        b"empty",
+    )
+    .unwrap();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY) && fixture.entered(&format!("search-{DELAYED}-1"))
+    });
+    let visible = runtime.latest_snapshot().unwrap();
+    assert!(visible.pending_extensions.iter().any(|id| id == DELAYED));
+    fixture.release(&format!("search-{DELAYED}-1"));
+    wait_until(|| {
+        runtime
+            .latest_snapshot()
+            .is_some_and(|s| s.pending_extensions.is_empty())
+    });
+    let current = runtime.latest_snapshot().unwrap();
+    assert_eq!(visible.authority(), current.authority());
+    assert!(!std::sync::Arc::ptr_eq(&visible, &current));
+    let result = runtime
+        .invoke(
+            &visible,
+            HEALTHY,
+            "fixture.entry",
+            "fixture.run",
+            "fixture",
+            nanika_protocol::ActionInvocation::Default,
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        result,
+        nanika_host::ExtensionInvocationOutcome::Completed { .. }
+    ));
     fixture.stop(runtime);
 }

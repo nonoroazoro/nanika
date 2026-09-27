@@ -123,6 +123,7 @@ fn detail_view(entry: &ClipboardEntry, text_offset: usize) -> Result<DetailView,
 
 fn copy_action() -> Action {
     Action {
+        icon: None,
         id: COPY_ACTION_ID.to_owned(),
         title: "Copy to Clipboard".to_owned(),
         confirmation_title: None,
@@ -135,6 +136,7 @@ fn copy_action() -> Action {
 
 fn clear_action() -> Action {
     Action {
+        icon: None,
         id: CLEAR_ACTION_ID.to_owned(),
         title: "Clear history".to_owned(),
         confirmation_title: Some("Clear now?".to_owned()),

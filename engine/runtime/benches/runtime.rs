@@ -17,6 +17,7 @@ fn runtime_benchmarks(criterion: &mut Criterion) {
 fn query_delivery_benchmark(criterion: &mut Criterion) {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
+    let source = search.register_extension("benchmark", 1).unwrap();
     let candidates = make_candidates(1_000);
 
     criterion.bench_function("search_query_delivery_1000", |bencher| {
@@ -26,8 +27,8 @@ fn query_delivery_benchmark(criterion: &mut Criterion) {
                 let generation = search
                     .begin_query(black_box("application 42"))
                     .expect("query should be accepted");
-                search
-                    .publish_extension_snapshot("benchmark", generation, candidates)
+                source
+                    .publish_extension_snapshot(generation, candidates, true)
                     .expect("snapshot should be accepted");
                 wait_for_generation(&search, generation)
             },

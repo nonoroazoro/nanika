@@ -100,7 +100,8 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             action_id: "open".to_owned(),
             title: format!("Application {index}"),
             subtitle: None,
-            icon_url: None,
+            icon: None,
+            confirmation_title: None,
 
             kind: "Extension".to_owned(),
             entry_type: "action",
@@ -126,6 +127,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         }),
     };
     let mut update = crate::RootSearchSnapshot {
+        pending_extensions: Vec::new(),
         navigation: crate::NavigationSnapshot {
             revision: 2,
             current: Some(Some(route)),
@@ -184,9 +186,31 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
     ));
     let paths =
         nanika_storage::NanikaPaths::from_roots(&root, root.join("cache"), root.join("config"));
-    let runtime =
-        nanika_host::RuntimeService::start(&paths, &[], &paths.app_data_root().join("resources"))
-            .unwrap();
+    let target = nanika_platform::target_triple();
+    // A static on-demand command requires no child process or native desktop effect.
+    let binary = std::env::current_exe().unwrap();
+    let manifest = serde_json::json!({
+        "format": "nanika-extension", "manifestVersion": 1,
+        "id": "com.nanika.application", "name": "Test", "icon": "assets/icon.png",
+        "version": "0.1.0", "hostApi": "^0.1", "activation": "onDemand",
+        "targets": { target: {
+            "entrypoint": format!("bin/{target}/{}", binary.file_name().unwrap().to_str().unwrap())
+        } },
+        "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+        "contributes": { "commands": [{
+            "command": "entry", "title": "Test", "description": "Static presentation fixture",
+            "action": nanika_protocol::Action::primary(
+                nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Open"
+            )
+        }] }
+    })
+    .to_string();
+    let runtime = nanika_host::RuntimeService::start(
+        &paths,
+        &[&manifest],
+        &paths.app_data_root().join("resources"),
+    )
+    .unwrap();
     let (wakes, receiver) = mpsc::sync_channel(1);
     let runtime_wakes = wakes.clone();
     runtime.set_notifier(Arc::new(move || {
@@ -243,6 +267,59 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
     wakes.send(SearchDelivery::Wake).unwrap();
     received.recv_timeout(Duration::from_secs(1)).unwrap();
     let repeated_for_navigation = preparations.recv_timeout(Duration::from_millis(50)).is_ok();
+    let result_revision = {
+        let mut state = shared.lock().unwrap();
+        let session = state.session.as_mut().unwrap();
+        session.in_flight = None;
+        let mut previous = (**session.delivered.as_ref().unwrap()).clone();
+        previous.pending_extensions = vec!["completed.extension".into()];
+        session.delivered = Some(Arc::new(previous));
+        session.result_revision
+    };
+    wakes.send(SearchDelivery::Wake).unwrap();
+    let progress: serde_json::Value =
+        serde_json::from_str(&received.recv_timeout(Duration::from_secs(1)).unwrap()).unwrap();
+    assert_eq!(progress["resultRevision"], result_revision);
+    assert!(
+        progress.get("results").is_none(),
+        "progress must not resend unchanged rows"
+    );
+    assert_eq!(progress["pendingExtensions"], serde_json::json!([]));
+    assert!(
+        preparations.try_recv().is_err(),
+        "progress must not prepare icons again"
+    );
+    {
+        let mut state = shared.lock().unwrap();
+        let session = state.session.as_mut().unwrap();
+        session.in_flight = None;
+        // The WebView has the same reviewed target with an older icon payload.
+        let mut previous = (**session.delivered.as_ref().unwrap()).clone();
+        assert_eq!(previous.results.len(), 1);
+        let mut rows = previous.results.to_vec();
+        rows[0].candidate = rows[0]
+            .candidate
+            .clone()
+            .with_icon(Some(nanika_protocol::IconSource::Empty));
+        previous.results = rows.into();
+        session.delivered = Some(Arc::new(previous));
+    }
+    wakes.send(SearchDelivery::Wake).unwrap();
+    let presentation: serde_json::Value =
+        serde_json::from_str(&received.recv_timeout(Duration::from_secs(1)).unwrap()).unwrap();
+    assert_eq!(presentation["resultRevision"], result_revision);
+    assert_eq!(presentation["results"][0]["title"], "Test");
+    assert_eq!(
+        preparations.recv_timeout(Duration::from_secs(1)).unwrap(),
+        first
+    );
+    // Historical usage failures must not poison a new query or recreate the fatal UI.
+    runtime
+        .record_execution("missing.extension", "entry", "open", "query")
+        .unwrap()
+        .wait()
+        .unwrap_err();
+    assert!(runtime.storage_failure().is_some());
     let next = {
         let mut state = shared.lock().unwrap();
         let session = state.session.as_mut().unwrap();

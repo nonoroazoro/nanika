@@ -143,11 +143,12 @@ pub use nanika_foundation::{DiagnosticCategory, DiagnosticCode};
 
 /// Publish one protocol snapshot into the shared search owner.
 pub fn publish_extension_snapshot(
-    search: &nanika_search::SearchHandle,
-    extension_id: &str,
+    search: &nanika_search::SearchContributor,
     generation: u64,
     entries: Vec<nanika_protocol::Candidate>,
+    complete: bool,
 ) -> Result<(), nanika_search::SearchQueueError> {
+    let extension_id = search.extension_id();
     tracing::debug!(
         extension_id,
         generation,
@@ -155,9 +156,9 @@ pub fn publish_extension_snapshot(
         "extension search snapshot received"
     );
     search.publish_extension_snapshot(
-        extension_id,
         generation,
         search_candidates(extension_id, entries),
+        complete,
     )
 }
 

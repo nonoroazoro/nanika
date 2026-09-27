@@ -38,8 +38,9 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
         .expect("extension registration should enqueue");
     let generation = search.begin_query("tool").expect("query should enqueue");
     search
+        .register_extension("test.extension", 1)
+        .unwrap()
         .publish_extension_snapshot(
-            "test.extension",
             generation,
             vec![
                 Candidate::new(
@@ -61,6 +62,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
                     Vec::new(),
                 ),
             ],
+            true,
         )
         .expect("snapshot should enqueue");
     worker
@@ -94,10 +96,10 @@ fn invalid_extension_ids_are_rejected_before_enqueueing() {
         std::env::temp_dir().join(format!("nanika-storage-invalid-{}.db", std::process::id()));
     cleanup(&database);
     let (worker, _) = SearchStorageWorker::spawn(&database).expect("storage owner should start");
-    assert_eq!(
+    assert!(matches!(
         worker.register_builtin_extension("../escape"),
         Err(StorageQueueError::InvalidExtensionId)
-    );
+    ));
     worker.shutdown();
     cleanup(&database);
 }
@@ -113,7 +115,10 @@ fn operation_failures_return_the_source_and_remain_available_to_diagnostics() {
         .execute("DROP TABLE input_history", [])
         .expect("history table should be removed");
     drop(connection);
-    let result = worker.record_history("query", "query", unix_timestamp());
+    let result = worker
+        .record_history("query", "query", unix_timestamp())
+        .unwrap()
+        .wait();
     assert!(
         matches!(&result, Err(StorageQueueError::Operation(source)) if source.contains("input_history"))
     );
@@ -224,4 +229,100 @@ fn cleanup(database: &std::path::Path) {
     let _ = std::fs::remove_file(database);
     let _ = std::fs::remove_file(database.with_extension("db-wal"));
     let _ = std::fs::remove_file(database.with_extension("db-shm"));
+}
+
+#[test]
+fn committed_execution_and_reset_survive_projection_failure() {
+    let database =
+        std::env::temp_dir().join(format!("nanika-commit-receipt-{}.db", std::process::id()));
+    cleanup(&database);
+    let (worker, _) = SearchStorageWorker::spawn(&database).unwrap();
+    worker.register_builtin_extension("test.extension").unwrap();
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    worker.attach_search(owner.handle());
+    owner.shutdown();
+    worker
+        .record_execution(
+            "query",
+            "Query",
+            nanika_search::UsageKey::new("test.extension", "entry", "open", "query"),
+            1,
+            1,
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+    let reader = HostDatabase::open(&database).unwrap();
+    assert_eq!(reader.load_usage().unwrap().len(), 1);
+    assert_eq!(reader.load_input_history().unwrap().len(), 1);
+    worker.reset_usage().unwrap().wait().unwrap();
+    assert!(reader.load_usage().unwrap().is_empty());
+    assert_eq!(reader.load_input_history().unwrap().len(), 1);
+    worker.shutdown();
+    let failure = worker.last_failure().unwrap();
+    assert_eq!(failure.operation(), "publish committed storage change");
+    assert_eq!(failure.sequence(), 2);
+    drop(reader);
+    cleanup(&database);
+}
+
+#[test]
+fn commit_receipt_precedes_projection_backpressure_and_shutdown_drains_accepted_writes() {
+    use std::sync::{Arc, Mutex, mpsc};
+    let database = std::env::temp_dir().join(format!(
+        "nanika-storage-backpressure-{}.db",
+        std::process::id()
+    ));
+    cleanup(&database);
+    let (worker, _) = SearchStorageWorker::spawn(&database).unwrap();
+    worker
+        .register_builtin_extension("test.extension")
+        .unwrap()
+        .wait()
+        .unwrap();
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let search = owner.handle();
+    worker.attach_search(search.clone());
+    let (entered, observed) = mpsc::sync_channel(1);
+    let (release, released) = mpsc::sync_channel(1);
+    let gate = Mutex::new(Some(released));
+    search.set_notifier(Arc::new(move || {
+        if let Some(gate) = gate.lock().unwrap().take() {
+            entered.send(()).unwrap();
+            gate.recv().unwrap();
+        }
+    }));
+    search.begin_query("tool").unwrap();
+    observed.recv_timeout(Duration::from_secs(5)).unwrap();
+    for _ in 0..16 {
+        search.reset_persisted_usage().unwrap();
+    }
+    let commit = worker
+        .record_usage("test.extension", "entry", "open", "tool", 1)
+        .unwrap();
+    let (done, receipt) = mpsc::sync_channel(1);
+    let waiter = std::thread::spawn(move || {
+        done.send(commit.wait()).unwrap();
+    });
+    let result = receipt.recv_timeout(Duration::from_secs(1));
+    // While the owner is blocked publishing its first commit, further writes are
+    // accepted without awaiting disk or search. Discarding receipts is intentional.
+    for _ in 0..8 {
+        drop(
+            worker
+                .record_usage("test.extension", "entry", "open", "tool", 2)
+                .unwrap(),
+        );
+    }
+    release.send(()).unwrap();
+    waiter.join().unwrap();
+    result
+        .expect("durable receipt must not await a full search queue")
+        .unwrap();
+    worker.shutdown();
+    owner.shutdown();
+    let reader = HostDatabase::open(&database).unwrap();
+    assert_eq!(reader.load_usage().unwrap()[0].execution_count, 9);
+    drop(reader);
+    cleanup(&database);
 }

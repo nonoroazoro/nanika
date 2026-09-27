@@ -33,6 +33,8 @@ mod invoke_candidate_request;
 mod publish_query_request;
 #[path = "ResourceProtocol.rs"]
 mod resource_protocol;
+#[path = "ResultIcon.rs"]
+mod result_icon;
 #[path = "RootSearchSnapshot.rs"]
 mod root_search_snapshot;
 #[path = "SearchDelivery.rs"]

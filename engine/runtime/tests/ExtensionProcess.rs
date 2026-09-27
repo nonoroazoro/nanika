@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use nanika_extension_package::ExtensionContributions;
@@ -210,8 +209,13 @@ fn extension_snapshot_reaches_the_shared_search_owner() {
     let entries = extension
         .query("query-search-owner", generation, "calculator")
         .expect("fixture should return candidates");
-    publish_extension_snapshot(&search, "fixture.extension", generation, entries)
-        .expect("snapshot should enqueue");
+    publish_extension_snapshot(
+        &search.register_extension("fixture.extension", 1).unwrap(),
+        generation,
+        entries,
+        true,
+    )
+    .expect("snapshot should enqueue");
 
     let deadline = Instant::now() + Duration::from_secs(1);
     loop {
@@ -364,10 +368,12 @@ fn extension_search_worker_dispatches_off_the_caller_thread() {
 fn extension_worker_publishes_incremental_snapshots() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
-    let notifications = Arc::new(AtomicUsize::new(0));
-    let notifier_count = Arc::clone(&notifications);
+    let (published, received) = std::sync::mpsc::channel();
+    let observed = search.clone();
     search.set_notifier(Arc::new(move || {
-        notifier_count.fetch_add(1, Ordering::Relaxed);
+        if let Some(snapshot) = observed.latest_snapshot() {
+            let _ = published.send(snapshot);
+        }
     }));
     let mut extension = ExtensionProcess::spawn_with(
         fixture_path(),
@@ -387,24 +393,36 @@ fn extension_worker_publishes_incremental_snapshots() {
             fixture_contributions(),
         )
         .expect("worker should register");
-    let generation = search.begin_query("final").expect("query should enqueue");
-    coordinator.query(generation, "final");
+    let generation = search.begin_query("").expect("query should enqueue");
+    coordinator.query(generation, "");
 
-    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut saw_partial = false;
     loop {
-        if let Some(snapshot) = search.latest_snapshot()
-            && snapshot.generation == generation
-            && snapshot
-                .results
-                .first()
-                .is_some_and(|result| result.candidate.title() == "final")
-            && notifications.load(Ordering::Relaxed) >= 2
+        let snapshot = received
+            .recv_timeout(Duration::from_secs(2))
+            .expect("query publication");
+        if snapshot.generation != generation {
+            continue;
+        }
+        if snapshot
+            .results
+            .iter()
+            .any(|row| row.candidate.title() == "Partial")
         {
+            assert_eq!(snapshot.pending_extensions, ["fixture.extension"]);
+            saw_partial = true;
+        }
+        if snapshot
+            .results
+            .iter()
+            .any(|row| row.candidate.title() == "Fixture")
+        {
+            assert!(saw_partial, "partial data must publish before completion");
+            assert!(snapshot.pending_extensions.is_empty());
             break;
         }
-        assert!(Instant::now() < deadline, "both snapshots should publish");
-        std::thread::yield_now();
     }
+    search.set_notifier(Arc::new(|| {}));
     drop(coordinator);
     owner.shutdown();
 }
@@ -541,9 +559,9 @@ fn superseded_query_error_is_drained_before_the_current_query() {
         .unwrap();
     coordinator.query(latest, "latest");
     wait_for_review_condition(|| {
-        search
-            .latest_snapshot()
-            .is_some_and(|snapshot| snapshot.generation == latest)
+        search.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == latest && snapshot.pending_extensions.is_empty()
+        })
     });
     let snapshot = search.latest_snapshot().unwrap();
     coordinator.shutdown();
@@ -1274,6 +1292,85 @@ fn shutdown_interrupts_a_blocked_input_write_and_joins_the_child() {
         stopped,
         "shutdown must complete without the extension reading or exiting voluntarily"
     );
+}
+
+#[test]
+fn manifest_baseline_survives_dynamic_progress_without_reranking() {
+    for collision in [false, true] {
+        let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+        let search = owner.handle();
+        let (published, received) = std::sync::mpsc::channel();
+        let observed = search.clone();
+        search.set_notifier(Arc::new(move || {
+            if let Some(snapshot) = observed.latest_snapshot() {
+                let _ = published.send(snapshot);
+            }
+        }));
+        let mut args = vec!["--manifest-progress-query".into()];
+        if collision {
+            args.push("--manifest-collision".into());
+        }
+        let extension =
+            ExtensionProcess::spawn_with(fixture_path(), args, ExtensionLimits::default()).unwrap();
+        let coordinator = ExtensionSearchCoordinator::new();
+        let mut contributions = fixture_contributions();
+        contributions
+            .commands
+            .push(nanika_extension_package::CommandContribution {
+                command: "fixture.command".into(),
+                title: "Manifest command".into(),
+                description: "Manifest-owned identity".into(),
+                category: None,
+                keywords: Vec::new(),
+                icon: None,
+                action: nanika_protocol::Action::primary(
+                    nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                    "Run",
+                ),
+            });
+        coordinator
+            .register(
+                "fixture.extension",
+                extension,
+                search.clone(),
+                contributions,
+            )
+            .unwrap();
+        let generation = search
+            .begin_query_with_expected_extensions("", ["fixture.extension".into()])
+            .unwrap();
+        coordinator.query(generation, "");
+        let baseline = loop {
+            let snapshot = received.recv_timeout(Duration::from_secs(5)).unwrap();
+            if snapshot.generation == generation && snapshot.pending_extensions.is_empty() {
+                break snapshot;
+            }
+        };
+        assert_eq!(baseline.results.len(), 2);
+        assert!(
+            baseline
+                .results
+                .iter()
+                .any(|result| result.candidate.title() == "Manifest command")
+        );
+        coordinator.query(generation, "");
+        let mut saw_pending = false;
+        loop {
+            let snapshot = received.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert_eq!(snapshot.results, baseline.results);
+            assert!(
+                Arc::ptr_eq(&snapshot.results, &baseline.results),
+                "progress and manifest collisions must not replace ranked results"
+            );
+            if snapshot.pending_extensions.is_empty() {
+                assert!(saw_pending);
+                break;
+            }
+            saw_pending = true;
+        }
+        coordinator.shutdown();
+        owner.shutdown();
+    }
 }
 
 #[test]

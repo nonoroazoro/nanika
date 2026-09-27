@@ -6,6 +6,8 @@ use crate::{ActionInvocation, ActionStyle};
 pub struct Action {
     pub id: String,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<crate::ActionIcon>,
     /// Replacement label that requires a second click before invoking a destructive action.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirmation_title: Option<String>,
@@ -34,6 +36,7 @@ impl Action {
         Self {
             id: id.into(),
             title: title.into(),
+            icon: None,
             confirmation_title: None,
             style: ActionStyle::Primary,
             enabled: true,
