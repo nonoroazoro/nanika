@@ -17,9 +17,8 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     assert_eq!(entry.icon_source.as_deref(), Some(source.as_path()));
     let cache = IconCache::new(&root);
 
-    cache
-        .prepare(&mut entry)
-        .expect("Books icon should extract");
+    entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
+    cache.prepare(&entry).expect("Books icon should extract");
 
     for size in [32, 64, 128] {
         let file = std::fs::File::open(root.join(&entry.icon_key).join(format!("{size}.png")))
@@ -48,26 +47,23 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     let modified = image.metadata().unwrap().modified().unwrap();
     entry.icon_source = Some(root.join("Missing.app"));
     cache
-        .prepare(&mut entry)
+        .prepare(&entry)
         .expect("a complete cache must not reacquire the system icon");
     assert_eq!(image.metadata().unwrap().modified().unwrap(), modified);
 
     std::fs::remove_file(root.join(&entry.icon_key).join("64.png")).unwrap();
     assert!(
-        cache.prepare(&mut entry).is_err(),
+        cache.prepare(&entry).is_err(),
         "a missing source must retain its failure"
     );
-    let mut presentable = [entry.clone()];
-    cache.use_available_icons(&mut presentable).unwrap();
-    assert_eq!(presentable[0].icon_key, IconCache::fallback_key());
+    assert!(cache.cached(&entry.icon_key).is_none());
+    assert_eq!(cache.fallback().unwrap().key(), IconCache::fallback_key());
 
     entry.icon_source = Some(source);
     cache
-        .prepare(&mut entry)
+        .prepare(&entry)
         .expect("an explicit attempt should repair every cache size");
-    let mut presentable = [entry.clone()];
-    cache.use_available_icons(&mut presentable).unwrap();
-    assert_eq!(presentable[0].icon_key, entry.icon_key);
+    assert_eq!(cache.cached(&entry.icon_key).unwrap().key(), entry.icon_key);
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -86,7 +82,14 @@ fn windows_executable_icons_are_cached_at_both_densities() {
         .expect("executable should parse")
         .expect("executable should contribute an entry");
     let cache = IconCache::new(&root);
-    cache.prepare(&mut entry).expect("icon should extract");
+    entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
+    let original = entry.clone();
+    let icon = cache.prepare(&entry).expect("icon should extract");
+    assert_eq!(
+        entry, original,
+        "cache preparation cannot change application state"
+    );
+    assert_eq!(icon.key(), entry.icon_key);
     assert_ne!(entry.icon_key, IconCache::fallback_key());
     for size in [32, 64] {
         let bytes = std::fs::read(root.join(&entry.icon_key).join(format!("{size}.png")))
@@ -124,10 +127,12 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
         .unwrap()
         .unwrap();
     assert_eq!(entry.icon_source.as_deref(), Some(bundle.as_path()));
-    let cache = IconCache::new(root.join("cache"));
-    let mut previous = cache.key(&entry).unwrap();
+    let mut previous = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
     assert_ne!(previous, IconCache::fallback_key());
-    assert_eq!(previous, cache.key(&entry).unwrap());
+    assert_eq!(
+        previous,
+        IconCache::key(&entry, &mut DiscoveryState::new()).unwrap()
+    );
 
     for (path, content) in [
         (resources.join("Artwork.icns"), b"original".as_slice()),
@@ -143,7 +148,7 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
         (executable, b"replacement executable".as_slice()),
     ] {
         std::fs::write(path, content).unwrap();
-        let next = cache.key(&entry).unwrap();
+        let next = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
         assert_ne!(
             next, previous,
             "icon inputs must invalidate their cached image"
@@ -151,7 +156,10 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
         previous = next;
     }
     std::fs::remove_file(resources.join("Artwork.icns")).unwrap();
-    assert_ne!(cache.key(&entry).unwrap(), previous);
+    assert_ne!(
+        IconCache::key(&entry, &mut DiscoveryState::new()).unwrap(),
+        previous
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -183,7 +191,11 @@ fn fallback_icons_are_valid_png_files() {
             priority: 0,
         })
     });
-    cache.prepare(&mut entry).expect("fallback should prepare");
+    entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
+    let original = entry.clone();
+    let icon = cache.prepare(&entry).expect("fallback should prepare");
+    assert_eq!(icon.key(), IconCache::fallback_key());
+    assert_eq!(entry, original);
     let bytes = std::fs::read(root.join(IconCache::fallback_key()).join("32.png"))
         .expect("fallback icon should exist");
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
@@ -212,13 +224,9 @@ fn fallback_icons_are_valid_png_files() {
 fn unavailable_icons_use_the_shared_fallback_until_the_cache_is_complete() {
     let root = test_root("presentation-fallback");
     let cache = IconCache::new(&root);
-    let mut entries = vec![test_entry("pending-icon")];
-
-    cache
-        .use_available_icons(&mut entries)
-        .expect("presentation icons should resolve");
-
-    assert_eq!(entries[0].icon_key, IconCache::fallback_key());
+    assert!(cache.cached("pending-icon").is_none());
+    let fallback = cache.fallback().expect("fallback should prepare");
+    assert_eq!(fallback.key(), IconCache::fallback_key());
     assert!(
         root.join(IconCache::fallback_key())
             .join("128.png")
@@ -237,13 +245,13 @@ fn complete_cached_icons_are_exposed_to_the_frontend() {
     for size in [32, 64, 128] {
         std::fs::write(directory.join(format!("{size}.png")), []).expect("icon should exist");
     }
-    let mut entries = vec![test_entry(key)];
-
-    cache
-        .use_available_icons(&mut entries)
-        .expect("presentation icons should resolve");
-
-    assert_eq!(entries[0].icon_key, key);
+    assert_eq!(
+        cache
+            .cached(key)
+            .expect("complete cache should resolve")
+            .key(),
+        key
+    );
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -258,13 +266,7 @@ fn fallback_markers_keep_failed_extractions_out_of_the_frontend() {
         std::fs::write(directory.join(format!("{size}.png")), []).expect("icon should exist");
     }
     std::fs::write(directory.join("fallback.marker"), []).expect("marker should exist");
-    let mut entries = vec![test_entry(key)];
-
-    cache
-        .use_available_icons(&mut entries)
-        .expect("presentation icons should resolve");
-
-    assert_eq!(entries[0].icon_key, IconCache::fallback_key());
+    assert!(cache.cached(key).is_none());
     std::fs::remove_dir_all(root).expect("test root should be removable");
 }
 
@@ -292,10 +294,68 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
     });
     let cache = IconCache::new(root.join("icons"));
 
-    assert!(cache.prepare(&mut entry).is_err());
-    assert!(cache.prepare(&mut entry).is_err());
+    entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
+    let original = entry.clone();
+    assert!(cache.prepare(&entry).is_err());
+    assert!(cache.prepare(&entry).is_err());
+    assert_eq!(entry, original);
+    assert!(cache.cached(&entry.icon_key).is_none());
+    assert!(
+        root.join("icons")
+            .join(&entry.icon_key)
+            .join("fallback.marker")
+            .is_file()
+    );
+    assert!(
+        !root.join("icons").join(IconCache::fallback_key()).exists(),
+        "extraction failures do not write fallback files; presentation belongs to the worker"
+    );
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn preparation_rejects_missing_discovery_metadata_without_creating_cache_files() {
+    let root = test_root("missing-metadata");
+    let cache_root = root.join("cache");
+    let cache = IconCache::new(&cache_root);
+    for key in ["", "missing-source"] {
+        let entry = test_entry(key);
+        assert!(cache.prepare(&entry).is_err());
+    }
+    assert!(!cache_root.exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn invalid_persisted_keys_cannot_write_outside_the_icon_cache() {
+    let root = test_root("invalid-persisted-keys");
+    let cache_root = root.join("cache");
+    std::fs::create_dir_all(&cache_root).unwrap();
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let cache = IconCache::new(&cache_root);
+    for key in [
+        "../outside".to_owned(),
+        outside.to_string_lossy().into_owned(),
+    ] {
+        for size in [32, 64, 128] {
+            std::fs::write(outside.join(format!("{size}.png")), b"unrelated data").unwrap();
+        }
+        std::fs::write(outside.join("fallback.marker"), []).unwrap();
+        let mut entry = test_entry(&key);
+        entry.icon_source = Some(root.join("Missing.exe"));
+        let result = cache.prepare(&entry);
+        let preserved = [32, 64, 128].into_iter().all(|size| {
+            std::fs::read(outside.join(format!("{size}.png"))).unwrap() == b"unrelated data"
+        });
+        assert!(result.is_err());
+        assert!(
+            preserved,
+            "an invalid persisted key must not alter sibling files: {key}"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 fn test_root(name: &str) -> PathBuf {

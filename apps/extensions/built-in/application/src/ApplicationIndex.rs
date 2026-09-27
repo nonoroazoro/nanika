@@ -14,21 +14,17 @@ use crate::{
 /// Cancellable discovery and transactional indexing boundary.
 pub struct ApplicationIndex {
     database: ApplicationDatabase,
-    icon_cache: IconCache,
     discovery_state: DiscoveryState,
     prepared_entries: Option<HashMap<String, ApplicationEntry>>,
-    pending_icons: HashSet<String>,
     sources: Option<crate::application_sources::ApplicationSources>,
 }
 
 impl ApplicationIndex {
-    pub fn new(database: ApplicationDatabase, icon_cache: IconCache) -> Self {
+    pub fn new(database: ApplicationDatabase) -> Self {
         Self {
             database,
-            icon_cache,
             discovery_state: DiscoveryState::new(),
             prepared_entries: None,
-            pending_icons: HashSet::new(),
             sources: None,
         }
     }
@@ -64,72 +60,6 @@ impl ApplicationIndex {
     }
 
     pub fn scan(
-        &mut self,
-        config: &ApplicationConfig,
-        generation: u64,
-        cancelled_through: &AtomicU64,
-        progress: impl FnMut(nanika_protocol::OperationProgress),
-        publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>),
-    ) -> Result<ScanReport, ApplicationError> {
-        let result = self._scan_roots(config, generation, cancelled_through, progress, publish);
-        // The owner cannot run icon work during a scan. Restore its queue invariant before
-        // returning on success, cancellation, or failure, preserving each committed root.
-        self.pending_icons.retain(|id| {
-            self.prepared_entries
-                .as_ref()
-                .is_some_and(|entries| entries.contains_key(id))
-        });
-        result
-    }
-
-    /// Populate at most `limit` icons so visible results can publish first.
-    pub fn populate_icon_batch(
-        &mut self,
-        cancelled_through: &AtomicU64,
-        generation: u64,
-        limit: usize,
-        requested: &[String],
-    ) -> (Vec<String>, Vec<ApplicationEntry>) {
-        let mut failures = Vec::new();
-        let ids = requested
-            .iter()
-            .filter(|id| self.pending_icons.contains(*id))
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>();
-        let entries = self
-            .prepared_entries
-            .as_mut()
-            .expect("pending icons belong to the prepared catalog");
-        let mut updated = Vec::new();
-        for id in &ids {
-            if is_cancelled(cancelled_through, generation) {
-                break;
-            }
-            self.pending_icons.remove(id);
-            let entry = entries.get_mut(id).expect("pending icon entry");
-            if let Err(error) = self.icon_cache.prepare(entry) {
-                failures.push(format!("{}: {error}", entry.target_path));
-            }
-            updated.push(entry.clone());
-        }
-        if let Err(error) = self.icon_cache.use_available_icons(&mut updated) {
-            failures.push(error.to_string());
-            for entry in &mut updated {
-                entry.icon_key.clear();
-            }
-        }
-        (failures, updated)
-    }
-
-    pub(crate) fn has_pending_icons_for(&self, requested: &[String]) -> bool {
-        requested.iter().any(|id| self.pending_icons.contains(id))
-    }
-
-    pub(crate) fn has_pending_icons(&self) -> bool {
-        !self.pending_icons.is_empty()
-    }
-    fn _scan_roots(
         &mut self,
         config: &ApplicationConfig,
         generation: u64,
@@ -181,7 +111,6 @@ impl ApplicationIndex {
         if self.prepared_entries.is_none() {
             self.load()?;
         }
-        self.pending_icons.clear();
         let total = u32::try_from(roots.len())
             .unwrap_or(u32::MAX - 1)
             .saturating_add(1);
@@ -298,10 +227,7 @@ impl ApplicationIndex {
                 if !entry.icon_key.is_empty() {
                     continue;
                 }
-                match self
-                    .icon_cache
-                    .key_with_state(entry, &mut self.discovery_state)
-                {
+                match IconCache::key(entry, &mut self.discovery_state) {
                     Ok(key) => entry.icon_key = key,
                     Err(error) => {
                         eprintln!(
@@ -309,12 +235,6 @@ impl ApplicationIndex {
                             entry.target_path
                         );
                         entry.icon_source = None;
-                        if let Err(fallback_error) = self.icon_cache.prepare(entry) {
-                            eprintln!(
-                                "application fallback icon failed for {}: {fallback_error}",
-                                entry.target_path
-                            );
-                        }
                         entry.icon_key = IconCache::fallback_key().to_owned();
                     }
                 }
@@ -405,7 +325,7 @@ impl ApplicationIndex {
             .filter(|entry| {
                 current
                     .get(&entry.entry_id)
-                    .is_none_or(|old| !_same_metadata(old, entry))
+                    .is_none_or(|old| old != **entry)
             })
             .map(|entry| (*entry).clone())
             .collect::<Vec<_>>();
@@ -427,18 +347,6 @@ impl ApplicationIndex {
             .collect::<Vec<_>>();
         self.database
             .commit_root(&root, &changed_sources, &removed_sources)?;
-        for entry in winners {
-            self.pending_icons.insert(entry.entry_id.clone());
-            if let Some(previous) = current.get_mut(&entry.entry_id)
-                && (previous.icon_source != entry.icon_source
-                    || previous.icon_index != entry.icon_index
-                    || previous.priority != entry.priority)
-            {
-                previous.icon_source = entry.icon_source.clone();
-                previous.icon_index = entry.icon_index;
-                previous.priority = entry.priority;
-            }
-        }
         self.sources
             .as_mut()
             .expect("sources initialized")
@@ -466,17 +374,6 @@ impl ApplicationIndex {
         }
         visible
     }
-}
-
-fn _same_metadata(left: &ApplicationEntry, right: &ApplicationEntry) -> bool {
-    left.source_key == right.source_key
-        && left.display_name == right.display_name
-        && left.normalized_name == right.normalized_name
-        && left.normalized_tokens == right.normalized_tokens
-        && left.launch_kind == right.launch_kind
-        && left.target_path == right.target_path
-        && left.arguments_json == right.arguments_json
-        && left.icon_key == right.icon_key
 }
 
 fn is_cancelled(cancelled_through: &AtomicU64, generation: u64) -> bool {

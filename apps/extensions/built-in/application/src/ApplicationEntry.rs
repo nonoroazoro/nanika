@@ -1,4 +1,4 @@
-use nanika_protocol::{Candidate, CandidateKind, IconReference, LaunchArguments, LaunchDescriptor};
+use nanika_protocol::{Candidate, CandidateKind, LaunchArguments, LaunchDescriptor};
 
 use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 
@@ -6,7 +6,9 @@ use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationEntry {
     _data: std::sync::Arc<crate::ApplicationEntryData>,
-    pub(crate) _icon_ready: bool,
+    // None is unprepared; an explicit Empty records a completed cache failure.
+    // Share presentation across catalog clones without changing persisted extraction inputs.
+    pub(crate) _icon: Option<std::sync::Arc<nanika_protocol::IconSource>>,
 }
 
 impl std::ops::Deref for ApplicationEntry {
@@ -26,7 +28,7 @@ impl ApplicationEntry {
     pub fn new(data: crate::ApplicationEntryData) -> Self {
         Self {
             _data: std::sync::Arc::new(data),
-            _icon_ready: false,
+            _icon: None,
         }
     }
 
@@ -47,13 +49,19 @@ impl ApplicationEntry {
             action_id: RUN_ACTION_ID.to_owned(),
             actions: self.actions(),
             aliases,
-            icon: self
-                ._icon_ready
-                .then(|| IconReference::new(&self.icon_key).ok())
-                .flatten()
-                .map(nanika_protocol::IconSource::Cache)
-                .or(Some(nanika_protocol::IconSource::Empty)),
+            icon: Some(
+                self._icon
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or(nanika_protocol::IconSource::Empty),
+            ),
         }
+    }
+
+    pub(crate) fn same_icon_source(&self, other: &Self) -> bool {
+        self.icon_key == other.icon_key
+            && self.icon_source == other.icon_source
+            && self.icon_index == other.icon_index
     }
 
     pub fn launch_descriptor(&self) -> Result<LaunchDescriptor, ApplicationError> {

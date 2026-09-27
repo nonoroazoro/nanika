@@ -1,3 +1,4 @@
+use nanika_protocol::IconReference;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,12 +24,7 @@ impl IconCache {
         FALLBACK_KEY
     }
 
-    pub(crate) fn key(&self, entry: &ApplicationEntry) -> Result<String, ApplicationError> {
-        self.key_with_state(entry, &mut DiscoveryState::new())
-    }
-
-    pub(crate) fn key_with_state(
-        &self,
+    pub(crate) fn key(
         entry: &ApplicationEntry,
         state: &mut DiscoveryState,
     ) -> Result<String, ApplicationError> {
@@ -38,25 +34,22 @@ impl IconCache {
         platform::icon_cache_key(source, entry.icon_index, state)
     }
 
-    pub fn prepare(&self, entry: &mut ApplicationEntry) -> Result<(), ApplicationError> {
-        entry._icon_ready = false;
-        let key = if entry.icon_key.is_empty() {
-            self.key(entry)?
-        } else {
-            entry.icon_key.clone()
-        };
-        if key == FALLBACK_KEY {
-            self.ensure_fallback()?;
-            if entry.icon_key != key {
-                entry.icon_key = key;
-            }
-            entry._icon_ready = true;
-            return Ok(());
+    /// Prepare files without changing discovery metadata or published presentation.
+    pub fn prepare(&self, entry: &ApplicationEntry) -> Result<IconReference, ApplicationError> {
+        // Persisted entries can reach the icon worker before discovery revalidates them.
+        // Reject path-shaped keys before any cache directory creation or repair.
+        let icon = IconReference::new(&entry.icon_key)
+            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
+        if icon.key() == FALLBACK_KEY {
+            return self.fallback();
         }
-        let Some(source) = entry.icon_source.as_deref() else {
-            return Ok(());
-        };
-        let directory = self.root.join(&key);
+        let source = entry.icon_source.as_deref().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "application icon source is missing",
+            )
+        })?;
+        let directory = self.root.join(icon.key());
         fs::create_dir_all(&directory)?;
         let fallback_marker = directory.join("fallback.marker");
         let retry_fallback = fallback_marker.is_file();
@@ -81,40 +74,35 @@ impl IconCache {
             .into_iter()
             .filter(|size| !directory.join(format!("{size}.png")).is_file())
             .collect::<Vec<_>>();
-        if !missing.is_empty()
-            && let Err(error) =
-                platform::extract_icons(source, entry.icon_index, &missing, &directory)
-        {
-            self.copy_fallback_to(&directory)?;
-            return Err(error);
+        if !missing.is_empty() {
+            // An incomplete set stays marked and is never published. The worker owns
+            // failure presentation through the single shared fallback icon.
+            platform::extract_icons(source, entry.icon_index, &missing, &directory)?;
         }
         if let Err(error) = fs::remove_file(fallback_marker)
             && error.kind() != std::io::ErrorKind::NotFound
         {
             return Err(error.into());
         }
-        if entry.icon_key != key {
-            entry.icon_key = key;
-        }
-        entry._icon_ready = true;
-        Ok(())
+        Ok(icon)
     }
 
-    pub(crate) fn use_available_icons(
-        &self,
-        entries: &mut [ApplicationEntry],
-    ) -> Result<(), ApplicationError> {
-        self.ensure_fallback()?;
-        for entry in entries {
-            if !self.is_ready(&entry.icon_key) {
-                entry.icon_key = FALLBACK_KEY.to_owned();
-            }
-            entry._icon_ready = true;
-        }
-        Ok(())
+    pub(crate) fn cached(&self, key: &str) -> Option<IconReference> {
+        let icon = IconReference::new(key).ok()?;
+        let directory = self.root.join(icon.key());
+        (!directory.join("fallback.marker").is_file()
+            && ICON_SIZES
+                .iter()
+                .all(|size| directory.join(format!("{size}.png")).is_file()))
+        .then_some(icon)
     }
 
-    fn ensure_fallback(&self) -> Result<(), ApplicationError> {
+    pub(crate) fn fallback(&self) -> Result<IconReference, ApplicationError> {
+        self._ensure_fallback()?;
+        Ok(IconReference::new(FALLBACK_KEY).expect("constant fallback key is valid"))
+    }
+
+    fn _ensure_fallback(&self) -> Result<(), ApplicationError> {
         let directory = self.root.join(FALLBACK_KEY);
         fs::create_dir_all(&directory)?;
         for size in ICON_SIZES {
@@ -122,30 +110,6 @@ impl IconCache {
             if !target.is_file() {
                 write_fallback_icon(&target, size)?;
             }
-        }
-        Ok(())
-    }
-
-    fn is_ready(&self, key: &str) -> bool {
-        if key == FALLBACK_KEY {
-            return true;
-        }
-        if nanika_protocol::IconReference::new(key).is_err() {
-            return false;
-        }
-        let directory = self.root.join(key);
-        !directory.join("fallback.marker").is_file()
-            && ICON_SIZES
-                .iter()
-                .all(|size| directory.join(format!("{size}.png")).is_file())
-    }
-
-    fn copy_fallback_to(&self, target: &Path) -> Result<(), ApplicationError> {
-        self.ensure_fallback()?;
-        let source = self.root.join(FALLBACK_KEY);
-        for size in ICON_SIZES {
-            let target = target.join(format!("{size}.png"));
-            fs::copy(source.join(format!("{size}.png")), target)?;
         }
         Ok(())
     }

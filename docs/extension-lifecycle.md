@@ -71,7 +71,9 @@ failure does not undo another's catalog. Shutdown interrupts waits before joinin
 5. Await cleanup, process/descendant exit and output draining.
 6. Publish disabled and release the instance only after successful cleanup.
 
-Extensions stop producers before draining durable writes. Clipboard stops its monitor,
+Extensions stop producers before draining durable writes. The application extension stops
+icon admission and discovery, drains bounded publications while any active native icon
+call finishes, and joins both workers before returning from EOF cleanup. Clipboard stops its monitor,
 joins its icon worker and drains its DB owner; cleanup failures reach the host through
 nonzero exit and retained stderr. Pending/failed cleanup stays visible and retains
 ownership, preventing replacement. Explicit disable has no timeout, forced kill or

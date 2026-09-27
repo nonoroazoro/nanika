@@ -2,9 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use nanika_extension_application::{
-    ApplicationConfig, ApplicationDatabase, ApplicationIndex, IconCache,
-};
+use nanika_extension_application::{ApplicationConfig, ApplicationDatabase, ApplicationIndex};
 use nanika_protocol::Message;
 
 const ENTRY_COUNT: usize = 500;
@@ -15,9 +13,8 @@ fn indexing(criterion: &mut Criterion) {
     std::fs::create_dir_all(&applications).expect("application root should exist");
     create_applications(&applications);
     let database_path = root.join("application.db");
-    let icon_root = root.join("icons");
     let database = ApplicationDatabase::open(&database_path).expect("database should open");
-    let mut index = ApplicationIndex::new(database, IconCache::new(&icon_root));
+    let mut index = ApplicationIndex::new(database);
     let config = ApplicationConfig {
         roots: vec![applications],
         exclusions: ApplicationConfig::standard_roots().expect("standard roots"),
@@ -34,7 +31,7 @@ fn indexing(criterion: &mut Criterion) {
             || {
                 let database =
                     ApplicationDatabase::open(&database_path).expect("database should reopen");
-                ApplicationIndex::new(database, IconCache::new(&icon_root))
+                ApplicationIndex::new(database)
             },
             |mut cold_index| {
                 cold_index

@@ -1,21 +1,19 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationIndex, DiscoveryCommand,
-    DiscoveryServices, EntryPriority, IconCache, RuntimeEvent,
+    DiscoveryServices, EntryPriority, IconWorker, RuntimeEvent,
 };
-
-const ICON_BATCH_SIZE: usize = 10;
 
 /// Named owner for filesystem discovery and application database writes.
 pub struct DiscoveryWorker {
     commands: Sender<DiscoveryCommand>,
     cancelled_through: Arc<AtomicU64>,
-    priority: Arc<Mutex<EntryPriority>>,
+    _icons: IconWorker,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -30,14 +28,13 @@ impl DiscoveryWorker {
         let (commands, receiver) = mpsc::channel();
         let cancelled_through = Arc::new(AtomicU64::new(0));
         let worker_cancellation = Arc::clone(&cancelled_through);
-        let priority = Arc::new(Mutex::new(EntryPriority::default()));
-        let worker_priority = Arc::clone(&priority);
-        let worker_commands = commands.clone();
+        let mut icons = IconWorker::spawn(icon_root, Arc::clone(&entries), events.clone())?;
+        let icon_wake = icons.wake_handle();
         let thread = std::thread::Builder::new()
             .name("nanika-application-discovery".to_owned())
             .spawn(move || {
                 let mut index = match ApplicationDatabase::open(&database_path)
-                    .map(|database| ApplicationIndex::new(database, IconCache::new(&icon_root)))
+                    .map(ApplicationIndex::new)
                 {
                     Ok(index) => index,
                     Err(error) => {
@@ -57,7 +54,7 @@ impl DiscoveryWorker {
                     }
                 };
                 match index.load() {
-                    Ok(loaded) => publish_entries(&entries, &events, loaded, Vec::new()),
+                    Ok(loaded) => publish_entries(&entries, &events, &icon_wake, loaded, Vec::new()),
                     Err(error) => {
                         send_failure(&events, None, 1, &error);
                         return;
@@ -68,9 +65,9 @@ impl DiscoveryWorker {
                     entries: &entries,
                     events: &events,
                     cancelled_through: &worker_cancellation,
+                    icon_wake: &icon_wake,
                 };
-                let mut scan_generation = 1;
-                index = match run_scan(index, &services, None, scan_generation) {
+                index = match run_scan(index, &services, None, 1) {
                     Some(index) => index,
                     None => return,
                 };
@@ -80,7 +77,6 @@ impl DiscoveryWorker {
                             request_id,
                             generation,
                         } => {
-                            scan_generation = generation;
                             index = match run_scan(
                                 index,
                                 &services,
@@ -91,49 +87,22 @@ impl DiscoveryWorker {
                                 None => return,
                             };
                         }
-                        DiscoveryCommand::PopulateIcons => {
-                            if !index.has_pending_icons() {
-                                worker_priority
-                                    .lock()
-                                    .unwrap_or_else(|error| error.into_inner())
-                                    .finish(|_| false);
-                                continue;
-                            }
-                            let entry_ids = worker_priority
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .entries();
-                            let (icon_failures, updated) = index.populate_icon_batch(
-                                services.cancelled_through,
-                                scan_generation,
-                                ICON_BATCH_SIZE,
-                                &entry_ids,
-                            );
-                            for failure in icon_failures {
-                                eprintln!("application icon extraction failed: {failure}");
-                            }
-                            publish_entries(services.entries, services.events, updated, Vec::new());
-                            let mut priority = worker_priority
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner());
-                            // Recheck the latest viewport while holding its admission lock.
-                            // A request arriving during extraction must retain its wake even
-                            // when this batch produces no catalog changes.
-                            if priority.finish(|requested| {
-                                services.cancelled_through.load(Ordering::Acquire) < scan_generation
-                                    && index.has_pending_icons_for(requested)
-                            }) && worker_commands.send(DiscoveryCommand::PopulateIcons).is_err() {
-                                return;
-                            }
-                        }
                         DiscoveryCommand::Shutdown => break,
                     }
                 }
-            })?;
+            });
+        let thread = match thread {
+            Ok(thread) => thread,
+            Err(error) => {
+                icons.stop();
+                let _ = icons.join();
+                return Err(error);
+            }
+        };
         Ok(Self {
             commands,
             cancelled_through,
-            priority,
+            _icons: icons,
             thread: Some(thread),
         })
     }
@@ -153,19 +122,12 @@ impl DiscoveryWorker {
     }
 
     pub fn prepare_entries(&self, generation: u64, entry_ids: Vec<String>) {
-        let mut priority = self
-            .priority
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if priority.request(generation, entry_ids)
-            && self.commands.send(DiscoveryCommand::PopulateIcons).is_err()
-        {
-            priority.finish(|_| false);
-        }
+        self._icons.prepare_entries(generation, entry_ids);
     }
 
     pub fn shutdown(mut self, events: mpsc::Receiver<RuntimeEvent>) -> Result<(), String> {
         self.cancel(u64::MAX);
+        self._icons.stop();
         let _ = self.commands.send(DiscoveryCommand::Shutdown);
         // Keep consuming the bounded event queue while the owner drains. Joining
         // first can deadlock on a final progress or database failure publication.
@@ -181,28 +143,32 @@ impl DiscoveryWorker {
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {
-            return Err("application discovery worker panicked".to_owned());
+            failure.get_or_insert("application discovery worker panicked".to_owned());
+        }
+        if let Err(error) = self._icons.join() {
+            failure.get_or_insert(error);
         }
         failure.map_or(Ok(()), Err)
     }
 
     fn _stop(&mut self) -> Result<(), String> {
-        if self.thread.is_none() {
-            return Ok(());
-        }
         self.cancel(u64::MAX);
+        self._icons.stop();
         let sent = self.commands.send(DiscoveryCommand::Shutdown).is_ok();
-        if let Some(thread) = self.thread.take()
-            && thread.join().is_err()
-        {
-            return Err("application discovery worker panicked".to_owned());
+        let mut failure = None;
+        if let Some(thread) = self.thread.take() {
+            if thread.join().is_err() {
+                failure = Some("application discovery worker panicked".to_owned());
+            } else if !sent {
+                failure = Some(
+                    "application discovery worker closed before shutdown was requested".to_owned(),
+                );
+            }
         }
-        if !sent {
-            return Err(
-                "application discovery worker closed before shutdown was requested".to_owned(),
-            );
+        if let Err(error) = self._icons.join() {
+            failure.get_or_insert(error);
         }
-        Ok(())
+        failure.map_or(Ok(()), Err)
     }
 }
 
@@ -225,6 +191,16 @@ fn run_scan(
         .read()
         .unwrap_or_else(|error| error.into_inner())
         .clone();
+    if request_id.is_some() && services.cancelled_through.load(Ordering::Acquire) < generation {
+        // Refresh explicitly re-admits failed icons. Viewport updates only change
+        // priority and never retry a completed failure.
+        let (priority, wake) = services.icon_wake;
+        priority
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .retry_failed();
+        wake.notify_one();
+    }
     let result = index.scan(
         &config,
         generation,
@@ -237,7 +213,15 @@ fn run_scan(
                 });
             }
         },
-        |updated, removed| publish_entries(services.entries, services.events, updated, removed),
+        |updated, removed| {
+            publish_entries(
+                services.entries,
+                services.events,
+                services.icon_wake,
+                updated,
+                removed,
+            )
+        },
     );
     match result {
         Ok(report) => {
@@ -279,12 +263,18 @@ fn send_failure(
 fn publish_entries(
     entries: &RwLock<std::collections::HashMap<String, ApplicationEntry>>,
     events: &SyncSender<RuntimeEvent>,
+    icon_wake: &(Mutex<EntryPriority>, Condvar),
     updated: Vec<ApplicationEntry>,
     removed: Vec<String>,
 ) {
     let mut current = entries.write().unwrap_or_else(|error| error.into_inner());
     let mut changed = removed.clone();
-    for entry in updated {
+    for mut entry in updated {
+        if let Some(previous) = current.get(&entry.entry_id)
+            && previous.same_icon_source(&entry)
+        {
+            entry._icon = previous._icon.clone();
+        }
         if current.get(&entry.entry_id) != Some(&entry) {
             changed.push(entry.entry_id.clone());
             current.insert(entry.entry_id.clone(), entry);
@@ -295,6 +285,12 @@ fn publish_entries(
     }
     drop(current);
     if !changed.is_empty() {
+        let (priority, wake) = icon_wake;
+        priority
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .wake();
+        wake.notify_one();
         let _ = events.send(RuntimeEvent::CatalogUpdated { entry_ids: changed });
     }
 }

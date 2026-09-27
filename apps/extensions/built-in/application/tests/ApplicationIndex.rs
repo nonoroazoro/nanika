@@ -2,49 +2,6 @@ use super::*;
 use crate::ApplicationEntryData;
 use crate::ScanReport;
 
-fn entry(id: &str) -> ApplicationEntry {
-    ApplicationEntry::new(ApplicationEntryData {
-        entry_id: id.to_owned(),
-        source_key: id.to_owned(),
-        display_name: id.to_owned(),
-        normalized_name: id.to_owned(),
-        normalized_tokens: id.to_owned(),
-        launch_kind: "macos-bundle".to_owned(),
-        target_path: format!("/{id}.app"),
-        arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
-        icon_key: id.to_owned(),
-        icon_source: None,
-        icon_index: 0,
-        priority: 0,
-    })
-}
-
-#[test]
-fn icon_preparation_only_consumes_requested_entries() {
-    let root =
-        std::env::temp_dir().join(format!("nanika-application-demand-{}", std::process::id()));
-    std::fs::create_dir_all(&root).unwrap();
-    let mut index = ApplicationIndex::new(
-        ApplicationDatabase::open(root.join("index.db")).unwrap(),
-        IconCache::new(root.join("icons")),
-    );
-    index.prepared_entries = Some(
-        [entry("a"), entry("b"), entry("c")]
-            .into_iter()
-            .map(|entry| (entry.entry_id.clone(), entry))
-            .collect(),
-    );
-    index.pending_icons = ["a", "b", "c"].map(str::to_owned).into_iter().collect();
-    let (_, updated) = index.populate_icon_batch(&AtomicU64::new(0), 1, 10, &["b".into()]);
-    assert!(!index.has_pending_icons_for(&["b".into()]));
-    assert!(index.has_pending_icons_for(&["a".into()]));
-    assert_eq!(updated.len(), 1);
-    assert_eq!(updated[0].entry_id, "b");
-    assert_eq!(index.pending_icons, HashSet::from(["a".into(), "c".into()]));
-    drop(index);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
 fn scan(
     index: &mut ApplicationIndex,
     config: &ApplicationConfig,
@@ -108,7 +65,7 @@ mod windows {
         create_executable(&applications.join("Sample Tool.exe"));
         let database =
             ApplicationDatabase::open(root.join("application.db")).expect("database should open");
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
@@ -138,10 +95,8 @@ mod windows {
         std::fs::write(broken.join("AppxManifest.xml"),
             r#"<Package><Identity Name="Retained"/><Application Id="App" DisplayName="Retained"/></Package>"#).unwrap();
         create_executable(&valid.join("Previous.exe"));
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(root.join("application.db")).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index =
+            ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
         let mut config = ApplicationConfig {
             roots: vec![valid.clone(), removed],
             exclusions: Vec::new(),
@@ -180,10 +135,7 @@ mod windows {
         create_executable(&first.join("OldFirst.exe"));
         create_executable(&second.join("nested/OldSecond.exe"));
         let db_path = root.join("application.db");
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(&db_path).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index = ApplicationIndex::new(ApplicationDatabase::open(&db_path).unwrap());
         let config = ApplicationConfig {
             roots: vec![first.clone(), second.clone()],
             exclusions: Vec::new(),
@@ -231,10 +183,7 @@ mod windows {
         assert_eq!(entries.len(), 2);
         drop(observer);
         drop(index);
-        let mut restarted = ApplicationIndex::new(
-            ApplicationDatabase::open(&db_path).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut restarted = ApplicationIndex::new(ApplicationDatabase::open(&db_path).unwrap());
         assert!(
             restarted
                 .load()
@@ -275,10 +224,7 @@ mod windows {
         create_executable(&first.join("Remove.exe"));
         create_executable(&second.join("Keep.exe"));
         let path = root.join("application.db");
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(&path).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index = ApplicationIndex::new(ApplicationDatabase::open(&path).unwrap());
         let config = ApplicationConfig {
             roots: vec![first.clone(), second],
             exclusions: Vec::new(),
@@ -349,7 +295,7 @@ mod windows {
         create_executable(&applications.join("First.exe"));
         let database =
             ApplicationDatabase::open(root.join("application.db")).expect("database should open");
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let config = ApplicationConfig {
             roots: vec![applications.clone()],
             exclusions: platform::standard_roots().expect("standard roots"),
@@ -381,7 +327,7 @@ mod windows {
         create_executable(&shortcut_target);
         create_shell_link(&shortcut, &shortcut_target);
         let database = ApplicationDatabase::open(root.join("application.db")).unwrap();
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let config = ApplicationConfig {
             roots: vec![removed.clone(), retained.clone()],
             exclusions: platform::standard_roots().unwrap(),
@@ -411,7 +357,7 @@ mod windows {
         let root = test_root("standard-roots");
         let database =
             ApplicationDatabase::open(root.join("application.db")).expect("database should open");
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let config = ApplicationConfig {
             roots: Vec::new(),
             exclusions: Vec::new(),
@@ -489,7 +435,7 @@ mod windows {
 
         let database =
             ApplicationDatabase::open(root.join("application.db")).expect("database should open");
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
@@ -528,10 +474,10 @@ mod windows {
             let mut entry = platform::read_entry(&mut state, &shortcut, 0)
                 .unwrap()
                 .unwrap();
-            cache.prepare(&mut entry).unwrap();
-            images.push(
-                std::fs::read(root.join("icons").join(&entry.icon_key).join("128.png")).unwrap(),
-            );
+            entry.icon_key = IconCache::key(&entry, &mut state).unwrap();
+            let icon = cache.prepare(&entry).unwrap();
+            images
+                .push(std::fs::read(root.join("icons").join(icon.key()).join("128.png")).unwrap());
         }
         assert_ne!(
             images[0], images[1],
@@ -562,10 +508,8 @@ mod windows {
             exclusions: platform::standard_roots().unwrap(),
             enabled_builtin_roots: Default::default(),
         };
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(root.join("application.db")).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index =
+            ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
         let (report, entries) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
@@ -592,10 +536,7 @@ mod windows {
             exclusions: ApplicationConfig::standard_roots().unwrap(),
             enabled_builtin_roots: Default::default(),
         };
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(&database_path).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
         assert!(
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
                 .unwrap()
@@ -643,10 +584,7 @@ mod windows {
             enabled_builtin_roots: Default::default(),
         };
         let database_path = root.join("application.db");
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(&database_path).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
         let (report, entries) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         assert!(report.complete);
@@ -789,7 +727,7 @@ mod windows {
         create_executable(&applications.join("Sample.exe"));
         let database_path = root.join("application.db");
         let database = ApplicationDatabase::open(&database_path).expect("database should open");
-        let mut index = ApplicationIndex::new(database, IconCache::new(root.join("icons")));
+        let mut index = ApplicationIndex::new(database);
         let observer = rusqlite::Connection::open(&database_path).expect("observer should open");
         observer
             .execute_batch(
@@ -914,10 +852,8 @@ mod windows {
         let preferred = applications.join("A Preferred.lnk");
         create_shell_link(&preferred, &target);
         create_shell_link(&applications.join("Z Alternate.lnk"), &target);
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(root.join("application.db")).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index =
+            ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: Vec::new(),
@@ -951,7 +887,7 @@ mod windows {
     }
 
     #[test]
-    fn failed_scan_reconciles_icon_work_before_returning() {
+    fn failed_scan_preserves_previously_committed_deletions() {
         let root = test_root("failed-scan-icon-work");
         let first = root.join("a");
         let second = root.join("b");
@@ -966,10 +902,7 @@ mod windows {
         create_shell_link(&first_link, &target);
         create_shell_link(&second_link, &target);
         let database = root.join("apps.db");
-        let mut index = ApplicationIndex::new(
-            ApplicationDatabase::open(&database).unwrap(),
-            IconCache::new(root.join("icons")),
-        );
+        let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database).unwrap());
         let config = ApplicationConfig {
             roots: vec![first, second, third.clone()],
             exclusions: Vec::new(),
@@ -985,7 +918,6 @@ mod windows {
         observer.execute_batch("CREATE TRIGGER reject_insert BEFORE INSERT ON app_sources WHEN NEW.display_name = 'New' BEGIN SELECT RAISE(ABORT, 'injected'); END").unwrap();
         let result = scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {});
         assert!(result.is_err());
-        let pending_after_failure = index.has_pending_icons();
         let visible_after_failure = index.load().unwrap();
         observer
             .execute_batch("DROP TRIGGER reject_insert")
@@ -995,10 +927,6 @@ mod windows {
         drop(observer);
         drop(index);
         std::fs::remove_dir_all(root).unwrap();
-        assert!(
-            !pending_after_failure,
-            "scan must return with no icon work for removed identities"
-        );
         assert!(
             visible_after_failure.is_empty(),
             "earlier root deletions must remain committed"
@@ -1117,10 +1045,7 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
     high.normalized_name = "preferred".into();
     high.priority = 1;
     let map = |value: ApplicationEntry| HashMap::from([(value.entry_id.clone(), value)]);
-    let mut index = ApplicationIndex::new(
-        ApplicationDatabase::open(&path).unwrap(),
-        IconCache::new(root.join("icons")),
-    );
+    let mut index = ApplicationIndex::new(ApplicationDatabase::open(&path).unwrap());
     index.load().unwrap();
     index
         ._commit_root(low_key.clone(), map(low.clone()), &mut |_, _| {})
@@ -1130,10 +1055,7 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
         .unwrap();
     // Reopening must seed the persisted winner before an earlier low-priority root is scanned.
     drop(index);
-    let mut index = ApplicationIndex::new(
-        ApplicationDatabase::open(&path).unwrap(),
-        IconCache::new(root.join("icons")),
-    );
+    let mut index = ApplicationIndex::new(ApplicationDatabase::open(&path).unwrap());
     index.load().unwrap();
     let observer = rusqlite::Connection::open(&path).unwrap();
     let version = || {
@@ -1182,4 +1104,21 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
     drop(observer);
     drop(index);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+fn entry(id: &str) -> ApplicationEntry {
+    ApplicationEntry::new(ApplicationEntryData {
+        entry_id: id.to_owned(),
+        source_key: id.to_owned(),
+        display_name: id.to_owned(),
+        normalized_name: id.to_owned(),
+        normalized_tokens: id.to_owned(),
+        launch_kind: "macos-bundle".to_owned(),
+        target_path: format!("/{id}.app"),
+        arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
+        icon_key: id.to_owned(),
+        icon_source: None,
+        icon_index: 0,
+        priority: 0,
+    })
 }

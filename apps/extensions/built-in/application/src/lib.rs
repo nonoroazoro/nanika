@@ -25,6 +25,9 @@ mod discovery_worker;
 #[path = "EntryPriority.rs"]
 mod entry_priority;
 pub(crate) use entry_priority::EntryPriority;
+#[path = "IconWorker.rs"]
+mod icon_worker;
+pub(crate) use icon_worker::IconWorker;
 #[path = "IconCache.rs"]
 mod icon_cache;
 mod normalization;

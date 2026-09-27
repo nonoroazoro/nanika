@@ -619,3 +619,74 @@ fn graceful_discovery_shutdown_drains_a_full_event_queue() {
     thread.join().unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn refresh_retries_failed_icon_preparation_after_cache_access_is_restored() {
+    use nanika_extension_application::{ApplicationConfig, DiscoveryWorker, RuntimeEvent};
+    use std::sync::{Arc, RwLock, mpsc};
+    use std::time::{Duration, Instant};
+
+    let root = test_root("icon-refresh-recovery");
+    let applications = root.join("applications");
+    std::fs::create_dir_all(&applications).unwrap();
+    create_application_fixture(&applications);
+    let icon_root = root.join("icons");
+    std::fs::write(&icon_root, []).unwrap();
+    let config =
+        ApplicationConfig::from_configuration(&application_configuration(&applications)).unwrap();
+    let entries = Arc::new(RwLock::new(std::collections::HashMap::new()));
+    let (sender, events) = mpsc::sync_channel(8);
+    let worker = DiscoveryWorker::spawn(
+        root.join("application.db"),
+        icon_root.clone(),
+        Arc::new(RwLock::new(config)),
+        Arc::clone(&entries),
+        sender,
+    )
+    .unwrap();
+    while !matches!(
+        events.recv_timeout(Duration::from_secs(5)).unwrap(),
+        RuntimeEvent::ScanFinished { .. }
+    ) {}
+    let id = entries
+        .read()
+        .unwrap()
+        .values()
+        .find(|entry| entry.display_name == "Nanika Sample")
+        .unwrap()
+        .entry_id
+        .clone();
+    worker.prepare_entries(1, vec![id.clone()]);
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(5)).unwrap(),
+        RuntimeEvent::CatalogUpdated { .. }
+    ));
+    assert_eq!(
+        entries.read().unwrap()[&id].candidate().icon,
+        Some(nanika_protocol::IconSource::Empty)
+    );
+    std::fs::remove_file(&icon_root).unwrap();
+    std::fs::create_dir_all(&icon_root).unwrap();
+    worker.refresh(Some("retry-icons".into()), 2).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let recovered = loop {
+        if matches!(
+            entries.read().unwrap()[&id].candidate().icon,
+            Some(nanika_protocol::IconSource::Cache(_))
+        ) {
+            break true;
+        }
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            break false;
+        };
+        if events.recv_timeout(remaining).is_err() {
+            break false;
+        }
+    };
+    worker.shutdown(events).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(
+        recovered,
+        "refresh must re-admit failed icons without restarting the extension"
+    );
+}

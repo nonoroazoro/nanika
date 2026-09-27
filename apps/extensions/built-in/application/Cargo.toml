@@ -56,3 +56,7 @@ harness = false
 [[bench]]
 name = "search"
 harness = false
+
+[[bench]]
+name = "icons"
+harness = false

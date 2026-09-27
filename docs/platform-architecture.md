@@ -207,10 +207,36 @@ rows and reconciles only the delivered window; see
 [result state](design-system.md#root-search).
 
 Application discovery initially publishes an explicit empty icon without per-entry
-cache probes, preserving the fixed icon slot without requesting an image. Visible-range requests prepare cached/native icons in small batches. One
-queued/active wake represents the latest viewport. Batch completion rechecks pending
-work under the admission lock, preserving requests that arrive during extraction even
-when the old batch publishes no changes. Hidden UI schedules no viewport requests.
+cache probes, preserving the fixed icon slot without requesting an image. A separate
+single icon worker serves the latest requested viewport while discovery continues;
+only discovery writes the application database. Discovery computes icon keys without
+owning a cache writer. Cache lookup and extraction accept read-only entry metadata and
+return icon references; only the icon worker publishes presentation state. Complete cache hits publish together
+before native extraction begins, and each native completion publishes independently
+through the existing bounded catalog transport. The worker rechecks the latest viewport
+between items; discovery commits wake pending requests for newly available entries.
+Completion changes presentation only and must still match the entry's icon key, source
+and resource index. Removed or replaced sources reject stale completions, while unchanged
+sources retain prepared icons across metadata updates. Failed extraction keeps its cache set marked incomplete and uses one shared fallback
+reference instead of copying fallback files into each failed cache directory. Cache failures remain explicit
+and do not turn repeated viewport requests into automatic retries. An admitted refresh
+re-admits failed icons, including a failure completing during that refresh; successful
+icons remain prepared and offscreen failures wait for a viewport request. Hidden UI schedules
+no viewport requests, and the worker sleeps without polling when there is no work.
+Shutdown stops admission, finishes an active native call and drains bounded publications
+before joining both workers. Windows retains per-size native extraction for 32/64/128 px;
+macOS retains its existing single 256 px NSWorkspace extraction and normalization.
+
+The opt-in `application` `icons` benchmark compares separate extraction with single
+128/256 px extraction without changing production policy. Set
+`NANIKA_ICON_BENCH_SOURCES` to a JSON array of absolute source paths,
+`NANIKA_ICON_BENCH_OUTPUT` to an isolated directory under `target`, and
+`NANIKA_ICON_BENCH_MODE` to `separate`, `single128` or `single256`, then run
+`cargo bench -p nanika-extension-application --bench icons`. Each process reports ten
+rounds including PNG encoding/writes. `NANIKA_ICON_BENCH_HANDSHAKE=1` pauses before
+and after work for an external process-memory sampler. Compare modes in alternating
+order with the same sources; process-cold measurements do not imply a cold OS cache.
+Single-extraction modes are evaluation candidates, not the Windows runtime contract.
 
 ## Extension image resources
 
