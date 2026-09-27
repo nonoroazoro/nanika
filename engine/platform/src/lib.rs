@@ -109,3 +109,19 @@ mod windows_alpha_recovery_tests;
 #[cfg(test)]
 #[path = "../tests/shared/FileIconCache.rs"]
 mod file_icon_cache_tests;
+
+#[path = "shared/PreparedClipboardContent.rs"]
+mod prepared_clipboard_content;
+pub(crate) use prepared_clipboard_content::PreparedClipboardContent;
+
+#[path = "shared/ClipboardWriteBudget.rs"]
+mod clipboard_write_budget;
+pub(crate) use clipboard_write_budget::ClipboardWriteBudget;
+
+#[path = "shared/ClipboardWritePermit.rs"]
+mod clipboard_write_permit;
+pub(crate) use clipboard_write_permit::ClipboardWritePermit;
+
+#[path = "shared/PreparedClipboardWrite.rs"]
+mod prepared_clipboard_write;
+pub use prepared_clipboard_write::PreparedClipboardWrite;

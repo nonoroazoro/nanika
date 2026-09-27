@@ -232,6 +232,7 @@ impl ExtensionRuntime {
                     Vec::new()
                 };
                 publish(nanika_protocol::CandidateUpdate {
+                    complete: true,
                     replace: true,
                     entries,
                     removed: Vec::new(),
@@ -252,22 +253,7 @@ impl ExtensionRuntime {
         }
     }
 
-    pub fn invoke_cancellable(
-        &mut self,
-        invocation: ExtensionRuntimeInvocation,
-        publish: Arc<dyn Fn(String) + Send + Sync>,
-        mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<(nanika_protocol::NavigationEffect, bool), SupervisorError> {
-        self.invoke_interruptible(invocation, publish, || {
-            if should_cancel() {
-                ExtensionInterruption::Cancel
-            } else {
-                ExtensionInterruption::None
-            }
-        })
-    }
-
-    pub(crate) fn invoke_interruptible(
+    pub fn invoke_interruptible(
         &mut self,
         invocation: ExtensionRuntimeInvocation,
         publish: Arc<dyn Fn(String) + Send + Sync>,
@@ -310,14 +296,14 @@ impl ExtensionRuntime {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn view_event_cancellable(
+    pub(crate) fn view_event_interruptible(
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-        should_cancel: impl FnMut() -> bool,
+        interruption: impl FnMut() -> ExtensionInterruption,
     ) -> Result<
         (
             u64,
@@ -327,13 +313,13 @@ impl ExtensionRuntime {
         SupervisorError,
     > {
         match self {
-            Self::Nanika(process) => process.view_event_cancellable(
+            Self::Nanika(process) => process.view_event_interruptible(
                 request_id,
                 generation,
                 view_id,
                 revision,
                 event,
-                should_cancel,
+                interruption,
             ),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
                 "ACP extensions cannot own host-rendered views".to_owned(),

@@ -171,8 +171,10 @@ pub(crate) fn resolve_request(
                 Error::NotFound => StatusCode::NOT_FOUND,
                 Error::OutsideRoot => StatusCode::FORBIDDEN,
                 Error::EncodedSize => StatusCode::PAYLOAD_TOO_LARGE,
-                Error::Dimensions { .. } | Error::Decode(_) => StatusCode::UNPROCESSABLE_ENTITY,
-                Error::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                Error::Dimensions { .. } | Error::Animation | Error::Decode(_) => {
+                    StatusCode::UNPROCESSABLE_ENTITY
+                }
+                Error::Io(_) | Error::Cancelled => StatusCode::INTERNAL_SERVER_ERROR,
             };
             response(status, "text/plain", Vec::new())
         }

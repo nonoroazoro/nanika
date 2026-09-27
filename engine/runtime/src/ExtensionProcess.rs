@@ -2,18 +2,16 @@ use nanika_platform::{ExtensionProcessTree, configure_extension_command};
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
-use std::io::{self, BufReader, BufWriter, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use nanika_protocol::{
-    ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_frame, write_frame,
-};
+use nanika_protocol::{ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME, read_frame};
 
 use crate::{
     ExtensionCommand, ExtensionInterruption, ExtensionLimits, ExtensionNotifier,
@@ -34,7 +32,7 @@ pub struct ExtensionProcess {
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
     process_tree: ExtensionProcessTree,
-    input: Option<BufWriter<ChildStdin>>,
+    input: Option<crate::ExtensionInput>,
     output: Option<Receiver<Result<Option<Message>, FrameError>>>,
     stderr_tail: Arc<Mutex<VecDeque<u8>>>,
     reader_thread: Option<JoinHandle<()>>,
@@ -173,6 +171,16 @@ impl ExtensionProcess {
             }
         };
 
+        let input = match crate::ExtensionInput::spawn(input) {
+            Ok(input) => input,
+            Err(error) => {
+                drop(receiver);
+                cleanup_failed_spawn(&mut child, Some(&process_tree));
+                let _ = reader_thread.join();
+                let _ = stderr_thread.join();
+                return Err(error);
+            }
+        };
         Ok(Self {
             connection_exit,
             candidate_changes,
@@ -185,7 +193,7 @@ impl ExtensionProcess {
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             child,
             process_tree,
-            input: Some(BufWriter::new(input)),
+            input: Some(input),
             output: Some(receiver),
             stderr_tail,
             reader_thread: Some(reader_thread),
@@ -229,15 +237,29 @@ impl ExtensionProcess {
     fn check_shutdown(&mut self) -> Result<(), SupervisorError> {
         if self.shutdown_requested.load(Ordering::Acquire) {
             self.terminate()?;
-            return Err(SupervisorError::Cancelled("application shutdown"));
+            return Err(SupervisorError::Terminated("application shutdown"));
         }
         Ok(())
     }
 
-    fn send(&mut self, message: &Message) -> Result<(), SupervisorError> {
+    fn send(&mut self, message: Message) -> Result<(), SupervisorError> {
         self.check_shutdown()?;
-        let input = self.input.as_mut().ok_or(SupervisorError::ChannelClosed)?;
-        write_frame(input, message).map_err(SupervisorError::Protocol)
+        self.input
+            .as_ref()
+            .ok_or(SupervisorError::ChannelClosed)?
+            .requests
+            .send(message)
+            .map_err(|_| SupervisorError::ChannelClosed)?;
+        loop {
+            self.check_shutdown()?;
+            let input = self.input.as_ref().ok_or(SupervisorError::ChannelClosed)?;
+            // This is shutdown observation, not an operation deadline. No write expires.
+            match input.completions.recv_timeout(Duration::from_millis(25)) {
+                Ok(result) => return result.map_err(SupervisorError::Protocol),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(SupervisorError::ChannelClosed),
+            }
+        }
     }
 
     pub(crate) fn prepare_entries(
@@ -245,7 +267,7 @@ impl ExtensionProcess {
         generation: u64,
         entry_ids: Vec<String>,
     ) -> Result<(), SupervisorError> {
-        self.send(&Message::PrepareEntries {
+        self.send(Message::PrepareEntries {
             generation,
             entry_ids,
         })
@@ -287,7 +309,7 @@ impl ExtensionProcess {
             return Ok(());
         }
         let request_id = request_id.into();
-        if let Err(error) = self.send(&Message::Initialize {
+        if let Err(error) = self.send(Message::Initialize {
             request_id: request_id.clone(),
             protocol: PROTOCOL_NAME.to_owned(),
             configuration,
@@ -352,8 +374,10 @@ impl ExtensionProcess {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
     ) -> Result<(), SupervisorError> {
-        self.invoke_cancellable(request_id, generation, entry_id, action_id, || false)
-            .map(|_| ())
+        self.invoke_interruptible(request_id, generation, entry_id, action_id, || {
+            ExtensionInterruption::None
+        })
+        .map(|_| ())
     }
 
     pub fn refresh(
@@ -381,7 +405,7 @@ impl ExtensionProcess {
     ) -> Result<(), SupervisorError> {
         self.ensure_initialized()?;
         let request_id = request_id.into();
-        self.send(&Message::ConfigurationChanged {
+        self.send(Message::ConfigurationChanged {
             request_id: request_id.clone(),
             configuration,
         })?;
@@ -405,7 +429,7 @@ impl ExtensionProcess {
         {
             return;
         }
-        if let Err(error) = self.send(&Message::ConfigurationChanged {
+        if let Err(error) = self.send(Message::ConfigurationChanged {
             request_id,
             configuration,
         }) {
@@ -429,29 +453,12 @@ impl ExtensionProcess {
         {
             return;
         }
-        if let Err(error) = self.send(&Message::Refresh {
+        if let Err(error) = self.send(Message::Refresh {
             request_id,
             generation,
         }) {
             self.refresh_reply.fail(error);
         }
-    }
-
-    pub(crate) fn invoke_cancellable(
-        &mut self,
-        request_id: impl Into<String>,
-        generation: u64,
-        entry_id: impl Into<String>,
-        action_id: impl Into<String>,
-        mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
-        self.invoke_interruptible(request_id, generation, entry_id, action_id, || {
-            if should_cancel() {
-                ExtensionInterruption::Cancel
-            } else {
-                ExtensionInterruption::None
-            }
-        })
     }
 
     pub(crate) fn invoke_interruptible(
@@ -462,12 +469,10 @@ impl ExtensionProcess {
         action_id: impl Into<String>,
         mut interruption: impl FnMut() -> ExtensionInterruption,
     ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
-        if matches!(interruption(), ExtensionInterruption::Cancel) {
-            return Err(SupervisorError::Cancelled("action"));
-        }
+        self._admit_operation(interruption(), "action")?;
         self.ensure_initialized()?;
         let request_id = request_id.into();
-        self.send(&Message::Invoke {
+        self.send(Message::Invoke {
             request_id: request_id.clone(),
             generation,
             entry_id: entry_id.into(),
@@ -478,7 +483,7 @@ impl ExtensionProcess {
             match interruption() {
                 ExtensionInterruption::None => {}
                 ExtensionInterruption::Cancel if !cancellation_sent => {
-                    self.send(&Message::Cancel {
+                    self.send(Message::Cancel {
                         request_id: request_id.clone(),
                         generation,
                     })?;
@@ -487,7 +492,7 @@ impl ExtensionProcess {
                 ExtensionInterruption::Cancel => {}
                 ExtensionInterruption::Terminate => {
                     self.terminate()?;
-                    return Err(SupervisorError::Cancelled("action"));
+                    return Err(SupervisorError::Terminated("action"));
                 }
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
@@ -546,7 +551,7 @@ impl ExtensionProcess {
         request_id: String,
     ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
         self.ensure_initialized()?;
-        self.send(&Message::CatalogRead {
+        self.send(Message::CatalogRead {
             request_id: request_id.clone(),
         })?;
         match self.receive()? {
@@ -565,7 +570,7 @@ impl ExtensionProcess {
     }
 
     pub(crate) fn acknowledge_catalog(&mut self, transaction: u64) -> Result<(), SupervisorError> {
-        self.send(&Message::CatalogApplied { transaction })
+        self.send(Message::CatalogApplied { transaction })
     }
 
     pub(crate) fn query_incremental(
@@ -583,7 +588,7 @@ impl ExtensionProcess {
         let incremental = incremental && self.query_generation.take() == Some(generation);
         self.query_generation = None;
         let request_id = request_id.into();
-        self.send(&Message::Query {
+        self.send(Message::Query {
             incremental,
             request_id: request_id.clone(),
             generation,
@@ -592,7 +597,7 @@ impl ExtensionProcess {
         let mut cancellation_sent = false;
         loop {
             if should_cancel() && !cancellation_sent {
-                self.send(&Message::Cancel {
+                self.send(Message::Cancel {
                     request_id: request_id.clone(),
                     generation,
                 })?;
@@ -631,6 +636,7 @@ impl ExtensionProcess {
                             ));
                         }
                         publish(nanika_protocol::CandidateUpdate {
+                            complete,
                             replace,
                             removed,
                             entries,
@@ -669,14 +675,14 @@ impl ExtensionProcess {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn view_event_cancellable(
+    pub(crate) fn view_event_interruptible(
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-        mut should_cancel: impl FnMut() -> bool,
+        mut interruption: impl FnMut() -> ExtensionInterruption,
     ) -> Result<
         (
             u64,
@@ -685,23 +691,33 @@ impl ExtensionProcess {
         ),
         SupervisorError,
     > {
+        self._admit_operation(interruption(), "view event")?;
         self.ensure_initialized()?;
         let request_id = request_id.into();
         let view_id = view_id.into();
-        self.send(&Message::ViewEvent {
+        self.send(Message::ViewEvent {
             request_id: request_id.clone(),
             generation,
             view_id: view_id.clone(),
             revision,
             event,
         })?;
+        let mut cancellation_sent = false;
         loop {
-            if should_cancel() {
-                self.send(&Message::Cancel {
-                    request_id: request_id.clone(),
-                    generation,
-                })?;
-                return Err(SupervisorError::Cancelled("view event"));
+            match interruption() {
+                ExtensionInterruption::None => {}
+                ExtensionInterruption::Cancel if !cancellation_sent => {
+                    self.send(Message::Cancel {
+                        request_id: request_id.clone(),
+                        generation,
+                    })?;
+                    cancellation_sent = true;
+                }
+                ExtensionInterruption::Cancel => {}
+                ExtensionInterruption::Terminate => {
+                    self.terminate()?;
+                    return Err(SupervisorError::Terminated("view event"));
+                }
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
                 Some(message) => message,
@@ -743,13 +759,6 @@ impl ExtensionProcess {
                     generation: service_generation,
                     request,
                 }) if parent_request_id == request_id && service_generation == generation => {
-                    let mut interruption = || {
-                        if should_cancel() {
-                            ExtensionInterruption::Cancel
-                        } else {
-                            ExtensionInterruption::None
-                        }
-                    };
                     self.handle_host_request(
                         service_request_id,
                         parent_request_id,
@@ -763,6 +772,9 @@ impl ExtensionProcess {
                     code,
                     message,
                 }) => {
+                    if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
+                        return Err(SupervisorError::Cancelled("view event"));
+                    }
                     return Err(extension_reported_error(
                         "view event",
                         &request_id,
@@ -785,7 +797,7 @@ impl ExtensionProcess {
         self.ensure_initialized()?;
         let request_id = request_id.into();
         let view_id = view_id.into();
-        self.send(&Message::ViewClose {
+        self.send(Message::ViewClose {
             request_id: request_id.clone(),
             view_id: view_id.clone(),
         })?;
@@ -841,7 +853,6 @@ impl ExtensionProcess {
 
     pub fn terminate(&mut self) -> io::Result<()> {
         self.initialized = false;
-        self.input.take();
         self.output.take();
         let mut first_error = None;
         let child_exited = match self.child.try_wait() {
@@ -870,6 +881,11 @@ impl ExtensionProcess {
         {
             first_error = Some(error);
         }
+        if let Some(input) = self.input.take()
+            && let Err(error) = input.close()
+        {
+            first_error.get_or_insert(error);
+        }
         if let Err(error) = self.join_threads() {
             first_error.get_or_insert(error);
         }
@@ -879,7 +895,9 @@ impl ExtensionProcess {
     /// Close host input only after accepted operations have settled. EOF asks the
     /// extension to drain its durable work; only a successful exit completes stop.
     pub fn shutdown(&mut self) -> Result<(), SupervisorError> {
-        self.input.take();
+        if let Some(input) = self.input.take() {
+            input.close()?;
+        }
         let mut failure = None;
         loop {
             match self.receive()? {
@@ -981,19 +999,52 @@ impl ExtensionProcess {
         request: nanika_protocol::HostServiceRequest,
         interruption: &mut impl FnMut() -> ExtensionInterruption,
     ) -> Result<(), SupervisorError> {
-        if matches!(interruption(), ExtensionInterruption::Cancel) {
-            return self.send(&Message::Error {
-                request_id: Some(request_id),
-                code: "cancelled".to_owned(),
-                message: "action was cancelled before host service submission".to_owned(),
-            });
+        match interruption() {
+            ExtensionInterruption::None => {}
+            ExtensionInterruption::Cancel => {
+                return self.send(Message::Error {
+                    request_id: Some(request_id),
+                    code: "cancelled".to_owned(),
+                    message: "action was cancelled before host service admission".to_owned(),
+                });
+            }
+            ExtensionInterruption::Terminate => {
+                self.terminate()?;
+                return Err(SupervisorError::Terminated("host service admission"));
+            }
         }
-        let receiver = self
+        // Preparation may read resources. Recheck interruption after it, before
+        // the prepared request transfers responsibility to the native service.
+        let services = self.host_services.clone();
+        let prepared = self
             .extension_id
             .as_deref()
-            .zip(self.host_services.as_deref())
+            .zip(services.as_deref())
             .ok_or_else(|| "host services are unavailable".to_owned())
-            .and_then(|(extension_id, services)| services.submit(extension_id, request));
+            .and_then(|(extension_id, services)| {
+                services.prepare(extension_id, request, interruption)
+            });
+        let receiver = match prepared {
+            Ok(prepared) => match interruption() {
+                ExtensionInterruption::None => prepared.admit(),
+                ExtensionInterruption::Cancel => {
+                    return self.send(Message::Error {
+                        request_id: Some(request_id),
+                        code: "cancelled".into(),
+                        message: "action was cancelled before host service admission".into(),
+                    });
+                }
+                ExtensionInterruption::Terminate => {
+                    drop(prepared);
+                    self.terminate()?;
+                    return Err(SupervisorError::Terminated("host service admission"));
+                }
+            },
+            Err(error) => {
+                self._admit_operation(interruption(), "host service preparation")?;
+                Err(error)
+            }
+        };
         let result = match receiver {
             Ok(receiver) => loop {
                 match interruption() {
@@ -1002,7 +1053,7 @@ impl ExtensionProcess {
                     ExtensionInterruption::Cancel => {}
                     ExtensionInterruption::Terminate => {
                         self.terminate()?;
-                        return Err(SupervisorError::Cancelled("host service"));
+                        return Err(SupervisorError::Terminated("host service"));
                     }
                 }
                 match receiver.recv_timeout(Duration::from_millis(25)) {
@@ -1016,17 +1067,31 @@ impl ExtensionProcess {
             Err(error) => Err(error),
         };
         match result {
-            Ok(response) => self.send(&Message::HostResponse {
+            Ok(response) => self.send(Message::HostResponse {
                 request_id,
                 parent_request_id,
                 generation,
                 response,
             }),
-            Err(message) => self.send(&Message::Error {
+            Err(message) => self.send(Message::Error {
                 request_id: Some(request_id),
                 code: "host_service_failed".to_owned(),
                 message,
             }),
+        }
+    }
+    fn _admit_operation(
+        &mut self,
+        interruption: ExtensionInterruption,
+        operation: &'static str,
+    ) -> Result<(), SupervisorError> {
+        match interruption {
+            ExtensionInterruption::None => Ok(()),
+            ExtensionInterruption::Cancel => Err(SupervisorError::Cancelled(operation)),
+            ExtensionInterruption::Terminate => {
+                self.terminate()?;
+                Err(SupervisorError::Terminated(operation))
+            }
         }
     }
 }

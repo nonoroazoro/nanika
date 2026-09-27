@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
-use std::sync::mpsc::Receiver;
 
 use nanika_platform::{ClipboardService, ProcessLauncher};
-use nanika_protocol::{ClipboardContent, HostServiceRequest, HostServiceResponse};
+use nanika_protocol::{ClipboardContent, HostServiceRequest};
 use nanika_storage::is_valid_extension_id;
 
 use crate::{DiagnosticCode, HostDiagnostic, HostServiceHandler};
@@ -98,11 +97,12 @@ impl HostServiceRouter {
 }
 
 impl HostServiceHandler for HostServiceRouter {
-    fn submit(
+    fn prepare(
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-    ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
+        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption,
+    ) -> Result<crate::PreparedHostService<'_>, String> {
         if !is_valid_extension_id(extension_id) {
             HostDiagnostic::new(
                 DiagnosticCode::PermissionDenied,
@@ -116,11 +116,17 @@ impl HostServiceHandler for HostServiceRouter {
         match request {
             HostServiceRequest::RevealPath { path } => {
                 self.require_permission(extension_id, "files.reveal")?;
-                self.launcher()?.reveal(path)
+                let service = self.launcher()?;
+                Ok(crate::PreparedHostService::new(move || {
+                    service.reveal(path)
+                }))
             }
             HostServiceRequest::Launch { descriptor } => {
                 self.require_permission(extension_id, "process.launch")?;
-                self.launcher()?.submit(descriptor)
+                let service = self.launcher()?;
+                Ok(crate::PreparedHostService::new(move || {
+                    service.submit(descriptor)
+                }))
             }
             HostServiceRequest::WriteClipboard { content } => {
                 self.require_permission(extension_id, "clipboard.write")?;
@@ -130,7 +136,13 @@ impl HostServiceHandler for HostServiceRouter {
                     }
                     ClipboardContent::Text { .. } | ClipboardContent::Files { .. } => None,
                 };
-                self.clipboard()?.submit(content, payload_root)
+                let service = self.clipboard()?;
+                let prepared = service.prepare(content, payload_root.as_deref(), &mut || {
+                    interruption() != crate::ExtensionInterruption::None
+                })?;
+                Ok(crate::PreparedHostService::new(move || {
+                    service.submit(prepared)
+                }))
             }
         }
     }

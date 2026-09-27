@@ -56,4 +56,10 @@ pub fn target_triple() -> &'static str {
 
 pub(crate) mod file_icon;
 
+pub(crate) mod clipboard;
+
+#[path = "ClipboardOwner.rs"]
+mod clipboard_owner;
+use clipboard_owner::ClipboardOwner;
+
 mod application_identity;

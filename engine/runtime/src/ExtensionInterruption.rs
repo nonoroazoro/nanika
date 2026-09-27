@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ExtensionInterruption {
+pub enum ExtensionInterruption {
     None,
     Cancel,
     Terminate,

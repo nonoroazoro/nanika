@@ -11,6 +11,4 @@ pub(crate) enum LauncherCommand {
         descriptor: LaunchDescriptor,
         response: SyncSender<Result<HostServiceResponse, String>>,
     },
-    #[cfg(windows)]
-    Shutdown,
 }

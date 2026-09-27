@@ -323,7 +323,7 @@ impl ExtensionSearchCoordinator {
         Ok(())
     }
 
-    pub(crate) fn view_event(
+    pub fn view_event(
         &self,
         extension_id: &str,
         instance_id: u64,

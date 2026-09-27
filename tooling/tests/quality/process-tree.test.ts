@@ -40,7 +40,9 @@ test.runIf(process.platform === "win32")("cancelling a hidden command waits for 
     const cancellation = new AbortController();
     const command = `
         const child = Bun.spawn(["bun", "-e", "setInterval(() => {}, 1000)"], { windowsHide: true });
-        await Bun.write("ready.json", JSON.stringify({ parent: process.pid, child: child.pid }));
+        await Bun.write("ready.tmp", JSON.stringify({ parent: process.pid, child: child.pid }));
+        // Existence publishes a complete document, never an in-progress write.
+        await (await import("node:fs/promises")).rename("ready.tmp", "ready.json");
         await child.exited;
     `;
     const running = runProcessTree(["bun", "-e", command], fixture, process.env, cancellation.signal);

@@ -59,3 +59,5 @@ pub fn target_triple() -> &'static str {
 }
 
 pub(crate) mod file_icon;
+
+pub(crate) mod clipboard;

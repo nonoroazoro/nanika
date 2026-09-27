@@ -170,7 +170,7 @@ impl AcpExtensionProcess {
         let result = loop {
             if self.shutdown_requested.load(Ordering::Acquire) {
                 self.terminate()?;
-                break Err(SupervisorError::Cancelled("ACP initialization"));
+                break Err(SupervisorError::Terminated("ACP initialization"));
             }
             match self.ready.recv_timeout(ACP_POLL_INTERVAL) {
                 Ok(Ok(())) => break Ok(()),
@@ -191,27 +191,20 @@ impl AcpExtensionProcess {
         &self.extension_id
     }
 
-    pub fn prompt_cancellable(
-        &mut self,
-        prompt: impl Into<String>,
-        publish: Arc<dyn Fn(String) + Send + Sync>,
-        mut should_cancel: impl FnMut() -> bool,
-    ) -> Result<(), SupervisorError> {
-        self.prompt_interruptible(prompt, publish, || {
-            if should_cancel() {
-                ExtensionInterruption::Cancel
-            } else {
-                ExtensionInterruption::None
-            }
-        })
-    }
-
     pub(crate) fn prompt_interruptible(
         &mut self,
         prompt: impl Into<String>,
         publish: Arc<dyn Fn(String) + Send + Sync>,
         mut interruption: impl FnMut() -> ExtensionInterruption,
     ) -> Result<(), SupervisorError> {
+        match interruption() {
+            ExtensionInterruption::None => {}
+            ExtensionInterruption::Cancel => return Err(SupervisorError::Cancelled("ACP prompt")),
+            ExtensionInterruption::Terminate => {
+                self.terminate()?;
+                return Err(SupervisorError::Terminated("ACP prompt"));
+            }
+        }
         if !self.initialized {
             return Err(SupervisorError::UnexpectedMessage(
                 "ACP extension is not initialized".to_owned(),
@@ -240,7 +233,7 @@ impl AcpExtensionProcess {
                 ExtensionInterruption::Cancel => {}
                 ExtensionInterruption::Terminate => {
                     self.terminate()?;
-                    return Err(SupervisorError::Cancelled("ACP prompt"));
+                    return Err(SupervisorError::Terminated("ACP prompt"));
                 }
             }
             match response.recv_timeout(ACP_POLL_INTERVAL) {

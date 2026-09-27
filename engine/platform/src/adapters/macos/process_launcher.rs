@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::io;
 use std::ptr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use nanika_protocol::HostServiceResponse;
@@ -43,7 +41,7 @@ pub(crate) fn close_queue(queue: i32) {
     unsafe { libc::close(queue) };
 }
 
-pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32, shutdown: Arc<AtomicBool>) {
+pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32) {
     let mut children = HashMap::<usize, std::process::Child>::new();
     let mut received = event(0, 0, 0, 0);
     'owner: loop {
@@ -56,9 +54,6 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32, shutdown: Arc
         }
         let filter = received.filter;
         let identifier = received.ident;
-        if shutdown.load(Ordering::Acquire) {
-            break;
-        }
         if filter == libc::EVFILT_USER {
             loop {
                 match receiver.try_recv() {

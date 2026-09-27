@@ -1,6 +1,6 @@
 use crate::{ExtensionInstance, HostServiceHandler};
-use nanika_protocol::{HostServiceRequest, HostServiceResponse};
-use std::sync::{Arc, mpsc::Receiver};
+use nanika_protocol::HostServiceRequest;
+use std::sync::Arc;
 
 pub(crate) struct InstanceHostServices {
     pub(crate) instance: Arc<ExtensionInstance>,
@@ -8,16 +8,23 @@ pub(crate) struct InstanceHostServices {
 }
 
 impl HostServiceHandler for InstanceHostServices {
-    fn submit(
+    fn prepare(
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-    ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
-        // Admission precedes the potentially blocking native queue. The owning
-        // invocation retains this accepted request through its terminal result.
+        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption,
+    ) -> Result<crate::PreparedHostService<'_>, String> {
         if !self.instance.is_active() {
             return Err("The extension instance has been retired.".into());
         }
-        self.services.submit(extension_id, request)
+        let prepared = self.services.prepare(extension_id, request, interruption)?;
+        Ok(crate::PreparedHostService::new(move || {
+            // This short check is the admission point. Retirement after it must
+            // preserve the prepared input and eventual native result.
+            if !self.instance.is_active() {
+                return Err("The extension instance has been retired.".into());
+            }
+            prepared.admit()
+        }))
     }
 }

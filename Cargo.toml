@@ -52,6 +52,7 @@ libc = "0.2.189"
 windows = { version = "0.62.2", default-features = false }
 windows-sys = "0.61.2"
 clipboard-rs = "0.3.5"
+clipboard-win = "5.4.1"
 block2 = "0.6.2"
 fend-core = "1.5.8"
 windows-registry = "0.100.0"

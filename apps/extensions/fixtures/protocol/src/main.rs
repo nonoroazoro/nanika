@@ -9,6 +9,17 @@ use nanika_protocol::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(path) = arguments
+        .iter()
+        .find_map(|argument| argument.strip_prefix("--block-input="))
+    {
+        let root = std::path::Path::new(path);
+        std::fs::write(root.join("ready"), b"ready")?;
+        while !root.join("release").exists() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        return Ok(());
+    }
     let error_after_initialize = arguments
         .iter()
         .any(|argument| argument == "--error-after-initialize");
@@ -371,6 +382,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 write_frame(&mut output, &response)?;
             }
+            Message::ViewEvent {
+                request_id,
+                generation,
+                view_id,
+                revision,
+                ..
+            } => {
+                if arguments
+                    .iter()
+                    .any(|value| value == "--request-launch-on-view")
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::HostRequest {
+                            request_id: format!("host-{request_id}"),
+                            parent_request_id: request_id.clone(),
+                            generation,
+                            request: HostServiceRequest::Launch {
+                                descriptor: LaunchDescriptor::Program {
+                                    program: "fixture-program".into(),
+                                    arguments: LaunchArguments::default(),
+                                    working_directory: None,
+                                },
+                            },
+                        },
+                    )?;
+                    match read_frame(&mut input)? {
+                        Some(Message::HostResponse { .. }) => {}
+                        Some(Message::Error { code, message, .. }) => {
+                            write_frame(
+                                &mut output,
+                                &Message::Error {
+                                    request_id: Some(request_id),
+                                    code,
+                                    message,
+                                },
+                            )?;
+                            continue;
+                        }
+                        _ => continue,
+                    }
+                }
+                write_frame(
+                    &mut output,
+                    &Message::ViewUpdated {
+                        request_id,
+                        generation,
+                        view_id,
+                        revision,
+                        effect: nanika_protocol::NavigationEffect::None,
+                        view: None,
+                    },
+                )?;
+            }
             Message::ViewClose {
                 request_id,
                 view_id,
@@ -525,7 +590,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             | Message::CandidatesChanged
             | Message::ViewsChanged
             | Message::Result { .. }
-            | Message::ViewEvent { .. }
             | Message::ViewUpdated { .. }
             | Message::ViewClosed { .. }
             | Message::Refreshed { .. }

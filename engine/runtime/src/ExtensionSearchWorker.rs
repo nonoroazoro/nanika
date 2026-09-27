@@ -728,7 +728,7 @@ fn run_view_event(
     let request_id = request.request_id;
     match request.kind {
         ExtensionViewRequestKind::Event(event) => runtime
-            .view_event_cancellable(
+            .view_event_interruptible(
                 format!("view-{extension_id}-{request_id}"),
                 request.generation,
                 request.view_id,
@@ -736,10 +736,16 @@ fn run_view_event(
                 event,
                 || {
                     let (lock, _) = &**state;
-                    lock.lock()
+                    if lock
+                        .lock()
                         .unwrap_or_else(|error| error.into_inner())
                         .shutdown
                         .load(Ordering::Acquire)
+                    {
+                        ExtensionInterruption::Terminate
+                    } else {
+                        ExtensionInterruption::None
+                    }
                 },
             )
             .map(|(revision, effect, view)| RuntimeViewCompletion {

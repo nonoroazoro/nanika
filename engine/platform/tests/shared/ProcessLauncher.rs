@@ -154,3 +154,68 @@ fn explicit_shell_launch_uses_the_platform_interpreter() {
     drop(launcher);
     let _ = std::fs::remove_file(marker);
 }
+
+#[test]
+fn shutdown_drains_every_accepted_launch_response() {
+    let service = nanika_platform::ProcessLauncher::spawn().unwrap();
+    let receipts = (0..32)
+        .map(|_| {
+            service
+                .submit(nanika_protocol::LaunchDescriptor::Program {
+                    program: String::new(),
+                    arguments: Default::default(),
+                    working_directory: None,
+                })
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    drop(service);
+    for receipt in receipts {
+        assert!(
+            receipt
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .expect("accepted launch must retain a concrete result")
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn packaged_activation_rejects_paths_commands_and_invalid_native_identities() {
+    let launcher = nanika_platform::ProcessLauncher::spawn().unwrap();
+    for id in [
+        "",
+        "C:\\Windows\\notepad.exe",
+        "shell:AppsFolder",
+        "app!",
+        "app\0id",
+        "app && command",
+    ] {
+        assert!(
+            launcher
+                .launch(
+                    nanika_protocol::LaunchDescriptor::WindowsPackagedApplication {
+                        app_user_model_id: id.into()
+                    }
+                )
+                .is_err()
+        );
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn registered_activation_reports_native_rejection_without_an_error_dialog() {
+    let launcher = nanika_platform::ProcessLauncher::spawn().unwrap();
+    let error = launcher
+        .launch(
+            nanika_protocol::LaunchDescriptor::WindowsPackagedApplication {
+                app_user_model_id: "Nanika.NotInstalled_0000000000000!App".into(),
+            },
+        )
+        .unwrap_err();
+    assert!(
+        !error.contains("invalid packaged application"),
+        "the native activation manager must reject this well-formed, unregistered identity: {error}"
+    );
+}

@@ -1,16 +1,11 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 
 use nanika_protocol::HostServiceResponse;
 
 use crate::{LauncherCommand, process_launch::process_launch};
 
-pub(crate) fn run(receiver: Receiver<LauncherCommand>, _notifier: (), shutdown: Arc<AtomicBool>) {
-    while !shutdown.load(Ordering::Acquire) {
-        let Ok(command) = receiver.recv() else {
-            break;
-        };
+pub(crate) fn run(receiver: Receiver<LauncherCommand>, _notifier: ()) {
+    while let Ok(command) = receiver.recv() {
         match command {
             LauncherCommand::Launch {
                 descriptor,
@@ -34,7 +29,6 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, _notifier: (), shutdown: 
                     tracing::warn!("reveal requester closed before receiving the result");
                 }
             }
-            LauncherCommand::Shutdown => break,
         }
     }
 }

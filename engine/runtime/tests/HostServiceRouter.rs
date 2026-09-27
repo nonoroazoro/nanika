@@ -14,10 +14,10 @@ fn reveal_requires_its_own_permission_before_accessing_the_platform() {
     let request = || HostServiceRequest::RevealPath {
         path: "relative.exe".to_owned(),
     };
-    let error = router.submit("com.nanika.test", request()).unwrap_err();
+    let error = _prepare(&router, "com.nanika.test", request()).unwrap_err();
     assert!(error.contains("files.reveal"));
     router.register_permissions("com.nanika.test", ["files.reveal".to_owned()]);
-    let error = router.submit("com.nanika.test", request()).unwrap_err();
+    let error = _prepare(&router, "com.nanika.test", request()).unwrap_err();
     assert!(error.contains("launcher unavailable"));
 }
 
@@ -30,20 +30,22 @@ fn clipboard_and_payload_unavailability_do_not_disable_process_launch() {
         permissions: Default::default(),
     };
     router.register_permissions("com.nanika.test", ["process.launch".to_owned()]);
-    let result = router
-        .submit(
-            "com.nanika.test",
-            HostServiceRequest::Launch {
-                descriptor: LaunchDescriptor::Program {
-                    program: String::new(),
-                    arguments: LaunchArguments::default(),
-                    working_directory: None,
-                },
+    let result = _prepare(
+        &router,
+        "com.nanika.test",
+        HostServiceRequest::Launch {
+            descriptor: LaunchDescriptor::Program {
+                program: String::new(),
+                arguments: LaunchArguments::default(),
+                working_directory: None,
             },
-        )
-        .expect("launch service should remain available")
-        .recv_timeout(std::time::Duration::from_secs(1))
-        .expect("launch service response");
+        },
+    )
+    .expect("launch service should remain available")
+    .admit()
+    .unwrap()
+    .recv_timeout(std::time::Duration::from_secs(1))
+    .expect("launch service response");
     assert!(result.is_err());
 }
 
@@ -55,7 +57,8 @@ fn payload_roots_reject_invalid_extension_ids() {
         payload_root: Ok(std::env::temp_dir()),
         permissions: Default::default(),
     };
-    let result = router.submit(
+    let result = _prepare(
+        &router,
         "../escape",
         HostServiceRequest::WriteClipboard {
             content: ClipboardContent::PngFile {
@@ -78,15 +81,25 @@ fn host_services_enforce_manifest_permissions() {
         payload_root: Ok(std::env::temp_dir()),
         permissions: Default::default(),
     };
-    let error = router
-        .submit(
-            "com.nanika.test",
-            HostServiceRequest::WriteClipboard {
-                content: ClipboardContent::Text {
-                    value: "value".to_owned(),
-                },
+    let error = _prepare(
+        &router,
+        "com.nanika.test",
+        HostServiceRequest::WriteClipboard {
+            content: ClipboardContent::Text {
+                value: "value".to_owned(),
             },
-        )
-        .expect_err("missing permission should fail");
+        },
+    )
+    .expect_err("missing permission should fail");
     assert!(error.contains("clipboard.write"));
+}
+
+fn _prepare<'a>(
+    router: &'a HostServiceRouter,
+    extension_id: &str,
+    request: HostServiceRequest,
+) -> Result<crate::PreparedHostService<'a>, String> {
+    router.prepare(extension_id, request, &mut || {
+        crate::ExtensionInterruption::None
+    })
 }

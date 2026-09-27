@@ -203,7 +203,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
     let streamed = Arc::new(Mutex::new(String::new()));
     let published_output = Arc::clone(&streamed);
     let (_, has_output) = runtime
-        .invoke_cancellable(
+        .invoke_interruptible(
             ExtensionRuntimeInvocation::new(
                 "invoke-dummy",
                 1,
@@ -217,7 +217,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
                     .unwrap_or_else(|error| error.into_inner())
                     .push_str(&chunk);
             }),
-            || false,
+            || nanika_host::ExtensionInterruption::None,
         )
         .expect("invoke ACP prompt");
     assert!(has_output);

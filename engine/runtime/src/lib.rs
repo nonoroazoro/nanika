@@ -107,7 +107,7 @@ pub use diagnostics::*;
 pub(crate) use extension_command::*;
 pub(crate) use extension_configuration_registry::*;
 pub(crate) use extension_configuration_update::*;
-pub(crate) use extension_interruption::*;
+pub use extension_interruption::*;
 pub(crate) use extension_invocation::*;
 pub use extension_invocation_outcome::*;
 pub(crate) use extension_invocation_output::*;
@@ -261,3 +261,15 @@ use catalog_transfer::CatalogTransfer;
 #[cfg(test)]
 #[path = "../tests/CatalogTransfer.rs"]
 mod catalog_transfer_tests;
+
+#[path = "ExtensionInput.rs"]
+mod extension_input;
+use extension_input::ExtensionInput;
+
+#[path = "PreparedHostService.rs"]
+mod prepared_host_service;
+pub use prepared_host_service::PreparedHostService;
+
+#[path = "HostServiceReceipt.rs"]
+mod host_service_receipt;
+pub use host_service_receipt::HostServiceReceipt;

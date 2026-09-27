@@ -790,10 +790,7 @@ fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_exec
         last_request.ends_with("-18"),
         "cancelled queued work must never reach the extension"
     );
-    assert!(matches!(
-        last_result,
-        Ok(Ok(nanika_host::ExtensionInvocationOutcome::Cancelled))
-    ));
+    assert!(matches!(last_result, Ok(Err(_))));
 }
 
 #[test]
@@ -1220,4 +1217,166 @@ fn catalog_extensions_publish_once_and_search_without_query_messages() {
     }
     coordinator.shutdown();
     owner.shutdown();
+}
+
+#[test]
+fn shutdown_interrupts_a_blocked_input_write_and_joins_the_child() {
+    let root = std::env::temp_dir().join(format!("nanika-blocked-input-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let release = root.join("release");
+    if release.exists() {
+        std::fs::remove_file(&release).unwrap();
+    }
+    let process = ExtensionProcess::spawn_with(
+        fixture_path(),
+        [format!("--block-input={}", root.display()).into()],
+        ExtensionLimits::default(),
+    )
+    .unwrap();
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let coordinator = Arc::new(ExtensionSearchCoordinator::new());
+    let configuration = nanika_protocol::ExtensionConfiguration::new(
+        [(
+            "large".into(),
+            serde_json::Value::String("x".repeat(2 * 1024 * 1024)),
+        )]
+        .into(),
+    );
+    coordinator
+        .register_with_configuration(
+            "blocked.extension",
+            process,
+            owner.handle(),
+            Default::default(),
+            configuration,
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !root.join("ready").exists() {
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    // The fixture never reads, so a frame larger than the pipe capacity cannot complete.
+    std::thread::sleep(Duration::from_millis(100));
+    let (sent, received) = std::sync::mpsc::channel();
+    let stop = Arc::clone(&coordinator);
+    let thread = std::thread::spawn(move || {
+        stop.shutdown();
+        let _ = sent.send(());
+    });
+    let stopped = received.recv_timeout(Duration::from_secs(2)).is_ok();
+    // Release before asserting so a regression cannot leave the test child or join hanging.
+    std::fs::write(&release, b"release").unwrap();
+    thread.join().unwrap();
+    owner.shutdown();
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(
+        stopped,
+        "shutdown must complete without the extension reading or exiting voluntarily"
+    );
+}
+
+#[test]
+fn root_and_view_termination_preserve_the_same_host_admission_boundary() {
+    for view in [false, true] {
+        for during_preparation in [false, true] {
+            let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+            let coordinator = Arc::new(ExtensionSearchCoordinator::new());
+            let weak = Arc::downgrade(&coordinator);
+            let service = Arc::new(if during_preparation {
+                pending_host_service::PendingHostService::stop_during_prepare(move || {
+                    weak.upgrade().unwrap().request_shutdown()
+                })
+            } else {
+                Default::default()
+            });
+            coordinator.set_host_services(service.clone());
+            let process = ExtensionProcess::spawn_with(
+                fixture_path(),
+                [if view {
+                    "--request-launch-on-view"
+                } else {
+                    "--request-launch-on-invoke"
+                }
+                .into()],
+                ExtensionLimits::default(),
+            )
+            .unwrap();
+            coordinator
+                .register(
+                    "fixture.extension",
+                    process,
+                    owner.handle(),
+                    fixture_contributions(),
+                )
+                .unwrap();
+            let instance = coordinator.instance_id("fixture.extension").unwrap();
+            let root_result;
+            let view_result;
+            if view {
+                root_result = None;
+                view_result = Some(
+                    coordinator
+                        .view_event(
+                            "fixture.extension",
+                            instance,
+                            1,
+                            "fixture.view",
+                            1,
+                            nanika_protocol::ViewEvent::Resumed,
+                        )
+                        .unwrap(),
+                );
+            } else {
+                root_result = Some(
+                    coordinator
+                        .invoke(
+                            "fixture.extension",
+                            instance,
+                            1,
+                            "fixture.entry",
+                            "fixture.run",
+                            "",
+                        )
+                        .unwrap(),
+                );
+                view_result = None;
+            }
+            if during_preparation {
+                wait_for_review_condition(|| service.prepared());
+            } else {
+                wait_for_review_condition(|| service.submitted());
+            }
+            let stopping = coordinator.clone();
+            let (done, stopped) = std::sync::mpsc::channel();
+            let thread = std::thread::spawn(move || {
+                stopping.shutdown();
+                let _ = done.send(());
+            });
+            let stopped_without_service = stopped.recv_timeout(Duration::from_secs(2)).is_ok();
+            if !during_preparation {
+                let _ = service.complete();
+            }
+            thread.join().unwrap();
+            assert!(
+                stopped_without_service,
+                "forced process stop must not wait for a native-service outcome"
+            );
+            assert_eq!(service.admissions(), usize::from(!during_preparation));
+            let error = if let Some(result) = root_result {
+                result
+                    .recv_timeout(Duration::from_secs(1))
+                    .unwrap()
+                    .unwrap_err()
+            } else {
+                view_result
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(1))
+                    .unwrap()
+                    .unwrap_err()
+            };
+            assert!(error.contains("terminated"), "{error}");
+            owner.shutdown();
+        }
+    }
 }

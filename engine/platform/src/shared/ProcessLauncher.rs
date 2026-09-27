@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
 
@@ -9,9 +7,8 @@ use crate::LauncherCommand;
 
 /// Single owner for processes requested through the host service boundary.
 pub struct ProcessLauncher {
-    commands: SyncSender<LauncherCommand>,
+    commands: Option<SyncSender<LauncherCommand>>,
     thread: Option<JoinHandle<()>>,
-    shutdown: Arc<AtomicBool>,
     #[cfg(target_os = "macos")]
     notifier: i32,
 }
@@ -25,20 +22,17 @@ impl ProcessLauncher {
         let owner_notifier = notifier;
         #[cfg(windows)]
         let owner_notifier = ();
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let owner_shutdown = Arc::clone(&shutdown);
         let thread = std::thread::Builder::new()
             .name("nanika-process-launcher".to_owned())
-            .spawn(move || run_owner(receiver, owner_notifier, owner_shutdown));
+            .spawn(move || run_owner(receiver, owner_notifier));
         #[cfg(target_os = "macos")]
         let thread =
             thread.inspect_err(|_| crate::adapter::process_launcher::close_queue(notifier))?;
         #[cfg(windows)]
         let thread = thread?;
         Ok(Self {
-            commands,
+            commands: Some(commands),
             thread: Some(thread),
-            shutdown,
             #[cfg(target_os = "macos")]
             notifier,
         })
@@ -50,12 +44,16 @@ impl ProcessLauncher {
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
+            .as_ref()
+            .ok_or("process launcher is closed")?
             .send(LauncherCommand::Launch {
                 descriptor,
                 response,
             })
             .map_err(|_| "process launcher is closed".to_owned())?;
-        self.wake()?;
+        if let Err(error) = self.wake() {
+            tracing::error!(%error, "could not wake launcher after admission; retain the accepted receipt");
+        }
         Ok(result)
     }
 
@@ -76,18 +74,19 @@ impl ProcessLauncher {
         }
         let (response, result) = mpsc::sync_channel(1);
         self.commands
+            .as_ref()
+            .ok_or("process launcher is closed")?
             .send(LauncherCommand::Reveal { path, response })
             .map_err(|_| "process launcher is closed".to_owned())?;
-        self.wake()?;
+        if let Err(error) = self.wake() {
+            tracing::error!(%error, "could not wake launcher after admission; retain the accepted receipt");
+        }
         Ok(result)
     }
 
     fn stop(&mut self) {
-        self.shutdown.store(true, Ordering::Release);
-        #[cfg(windows)]
-        if self.commands.send(LauncherCommand::Shutdown).is_err() {
-            tracing::error!("process launcher closed before shutdown was requested");
-        }
+        // Closing admission wakes/drains the owner without abandoning queued effects.
+        self.commands.take();
         if let Err(error) = self.wake() {
             tracing::error!(%error, "failed to wake process launcher for shutdown");
         }
@@ -116,11 +115,11 @@ impl Drop for ProcessLauncher {
 }
 
 #[cfg(target_os = "macos")]
-fn run_owner(receiver: Receiver<LauncherCommand>, notifier: i32, shutdown: Arc<AtomicBool>) {
-    crate::adapter::process_launcher::run(receiver, notifier, shutdown);
+fn run_owner(receiver: Receiver<LauncherCommand>, notifier: i32) {
+    crate::adapter::process_launcher::run(receiver, notifier);
 }
 
 #[cfg(windows)]
-fn run_owner(receiver: Receiver<LauncherCommand>, _notifier: (), shutdown: Arc<AtomicBool>) {
-    crate::adapter::process_launcher::run(receiver, (), shutdown);
+fn run_owner(receiver: Receiver<LauncherCommand>, _notifier: ()) {
+    crate::adapter::process_launcher::run(receiver, ());
 }

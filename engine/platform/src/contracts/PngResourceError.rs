@@ -5,6 +5,8 @@ pub enum PngResourceError {
     NotFound,
     OutsideRoot,
     EncodedSize,
+    Animation,
+    Cancelled,
     Dimensions { width: u32, height: u32 },
     Decode(png::DecodingError),
     Io(std::io::Error),
@@ -15,6 +17,10 @@ impl Display for PngResourceError {
         match self {
             Self::NotFound => formatter.write_str("PNG resource was not found"),
             Self::OutsideRoot => formatter.write_str("PNG resource is outside its payload root"),
+            Self::Animation => formatter.write_str("PNG resources must be static images"),
+            Self::Cancelled => {
+                formatter.write_str("PNG preparation was cancelled before admission")
+            }
             Self::EncodedSize => formatter.write_str("PNG resource exceeds the encoded size limit"),
             Self::Dimensions { width, height } => write!(
                 formatter,

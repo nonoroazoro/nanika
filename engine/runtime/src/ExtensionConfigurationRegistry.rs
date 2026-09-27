@@ -133,15 +133,17 @@ impl ExtensionConfigurationRegistry {
         key: &str,
         value: Value,
     ) -> Result<(), String> {
-        let mut registered = self
-            .registered
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let current = registered
-            .get(extension_id)
-            .expect("reserved configuration");
-        let contribution = current.contribution.clone();
-        let mut effective = current.values.clone();
+        let (contribution, mut effective) = {
+            let registered = self
+                .registered
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let current = registered
+                .get(extension_id)
+                .expect("reserved configuration");
+            (current.contribution.clone(), current.values.clone())
+        };
+        // The caller owns the per-extension reservation through persistence and publication.
         effective.insert(key.to_owned(), value);
         contribution.validate_values(&effective)?;
         let path = self.store.extension_configuration_file(extension_id);
@@ -162,6 +164,10 @@ impl ExtensionConfigurationRegistry {
                 .map_err(|error| error.to_string())?;
         }
 
+        let mut registered = self
+            .registered
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let current = registered
             .get_mut(extension_id)
             .ok_or_else(|| format!("extension configuration disappeared: {extension_id}"))?;

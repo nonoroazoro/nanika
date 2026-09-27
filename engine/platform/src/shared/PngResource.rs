@@ -32,9 +32,12 @@ pub fn read_png_resource(path: &Path, payload_root: &Path) -> Result<Vec<u8>, Pn
     if bytes.len() > MAX_PNG_ENCODED_BYTES {
         return Err(PngResourceError::EncodedSize);
     }
-    let decoder = png::Decoder::new(std::io::Cursor::new(&bytes));
+    let decoder = _decoder(&bytes);
     let reader = decoder.read_info().map_err(PngResourceError::Decode)?;
     let info = reader.info();
+    if info.animation_control.is_some() {
+        return Err(PngResourceError::Animation);
+    }
     if !png_dimensions_within_limits(info.width, info.height) {
         return Err(PngResourceError::Dimensions {
             width: info.width,
@@ -50,4 +53,40 @@ pub fn png_resource_hash(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// Decode every row and verify the terminal chunks before admitting a native write.
+/// Keep the original bytes and only a row-sized output buffer, including for Adam7.
+pub(crate) fn validate_png_pixels(
+    bytes: &[u8],
+    cancelled: &mut dyn FnMut() -> bool,
+) -> Result<(), PngResourceError> {
+    let mut reader = _decoder(bytes)
+        .read_info()
+        .map_err(PngResourceError::Decode)?;
+    if reader.info().animation_control.is_some() {
+        return Err(PngResourceError::Animation);
+    }
+    loop {
+        if cancelled() {
+            return Err(PngResourceError::Cancelled);
+        }
+        if reader
+            .next_row()
+            .map_err(PngResourceError::Decode)?
+            .is_none()
+        {
+            break;
+        }
+    }
+    reader.finish().map_err(PngResourceError::Decode)
+}
+
+fn _decoder(bytes: &[u8]) -> png::Decoder<std::io::Cursor<&[u8]>> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    // Validation consumes pixels, not ancillary metadata. Preserve those encoded
+    // chunks for the OS without allocating their decompressed text/profile payloads.
+    decoder.set_ignore_text_chunk(true);
+    decoder.set_ignore_iccp_chunk(true);
+    decoder
 }

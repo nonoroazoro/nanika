@@ -2677,6 +2677,7 @@ dependencies = [
  "async-process",
  "block2",
  "clipboard-rs",
+ "clipboard-win",
  "directories",
  "libc",
  "nanika-protocol",
