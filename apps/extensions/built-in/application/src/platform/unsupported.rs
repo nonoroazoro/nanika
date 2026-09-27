@@ -54,3 +54,10 @@ pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> 
         "Windows shortcut targets are unavailable on this platform".to_owned(),
     ))
 }
+
+pub(super) fn inventories(
+    _enabled: &std::collections::BTreeSet<String>,
+    _cancelled: &mut dyn FnMut() -> bool,
+) -> Vec<super::DiscoveryInventory> {
+    Vec::new()
+}

@@ -78,7 +78,7 @@ impl ApplicationIndex {
             .iter()
             .map(|path| path_key(path).trim_end_matches('/').to_owned())
             .collect::<Vec<_>>();
-        let standard_roots = platform::configured_roots(&config.enabled_builtin_roots)?;
+        let standard_roots = platform::configured_roots(&config.enabled_builtin_sources)?;
         let roots_resolved = standard_roots
             .failures
             .iter()
@@ -110,6 +110,33 @@ impl ApplicationIndex {
         let mut discovered = HashSet::new();
         if self.prepared_entries.is_none() {
             self.load()?;
+        }
+        let inventories =
+            platform::configured_inventories(&config.enabled_builtin_sources, &mut || {
+                is_cancelled(cancelled_through, generation)
+            });
+        let inventory_keys = inventories
+            .iter()
+            .map(|inventory| inventory.key.to_owned())
+            .collect::<HashSet<_>>();
+        for inventory in inventories {
+            if is_cancelled(cancelled_through, generation) {
+                break;
+            }
+            let key = inventory.key;
+            match inventory.entries {
+                Ok(entries) => {
+                    discovered.extend(entries.iter().map(|entry| entry.entry_id.clone()));
+                    self._commit_inventory(key, entries, &mut publish)?;
+                }
+                Err(error) => {
+                    // A failed native inventory preserves its entire last committed
+                    // contribution. Healthy filesystem sources still progress.
+                    eprintln!("application inventory {key} failed: {error}");
+                    warnings = warnings.saturating_add(1);
+                    complete = false;
+                }
+            }
         }
         let total = u32::try_from(roots.len())
             .unwrap_or(u32::MAX - 1)
@@ -223,33 +250,18 @@ impl ApplicationIndex {
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
-            for entry in root_entries.values_mut() {
-                if !entry.icon_key.is_empty() {
-                    continue;
-                }
-                match IconCache::key(entry, &mut self.discovery_state) {
-                    Ok(key) => entry.icon_key = key,
-                    Err(error) => {
-                        eprintln!(
-                            "application icon key failed for {}: {error}",
-                            entry.target_path
-                        );
-                        entry.icon_source = None;
-                        entry.icon_key = IconCache::fallback_key().to_owned();
-                    }
-                }
-            }
+            self._prepare_icons(&mut root_entries);
             if is_cancelled(cancelled_through, generation) {
                 break;
             }
             discovered.extend(root_entries.keys().cloned());
-            let root_key = path_key(root);
+            let source_id = path_key(root);
             // A failed subtree keeps its previous contribution, including non-winning sources.
             if let Some(previous) = self
                 .sources
                 .as_ref()
                 .expect("sources initialized")
-                .entries(&root_key)
+                .entries(&source_id)
             {
                 for entry in previous.values() {
                     if !coverage.replaces(&entry.source_key) {
@@ -257,7 +269,7 @@ impl ApplicationIndex {
                     }
                 }
             }
-            self._commit_root(root_key, root_entries, &mut publish)?;
+            self._commit_source(source_id, root_entries, &mut publish)?;
         }
 
         progress(nanika_protocol::OperationProgress {
@@ -278,12 +290,13 @@ impl ApplicationIndex {
             let configured = roots
                 .iter()
                 .map(|(path, _)| path_key(path))
+                .chain(inventory_keys)
                 .collect::<HashSet<_>>();
             let obsolete = self
                 .sources
                 .as_ref()
                 .expect("sources initialized")
-                .roots()
+                .source_ids()
                 .filter(|root| !configured.contains(*root))
                 .cloned()
                 .collect::<Vec<_>>();
@@ -298,13 +311,46 @@ impl ApplicationIndex {
                     .filter(|(_, entry)| !coverage.replaces(&entry.source_key))
                     .map(|(id, entry)| (id.clone(), entry.clone()))
                     .collect();
-                self._commit_root(root, retained, &mut publish)?;
+                self._commit_source(root, retained, &mut publish)?;
             }
         }
         Ok(report)
     }
 
-    fn _commit_root(
+    fn _commit_inventory(
+        &mut self,
+        key: &str,
+        entries: Vec<ApplicationEntry>,
+        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+    ) -> Result<(), ApplicationError> {
+        let mut replacement = HashMap::new();
+        for entry in entries {
+            _insert_preferred(&mut replacement, entry);
+        }
+        self._prepare_icons(&mut replacement);
+        self._commit_source(key.to_owned(), replacement, publish)
+    }
+
+    fn _prepare_icons(&mut self, entries: &mut HashMap<String, ApplicationEntry>) {
+        for entry in entries.values_mut() {
+            if !entry.icon_key.is_empty() {
+                continue;
+            }
+            match IconCache::key(entry, &mut self.discovery_state) {
+                Ok(key) => entry.icon_key = key,
+                Err(error) => {
+                    eprintln!(
+                        "application icon key failed for {}: {error}",
+                        entry.target_path
+                    );
+                    entry.icon_source = None;
+                    entry.icon_key = IconCache::fallback_key().to_owned();
+                }
+            }
+        }
+    }
+
+    fn _commit_source(
         &mut self,
         root: String,
         mut replacement: HashMap<String, ApplicationEntry>,
@@ -346,7 +392,7 @@ impl ApplicationIndex {
             .cloned()
             .collect::<Vec<_>>();
         self.database
-            .commit_root(&root, &changed_sources, &removed_sources)?;
+            .commit_source(&root, &changed_sources, &removed_sources)?;
         self.sources
             .as_mut()
             .expect("sources initialized")

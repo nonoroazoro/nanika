@@ -85,3 +85,7 @@ mod scan_coverage_tests;
 #[path = "ApplicationEntryData.rs"]
 mod entry_data;
 pub use entry_data::ApplicationEntryData;
+
+#[path = "ApplicationIconSource.rs"]
+mod application_icon_source;
+pub(crate) use application_icon_source::ApplicationIconSource;

@@ -20,6 +20,9 @@ walkdir.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
+    "ApplicationModel_Core",
+    "Management_Deployment",
+    "Win32_System_WinRT",
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use crate::ApplicationIconSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplicationEntryData {
@@ -12,7 +12,6 @@ pub struct ApplicationEntryData {
     pub target_path: String,
     pub arguments_json: String,
     pub icon_key: String,
-    pub(crate) icon_source: Option<PathBuf>,
-    pub(crate) icon_index: i32,
+    pub(crate) icon_source: Option<ApplicationIconSource>,
     pub(crate) priority: usize,
 }

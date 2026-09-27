@@ -108,3 +108,35 @@ pub(crate) fn mac_application(_bundle_path: &str) -> std::io::Result<Command> {
         "macOS application launch is unsupported on this platform",
     ))
 }
+
+pub(crate) fn windows_packaged_application(id: &str) -> std::io::Result<()> {
+    use windows::{
+        Win32::{
+            System::Com::{
+                CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+                CoUninitialize,
+            },
+            UI::Shell::{
+                AO_NOERRORUI, ApplicationActivationManager, IApplicationActivationManager,
+            },
+        },
+        core::PCWSTR,
+    };
+    let id = super::application_identity::validate(id)?;
+    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+        .ok()
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let result = (|| -> windows::core::Result<()> {
+        let manager: IApplicationActivationManager =
+            unsafe { CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_INPROC_SERVER)? };
+        // Surface activation failures through the host receipt, without an OS error dialog.
+        unsafe {
+            manager.ActivateApplication(PCWSTR(id.as_ptr()), PCWSTR::null(), AO_NOERRORUI)?;
+        }
+        Ok(())
+    })();
+    unsafe {
+        CoUninitialize();
+    }
+    result.map_err(|error| std::io::Error::other(error.to_string()))
+}

@@ -42,3 +42,18 @@ pub(crate) fn cached_list_pixels(
     let _ = preview;
     crate::adapter::file_icon::list_pixels(path, 128)
 }
+
+/// Native artwork for a registered Windows application, without a filesystem identity.
+/// Other platforms reject this request explicitly. Run on a blocking owner.
+pub fn windows_application_icon_pixels(
+    app_user_model_id: &str,
+    size: u32,
+) -> std::io::Result<Vec<u8>> {
+    if !(1..=512).contains(&size) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid application icon size",
+        ));
+    }
+    crate::adapter::file_icon::application_pixels(app_user_model_id, size)
+}

@@ -49,14 +49,14 @@ fn manifest_defaults_enable_builtin_sources_and_explicit_false_disables_one() {
         .map(|(key, _)| key.clone())
         .collect();
     assert!(!expected.is_empty());
-    assert_eq!(config.enabled_builtin_roots, expected);
+    assert_eq!(config.enabled_builtin_sources, expected);
     let key = expected.first().unwrap();
     values.insert(key.clone(), serde_json::json!(false));
     let disabled =
         ApplicationConfig::from_configuration(&ExtensionConfiguration::new(values.clone()))
             .unwrap();
-    assert!(!disabled.enabled_builtin_roots.contains(key));
-    assert_eq!(disabled.enabled_builtin_roots.len(), expected.len() - 1);
+    assert!(!disabled.enabled_builtin_sources.contains(key));
+    assert_eq!(disabled.enabled_builtin_sources.len(), expected.len() - 1);
     values.insert(key.clone(), serde_json::json!("false"));
     assert!(ApplicationConfig::from_configuration(&ExtensionConfiguration::new(values)).is_err());
 }

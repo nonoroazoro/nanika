@@ -183,11 +183,39 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
     result
 }
 
+pub(crate) fn application_pixels(id: &str, size: u32) -> std::io::Result<Vec<u8>> {
+    let id = super::application_identity::validate(id)?;
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    initialized
+        .ok()
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let _apartment = Apartment(true);
+    let factory: IShellItemImageFactory = unsafe {
+        windows::Win32::UI::Shell::SHCreateItemInKnownFolder(
+            &windows::Win32::UI::Shell::FOLDERID_AppsFolder,
+            windows::Win32::UI::Shell::KF_FLAG_DEFAULT,
+            PCWSTR(id.as_ptr()),
+        )
+    }
+    .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let pixels = _factory_pixels(&factory, 256, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT)?;
+    crate::normalize_icon_rgba(&pixels, 256, 256, size)
+        .ok_or_else(|| std::io::Error::other("Windows provided an empty application icon"))
+}
+
 fn image_factory_pixels(source: &[u16], size: u32, flags: SIIGBF) -> std::io::Result<Vec<u8>> {
     let factory = unsafe {
         SHCreateItemFromParsingName::<_, _, IShellItemImageFactory>(PCWSTR(source.as_ptr()), None)
     }
     .map_err(|error| std::io::Error::other(error.to_string()))?;
+    _factory_pixels(&factory, size, flags)
+}
+
+fn _factory_pixels(
+    factory: &IShellItemImageFactory,
+    size: u32,
+    flags: SIIGBF,
+) -> std::io::Result<Vec<u8>> {
     let bitmap = unsafe {
         factory.GetImage(
             SIZE {

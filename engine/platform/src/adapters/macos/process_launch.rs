@@ -33,3 +33,10 @@ pub(crate) fn mac_application(bundle_path: &str) -> std::io::Result<Command> {
     command.arg(path);
     Ok(command)
 }
+
+pub(crate) fn windows_packaged_application(_id: &str) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Windows packaged application activation is unsupported on this platform",
+    ))
+}

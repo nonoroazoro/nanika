@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use crate::ApplicationEntry;
 
-/// Committed root contributions and an identity-to-root index for local winner selection.
+/// Committed source contributions and an identity-to-source index for local winner selection.
 #[derive(Default)]
 pub(crate) struct ApplicationSources {
-    _roots: HashMap<String, HashMap<String, ApplicationEntry>>,
+    _sources: HashMap<String, HashMap<String, ApplicationEntry>>,
     _owners: HashMap<String, Vec<Arc<str>>>,
 }
 
@@ -17,7 +17,7 @@ impl ApplicationSources {
             .filter_map(|(id, owners)| {
                 owners
                     .iter()
-                    .filter_map(|root| self._roots.get(root.as_ref())?.get(id))
+                    .filter_map(|root| self._sources.get(root.as_ref())?.get(id))
                     .max_by(|left, right| {
                         left.priority
                             .cmp(&right.priority)
@@ -28,12 +28,12 @@ impl ApplicationSources {
             .collect()
     }
 
-    pub(crate) fn roots(&self) -> impl Iterator<Item = &String> {
-        self._roots.keys()
+    pub(crate) fn source_ids(&self) -> impl Iterator<Item = &String> {
+        self._sources.keys()
     }
 
     pub(crate) fn entries(&self, root: &str) -> Option<&HashMap<String, ApplicationEntry>> {
-        self._roots.get(root)
+        self._sources.get(root)
     }
 
     /// Stage winner changes without mutating the committed sources before the database commits.
@@ -43,7 +43,7 @@ impl ApplicationSources {
         replacement: &'a HashMap<String, ApplicationEntry>,
     ) -> (Vec<&'a ApplicationEntry>, Vec<String>) {
         let affected = self
-            ._roots
+            ._sources
             .get(root)
             .into_iter()
             .flat_map(|entries| entries.keys())
@@ -58,7 +58,7 @@ impl ApplicationSources {
                 .into_iter()
                 .flatten()
                 .filter(|owner| owner.as_ref() != root)
-                .filter_map(|owner| self._roots.get(owner.as_ref())?.get(id))
+                .filter_map(|owner| self._sources.get(owner.as_ref())?.get(id))
                 .chain(replacement.get(id))
                 .max_by(|left, right| {
                     left.priority
@@ -74,7 +74,7 @@ impl ApplicationSources {
     }
 
     pub(crate) fn commit(&mut self, root: String, replacement: HashMap<String, ApplicationEntry>) {
-        let previous = self._roots.remove(&root);
+        let previous = self._sources.remove(&root);
         if let Some(previous) = &previous {
             for id in previous.keys().filter(|id| !replacement.contains_key(*id)) {
                 if let Some(owners) = self._owners.get_mut(id) {
@@ -88,7 +88,7 @@ impl ApplicationSources {
         if replacement.is_empty() {
             return;
         }
-        // Root paths are shared, and unchanged memberships keep their existing allocation.
+        // Source identities are shared, and unchanged memberships keep their existing allocation.
         let owner: Arc<str> = Arc::from(root.as_str());
         for id in replacement.keys().filter(|id| {
             previous
@@ -100,6 +100,6 @@ impl ApplicationSources {
                 .or_default()
                 .push(Arc::clone(&owner));
         }
-        self._roots.insert(root, replacement);
+        self._sources.insert(root, replacement);
     }
 }

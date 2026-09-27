@@ -233,3 +233,10 @@ pub(crate) fn stamp(metadata: &std::fs::Metadata) -> String {
 #[cfg(test)]
 #[path = "../../../tests/adapters/macos/file_icon.rs"]
 mod tests;
+
+pub(crate) fn application_pixels(_app_user_model_id: &str, _size: u32) -> std::io::Result<Vec<u8>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Windows application icons are unsupported on this platform",
+    ))
+}

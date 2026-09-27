@@ -378,9 +378,15 @@ fn stale_cached_completions_reject_source_path_and_resource_index_changes() {
         let prepared = _ready(&original);
         let mut replacement = original.clone();
         if change_path {
-            replacement.icon_source = Some(PathBuf::from("/replacement.exe"));
+            replacement.icon_source = Some(crate::ApplicationIconSource::File {
+                path: PathBuf::from("/replacement.exe"),
+                index: 0,
+            });
         } else {
-            replacement.icon_index = 1;
+            replacement.icon_source = Some(crate::ApplicationIconSource::File {
+                path: PathBuf::from("/a.exe"),
+                index: 1,
+            });
         }
         let entries = RwLock::new(HashMap::from([("a".into(), replacement.clone())]));
         let (events, receiver) = mpsc::sync_channel(1);
@@ -401,8 +407,10 @@ fn _entry(id: &str) -> ApplicationEntry {
         target_path: format!("/{id}.exe"),
         arguments_json: "{\"kind\":\"structured\",\"values\":[]}".into(),
         icon_key: id.into(),
-        icon_source: Some(PathBuf::from(format!("/{id}.exe"))),
-        icon_index: 0,
+        icon_source: Some(crate::ApplicationIconSource::File {
+            path: PathBuf::from(format!("/{id}.exe")),
+            index: 0,
+        }),
         priority: 0,
     })
 }

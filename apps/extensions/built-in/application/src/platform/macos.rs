@@ -123,8 +123,10 @@ pub(super) fn read_entry(
         target_path: path.to_string_lossy().into_owned(),
         arguments_json,
         icon_key: String::new(),
-        icon_source: Some(path.to_path_buf()),
-        icon_index: 0,
+        icon_source: Some(crate::ApplicationIconSource::File {
+            path: path.to_path_buf(),
+            index: 0,
+        }),
         priority,
     })))
 }
@@ -227,4 +229,11 @@ pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> 
     Err(ApplicationError::Configuration(
         "Windows shortcut targets are unavailable on this platform".to_owned(),
     ))
+}
+
+pub(super) fn inventories(
+    _enabled: &std::collections::BTreeSet<String>,
+    _cancelled: &mut dyn FnMut() -> bool,
+) -> Vec<super::DiscoveryInventory> {
+    Vec::new()
 }

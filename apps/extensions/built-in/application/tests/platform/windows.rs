@@ -1,25 +1,6 @@
 use super::*;
 
 #[test]
-fn packaged_inspection_failure_retains_the_resolved_path_for_cleanup() {
-    let root = std::env::temp_dir().join(format!("nanika-packaged-root-{}", std::process::id()));
-    std::fs::write(&root, "not a directory").unwrap();
-    let mut roots = DiscoveryRoots::default();
-    _include_packaged_root(&mut roots, SYSTEM_PACKAGED_KEY, Ok(root.clone()));
-    assert!(roots.paths.is_empty());
-    assert_eq!(roots.failures.len(), 1);
-    assert_eq!(roots.failures[0].path.as_ref(), Some(&root));
-    let mut coverage = crate::scan_coverage::ScanCoverage::new(
-        std::iter::empty(),
-        roots.failures.iter().all(|failure| failure.path.is_some()),
-    );
-    coverage.failed(roots.failures[0].path.as_deref().unwrap());
-    assert!(!coverage.replaces(&path_key(&root.join("Existing.exe"))));
-    assert!(coverage.replaces(&path_key(&root.with_extension("removed").join("Old.exe"))));
-    std::fs::remove_file(root).unwrap();
-}
-
-#[test]
 fn scoop_uses_only_the_selected_installations_shims() {
     let root = known_folder(&FOLDERID_Profile)
         .unwrap()

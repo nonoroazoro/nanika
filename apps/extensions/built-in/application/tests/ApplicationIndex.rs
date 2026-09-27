@@ -69,7 +69,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let (report, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("scan should complete");
@@ -86,21 +86,21 @@ mod windows {
     fn partial_scan_cleans_successful_paths_and_removed_roots_but_preserves_failed_paths() {
         let root = test_root("independent-roots");
         let valid = root.join("valid");
-        let broken = valid.join("broken-package");
+        let broken = valid.join("Retained.lnk");
         let removed = root.join("removed");
         std::fs::create_dir_all(&valid).unwrap();
-        std::fs::create_dir_all(&broken).unwrap();
         std::fs::create_dir_all(&removed).unwrap();
         create_executable(&removed.join("Removed.exe"));
-        std::fs::write(broken.join("AppxManifest.xml"),
-            r#"<Package><Identity Name="Retained"/><Application Id="App" DisplayName="Retained"/></Package>"#).unwrap();
+        let target = root.join("Retained.exe");
+        create_executable(&target);
+        create_shell_link(&broken, &target);
         create_executable(&valid.join("Previous.exe"));
         let mut index =
             ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
         let mut config = ApplicationConfig {
             roots: vec![valid.clone(), removed],
             exclusions: Vec::new(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         assert!(
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
@@ -110,7 +110,7 @@ mod windows {
         );
         std::fs::remove_file(valid.join("Previous.exe")).unwrap();
         create_executable(&valid.join("Current.exe"));
-        std::fs::write(broken.join("AppxManifest.xml"), "invalid manifest").unwrap();
+        std::fs::write(&broken, "invalid shortcut").unwrap();
         config.roots.pop();
         let (report, entries) =
             scan(&mut index, &config, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -139,7 +139,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first.clone(), second.clone()],
             exclusions: Vec::new(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         std::fs::remove_file(first.join("OldFirst.exe")).unwrap();
@@ -228,7 +228,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first.clone(), second],
             exclusions: Vec::new(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         index
             .scan(&config, 1, &AtomicU64::new(0), |_| {}, |_, _| {})
@@ -299,7 +299,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications.clone()],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("first scan should complete");
@@ -331,7 +331,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![removed.clone(), retained.clone()],
             exclusions: platform::standard_roots().unwrap(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let (report, initial) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -361,7 +361,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: Vec::new(),
             exclusions: Vec::new(),
-            enabled_builtin_roots: serde_json::from_str::<serde_json::Value>(include_str!(
+            enabled_builtin_sources: serde_json::from_str::<serde_json::Value>(include_str!(
                 "../manifest.jsonc"
             ))
             .unwrap()["contributes"]["configuration"]["properties"]
@@ -379,7 +379,8 @@ mod windows {
         assert!(entries.iter().all(|entry| {
             !entry.entry_id.is_empty()
                 && !entry.display_name.is_empty()
-                && PathBuf::from(&entry.target_path).is_file()
+                && (entry.launch_kind == "windows-packaged"
+                    || PathBuf::from(&entry.target_path).is_file())
         }));
         // Explicit folders remain eligible after their built-in discovery source is disabled.
         let retained = entries
@@ -389,7 +390,7 @@ mod windows {
             })
             .unwrap();
         let mut disabled = config.clone();
-        disabled.enabled_builtin_roots.clear();
+        disabled.enabled_builtin_sources.clear();
         disabled.roots = vec![PathBuf::from(&retained.target_path)];
         let (report, remaining) =
             scan(&mut index, &disabled, 2, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -439,7 +440,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
 
         let (_, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
@@ -506,7 +507,7 @@ mod windows {
                 PathBuf::from(applications.to_string_lossy().to_uppercase()),
             ],
             exclusions: platform::standard_roots().unwrap(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let mut index =
             ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
@@ -534,7 +535,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
         assert!(
@@ -581,7 +582,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let database_path = root.join("application.db");
         let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
@@ -737,7 +738,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
 
         assert!(scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).is_err());
@@ -857,7 +858,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: Vec::new(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let (_, initial) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -906,7 +907,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first, second, third.clone()],
             exclusions: Vec::new(),
-            enabled_builtin_roots: Default::default(),
+            enabled_builtin_sources: Default::default(),
         };
         let (_, entries) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -1048,10 +1049,10 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
     let mut index = ApplicationIndex::new(ApplicationDatabase::open(&path).unwrap());
     index.load().unwrap();
     index
-        ._commit_root(low_key.clone(), map(low.clone()), &mut |_, _| {})
+        ._commit_source(low_key.clone(), map(low.clone()), &mut |_, _| {})
         .unwrap();
     index
-        ._commit_root(high_key.clone(), map(high.clone()), &mut |_, _| {})
+        ._commit_source(high_key.clone(), map(high.clone()), &mut |_, _| {})
         .unwrap();
     // Reopening must seed the persisted winner before an earlier low-priority root is scanned.
     drop(index);
@@ -1066,12 +1067,12 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
     let before = version();
     for _ in 0..2 {
         index
-            ._commit_root(low_key.clone(), map(low.clone()), &mut |_, _| {
+            ._commit_source(low_key.clone(), map(low.clone()), &mut |_, _| {
                 panic!("losing sources do not publish")
             })
             .unwrap();
         index
-            ._commit_root(high_key.clone(), map(high.clone()), &mut |_, _| {
+            ._commit_source(high_key.clone(), map(high.clone()), &mut |_, _| {
                 panic!("unchanged winner does not publish")
             })
             .unwrap();
@@ -1084,7 +1085,7 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
     observer.execute_batch("CREATE TRIGGER reject_change BEFORE DELETE ON app_sources BEGIN SELECT RAISE(ABORT, 'injected'); END").unwrap();
     assert!(
         index
-            ._commit_root(high_key.clone(), HashMap::new(), &mut |_, _| panic!(
+            ._commit_source(high_key.clone(), HashMap::new(), &mut |_, _| panic!(
                 "failed commit must not publish"
             ))
             .is_err()
@@ -1095,7 +1096,7 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
         .unwrap();
     let mut titles = Vec::new();
     index
-        ._commit_root(high_key, HashMap::new(), &mut |updated, removed| {
+        ._commit_source(high_key, HashMap::new(), &mut |updated, removed| {
             assert!(removed.is_empty());
             titles.extend(updated.into_iter().map(|entry| entry.display_name.clone()));
         })
@@ -1118,7 +1119,48 @@ fn entry(id: &str) -> ApplicationEntry {
         arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
         icon_key: id.to_owned(),
         icon_source: None,
-        icon_index: 0,
         priority: 0,
     })
+}
+
+#[test]
+fn native_inventory_commit_is_atomic_and_empty_inventory_retires_its_entries() {
+    let root = std::env::temp_dir().join(format!("nanika-native-inventory-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("application.db");
+    let mut index = crate::ApplicationIndex::new(crate::ApplicationDatabase::open(&path).unwrap());
+    index.load().unwrap();
+    let mut first = entry("native-one");
+    first.source_key = "native:test/one".into();
+    index
+        ._commit_inventory("native:test", vec![first.clone()], &mut |_, _| {})
+        .unwrap();
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_native BEFORE INSERT ON app_sources BEGIN SELECT RAISE(ABORT, 'reject'); END").unwrap();
+    let next = entry("native-two");
+    assert!(
+        index
+            ._commit_inventory("native:test", vec![next], &mut |_, _| panic!(
+                "failed commit must not publish"
+            ))
+            .is_err()
+    );
+    assert_eq!(index.load().unwrap().len(), 1);
+    assert_eq!(index.load().unwrap()[0].entry_id, first.entry_id);
+    assert_eq!(
+        connection
+            .query_row("SELECT entry_id FROM app_sources", [], |row| row
+                .get::<_, String>(0))
+            .unwrap(),
+        first.entry_id
+    );
+    let mut removed = Vec::new();
+    index
+        ._commit_inventory("native:test", Vec::new(), &mut |_, ids| removed.extend(ids))
+        .unwrap();
+    assert_eq!(removed, [first.entry_id.clone()]);
+    assert!(index.load().unwrap().is_empty());
+    drop(connection);
+    drop(index);
+    std::fs::remove_dir_all(root).unwrap();
 }

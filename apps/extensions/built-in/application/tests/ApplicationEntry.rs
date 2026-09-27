@@ -326,7 +326,21 @@ fn entry(index: usize, name: &str) -> ApplicationEntry {
         arguments_json: r#"{"kind":"structured","values":[]}"#.to_owned(),
         icon_key: "fallback".to_owned(),
         icon_source: None,
-        icon_index: 0,
         priority: 0,
     })
+}
+
+#[test]
+fn packaged_applications_use_typed_native_activation_without_command_reconstruction() {
+    let mut app = entry(1, "Registered application");
+    app.launch_kind = "windows-packaged".into();
+    app.target_path = "Example.App_123456789abcd!Main".into();
+    assert_eq!(
+        app.launch_descriptor().unwrap(),
+        nanika_protocol::LaunchDescriptor::WindowsPackagedApplication {
+            app_user_model_id: app.target_path.clone()
+        }
+    );
+    app.launch_kind = "unknown".into();
+    assert!(app.launch_descriptor().is_err());
 }

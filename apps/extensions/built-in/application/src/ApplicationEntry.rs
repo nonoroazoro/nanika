@@ -1,6 +1,6 @@
-use nanika_protocol::{Candidate, CandidateKind, LaunchArguments, LaunchDescriptor};
+use nanika_protocol::{Candidate, CandidateKind, LaunchDescriptor};
 
-use crate::{ApplicationArguments, ApplicationError, RUN_ACTION_ID};
+use crate::{ApplicationError, RUN_ACTION_ID};
 
 /// Persisted application metadata plus transient icon extraction input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,9 +59,7 @@ impl ApplicationEntry {
     }
 
     pub(crate) fn same_icon_source(&self, other: &Self) -> bool {
-        self.icon_key == other.icon_key
-            && self.icon_source == other.icon_source
-            && self.icon_index == other.icon_index
+        self.icon_key == other.icon_key && self.icon_source == other.icon_source
     }
 
     pub fn launch_descriptor(&self) -> Result<LaunchDescriptor, ApplicationError> {
@@ -78,15 +76,15 @@ impl ApplicationEntry {
                 bundle_path: self.target_path.clone(),
             });
         }
-        let arguments = match serde_json::from_str::<ApplicationArguments>(&self.arguments_json)? {
-            ApplicationArguments::Structured { values } => LaunchArguments::Structured { values },
-            ApplicationArguments::WindowsRaw { value } => LaunchArguments::WindowsRaw { value },
-        };
-        Ok(LaunchDescriptor::Program {
-            program: self.target_path.clone(),
-            arguments,
-            working_directory: None,
-        })
+        if self.launch_kind == "windows-packaged" {
+            return Ok(LaunchDescriptor::WindowsPackagedApplication {
+                app_user_model_id: self.target_path.clone(),
+            });
+        }
+        Err(ApplicationError::Configuration(format!(
+            "unsupported application kind: {}",
+            self.launch_kind
+        )))
     }
 
     pub fn actions(&self) -> Vec<nanika_protocol::Action> {

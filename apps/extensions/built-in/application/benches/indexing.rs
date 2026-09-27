@@ -18,7 +18,7 @@ fn indexing(criterion: &mut Criterion) {
     let config = ApplicationConfig {
         roots: vec![applications],
         exclusions: ApplicationConfig::standard_roots().expect("standard roots"),
-        enabled_builtin_roots: Default::default(),
+        enabled_builtin_sources: Default::default(),
     };
     let cancellation = AtomicU64::new(0);
     index

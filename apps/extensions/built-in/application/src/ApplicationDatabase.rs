@@ -6,7 +6,7 @@ use std::path::Path;
 
 const SCHEMA: &str = "
 CREATE TABLE app_sources (
-    root_key TEXT NOT NULL CHECK (root_key <> ''),
+    source_id TEXT NOT NULL CHECK (source_id <> ''),
     entry_id TEXT NOT NULL CHECK (entry_id <> ''),
     source_key TEXT NOT NULL CHECK (source_key <> ''),
     display_name TEXT NOT NULL CHECK (display_name <> ''),
@@ -16,14 +16,13 @@ CREATE TABLE app_sources (
     arguments_json TEXT NOT NULL CHECK (arguments_json <> ''),
     icon_key TEXT NOT NULL,
     icon_source TEXT,
-    icon_index INTEGER NOT NULL,
     priority INTEGER NOT NULL CHECK (priority >= 0),
-    PRIMARY KEY (root_key, entry_id)
+    PRIMARY KEY (source_id, entry_id)
 ) STRICT;
 PRAGMA user_version=1;
 ";
 
-/// Durable root-owned source records. Winner selection belongs to the extension.
+/// Durable source-owned records. Winner selection belongs to the extension.
 pub struct ApplicationDatabase {
     connection: Connection,
 }
@@ -38,7 +37,7 @@ impl ApplicationDatabase {
     pub(crate) fn load_sources(
         &self,
     ) -> Result<HashMap<String, HashMap<String, ApplicationEntry>>, ApplicationError> {
-        let mut statement = self.connection.prepare("SELECT root_key, entry_id, source_key, display_name, normalized_tokens, launch_kind, target_path, arguments_json, icon_key, icon_source, icon_index, priority FROM app_sources")?;
+        let mut statement = self.connection.prepare("SELECT source_id, entry_id, source_key, display_name, normalized_tokens, launch_kind, target_path, arguments_json, icon_key, icon_source, priority FROM app_sources")?;
         let rows = statement.query_map([], |row| {
             let display_name: String = row.get(3)?;
             let entry = ApplicationEntry::new(ApplicationEntryData {
@@ -51,9 +50,19 @@ impl ApplicationDatabase {
                 target_path: row.get(6)?,
                 arguments_json: row.get(7)?,
                 icon_key: row.get(8)?,
-                icon_source: row.get::<_, Option<String>>(9)?.map(Into::into),
-                icon_index: row.get(10)?,
-                priority: row.get::<_, u32>(11)? as usize,
+                icon_source: row
+                    .get::<_, Option<String>>(9)?
+                    .map(|json| {
+                        serde_json::from_str(&json).map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                9,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })
+                    })
+                    .transpose()?,
+                priority: row.get::<_, u32>(10)? as usize,
             });
             Ok((row.get::<_, String>(0)?, entry))
         })?;
@@ -76,8 +85,8 @@ impl ApplicationDatabase {
         Ok(sources.winners())
     }
 
-    /// Persist only changed source rows after traversal, including non-winning alternatives.
-    pub fn commit_root(
+    /// Persist only changed source rows after discovery, including non-winning alternatives.
+    pub fn commit_source(
         &mut self,
         root: &str,
         entries: &[ApplicationEntry],
@@ -89,11 +98,11 @@ impl ApplicationDatabase {
         let transaction = self.connection.transaction()?;
         {
             let mut remove = transaction
-                .prepare("DELETE FROM app_sources WHERE root_key = ?1 AND entry_id = ?2")?;
+                .prepare("DELETE FROM app_sources WHERE source_id = ?1 AND entry_id = ?2")?;
             for id in removed {
                 remove.execute(params![root, id])?;
             }
-            let mut upsert = transaction.prepare("INSERT INTO app_sources (root_key, entry_id, source_key, display_name, normalized_tokens, launch_kind, target_path, arguments_json, icon_key, icon_source, icon_index, priority) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(root_key, entry_id) DO UPDATE SET source_key=excluded.source_key, display_name=excluded.display_name, normalized_tokens=excluded.normalized_tokens, launch_kind=excluded.launch_kind, target_path=excluded.target_path, arguments_json=excluded.arguments_json, icon_key=excluded.icon_key, icon_source=excluded.icon_source, icon_index=excluded.icon_index, priority=excluded.priority")?;
+            let mut upsert = transaction.prepare("INSERT INTO app_sources (source_id, entry_id, source_key, display_name, normalized_tokens, launch_kind, target_path, arguments_json, icon_key, icon_source, priority) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) ON CONFLICT(source_id, entry_id) DO UPDATE SET source_key=excluded.source_key, display_name=excluded.display_name, normalized_tokens=excluded.normalized_tokens, launch_kind=excluded.launch_kind, target_path=excluded.target_path, arguments_json=excluded.arguments_json, icon_key=excluded.icon_key, icon_source=excluded.icon_source, priority=excluded.priority")?;
             for entry in entries {
                 upsert.execute(params![
                     root,
@@ -108,8 +117,8 @@ impl ApplicationDatabase {
                     entry
                         .icon_source
                         .as_ref()
-                        .map(|path| path.to_string_lossy().into_owned()),
-                    entry.icon_index,
+                        .map(serde_json::to_string)
+                        .transpose()?,
                     i64::try_from(entry.priority).map_err(|error| {
                         rusqlite::Error::ToSqlConversionFailure(Box::new(error))
                     })?

@@ -533,10 +533,9 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
 
 #[cfg(windows)]
 fn _broken_application(root: &Path) -> PathBuf {
-    let package = root.join("broken-package");
-    std::fs::create_dir_all(&package).unwrap();
-    std::fs::write(package.join("AppxManifest.xml"), "invalid manifest").unwrap();
-    package
+    let shortcut = root.join("broken.lnk");
+    std::fs::write(&shortcut, "invalid shortcut").unwrap();
+    shortcut
 }
 
 #[cfg(target_os = "macos")]

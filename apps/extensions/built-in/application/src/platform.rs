@@ -74,3 +74,14 @@ pub(crate) fn extract_icons(
 ) -> Result<(), ApplicationError> {
     implementation::extract_icons(source, icon_index, sizes, directory)
 }
+
+#[path = "platform/DiscoveryInventory.rs"]
+mod discovery_inventory;
+pub(crate) use discovery_inventory::DiscoveryInventory;
+
+pub(crate) fn configured_inventories(
+    enabled: &std::collections::BTreeSet<String>,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> Vec<DiscoveryInventory> {
+    implementation::inventories(enabled, cancelled)
+}

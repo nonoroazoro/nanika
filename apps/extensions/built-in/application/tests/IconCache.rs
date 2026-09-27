@@ -14,7 +14,13 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     let mut entry = platform::read_entry(&mut DiscoveryState::new(), &source, 0)
         .expect("Books bundle should parse")
         .expect("Books bundle should contribute an entry");
-    assert_eq!(entry.icon_source.as_deref(), Some(source.as_path()));
+    assert_eq!(
+        entry.icon_source.as_ref(),
+        Some(&crate::ApplicationIconSource::File {
+            path: source.clone(),
+            index: 0
+        })
+    );
     let cache = IconCache::new(&root);
 
     entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
@@ -45,7 +51,10 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     }
     let image = root.join(&entry.icon_key).join("128.png");
     let modified = image.metadata().unwrap().modified().unwrap();
-    entry.icon_source = Some(root.join("Missing.app"));
+    entry.icon_source = Some(crate::ApplicationIconSource::File {
+        path: root.join("Missing.app"),
+        index: 0,
+    });
     cache
         .prepare(&entry)
         .expect("a complete cache must not reacquire the system icon");
@@ -59,7 +68,10 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     assert!(cache.cached(&entry.icon_key).is_none());
     assert_eq!(cache.fallback().unwrap().key(), IconCache::fallback_key());
 
-    entry.icon_source = Some(source);
+    entry.icon_source = Some(crate::ApplicationIconSource::File {
+        path: source,
+        index: 0,
+    });
     cache
         .prepare(&entry)
         .expect("an explicit attempt should repair every cache size");
@@ -126,7 +138,13 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
     let entry = platform::read_entry(&mut DiscoveryState::new(), &bundle, 0)
         .unwrap()
         .unwrap();
-    assert_eq!(entry.icon_source.as_deref(), Some(bundle.as_path()));
+    assert_eq!(
+        entry.icon_source.as_ref(),
+        Some(&crate::ApplicationIconSource::File {
+            path: bundle.clone(),
+            index: 0
+        })
+    );
     let mut previous = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
     assert_ne!(previous, IconCache::fallback_key());
     assert_eq!(
@@ -187,7 +205,6 @@ fn fallback_icons_are_valid_png_files() {
                 .expect("arguments should encode"),
             icon_key: String::new(),
             icon_source: None,
-            icon_index: 0,
             priority: 0,
         })
     });
@@ -288,8 +305,10 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
             .to_json()
             .expect("arguments should encode"),
         icon_key: String::new(),
-        icon_source: Some(executable),
-        icon_index: 0,
+        icon_source: Some(crate::ApplicationIconSource::File {
+            path: executable,
+            index: 0,
+        }),
         priority: 0,
     });
     let cache = IconCache::new(root.join("icons"));
@@ -344,7 +363,10 @@ fn invalid_persisted_keys_cannot_write_outside_the_icon_cache() {
         }
         std::fs::write(outside.join("fallback.marker"), []).unwrap();
         let mut entry = test_entry(&key);
-        entry.icon_source = Some(root.join("Missing.exe"));
+        entry.icon_source = Some(crate::ApplicationIconSource::File {
+            path: root.join("Missing.exe"),
+            index: 0,
+        });
         let result = cache.prepare(&entry);
         let preserved = [32, 64, 128].into_iter().all(|size| {
             std::fs::read(outside.join(format!("{size}.png"))).unwrap() == b"unrelated data"
@@ -382,7 +404,6 @@ fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
             .expect("arguments should encode"),
         icon_key: icon_key.to_owned(),
         icon_source: None,
-        icon_index: 0,
         priority: 0,
     })
 }

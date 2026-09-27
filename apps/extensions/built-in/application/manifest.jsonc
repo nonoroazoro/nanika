@@ -45,10 +45,10 @@
           "platforms": ["macos"],
           "order": 20
         },
-        "application.builtin.windows.systemPackaged": {
+        "application.builtin.windows.packaged": {
           "type": "boolean",
-          "title": "System packaged applications",
-          "description": "Search packaged applications installed for all users.",
+          "title": "Packaged applications",
+          "description": "Search registered packaged applications available to your user.",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 10
@@ -76,14 +76,6 @@
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 40
-        },
-        "application.builtin.windows.userPackaged": {
-          "type": "boolean",
-          "title": "User packaged applications",
-          "description": "Search packaged applications installed for your user.",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
-          "order": 50
         },
         "application.builtin.windows.userPrograms": {
           "type": "boolean",

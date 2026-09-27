@@ -16,14 +16,14 @@ use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_CommonPrograms, FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData,
-    FOLDERID_ProgramFiles, FOLDERID_Programs, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+    FOLDERID_CommonPrograms, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_Programs,
+    KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
 };
 
 use super::DiscoveryRoots;
 use super::shell_link_metadata::ShellLinkMetadata;
 use crate::normalization::{normalize_name, path_key, stable_hash, timestamp_nanos};
-use crate::{ApplicationArguments, ApplicationEntry, ApplicationError, DiscoveryState};
+use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
 const SCOOP_ENVIRONMENT: &str = "SCOOP";
 const SCOOP_GLOBAL_ENVIRONMENT: &str = "SCOOP_GLOBAL";
@@ -62,62 +62,12 @@ pub(super) fn standard_roots(
             .map(Some),
         );
     }
-    if enabled(USER_PACKAGED_KEY) {
-        _include_packaged_root(
-            &mut roots,
-            USER_PACKAGED_KEY,
-            known_folder(&FOLDERID_LocalAppData).map(|root| root.join(PACKAGES_DIRECTORY)),
-        );
-    }
-    if enabled(SYSTEM_PACKAGED_KEY) {
-        _include_packaged_root(
-            &mut roots,
-            SYSTEM_PACKAGED_KEY,
-            known_folder(&FOLDERID_ProgramFiles).map(|root| root.join(WINDOWS_APPS_DIRECTORY)),
-        );
-    }
     Ok(roots)
 }
 const USER_PROGRAMS_KEY: &str = "application.builtin.windows.userPrograms";
 const SYSTEM_PROGRAMS_KEY: &str = "application.builtin.windows.systemPrograms";
-const USER_PACKAGED_KEY: &str = "application.builtin.windows.userPackaged";
-const SYSTEM_PACKAGED_KEY: &str = "application.builtin.windows.systemPackaged";
 const SCOOP_USER_KEY: &str = "application.builtin.windows.scoopUser";
 const SCOOP_GLOBAL_KEY: &str = "application.builtin.windows.scoopGlobal";
-const PACKAGES_DIRECTORY: &str = "Packages";
-const WINDOWS_APPS_DIRECTORY: &str = "WindowsApps";
-
-fn packaged_root(root: PathBuf) -> Result<Option<PathBuf>, ApplicationError> {
-    let entries = match std::fs::read_dir(&root) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    for entry in entries {
-        let entry = entry?;
-        if entry.path().join("AppxManifest.xml").is_file() {
-            return Ok(Some(root));
-        }
-    }
-    Ok(None)
-}
-
-fn _include_packaged_root(
-    roots: &mut DiscoveryRoots,
-    source: &str,
-    path: Result<PathBuf, ApplicationError>,
-) {
-    match path {
-        Ok(path) => match packaged_root(path.clone()) {
-            Ok(result) => roots.include(source, Ok(result)),
-            Err(error) => roots.failures.push(super::DiscoveryFailure {
-                message: format!("{source}: {}: {error}", path.display()),
-                path: Some(path),
-            }),
-        },
-        Err(error) => roots.include(source, Err(error)),
-    }
-}
 pub(super) fn is_application_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -126,8 +76,8 @@ pub(super) fn is_application_path(path: &Path) -> bool {
         })
 }
 
-pub(super) fn is_application_bundle(path: &Path) -> bool {
-    path.is_dir() && path.join("AppxManifest.xml").is_file()
+pub(super) fn is_application_bundle(_path: &Path) -> bool {
+    false
 }
 
 pub(super) fn read_entry(
@@ -143,80 +93,9 @@ pub(super) fn read_entry(
         read_shell_link(state, path, priority)
     } else if extension.eq_ignore_ascii_case("exe") {
         read_executable(state, path, priority)
-    } else if is_application_bundle(path) {
-        read_packaged_application(path, priority)
     } else {
         Ok(None)
     }
-}
-
-fn read_packaged_application(
-    package_root: &Path,
-    priority: usize,
-) -> Result<Option<ApplicationEntry>, ApplicationError> {
-    let manifest_path = package_root.join("AppxManifest.xml");
-    let manifest = std::fs::read_to_string(&manifest_path)?;
-    let identity = xml_attribute(&manifest, "Identity", "Name").unwrap_or_else(|| {
-        package_root
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("package")
-            .to_owned()
-    });
-    let application = xml_element(&manifest, "Application").ok_or_else(|| {
-        ApplicationError::Configuration(format!(
-            "packaged app manifest has no Application: {}",
-            manifest_path.display()
-        ))
-    })?;
-    let app_id =
-        xml_attribute(application, "Application", "Id").unwrap_or_else(|| "App".to_owned());
-    let display_name = xml_attribute(application, "Application", "DisplayName")
-        .filter(|value| !value.starts_with("ms-resource:"))
-        .unwrap_or_else(|| identity.clone());
-    let visual = xml_element(application, "uap:VisualElements")
-        .or_else(|| xml_element(application, "VisualElements"));
-    let icon = visual
-        .and_then(|value| xml_attribute(value, "uap:VisualElements", "Square44x44Logo"))
-        .or_else(|| visual.and_then(|value| xml_attribute(value, "VisualElements", "Logo")))
-        .map(|value| package_root.join(value));
-    let package_id = format!("{identity}!{app_id}");
-    let arguments_json =
-        ApplicationArguments::from_windows_raw(Some(format!("shell:AppsFolder\\{package_id}")))
-            .to_json()?;
-    let entry_id = stable_hash(&["windows-packaged", &package_id, &path_key(package_root)]);
-    let icon_key = icon
-        .as_ref()
-        .map_or_else(String::new, |path| _icon_key_from_stamp(path, 0, 0, 0));
-    Ok(Some(ApplicationEntry::new(ApplicationEntryData {
-        entry_id: format!("app.{entry_id}"),
-        source_key: path_key(package_root),
-        display_name: display_name.clone(),
-        normalized_name: normalize_name(&display_name),
-        normalized_tokens: normalize_name(&display_name),
-        launch_kind: "windows-packaged".to_owned(),
-        target_path: "explorer.exe".to_owned(),
-        arguments_json,
-        icon_key,
-        icon_source: icon,
-        icon_index: 0,
-        priority,
-    })))
-}
-
-fn xml_element<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
-    let start = xml.find(&format!("<{name}"))?;
-    let rest = &xml[start..];
-    let end = rest.find('>')?;
-    Some(&rest[..=end])
-}
-
-fn xml_attribute(xml: &str, element: &str, attribute: &str) -> Option<String> {
-    let element = xml_element(xml, element)?;
-    let marker = format!("{attribute}=\"");
-    let start = element.find(&marker)? + marker.len();
-    let end = element[start..].find('\"')? + start;
-    Some(element[start..end].replace('/', "\\"))
 }
 
 pub(super) fn icon_cache_key(
@@ -343,8 +222,10 @@ fn read_shell_link(
         icon_key,
         // The Shell item resolves the shortcut's actual icon resource and index;
         // asking for the DLL itself can return its generic file-type icon.
-        icon_source: Some(path.to_path_buf()),
-        icon_index: 0,
+        icon_source: Some(crate::ApplicationIconSource::File {
+            path: path.to_path_buf(),
+            index: 0,
+        }),
         priority,
     })))
 }
@@ -377,8 +258,10 @@ fn read_executable(
         target_path: target.to_string_lossy().into_owned(),
         arguments_json,
         icon_key: _icon_key_from_stamp(&target, 0, executable_length, executable_modified),
-        icon_source: Some(target),
-        icon_index: 0,
+        icon_source: Some(crate::ApplicationIconSource::File {
+            path: target,
+            index: 0,
+        }),
         priority,
     })))
 }
@@ -550,3 +433,7 @@ pub(super) fn shortcut_target(path: &Path) -> Result<String, ApplicationError> {
     let target = expand_environment(&link.target).canonicalize()?;
     Ok(target.to_string_lossy().into_owned())
 }
+
+#[path = "windows/registered_applications.rs"]
+mod registered_applications;
+pub(super) use registered_applications::inventories;

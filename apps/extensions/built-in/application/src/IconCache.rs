@@ -28,10 +28,23 @@ impl IconCache {
         entry: &ApplicationEntry,
         state: &mut DiscoveryState,
     ) -> Result<String, ApplicationError> {
-        let Some(source) = entry.icon_source.as_deref() else {
+        let Some(source) = entry.icon_source.as_ref() else {
             return Ok(FALLBACK_KEY.to_owned());
         };
-        platform::icon_cache_key(source, entry.icon_index, state)
+        match source {
+            crate::ApplicationIconSource::File { path, index } => {
+                platform::icon_cache_key(path, *index, state)
+            }
+            crate::ApplicationIconSource::WindowsApplication {
+                app_user_model_id,
+                package_full_name,
+            } => Ok(stable_hash(&[
+                ICON_RENDER_VERSION,
+                "windows-app",
+                app_user_model_id,
+                package_full_name,
+            ])),
+        }
     }
 
     /// Prepare files without changing discovery metadata or published presentation.
@@ -43,7 +56,7 @@ impl IconCache {
         if icon.key() == FALLBACK_KEY {
             return self.fallback();
         }
-        let source = entry.icon_source.as_deref().ok_or_else(|| {
+        let source = entry.icon_source.as_ref().ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "application icon source is missing",
@@ -77,7 +90,25 @@ impl IconCache {
         if !missing.is_empty() {
             // An incomplete set stays marked and is never published. The worker owns
             // failure presentation through the single shared fallback icon.
-            platform::extract_icons(source, entry.icon_index, &missing, &directory)?;
+            match source {
+                crate::ApplicationIconSource::File { path, index } => {
+                    platform::extract_icons(path, *index, &missing, &directory)?
+                }
+                crate::ApplicationIconSource::WindowsApplication {
+                    app_user_model_id, ..
+                } => {
+                    // One native render supplies the complete resolution set.
+                    let native =
+                        nanika_platform::windows_application_icon_pixels(app_user_model_id, 256)?;
+                    for size in missing {
+                        let pixels = nanika_platform::normalize_icon_rgba(&native, 256, 256, size)
+                            .ok_or_else(|| {
+                                std::io::Error::other("Windows provided an empty application icon")
+                            })?;
+                        write_png(&directory.join(format!("{size}.png")), size, size, &pixels)?;
+                    }
+                }
+            }
         }
         if let Err(error) = fs::remove_file(fallback_marker)
             && error.kind() != std::io::ErrorKind::NotFound

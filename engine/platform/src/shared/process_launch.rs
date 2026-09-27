@@ -3,6 +3,7 @@ use std::process::{Child, Command, Stdio};
 
 use crate::adapter::process_launch::{
     apply_windows_raw, mac_application, shell_command, windows_application,
+    windows_packaged_application,
 };
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
 
@@ -44,6 +45,10 @@ pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<O
             process
         }
         LaunchDescriptor::MacApplication { bundle_path } => mac_application(bundle_path)?,
+        LaunchDescriptor::WindowsPackagedApplication { app_user_model_id } => {
+            windows_packaged_application(app_user_model_id)?;
+            return Ok(None);
+        }
         LaunchDescriptor::WindowsApplication { path } => {
             windows_application(path)?;
             // Shell activation may reuse an existing process and return no child.

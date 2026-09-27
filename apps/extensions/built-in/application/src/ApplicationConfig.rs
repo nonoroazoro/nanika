@@ -6,7 +6,7 @@ use nanika_protocol::ExtensionConfiguration;
 use crate::ApplicationError;
 
 const ROOTS_KEY: &str = "application.roots";
-const BUILTIN_ROOT_PREFIX: &str = "application.builtin.";
+const BUILTIN_SOURCE_PREFIX: &str = "application.builtin.";
 const MAX_PATHS: usize = 256;
 const MAX_PATH_BYTES: usize = 4_096;
 
@@ -14,7 +14,7 @@ const MAX_PATH_BYTES: usize = 4_096;
 pub struct ApplicationConfig {
     pub roots: Vec<PathBuf>,
     pub exclusions: Vec<PathBuf>,
-    pub enabled_builtin_roots: BTreeSet<String>,
+    pub enabled_builtin_sources: BTreeSet<String>,
 }
 
 impl ApplicationConfig {
@@ -25,7 +25,7 @@ impl ApplicationConfig {
         let config = Self {
             roots: path_list(values, ROOTS_KEY)?,
             exclusions: Vec::new(),
-            enabled_builtin_roots: enabled_builtin_roots(values)?,
+            enabled_builtin_sources: enabled_builtin_sources(values)?,
         };
         config.validate()?;
         Ok(config)
@@ -53,13 +53,13 @@ impl ApplicationConfig {
     }
 }
 
-fn enabled_builtin_roots(
+fn enabled_builtin_sources(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
 ) -> Result<BTreeSet<String>, ApplicationError> {
     let mut enabled = BTreeSet::new();
     for (key, value) in values
         .iter()
-        .filter(|(key, _)| key.starts_with(BUILTIN_ROOT_PREFIX))
+        .filter(|(key, _)| key.starts_with(BUILTIN_SOURCE_PREFIX))
     {
         let value = value.as_bool().ok_or_else(|| {
             ApplicationError::Configuration(format!(

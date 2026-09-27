@@ -26,7 +26,7 @@ fn schema_contains_only_persistent_application_metadata() {
     assert_eq!(
         table_columns(&connection, "app_sources"),
         [
-            "root_key",
+            "source_id",
             "entry_id",
             "source_key",
             "display_name",
@@ -36,7 +36,6 @@ fn schema_contains_only_persistent_application_metadata() {
             "arguments_json",
             "icon_key",
             "icon_source",
-            "icon_index",
             "priority"
         ]
     );
@@ -51,10 +50,10 @@ fn root_commits_preserve_unrelated_records_and_survive_reopen() {
     let path = root.join("application.db");
     let mut database = ApplicationDatabase::open(&path).unwrap();
     database
-        .commit_root("root", &[entry("first"), entry("unrelated")], &[])
+        .commit_source("root", &[entry("first"), entry("unrelated")], &[])
         .unwrap();
     database
-        .commit_root("root", &[entry("replacement")], &["first".to_owned()])
+        .commit_source("root", &[entry("replacement")], &["first".to_owned()])
         .unwrap();
     drop(database);
     let database = ApplicationDatabase::open(&path).unwrap();
@@ -71,13 +70,13 @@ fn failed_root_upsert_rolls_back_its_deletions() {
     let root = test_root("root-rollback");
     let mut database = ApplicationDatabase::open(root.join("application.db")).unwrap();
     database
-        .commit_root("root", &[entry("retained")], &[])
+        .commit_source("root", &[entry("retained")], &[])
         .unwrap();
     let mut invalid = entry("invalid");
     invalid.display_name.clear();
     assert!(
         database
-            .commit_root("root", &[invalid], &["retained".to_owned()])
+            .commit_source("root", &[invalid], &["retained".to_owned()])
             .is_err()
     );
     assert_eq!(database.load_entries().unwrap()[0].entry_id, "retained");
@@ -101,7 +100,7 @@ fn corrupt_application_table_fails_explicitly() {
     let path = root.join("application.db");
     let mut database = ApplicationDatabase::open(&path).expect("database should open");
     database
-        .commit_root("root", &[entry("app.corrupt")], &[])
+        .commit_source("root", &[entry("app.corrupt")], &[])
         .expect("application row should persist");
     drop(database);
     let connection = rusqlite::Connection::open(&path).expect("database should reopen");
@@ -151,7 +150,6 @@ fn entry(entry_id: &str) -> ApplicationEntry {
             .expect("arguments should encode"),
         icon_key: "fallback".to_owned(),
         icon_source: None,
-        icon_index: 0,
         priority: 0,
     })
 }
@@ -185,4 +183,33 @@ fn table_is_strict(connection: &rusqlite::Connection, table: &str) -> bool {
             |row| row.get(0),
         )
         .expect("table strictness should load")
+}
+
+#[test]
+fn native_icon_identity_round_trips_and_rejects_unknown_variants() {
+    let root = test_root("native-icon");
+    let path = root.join("application.db");
+    let mut database = ApplicationDatabase::open(&path).unwrap();
+    let mut app = entry("registered-app");
+    app.launch_kind = "windows-packaged".into();
+    app.target_path = "Example.App_123456789abcd!Main".into();
+    app.icon_source = Some(crate::ApplicationIconSource::WindowsApplication {
+        app_user_model_id: app.target_path.clone(),
+        package_full_name: "Example.App_1.0.0.0_x64__123456789abcd".into(),
+    });
+    database
+        .commit_source("native:windows.packaged", &[app.clone()], &[])
+        .unwrap();
+    assert_eq!(database.load_entries().unwrap(), vec![app]);
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE app_sources SET icon_source = ?1",
+            [r#"{"kind":"unknown"}"#],
+        )
+        .unwrap();
+    assert!(database.load_entries().is_err());
+    drop(connection);
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
 }
