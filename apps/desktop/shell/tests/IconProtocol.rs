@@ -169,3 +169,72 @@ fn package_icons_are_scoped_shared_with_settings_and_fail_independently() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn fingerprinted_package_icons_cache_only_matching_content() {
+    let root =
+        std::env::temp_dir().join(format!("nanika-fingerprinted-icons-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("icon.png");
+    write_png(&path);
+    let bytes = std::fs::read(&path).unwrap();
+    let hash = nanika_platform::png_resource_hash(&bytes);
+    let packages = std::collections::HashMap::from([("example.tools".to_owned(), root.clone())]);
+    let url = format!("/example.tools/package/icon.png?sha256={hash}");
+    for surface in ["launcher", "settings"] {
+        let response = resolve_request(&root, &root, &packages, surface, &request(&url));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body(), &bytes);
+        assert_eq!(
+            response.headers()["Cache-Control"],
+            "private, max-age=31536000, immutable"
+        );
+    }
+    for query in [
+        "sha256=bad",
+        "other=value",
+        &format!("sha256={hash}&extra=1"),
+    ] {
+        let response = resolve_request(
+            &root,
+            &root,
+            &packages,
+            "settings",
+            &request(&format!("/example.tools/package/icon.png?{query}")),
+        );
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["Cache-Control"], "no-store");
+    }
+    let file = std::fs::File::create(&path).unwrap();
+    let mut encoder = png::Encoder::new(file, 1, 1);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&[255, 0, 0, 255])
+        .unwrap();
+    let response = resolve_request(&root, &root, &packages, "settings", &request(&url));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()["Cache-Control"], "no-store");
+    assert!(response.body().is_empty());
+    let new_bytes = std::fs::read(&path).unwrap();
+    let new_hash = nanika_platform::png_resource_hash(&new_bytes);
+    assert_ne!(hash, new_hash);
+    let response = resolve_request(
+        &root,
+        &root,
+        &packages,
+        "settings",
+        &request(&format!(
+            "/example.tools/package/icon.png?sha256={new_hash}"
+        )),
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.body(), &new_bytes);
+    std::fs::remove_file(&path).unwrap();
+    let response = resolve_request(&root, &root, &packages, "settings", &request(&url));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()["Cache-Control"], "no-store");
+    std::fs::remove_dir_all(root).unwrap();
+}

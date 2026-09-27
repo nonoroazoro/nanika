@@ -53,6 +53,11 @@ build dependencies. Cite commits for implementation-specific values; do not mirr
   manifest icon when omitted; explicit empty icons reserve the fixed icon slot.
   Images have no `src` while empty and stay hidden with `visibility: hidden` until
   loaded, preserving row geometry; invalid images show a neutral placeholder.
+  Already-complete images become visible without waiting for the queued load event.
+  Settings manifest icons use content-fingerprinted URLs with immutable browser caching;
+  the resource handler verifies the fingerprint before serving bytes. Mutable package
+  paths remain uncached. Fingerprints are read once by the runtime startup worker,
+  using the same bounded PNG validation for built-in and external extensions.
 
 ## Settings
 

@@ -11,4 +11,6 @@ pub struct RuntimeExtensionInfo {
     pub lifecycle_error: Option<String>,
     pub configuration_error: Option<String>,
     pub icon: String,
+    #[serde(skip)]
+    pub icon_hash: Option<String>,
 }

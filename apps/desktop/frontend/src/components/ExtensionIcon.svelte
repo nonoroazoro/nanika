@@ -2,10 +2,21 @@
 const { src }: { src: string | null; } = $props();
 let failed = $state<string | null>(null);
 let loaded = $state<string | null>(null);
+let element = $state<HTMLImageElement>();
+
+$effect(() =>
+{
+    // Cached images can already be drawable before their queued load event fires.
+    if (src && element?.getAttribute("src") === src && element.complete && element.naturalWidth > 0)
+    {
+        loaded = src;
+    }
+});
 </script>
 
 {#if !src || failed !== src}
     <img
+        bind:this={element}
         src={src ?? undefined}
         class:pending={!src || loaded !== src}
         alt=""

@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::Path;
 
 use nanika_protocol::{MAX_PNG_ENCODED_BYTES, png_dimensions_within_limits};
+use sha2::{Digest, Sha256};
 
 use crate::PngResourceError;
 
@@ -41,4 +42,12 @@ pub fn read_png_resource(path: &Path, payload_root: &Path) -> Result<Vec<u8>, Pn
         });
     }
     Ok(bytes)
+}
+
+/// Identifies the exact encoded bytes used by an immutable PNG resource URL.
+pub fn png_resource_hash(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }

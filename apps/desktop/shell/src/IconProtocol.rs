@@ -120,6 +120,17 @@ pub(crate) fn resolve_request(
     if webview_label == "settings" && *source != "package" {
         return response(StatusCode::FORBIDDEN, "text/plain", Vec::new());
     }
+    let fingerprint = if *source == "package" {
+        match request.uri().query() {
+            None => None,
+            Some(query) => match query.strip_prefix("sha256=") {
+                Some(hash) if nanika_protocol::is_valid_content_hash(hash) => Some(hash),
+                _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new()),
+            },
+        }
+    } else {
+        None
+    };
     let (root, relative) = match (*source, rest) {
         ("package", segments) => {
             let relative = segments.join("/");
@@ -146,7 +157,14 @@ pub(crate) fn resolve_request(
         _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new()),
     };
     let mut result = match nanika_platform::read_png_resource(&root.join(relative), &root) {
-        Ok(bytes) => response(StatusCode::OK, "image/png", bytes),
+        Ok(bytes) => {
+            // Never cache replacement bytes under the previous package's fingerprint.
+            if fingerprint.is_some_and(|hash| nanika_platform::png_resource_hash(&bytes) != hash) {
+                response(StatusCode::NOT_FOUND, "text/plain", Vec::new())
+            } else {
+                response(StatusCode::OK, "image/png", bytes)
+            }
+        }
         Err(error) => {
             use nanika_platform::PngResourceError as Error;
             let status = match error {
@@ -160,7 +178,7 @@ pub(crate) fn resolve_request(
         }
     };
     // Package paths can be replaced by an extension update; only content-addressed artifacts are immutable.
-    if *source == "package" {
+    if *source == "package" && fingerprint.is_none() {
         result.headers_mut().insert(
             "Cache-Control",
             tauri::http::HeaderValue::from_static("no-store"),

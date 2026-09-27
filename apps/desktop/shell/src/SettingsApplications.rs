@@ -43,8 +43,13 @@ impl SettingsApplications {
             .into_iter()
             .map(|info| crate::ExtensionLifecycle {
                 icon_url: crate::resource_protocol::url(&format!(
-                    "{}/package/{}",
-                    info.id, info.icon
+                    "{}/package/{}{}",
+                    info.id,
+                    info.icon,
+                    info.icon_hash
+                        .as_ref()
+                        .map(|hash| format!("?sha256={hash}"))
+                        .unwrap_or_default()
                 )),
                 configuration: configurations.remove(&info.id),
                 info,

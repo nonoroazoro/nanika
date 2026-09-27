@@ -128,11 +128,26 @@ impl RuntimeService {
                 &extension.extension_id,
                 extension.contributes.configuration.as_ref(),
             );
+            // Fingerprint once on the startup worker, independently of extension activation.
+            let icon_hash = match nanika_platform::read_png_resource(
+                &extension.resource_root.join(&extension.icon),
+                &extension.resource_root,
+            ) {
+                Ok(bytes) => Some(nanika_platform::png_resource_hash(&bytes)),
+                Err(error) => {
+                    diagnostics.push(format!(
+                        "extension {} icon is unavailable: {error}",
+                        extension.extension_id
+                    ));
+                    None
+                }
+            };
             // Installed metadata remains available without a live worker or schema.
             extension_info.push(crate::RuntimeExtensionInfo {
                 id: extension.extension_id.clone(),
                 name: extension.name,
                 icon: extension.icon,
+                icon_hash,
                 enabled,
                 pending: false,
                 state: if enabled {
