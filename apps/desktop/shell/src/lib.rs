@@ -185,7 +185,6 @@ pub fn run() -> Result<(), String> {
                 .spawn(move || {
                     let built_in_manifests = [
                         include_str!("../../../extensions/built-in/application/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/command/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/script/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),

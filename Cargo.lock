@@ -2593,14 +2593,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nanika-extension-command"
-version = "0.1.0"
-dependencies = [
- "nanika-protocol",
- "sha2 0.11.0",
-]
-
-[[package]]
 name = "nanika-extension-fixture"
 version = "0.1.0"
 dependencies = [

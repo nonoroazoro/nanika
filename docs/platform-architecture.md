@@ -20,6 +20,10 @@ no compatibility paths, migrations or automatic data resets.
 | apps/desktop/frontend | One Svelte renderer for host and declarative extension surfaces                                |
 | tooling               | Development, build and validation; never an installed-app dependency                           |
 
+The built-in inventory contains Applications, Scripts, Calculator and Clipboard History.
+Static command contributions and typed process-launch services are shared extension
+contracts, independent of the built-in inventory.
+
 Extensions provide all domain capabilities. Built-in provenance grants no runtime
 shortcut. Native adapters own mechanisms, while callers own transaction, lifecycle,
 cancellation and failure policy. Reject unsupported platforms explicitly.

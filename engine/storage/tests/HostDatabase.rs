@@ -92,7 +92,7 @@ fn external_package_metadata_round_trips_without_affecting_builtins() {
     ));
     cleanup(&database);
     let host = HostDatabase::open(&database).expect("database should open");
-    host.register_builtin_extension("com.nanika.command")
+    host.register_builtin_extension("com.nanika.script")
         .expect("built-in should register");
     host.install_external_extension(
         "com.example.extension",
@@ -113,7 +113,7 @@ fn external_package_metadata_round_trips_without_affecting_builtins() {
             .expect("external extension should remove")
     );
     assert!(
-        host.extension("com.nanika.command")
+        host.extension("com.nanika.script")
             .expect("built-in should load")
             .is_some()
     );
@@ -180,13 +180,13 @@ fn repeated_builtin_registration_does_not_write_inventory() {
     ));
     cleanup(&database);
     let host = HostDatabase::open(&database).unwrap();
-    host.register_builtin_extension("com.nanika.command")
+    host.register_builtin_extension("com.nanika.script")
         .unwrap();
     let observer = rusqlite::Connection::open(&database).unwrap();
     observer.execute_batch("CREATE TRIGGER reject_rewrite BEFORE UPDATE ON extensions BEGIN SELECT RAISE(ABORT, 'unchanged inventory must not be rewritten'); END;").unwrap();
-    host.register_builtin_extension("com.nanika.command")
+    host.register_builtin_extension("com.nanika.script")
         .unwrap();
-    assert!(host.extension("com.nanika.command").unwrap().is_some());
+    assert!(host.extension("com.nanika.script").unwrap().is_some());
     drop(observer);
     drop(host);
     cleanup(&database);

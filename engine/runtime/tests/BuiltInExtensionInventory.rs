@@ -6,13 +6,12 @@ use crate::BuiltInExtensionInventory;
 fn every_built_in_uses_the_ordinary_manifest_contract() {
     let sources = [
         include_str!("../../../apps/extensions/built-in/application/manifest.jsonc"),
-        include_str!("../../../apps/extensions/built-in/command/manifest.jsonc"),
         include_str!("../../../apps/extensions/built-in/script/manifest.jsonc"),
         include_str!("../../../apps/extensions/built-in/calculator/manifest.jsonc"),
         include_str!("../../../apps/extensions/built-in/clipboard/manifest.jsonc"),
     ];
     let inventory = BuiltInExtensionInventory::parse(&sources).expect("built-in manifests");
-    assert_eq!(inventory.extensions.len(), 5);
+    assert_eq!(inventory.extensions.len(), 4);
     let identifiers = inventory
         .extensions
         .iter()

@@ -6,7 +6,6 @@ members = [
     "apps/extensions/built-in/application",
     "apps/extensions/built-in/calculator",
     "apps/extensions/built-in/clipboard",
-    "apps/extensions/built-in/command",
     "apps/extensions/built-in/script",
     "apps/extensions/fixtures/acp",
     "apps/extensions/fixtures/protocol",

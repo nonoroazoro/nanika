@@ -11,7 +11,7 @@ fn registry_round_trips_enablement_in_the_config_tree() {
     drop(registry);
     let loaded = ExtensionRegistryConfig::load(&store).expect("load registry");
     assert!(!loaded.is_enabled("com.example.extension"));
-    assert!(loaded.is_enabled("com.nanika.command"));
+    assert!(loaded.is_enabled("com.nanika.script"));
 
     std::fs::remove_dir_all(root).expect("cleanup");
 }
