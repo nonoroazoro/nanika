@@ -236,7 +236,18 @@ button, hidden trigger, Shift+F10/Menu binding or second focus manager. Keep lau
 
 In-WebView menus create no native window. Tauri `Focused(false)` owns hide-on-blur;
 DOM blur must not hide, suppress hiding or refocus the app. Windows Settings uses custom
-controls/transparent rounded surfaces; macOS uses native titlebar controls/gestures.
+controls/transparent rounded surfaces; macOS uses an overlay titlebar with hidden
+window title and native window controls. Its top 48px blank strip, starting 96px
+from the left to exclude the traffic lights, submits dragging through the typed
+Settings bridge to Rust's native `start_dragging`. Content and form controls do
+not start window drags. On macOS the sidebar extends behind the
+traffic lights, whose centers sit 24pt below the top edge, centered in the blank strip. Navigation reserves
+48px at the top, and the detail viewport starts
+48px below the window edge. Native window clipping owns the outer corners; the
+content has no separate titlebar background or inner rounded frame. The macOS
+Settings window opens at 900x700 logical pixels, which is also its minimum size.
+Windows retains its 920x680 initial size, 700x500 minimum, and existing custom
+titlebar drag and caption-button regions.
 Maximized content removes rounding. See [native presentation](platform-architecture.md#native-presentation-and-reveal).
 
 ## Windows caption controls

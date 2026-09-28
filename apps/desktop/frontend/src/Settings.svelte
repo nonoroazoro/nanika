@@ -275,7 +275,7 @@ function _windowAction(action: SettingsWindowAction): void
 }
 </script>
 
-<div class="settings-window" class:maximized>
+<div class="settings-window" class:maximized class:native-controls={!customControls}>
     <SettingsToast
         message={notification}
         onDismiss={() =>
@@ -283,7 +283,23 @@ function _windowAction(action: SettingsWindowAction): void
             notification = null;
         }}
     />
-    {#if customControls}<SettingsTitleBar {maximized} onAction={_windowAction} />{/if}
+    {#if customControls}
+        <SettingsTitleBar {maximized} onAction={_windowAction} />
+    {:else}
+        <!-- Overlay titlebars leave dragging to the WebView; native traffic lights stay outside this region. -->
+        <div
+            class="native-drag-region"
+            role="presentation"
+            onmousedown={event =>
+            {
+                if (event.button === 0 && event.detail === 1)
+                {
+                    _windowAction({ kind: "drag" });
+                }
+            }}
+        >
+        </div>
+    {/if}
     {#if windowError}<div class="window-error" role="alert">{windowError}</div>{/if}
     <main class="settings">
         <aside class="sidebar" aria-label="Settings navigation">
@@ -328,7 +344,7 @@ function _windowAction(action: SettingsWindowAction): void
                 </nav></ScrollArea>
             <div class="sidebar-footer">Nanika {snapshot?.version ?? ""}</div>
         </aside>
-        <ScrollArea><section class="content" aria-label="Settings content" aria-busy={loading}>
+        <ScrollArea class="settings-detail"><section class="content" aria-label="Settings content" aria-busy={loading}>
                 {#if loading}
                     <div class="empty-state" role="status">Loading settings…</div>
                 {:else if loadError}
@@ -462,6 +478,11 @@ function _windowAction(action: SettingsWindowAction): void
 <style>
 .settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
 .settings-window.maximized { border: 0; border-radius: 0; }
+/* macOS owns the outer clipping and overlays native controls on these surfaces. */
+.settings-window.native-controls { --settings-titlebar-height: 48px; border: 0; border-radius: 0; }
+.native-drag-region { position: absolute; z-index: 1; top: 0; right: 0; left: 96px; height: var(--settings-titlebar-height); cursor: default; -webkit-user-select: none; user-select: none; }
+.native-controls .sidebar { padding-top: var(--settings-titlebar-height); }
+.native-controls :global(.settings-detail) { margin-top: var(--settings-titlebar-height); }
 .window-error { padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
 
 .settings { display: grid; min-height: 0; flex: 1; grid-template-columns: 13rem minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
