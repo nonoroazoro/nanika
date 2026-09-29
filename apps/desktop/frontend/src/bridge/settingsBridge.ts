@@ -10,6 +10,7 @@ import type {
     StartupStatus
 } from "../types/Settings";
 import type { SettingsEvent } from "../types/SettingsEvent";
+import type { SettingsSearchEntry } from "../types/SettingsSearchEntry";
 import type { SettingsWindowAction } from "../types/SettingsWindowAction";
 
 // A retained Settings WebView owns one channel, including across native closes.
@@ -56,6 +57,17 @@ export const settingsBridge = {
         };
         // Rust registers before loading configuration; retain the channel even if loading fails.
         return await invoke("read_settings", { updates: subscribe ? updates : null });
+    },
+    search: async (query: string): Promise<SettingsSearchEntry[]> =>
+    {
+        const results = new Channel<SettingsSearchEntry[]>();
+        const delivery = new Promise<SettingsSearchEntry[]>(resolve =>
+        {
+            results.onmessage = resolve;
+        });
+        // The invoke acknowledges transport work; only the window-bound Channel supplies results.
+        await invoke<null>("search_settings", { query, results });
+        return await delivery;
     },
     ready: async (): Promise<boolean> => invoke("settings_ready"),
     windowAction: async (action: SettingsWindowAction): Promise<void> => invoke("settings_window_action", { action }),

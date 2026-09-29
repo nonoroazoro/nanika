@@ -1,7 +1,16 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
+import { cubicBezier } from "animejs/easings/cubic-bezier";
+import { repeatMotion } from "../components/motion/repeat";
 import { uiActivity } from "../ui/activity";
+
+import type { Snippet } from "svelte";
 import type { OperationProgress } from "../types/OperationProgress";
+
+const sweep = repeatMotion({
+    transform: ["translateX(0%)", "translateX(185%)"],
+    alternate: true,
+    ease: cubicBezier(0.42, 0, 0.58, 1)
+}, "--motion-progress-duration");
 
 const { busy = false, label, startedAt, progress, onCommit, children }: {
     busy?: boolean;
@@ -104,7 +113,6 @@ $effect(() =>
         <div
             class="progress"
             class:determinate={progress?.total != null}
-            class:visible={$uiActivity.visible}
             role="progressbar"
             aria-label={description}
             title={description}
@@ -115,7 +123,7 @@ $effect(() =>
             {#if progress?.total != null}
                 <span class="fill" style:width={`${progress.completed / progress.total * 100}%`}></span>
             {:else}
-                <span class="indeterminate"></span>
+                <span {@attach sweep} class="indeterminate"></span>
             {/if}
         </div>
     {/if}
@@ -128,7 +136,4 @@ fieldset[aria-busy="true"] :global(button:disabled:not([disabled])) { opacity: 1
 .progress { position: absolute; inset: auto 0 -7px; width: 100%; height: 2px; color: var(--accent); border-radius: 1px; overflow: hidden; background: var(--border-subtle); }
 .fill { display: block; height: 100%; background: currentColor; }
 .indeterminate { display: block; width: 35%; height: 100%; border-radius: inherit; background: currentColor; }
-.progress.visible .indeterminate { animation: progress-sweep var(--motion-progress-duration) ease-in-out infinite alternate; }
-@keyframes progress-sweep { from { transform: translateX(0); } to { transform: translateX(185%); } }
-@media (prefers-reduced-motion: reduce) { .progress.visible .indeterminate { animation: none; } }
 </style>

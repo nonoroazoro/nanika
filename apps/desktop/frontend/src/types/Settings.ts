@@ -1,3 +1,4 @@
+import type { GeneralSettingsSection } from "./GeneralSettingsSection";
 import type { OperationProgress } from "./OperationProgress";
 import type { ConfigurationWriteResult } from "../settings/ConfigurationWriteResult";
 
@@ -66,6 +67,7 @@ export interface SettingsSnapshot
     maximized: boolean;
     version: string;
     general: HostPreferences;
+    generalSections: GeneralSettingsSection[];
     extensions: ExtensionSettings[];
 }
 

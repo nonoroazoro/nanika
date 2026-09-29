@@ -17,5 +17,10 @@ function _compareProperties(
     [rightKey, right]: [string, ConfigurationProperty]
 ): number
 {
-    return (left.order ?? 0) - (right.order ?? 0) || leftKey.localeCompare(rightKey);
+    const order = (left.order ?? 0) - (right.order ?? 0);
+    if (order !== 0 || leftKey === rightKey)
+    {
+        return order;
+    }
+    return leftKey < rightKey ? -1 : 1;
 }

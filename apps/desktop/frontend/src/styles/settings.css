@@ -1,6 +1,15 @@
+/* Settings has two explicit scroll viewports. The shell must not become another
+   scroll container when focus or field navigation reveals an offscreen element. */
+:root[data-surface="settings"],
+:root[data-surface="settings"] body,
+:root[data-surface="settings"] #app {
+  overflow: clip;
+}
+
 /* Settings-specific visual tokens.
    Keep the scope on the document so portaled controls inherit the same tokens. */
 :root[data-surface="settings"] {
+  --settings-sidebar-surface: #e5e5e7;
   --settings-caption-hover: rgb(0 0 0 / 10%);
   --settings-caption-close-hover: rgb(232 17 35 / 90%);
   --settings-caption-close-foreground: #ffffff;
@@ -38,11 +47,11 @@
   --popup-padding: 4px;
   --popup-item-padding: 6px 8px;
   --popup-item-height: 32px;
-  --shadow-popup: 0 8px 24px rgb(20 30 50 / 10%), 0 2px 6px rgb(20 30 50 / 6%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-surface="settings"] {
+    --settings-sidebar-surface: #1f2024;
     --settings-caption-hover: rgb(255 255 255 / 10%);
     --text-primary: #dce0e7;
     --surface-selected: rgb(210 222 245 / 9%);
@@ -60,6 +69,11 @@
     --switch-active: #5789e8;
     --switch-active-hover: #6091ee;
     --switch-active-pressed: #4b7edc;
-    --shadow-popup: 0 8px 24px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 16%);
   }
 }
+
+/* Controls paint above the shared moving background without clipping their popovers. */
+.settings-search-target { position: relative; }
+.settings-search-target > :not(.settings-search-target) { position: relative; z-index: 2; }
+.settings-search-target:first-child { border-top-left-radius: calc(var(--radius-row) - 1px); border-top-right-radius: calc(var(--radius-row) - 1px); }
+.settings-search-target:last-child { border-bottom-left-radius: calc(var(--radius-row) - 1px); border-bottom-right-radius: calc(var(--radius-row) - 1px); }

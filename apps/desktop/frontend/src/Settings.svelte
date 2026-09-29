@@ -1,5 +1,11 @@
 <script lang="ts">
+import SettingsSidebar from "./settings/SettingsSidebar.svelte";
+import { SettingsSearchState } from "./settings/SettingsSearchState.svelte";
+import { settingsAnchor } from "./settings/anchor";
+import { revealSetting } from "./settings/reveal";
+import type { SettingsSearchTarget } from "./types/SettingsSearchTarget";
 import ScrollArea from "./components/ui/ScrollArea.svelte";
+import SelectionHighlight from "./components/motion/SelectionHighlight.svelte";
 import "./styles/settings.css";
 import Switch from "./components/ui/Switch.svelte";
 import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
@@ -11,6 +17,7 @@ import { settingsBridge } from "./bridge/settingsBridge";
 import SettingsValue from "./settings/SettingsValue.svelte";
 import DirectoryList from "./settings/DirectoryList.svelte";
 import GeneralSettings from "./settings/GeneralSettings.svelte";
+import AboutSettings from "./settings/AboutSettings.svelte";
 import SettingsToast from "./settings/SettingsToast.svelte";
 import SettingsField from "./settings/SettingsField.svelte";
 import ExtensionStatus from "./settings/ExtensionStatus.svelte";
@@ -37,6 +44,15 @@ let selection = $state("general");
 let loading = $state(true);
 let loadError = $state(false);
 const applications = new SettingsApplications();
+const search = new SettingsSearchState(settingsBridge.search);
+let revealed = $state<string | null>(null);
+let navigationRevision = 0;
+let detailViewport = $state<HTMLDivElement | null>(null);
+let detailContent = $state<HTMLElement | null>(null);
+let highlightedTarget = $state<HTMLElement | null>(null);
+let searchInput = $state<HTMLInputElement>();
+// The supported native adapters use custom caption controls only on Windows.
+const searchShortcut = $derived(customControls ? "Control+F" : "Meta+F");
 const toggling = new SvelteMap<string, number>();
 let lifecycleRevision = 0;
 let lifecycle: ExtensionLifecycle[] = [];
@@ -53,6 +69,7 @@ onMount(() =>
     let active = false;
     return uiActivity.subscribe(activity =>
     {
+        search.setVisible(activity.visible);
         const next = activity.visible && activity.focused;
         if (next && !active)
         {
@@ -137,6 +154,7 @@ async function _load(): Promise<void>
     finally
     {
         loading = false;
+        search.refresh();
     }
 }
 
@@ -173,6 +191,7 @@ function _lifecycle(revision: number, updates: ExtensionLifecycle[]): void
     lifecycleRevision = revision;
     lifecycle = updates;
     _mergeLifecycle();
+    search.refresh();
 }
 
 function _mergeLifecycle(): void
@@ -259,11 +278,91 @@ function _closed(): void
     // Retain pending writes and failed edits across native closes; reloading can overwrite them.
     selectedState?.commitEdits();
     selection = "general";
+    navigationRevision++;
+    revealed = null;
+    highlightedTarget = null;
+    search.update("");
     void tick().then(() => settingsBridge.ready()).catch(error =>
     {
         console.error("Settings could not finish closing", error);
         windowError = String(error);
     });
+}
+
+function _query(query: string): void
+{
+    revealed = null;
+    highlightedTarget = null;
+    search.update(query);
+}
+
+async function _navigate(page: string, target: SettingsSearchTarget): Promise<void>
+{
+    selectedState?.commitEdits();
+    if (selection !== page)
+    {
+        highlightedTarget = null;
+        revealed = null;
+    }
+    selection = page;
+    const revision = ++navigationRevision;
+    if (page === "general")
+    {
+        void _loadStartup();
+    }
+    await tick();
+    if (revision !== navigationRevision)
+    {
+        return;
+    }
+    const anchor = settingsAnchor(page, target);
+    const element = document.getElementById(anchor);
+    if (!element || !detailViewport?.contains(element))
+    {
+        highlightedTarget = null;
+        search.refresh();
+        _notify("This setting is no longer available.");
+        return;
+    }
+    if (target.kind === "page")
+    {
+        detailViewport.scrollTop = 0;
+    }
+    else
+    {
+        revealSetting(detailViewport, element);
+    }
+    highlightedTarget = null;
+    if (target.kind !== "page")
+    {
+        highlightedTarget = element.matches(".settings-search-target")
+            ? element
+            : element.querySelector<HTMLElement>(".settings-search-target");
+    }
+    revealed = anchor;
+}
+
+function _focusSearch(): void
+{
+    searchInput?.focus({ preventScroll: true });
+    searchInput?.select();
+}
+
+function _searchKeydown(event: KeyboardEvent): void
+{
+    const modifier = customControls ? event.ctrlKey && !event.metaKey : event.metaKey && !event.ctrlKey;
+    if (
+        event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey || !modifier
+        || event.key.toLowerCase() !== "f"
+    )
+    {
+        return;
+    }
+    event.preventDefault();
+    if (!event.repeat)
+    {
+        _focusSearch();
+    }
 }
 
 function _windowAction(action: SettingsWindowAction): void
@@ -274,6 +373,8 @@ function _windowAction(action: SettingsWindowAction): void
     });
 }
 </script>
+
+<svelte:window onkeydown={_searchKeydown} />
 
 <div class="settings-window" class:maximized class:native-controls={!customControls}>
     <SettingsToast
@@ -303,48 +404,26 @@ function _windowAction(action: SettingsWindowAction): void
     {#if windowError}<div class="window-error" role="alert">{windowError}</div>{/if}
     <main class="settings">
         <aside class="sidebar" aria-label="Settings navigation">
-            <ScrollArea><nav aria-label="Settings sections">
-                    <Button
-                        class={{ active: selection === "general" }}
-                        aria-current={selection === "general" ? "page" : undefined}
-                        onclick={() =>
-                        {
-                            selectedState?.commitEdits();
-                            selection = "general";
-                            void _loadStartup();
-                        }}
-                    >
-                        <span class="nav-icon" aria-hidden="true"><svg
-                                width="20"
-                                height="20"
-                                viewBox="0 0 20 20"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.25"
-                            >
-                                <rect x="1.5" y="1.5" width="17" height="17" rx="3" />
-                                <path d="M1.5 6.5h17M7 6.5v12" />
-                            </svg></span>General
-                    </Button>
-                    <h2>Extensions</h2>
-                    {#each extensions as extension (extension.id)}
-                        <Button
-                            class={{ active: selection === extension.id }}
-                            aria-current={selection === extension.id ? "page" : undefined}
-                            onclick={() =>
-                            {
-                                selectedState?.commitEdits();
-                                selection = extension.id;
-                            }}
-                        >
-                            <span class="nav-icon" aria-hidden="true"><ExtensionIcon src={extension.iconUrl} /></span>
-                            <span class="nav-title">{extension.name}</span>
-                        </Button>
-                    {/each}
-                </nav></ScrollArea>
-            <div class="sidebar-footer">Nanika {snapshot?.version ?? ""}</div>
+            <SettingsSidebar
+                {extensions}
+                {selection}
+                {revealed}
+                {search}
+                bind:input={searchInput}
+                {searchShortcut}
+                onQuery={_query}
+                onNavigate={(page, target) =>
+                {
+                    void _navigate(page, target);
+                }}
+            />
         </aside>
-        <ScrollArea class="settings-detail"><section class="content" aria-label="Settings content" aria-busy={loading}>
+        <ScrollArea class="settings-detail" bind:viewport={detailViewport}><section
+                class="content"
+                bind:this={detailContent}
+                aria-label="Settings content"
+                aria-busy={loading}
+            >
                 {#if loading}
                     <div class="empty-state" role="status">Loading settings…</div>
                 {:else if loadError}
@@ -362,11 +441,14 @@ function _windowAction(action: SettingsWindowAction): void
                 {:else if selection === "general" && host}
                     <GeneralSettings
                         settings={host}
+                        sections={snapshot?.generalSections ?? []}
                         startup={startup.status === null ? null : startup.settings}
                         startupStatus={startup.status}
                     />
+                {:else if selection === "about" && snapshot}
+                    <AboutSettings version={snapshot.version} />
                 {:else if selected}
-                    <div class="extension-page">
+                    <div class="extension-page" id={settingsAnchor(selected.id, { kind: "page" })}>
                         <header>
                             <div class="extension-heading">
                                 <span class="heading-icon"><ExtensionIcon src={selected.iconUrl} /></span><div>
@@ -385,7 +467,11 @@ function _windowAction(action: SettingsWindowAction): void
                                 }}
                             >
                                 <div class="fields">
-                                    <section class="property scalar" aria-labelledby="extension-enabled-title">
+                                    <section
+                                        class="property scalar settings-search-target"
+                                        id={settingsAnchor(selected.id, { kind: "enabled" })}
+                                        aria-labelledby="extension-enabled-title"
+                                    >
                                         <div class="property-copy">
                                             <h2 id="extension-enabled-title">Enable extension</h2>
                                         </div>
@@ -414,7 +500,8 @@ function _windowAction(action: SettingsWindowAction): void
                                     <div class="fields">
                                         {#each properties as [key, property] (key)}
                                             <section
-                                                class="property"
+                                                class="property settings-search-target"
+                                                id={settingsAnchor(selected.id, { kind: "field", key })}
                                                 class:directory={property.type === "array" && property.items?.format === "directory"}
                                                 class:scalar={property.type === "boolean" || property.type === "integer"}
                                                 aria-labelledby={`title-${key}`}
@@ -471,12 +558,13 @@ function _windowAction(action: SettingsWindowAction): void
                         {/key}
                     </div>
                 {/if}
+                <SelectionHighlight container={detailContent} target={highlightedTarget} />
             </section></ScrollArea>
     </main>
 </div>
 
 <style>
-.settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
+.settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: clip; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
 .settings-window.maximized { border: 0; border-radius: 0; }
 /* macOS owns the outer clipping and overlays native controls on these surfaces. */
 .settings-window.native-controls { --settings-titlebar-height: 48px; border: 0; border-radius: 0; }
@@ -486,17 +574,10 @@ function _windowAction(action: SettingsWindowAction): void
 .window-error { padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
 
 .settings { display: grid; min-height: 0; flex: 1; grid-template-columns: 13rem minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
-.sidebar { display: flex; flex-direction: column; min-height: 0; gap: var(--space-4); padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--surface-hovered); }
-nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; }
-nav :global(button) { justify-content: flex-start; gap: var(--space-2); flex: 0 0 auto; width: 100%; min-height: var(--settings-nav-height); border: 0; border-radius: var(--control-radius); padding: 6px 10px; background: transparent; text-align: left; font-size: var(--font-control); line-height: 20px; }
-nav :global(button.active) { background: var(--surface-selected); font-weight: var(--settings-heading-weight); }
+.sidebar { display: flex; flex-direction: column; min-height: 0; gap: var(--space-4); padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--settings-sidebar-surface); }
 .extension-heading { display: flex; align-items: center; gap: 12px; }
 .heading-icon { --icon-size: 48px; display: block; flex-shrink: 0; }
-.nav-icon { --icon-size: var(--settings-nav-icon-size); display: grid; width: var(--settings-nav-icon-size); height: var(--settings-nav-icon-size); flex-shrink: 0; place-items: center; color: var(--text-secondary); }
-.nav-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-nav h2 { display: flex; justify-content: space-between; margin: var(--space-5) 10px var(--space-2); color: var(--text-secondary); font-size: 12px; font-weight: var(--settings-heading-weight); }
-.sidebar-footer { padding: 8px 10px; color: var(--text-tertiary); font-size: 12px; }
-.content { min-width: 0; min-height: 100%; }
+.content { position: relative; isolation: isolate; min-width: 0; min-height: 100%; }
 .extension-page { max-width: 52rem; margin: 0 auto; padding: var(--space-4) var(--space-6) 0; }
 .extension-page { display: flex; flex-direction: column; min-height: 100%; }
 header { margin-bottom: var(--settings-group-gap); }

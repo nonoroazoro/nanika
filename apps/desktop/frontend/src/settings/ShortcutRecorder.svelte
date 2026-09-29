@@ -99,6 +99,7 @@ function toggleRecording(): void
     setRecording(!recording);
 }
 
+// Capture on the focused recorder before window-level commands can handle the key.
 function capture(event: KeyboardEvent): void
 {
     if (!recording)
@@ -150,7 +151,7 @@ onDestroy(() =>
 });
 </script>
 
-<svelte:window onblur={cancel} onkeydown={capture} onkeyup={updatePreview} />
+<svelte:window onblur={cancel} />
 <div class="recorder">
     <Button
         variant="outline"
@@ -161,6 +162,8 @@ onDestroy(() =>
         aria-describedby={error ? "shortcut-help" : undefined}
         onclick={toggleRecording}
         onblur={cancel}
+        onkeydown={capture}
+        onkeyup={updatePreview}
     >
         {#if recording && preview.length === 0}<span class="recording-prompt">Press keys…</span>
         {:else}<ShortcutKeys

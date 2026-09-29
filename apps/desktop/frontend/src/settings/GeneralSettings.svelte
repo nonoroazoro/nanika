@@ -6,8 +6,12 @@ import SettingsField from "./SettingsField.svelte";
 import type { SettingsState } from "./SettingsState.svelte";
 import type { HostPreferences, StartupStatus } from "../types/Settings";
 
-const { settings, startup, startupStatus }: {
+import type { GeneralSettingsSection } from "../types/GeneralSettingsSection";
+import { settingsAnchor } from "./anchor";
+
+const { settings, startup, startupStatus, sections }: {
     settings: SettingsState<HostPreferences>;
+    sections: GeneralSettingsSection[];
     startup: SettingsState<{ enabled: boolean; }> | null;
     startupStatus: StartupStatus | null;
 } = $props();
@@ -25,91 +29,76 @@ const startupStatusMessage = $derived.by(() =>
 });
 </script>
 
-<div class="general-page">
+<div class="general-page" id={settingsAnchor("general", { kind: "page" })}>
     <h1>General</h1>
     <div class="sections">
-        <fieldset>
-            <section aria-labelledby="launcher-settings">
-                <h2 id="launcher-settings">Launcher</h2>
-                <div class="group">
-                    <div class="row">
-                        <span id="shortcut-label">Open launcher</span>
-                        <SettingsField
-                            busy={settings.phase.get("launcherShortcut") !== undefined}
-                            label="Open launcher"
-                            startedAt={settings.startedAt.get("launcherShortcut")}
+        {#each sections as section (section.key)}
+            {@const sectionId = settingsAnchor("general", { kind: "section", key: section.key })}
+            <section id={sectionId} aria-labelledby={`${sectionId}/label`}>
+                <h2 id={`${sectionId}/label`}>{section.title}</h2>
+                <div class="group settings-search-target">
+                    {#each section.fields as field (field.key)}
+                        {@const fieldId = settingsAnchor("general", { kind: "field", key: field.key })}
+                        <div
+                            class="row settings-search-target"
+                            id={fieldId}
                         >
-                            <ShortcutRecorder
-                                value={settings.values.launcherShortcut}
-                                registeredValue={settings.saved.launcherShortcut}
-                                onChange={launcherShortcut => settings.change("launcherShortcut", launcherShortcut)}
-                            />
-                        </SettingsField>
-                    </div>
-                    <div class="row">
-                        <span>Hide when focus is lost</span>
-                        <SettingsField
-                            busy={settings.phase.get("hideOnBlur") !== undefined}
-                            label="Hide when focus is lost"
-                            startedAt={settings.startedAt.get("hideOnBlur")}
-                        >
-                            <Switch
-                                label="Hide when focus is lost"
-                                checked={settings.values.hideOnBlur}
-                                onChange={checked => settings.change("hideOnBlur", checked)}
-                            />
-                        </SettingsField>
-                    </div>
+                            <div class="row-copy">
+                                <span>{field.title}</span>
+                                {#if field.description}<p>{field.description}</p>{/if}
+                                {#if field.key === "launchAtLogin" && startupStatusMessage}<p>
+                                        {startupStatusMessage}
+                                    </p>{/if}
+                            </div>
+                            {#if field.key === "launchAtLogin"}
+                                <SettingsField
+                                    busy={startup?.phase.get("enabled") !== undefined}
+                                    label={field.title}
+                                    startedAt={startup?.startedAt.get("enabled")}
+                                >
+                                    <Switch
+                                        label={field.title}
+                                        checked={startup?.values.enabled ?? false}
+                                        disabled={startup === null}
+                                        onChange={checked =>
+                                        {
+                                            void startup?.change("enabled", checked);
+                                        }}
+                                    />
+                                </SettingsField>
+                            {:else}
+                                <SettingsField
+                                    busy={settings.phase.get(field.key) !== undefined}
+                                    label={field.title}
+                                    startedAt={settings.startedAt.get(field.key)}
+                                >
+                                    {#if field.key === "launcherShortcut"}
+                                        <ShortcutRecorder
+                                            value={settings.values.launcherShortcut}
+                                            registeredValue={settings.saved.launcherShortcut}
+                                            onChange={value => settings.change("launcherShortcut", value)}
+                                        />
+                                    {:else if field.key === "hideOnBlur"}
+                                        <Switch
+                                            label={field.title}
+                                            checked={settings.values.hideOnBlur}
+                                            onChange={checked => settings.change("hideOnBlur", checked)}
+                                        />
+                                    {:else if field.key === "theme"}
+                                        <Select
+                                            label={field.title}
+                                            value={settings.values.theme}
+                                            options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]}
+                                            onChange={theme => settings.change("theme", theme as HostPreferences["theme"])}
+                                        />
+                                    {/if}
+                                </SettingsField>
+                            {/if}
+                        </div>
+                    {/each}
                 </div>
             </section>
-            <section aria-labelledby="appearance-settings">
-                <h2 id="appearance-settings">Appearance</h2>
-                <div class="group">
-                    <div class="row">
-                        <span>Theme</span>
-                        <SettingsField
-                            busy={settings.phase.get("theme") !== undefined}
-                            label="Theme"
-                            startedAt={settings.startedAt.get("theme")}
-                        >
-                            <Select
-                                label="Theme"
-                                value={settings.values.theme}
-                                options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]}
-                                onChange={theme => settings.change("theme", theme as HostPreferences["theme"])}
-                            />
-                        </SettingsField>
-                    </div>
-                </div>
-            </section>
-        </fieldset>
-        <section aria-labelledby="startup-settings">
-            <h2 id="startup-settings">Startup</h2>
-            <div class="group">
-                <div class="row">
-                    <div class="row-copy">
-                        <span>Launch at login</span>
-                        <p>Launch Nanika automatically when you sign in.</p>
-                        {#if startupStatusMessage}<p>{startupStatusMessage}</p>{/if}
-                    </div>
-                    <SettingsField
-                        busy={startup?.phase.get("enabled") !== undefined}
-                        label="Launch at login"
-                        startedAt={startup?.startedAt.get("enabled")}
-                    >
-                        <Switch
-                            label="Launch at login"
-                            checked={startup?.values.enabled ?? false}
-                            disabled={startup === null}
-                            onChange={checked =>
-                            {
-                                void startup?.change("enabled", checked);
-                            }}
-                        />
-                    </SettingsField>
-                </div>
-            </div>
-        </section>
+        {/each}
     </div>
 </div>
 
@@ -119,7 +108,6 @@ const startupStatusMessage = $derived.by(() =>
 h1 { margin: 0 0 var(--settings-group-gap); font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
 h2 { color: var(--text-secondary); margin: 0 0 var(--space-2); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); font-weight: var(--settings-heading-weight); }
 section { margin-bottom: var(--settings-group-gap); }
-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .group { border: 1px solid var(--border-subtle); border-radius: var(--radius-row); background: var(--surface-form); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--settings-row-padding); font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); }
 .row + .row { border-top: 1px solid var(--border-subtle); }

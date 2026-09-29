@@ -1,6 +1,10 @@
 <script lang="ts">
+import { styleMotion } from "../components/motion/style";
 import { untrack } from "svelte";
+
 import type { ExtensionSettings } from "../types/Settings";
+
+const dotMotion = styleMotion({ properties: ["background-color"], scope: "[role=status]" });
 
 const { lifecycleState }: { lifecycleState: ExtensionSettings["state"]; } = $props();
 const labels = {
@@ -36,13 +40,13 @@ $effect(() =>
 </script>
 
 <p role="status" aria-atomic="true" data-state={displayed}>
-    <span class="dot" aria-hidden="true"></span>
+    <span {@attach dotMotion} class="dot" aria-hidden="true"></span>
     <span>{labels[displayed]}</span>
 </p>
 
 <style>
 p { display: flex; align-items: center; gap: 0.375rem; margin: var(--space-1) 0 0; color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
-.dot { flex: 0 0 var(--status-dot-size); width: var(--status-dot-size); height: var(--status-dot-size); border: 1px solid transparent; border-radius: 50%; background: var(--status-inactive); transition: background-color var(--motion-control) var(--motion-ease); }
+.dot { flex: 0 0 var(--status-dot-size); width: var(--status-dot-size); height: var(--status-dot-size); border: 1px solid transparent; border-radius: 50%; background: var(--status-inactive); }
 p[data-state="ready"] .dot, p[data-state="dormant"] .dot { background: var(--status-available); }
 p[data-state="failed"] .dot { background: var(--status-failed); }
 </style>
