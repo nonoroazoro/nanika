@@ -20,7 +20,6 @@ Before Nanika v1.0:
 
 - Follow the user's latest requirements, using current code and tests to establish implementation status.
 - Leave changes unstaged unless requested. Use just dev and just check.
-- Keep Bun/Node as development tooling and releases self-contained.
 
 ### Architecture
 
