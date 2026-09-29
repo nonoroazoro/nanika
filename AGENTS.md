@@ -1,35 +1,61 @@
 # Nanika
 
-## Workflow
+## Goal
 
-- Before 1.0, replace designs directly and keep all Nanika-owned internal versions, including protocol and schema versions at their initial values. Remove superseded code; do not introduce version upgrades, compatibility paths, migrations or automatic data resets.
-- Use direct file edits, not apply_patch. Keep changes unstaged unless asked.
-- Use just dev and just check. Keep one root package and bun.lock, the pinned Bun version and public registries. Keep credentials and private infrastructure out of code, logs and artifacts.
-- Preserve apps / engine / tooling ownership. Temporary output belongs in target; frontend output in apps/desktop/frontend/dist.
-- Bun is tooling only. Installed releases must need neither Bun nor Node. Derive sidecar build/staging from Tauri bundle.externalBin; inspect packaged files after toolchain or packaging changes.
+Build an exceptionally high-quality native launcher app.
 
-## Architecture
+## Core Principle
 
-- Support Windows 10+ and macOS 13+ only. Keep native mechanisms in their owning adapters, document the shared contract and both implementations, and reject other platforms explicitly.
-- Rust owns search, supervision, storage, configuration and platform services. Keep engine independent of Tauri; commands, channels, windows and capabilities belong in the desktop shell. Callers own lifecycle and transaction policy.
-- The launcher only initiates App, Scripts and System commands, then dismisses after submission or launch. Do not track their subsequent execution, interpret exit results, query completion or display outcome/progress notifications. System operations belong to the OS; host submission receipts are not completion claims. Keep permission validation and admission failures distinct from post-handoff execution.
-- Extensions provide all domain capabilities. Built-in and external extensions share process, permission, configuration, view, lifecycle and failure contracts. Only host inventory establishes built-in identity; provenance grants no runtime shortcut.
-- One Svelte frontend renders bounded declarative extension data. No extension-supplied frontend code or DOM/WebView access; never render application or extension data with {@html}.
-- Route frontend Tauri access through the typed bridge. Preserve Isolation, explicit permissions, Rust validation and session-bound channels. Search invoke replies acknowledge submission; authoritative state arrives through the Channel. Queued delivery is not receipt.
-- Preserve accepted work, concrete failures and bounded backpressure. Coalesce only idempotent wakes or superseded queries/selections where the latest value remains authoritative; actions are barriers. No new automatic timeout, retry, restart, truncation, retention, deletion, recovery or fallback policy without approval.
-- Preserve the live extension lifecycle contract in docs/extension-lifecycle.md: shared configuration/lifecycle admission, instance-scoped authority, EOF cleanup and explicit stop outcomes.
+Before Nanika v1.0:
 
-## UI
+- Fundamental design flaws must be corrected, even when this requires breaking changes.
+- Implement the best solution based on current evidence and understanding.
+- Layering patches or workarounds onto a flawed underlying design is strictly prohibited.
+- Remove obsolete implementations when their replacements are introduced.
+- Keep Nanika-owned protocol, manifest, configuration, database schema and cache versions at v1.
 
-- Use Svelte 5 runes, Bits UI headless primitives, shared controls and plain CSS semantic tokens. Reserve $effect for external synchronization. Follow docs/design-system.md; use Fluent 2 as the design system, adapting for native conventions or concrete product needs. Do not adopt its component library/theme or raise OS/WebView requirements.
-- Keep native editing, selection and keyboard semantics. No focus rings, extra Actions button or unrequested shortcuts. Tauri owns launcher hiding; DOM activity owns visual work only. Settings has no custom window transition.
-- Motion must handle interruption and live reduced-motion preferences. Hidden UI must not poll or animate; keep blocking work off UI/event-loop threads. Add dependencies only for demonstrated requirements.
+## Requirements
 
-## Validation and docs
+### Workflow
 
-- Before taking control of the desktop or changing foreground focus for testing, notify the user and give them time to stop their current input. Announce when desktop control is released. Interactive testing is allowed; advance notice does not require separate approval.
-- Run repository checks appropriate to the change. Preserve zero-extension, extension-equivalence, failure, protocol/storage and concurrency coverage. Keep frontend/tooling tests and types separate; validation dependencies stay development-only and CI warnings fail.
-- Validate affected Tauri flows on both platforms, including focus, input, DPI and rendered state. Measure performance changes under comparable workloads, including 60/120 Hz and hidden idle where relevant. Report unvalidated platforms; browser fixtures and cross-compilation do not prove native behavior.
-- Code and manifests define implementation. Update the existing documents, remove completed/history-only content, and keep optional candidates distinct from commitments. Original artwork belongs in docs/assets/icons; runtime and packaging exports stay with their consumers.
+- Follow the user's latest requirements, using current code and tests to establish implementation status.
+- Leave changes unstaged unless requested. Use just dev and just check.
+- Keep Bun/Node as development tooling and releases self-contained.
 
-References: [architecture](docs/platform-architecture.md), [extensions](docs/extension-lifecycle.md), [design system](docs/design-system.md), [TODO](docs/tasks.md).
+### Architecture
+
+- Support only Windows 10+ and macOS 13+ through platform adapters with a shared contract.
+- Rust owns search, supervision, storage, configuration and platform services. Tauri integration belongs in the desktop shell; callers own lifecycle and transaction policy.
+- Limit launcher responsibility for App, Scripts and System commands to admission and handoff, then dismiss it. The OS owns System execution.
+- Extensions provide domain capabilities under identical built-in and external runtime contracts. Host inventory establishes built-in identity.
+- The host renders bounded declarative extension UI. Protect frontend and host-service boundaries through typed bridges, explicit permissions, Rust validation and session/instance-scoped authority.
+- Preserve user data and accepted work, report failures explicitly, and bound queued work. New automatic lifecycle or data-management policies require explicit user authorization.
+
+### UX and motion
+
+Visual craft, interaction feel and motion are mandatory acceptance criteria alongside
+functional correctness for every UI change.
+
+- Use deliberate proportion, spacing, typography, surface hierarchy and state contrast to make Nanika lightweight, precise and recognizable. Reuse shared patterns that serve its interaction goals.
+- Preserve native editing, selection, keyboard and window semantics, with immediate feedback, responsive input and stable text/layout.
+- Provide purposeful, comfortable animation as required interaction feedback. Keep motion coherent and proportionate, with continuity through interruption and live reduced-motion support.
+- Keep hidden UI idle and blocking work off UI/event-loop threads.
+
+Nanika's product principles and native conventions govern how these skills are applied:
+
+- `$find-animation-opportunities`: identify and prioritize useful motion opportunities; propose changes without modifying code.
+- `$animate`: implement purposeful motion using the current stack and shared patterns.
+- `$review-animations`: review existing or changed motion for interaction feel, timing, interruption, accessibility and performance.
+
+### Validation
+
+- Run checks appropriate to the change and preserve zero-extension, extension-equivalence, failure, security, protocol/storage and concurrency coverage.
+- Exercise entry, exit, repeated input, interruption, scrolling and resizing on both supported platforms. Report untested conditions; native acceptance requires native execution evidence.
+- Measure performance changes before and after under comparable workloads, including 60/120 Hz and hidden idle where relevant.
+- Announce desktop control in advance, allow time for the user to stop input, and announce release afterward.
+
+### Backlog
+
+- Record worthwhile ideas deferred from current work in [docs/BACKLOG.md](docs/BACKLOG.md), the sole Markdown file under docs.
+- Briefly explain each idea, why it is deferred and when to reconsider it.
+- Read the backlog or implement its items only when explicitly requested by the user.
