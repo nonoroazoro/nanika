@@ -1,8 +1,8 @@
 <script lang="ts">
-import Button from "../components/Button.svelte";
+import Button from "../components/ui/Button.svelte";
 import { onDestroy } from "svelte";
 import { settingsBridge } from "../bridge/settingsBridge";
-import ShortcutKeys from "../components/ShortcutKeys.svelte";
+import ShortcutKeys from "../components/ui/ShortcutKeys.svelte";
 import { shortcutFromKey, shortcutKeys, shortcutModifiers } from "./shortcut";
 
 const { value, registeredValue, onChange }: {

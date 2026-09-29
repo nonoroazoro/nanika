@@ -167,6 +167,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 view_id,
             } if view_id == VIEW_ID => {
+                if let Err(message) = worker.close_view() {
+                    send_error(&output, Some(request_id), "view_close_failed", &message)?;
+                    continue;
+                }
                 view_state = None;
                 send_frame(
                     &output,
@@ -256,7 +260,7 @@ fn handle_view_event(
     }
     let mut proposed = current.state.clone();
     let state = &mut proposed;
-    let mut expected_data_revision = None;
+    let mut expected_collection_revision = None;
     match event {
         ViewEvent::Resumed => {}
         ViewEvent::Invalidated => {}
@@ -272,34 +276,57 @@ fn handle_view_event(
             }
             state.selected_item_id = None;
         }
-        ViewEvent::SearchChanged { text } => {
+        ViewEvent::SearchChanged {
+            text,
+            minimum_items,
+        } => {
             state.query = text;
-            state.page_offset = 0;
-            state.selected_item_id = None;
-            state.text_offset = 0;
+            state.reset_results(minimum_items);
         }
-        ViewEvent::SelectionChanged { item_id } => {
-            if state.selected_item_id != item_id {
-                state.text_offset = 0;
+        ViewEvent::SelectionChanged {
+            collection_id,
+            index,
+        } => {
+            match current.select_index(&collection_id, index) {
+                Ok(selected) => *state = selected,
+                Err(message) => {
+                    return send_error(output, Some(request_id), "invalid_selection", &message);
+                }
             }
-            state.selected_item_id = item_id;
+            expected_collection_revision = Some(current.collection_revision);
         }
-        ViewEvent::FilterChanged { filter_id, value }
-            if filter_id == "contentType"
-                && matches!(value.as_str(), "all" | "text" | "files" | "images") =>
+        ViewEvent::FilterChanged {
+            filter_id,
+            value,
+            minimum_items,
+        } if filter_id == "contentType"
+            && matches!(value.as_str(), "all" | "text" | "files" | "images") =>
         {
             state.content_type = value;
-            state.page_offset = 0;
-            state.selected_item_id = None;
-            state.text_offset = 0;
+            state.reset_results(minimum_items);
         }
-        ViewEvent::PageChanged { target, cursor } => {
-            if let Err(message) =
-                nanika_extension_clipboard::change_page(state, &current.view, target, &cursor)
-            {
-                return send_error(output, Some(request_id), "invalid_view_page", &message);
+        ViewEvent::ListRangeChanged {
+            collection_id,
+            offset,
+            count,
+        } => {
+            if let Err(message) = nanika_extension_clipboard::read_range(
+                state,
+                &current.view,
+                &collection_id,
+                offset,
+                count,
+            ) {
+                return send_error(output, Some(request_id), "invalid_view_range", &message);
             }
-            expected_data_revision = Some(current.data_revision);
+            expected_collection_revision = Some(current.collection_revision);
+        }
+        ViewEvent::TextChunkRequested { text_id, index } => {
+            if let Err(message) =
+                nanika_extension_clipboard::read_text_chunk(state, &current.view, &text_id, index)
+            {
+                return send_error(output, Some(request_id), "invalid_text_chunk", &message);
+            }
         }
 
         ViewEvent::ActionInvoked {
@@ -375,7 +402,7 @@ fn handle_view_event(
         );
     };
     state.revision = next_revision;
-    let mut presentation = match worker.present(proposed, expected_data_revision) {
+    let mut presentation = match worker.present(proposed, expected_collection_revision) {
         Ok(presentation) => presentation,
         Err(message) => return send_error(output, Some(request_id), "view_failed", &message),
     };

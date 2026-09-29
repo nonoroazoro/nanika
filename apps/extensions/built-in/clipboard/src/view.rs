@@ -11,30 +11,51 @@ use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState}
 pub const FILE_COLLECTION_PREVIEW_LIMIT: usize = 3;
 
 pub(crate) fn clipboard_view(
-    state: &mut ClipboardViewState,
+    state: &ClipboardViewState,
     visible: &[crate::ClipboardItem],
-    selected: Option<&ClipboardEntry>,
+    selected: Option<&crate::ClipboardPreview>,
+    selected_index: Option<usize>,
     total: usize,
+    collection_id: String,
 ) -> Result<View, String> {
+    let filtered = !state.query.trim().is_empty() || state.content_type != "all";
     let items = visible.iter().map(list_item).collect::<Result<_, _>>()?;
-    let sections = (!visible.is_empty())
-        .then(|| ListSection {
-            id: "all".to_owned(),
-            title: None,
-            items,
-        })
-        .into_iter()
-        .collect();
+    let sections = vec![ListSection {
+        id: "all".to_owned(),
+        title: None,
+        offset: state.offset,
+        total,
+        items,
+    }];
     Ok(View::List {
         list: Box::new(ListView {
             title: "Clipboard History".to_owned(),
-            search_placeholder: "Search for entries".to_owned(),
+            search_placeholder: "Search clipboard history".to_owned(),
             search_text: state.query.clone(),
+            empty_title: if filtered {
+                "No matching entries"
+            } else {
+                "No clipboard history yet"
+            }
+            .to_owned(),
+            empty_description: if filtered {
+                "Try a different search or filter."
+            } else {
+                "Copied content will appear here."
+            }
+            .to_owned(),
             layout: ListLayout::Split,
             sections,
-            selected_item_id: state.selected_item_id.clone(),
+            collection_id,
+            selection: selected
+                .zip(selected_index)
+                .map(|(preview, index)| {
+                    list_item(&crate::ClipboardItem::from_entry(&preview.entry))
+                        .map(|item| nanika_protocol::ListSelection { index, item })
+                })
+                .transpose()?,
             detail: selected
-                .map(|entry| detail_view(entry, state.text_offset))
+                .map(|entry| detail_view(entry, state.text_chunk))
                 .transpose()?,
             filter: Some(ViewFilter {
                 id: "contentType".to_owned(),
@@ -46,7 +67,6 @@ pub(crate) fn clipboard_view(
                     filter_option("images", "Images"),
                 ],
             }),
-            pagination: _pagination(state.page_offset, crate::CLIPBOARD_PAGE_SIZE, total),
         }),
     })
 }
@@ -65,18 +85,21 @@ fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
     })
 }
 
-fn detail_view(entry: &ClipboardEntry, text_offset: usize) -> Result<DetailView, String> {
+fn detail_view(preview: &crate::ClipboardPreview, chunk: usize) -> Result<DetailView, String> {
+    let entry = &preview.entry;
     Ok(DetailView {
         title: None,
         content: match &entry.content {
             ClipboardContent::Text { value } => {
-                const TEXT_PAGE_SIZE: usize = nanika_protocol::MAX_DETAIL_TEXT_CHARS;
-                let total = value.chars().count();
-                let offset =
-                    text_offset.min(total.saturating_sub(1) / TEXT_PAGE_SIZE * TEXT_PAGE_SIZE);
+                let range = preview
+                    .chunks
+                    .get(chunk)
+                    .ok_or("Text chunk is outside its document.")?;
                 DetailContent::Text {
-                    value: value.chars().skip(offset).take(TEXT_PAGE_SIZE).collect(),
-                    pagination: _pagination(offset, TEXT_PAGE_SIZE, total).map(Box::new),
+                    value: value[range.clone()].to_owned(),
+                    text_id: entry.entry_id.clone(),
+                    chunk_index: chunk,
+                    total_chunks: preview.chunks.len(),
                 }
             }
             ClipboardContent::Files { paths } => DetailContent::Files {
@@ -172,50 +195,54 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-fn _pagination(
-    offset: usize,
-    size: usize,
-    total: usize,
-) -> Option<nanika_protocol::ViewPagination> {
-    (total > size).then(|| nanika_protocol::ViewPagination {
-        label: format!("{}-{} of {}", offset + 1, (offset + size).min(total), total),
-        previous_cursor: offset.checked_sub(size).map(|offset| offset.to_string()),
-        next_cursor: (offset + size < total).then(|| (offset + size).to_string()),
-    })
-}
-
-/// Accept only an adjacent cursor from the currently rendered data scope.
-pub fn change_page(
+/// Range requests address an immutable collection identity, independent of selection updates.
+pub fn read_range(
     state: &mut ClipboardViewState,
     current: &View,
-    target: nanika_protocol::ViewPageTarget,
-    cursor: &str,
+    collection_id: &str,
+    offset: usize,
+    count: std::num::NonZeroU32,
 ) -> Result<(), String> {
     let View::List { list } = current else {
         return Err("Clipboard view is not a list.".into());
     };
-    let pagination = match target {
-        nanika_protocol::ViewPageTarget::List => list.pagination.as_ref(),
-        nanika_protocol::ViewPageTarget::Detail => {
-            list.detail
-                .as_ref()
-                .and_then(|detail| match &detail.content {
-                    DetailContent::Text { pagination, .. } => pagination.as_deref(),
-                    _ => None,
-                })
-        }
+    if collection_id != list.collection_id
+        || count.get() as usize > nanika_protocol::MAX_VIEW_ITEMS
+        || offset > list.total()
+        || (offset == list.total() && offset != 0)
+    {
+        return Err("The requested collection range is no longer available.".into());
+    }
+    state.offset = offset;
+    state.count = count.get() as usize;
+    state.anchor_id = None;
+    Ok(())
+}
+
+pub fn read_text_chunk(
+    state: &mut ClipboardViewState,
+    current: &View,
+    text_id: &str,
+    index: usize,
+) -> Result<(), String> {
+    let View::List { list } = current else {
+        return Err("Clipboard view is not a list.".into());
     };
-    if !pagination.is_some_and(|page| page.allows(cursor)) {
-        return Err("The requested page is no longer available.".to_owned());
+    let Some(DetailView {
+        content:
+            DetailContent::Text {
+                text_id: current_id,
+                total_chunks,
+                ..
+            },
+        ..
+    }) = &list.detail
+    else {
+        return Err("Clipboard detail is not text.".into());
+    };
+    if text_id != current_id || index >= *total_chunks {
+        return Err("Text document changed.".into());
     }
-    let offset = cursor.parse::<usize>().map_err(|error| error.to_string())?;
-    match target {
-        nanika_protocol::ViewPageTarget::List => {
-            state.page_offset = offset;
-            state.selected_item_id = None;
-            state.text_offset = 0;
-        }
-        nanika_protocol::ViewPageTarget::Detail => state.text_offset = offset,
-    }
+    state.text_chunk = index;
     Ok(())
 }

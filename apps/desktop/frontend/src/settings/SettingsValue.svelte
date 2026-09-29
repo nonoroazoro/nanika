@@ -1,9 +1,9 @@
 <script lang="ts">
-import Button from "../components/Button.svelte";
-import Input from "../components/Input.svelte";
+import Button from "../components/ui/Button.svelte";
+import Input from "../components/ui/Input.svelte";
 import SettingsValue from "./SettingsValue.svelte";
 import IntegerSetting from "./IntegerSetting.svelte";
-import Switch from "../components/Switch.svelte";
+import Switch from "../components/ui/Switch.svelte";
 import { emptyValue, fieldTitle } from "./values";
 import { stringError } from "./stringValue";
 import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";

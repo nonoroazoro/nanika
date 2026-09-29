@@ -4,6 +4,9 @@ use crate::ClipboardConfig;
 
 pub(crate) enum ClipboardCommand {
     Capture,
+    CloseView {
+        response: SyncSender<()>,
+    },
     Clear {
         entry_ids: std::sync::Arc<Vec<String>>,
         response: SyncSender<Result<(), String>>,

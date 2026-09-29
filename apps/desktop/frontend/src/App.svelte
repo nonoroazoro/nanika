@@ -1,5 +1,5 @@
 <script lang="ts">
-import Button from "./components/Button.svelte";
+import Button from "./components/ui/Button.svelte";
 import { RootSearchState } from "./logic/RootSearchState.svelte";
 import { onMount, tick } from "svelte";
 
@@ -7,10 +7,12 @@ import { uiActivity } from "./ui/activity";
 import { tauriBridge } from "./bridge";
 import { orderedViewEvents } from "./bridge/orderedViewEvents";
 import { viewInputScheduler } from "./bridge/viewInputScheduler";
-import ContextMenu from "./components/ContextMenu.svelte";
+import ContextMenu from "./components/ui/ContextMenu.svelte";
+import AppMenuBrand from "./components/launcher/AppMenuBrand.svelte";
 import type { ContextMenuPresentation } from "./types/ContextMenuPresentation";
 import type { MenuTarget } from "./types/MenuTarget";
-import { ExtensionView, RootSearch } from "./components";
+import ExtensionView from "./components/extensions/ExtensionView.svelte";
+import RootSearch from "./components/launcher/RootSearch.svelte";
 import type {
     ApplicationSnapshot,
     NavigationSnapshot,
@@ -39,6 +41,7 @@ let navigation = $state.raw<NavigationSnapshot>({
     dismissCount: 0
 });
 let viewPending = $state(false);
+let viewCanLoadMore = $state(false);
 let viewQuery = $state("");
 let viewInputError = $state<string | null>(null);
 let viewOperation = 0;
@@ -236,7 +239,7 @@ async function openSettings(): Promise<void>
     }
 }
 
-async function showAppMenu(): Promise<void>
+async function showAppMenu(trigger: HTMLButtonElement): Promise<void>
 {
     const wasOpen = menuOpen && contextMenu?.request === null;
     closeContextMenu();
@@ -262,7 +265,8 @@ async function showAppMenu(): Promise<void>
             style: "secondary",
             group: null
         }],
-        position: [20, window.innerHeight - 56]
+        position: null,
+        anchor: trigger
     };
     menuOpen = true;
 }
@@ -419,9 +423,9 @@ function updateNavigation(next: NavigationSnapshot): void
     reconcileViewInput();
 }
 
-function changeViewQuery(text: string): void
+function changeViewQuery(text: string, minimumItems: number): void
 {
-    viewInput.query(text);
+    viewInput.query(text, minimumItems);
     reconcileViewInput();
 }
 
@@ -434,6 +438,7 @@ function resumeView(): void
 function reconcileViewInput(): void
 {
     viewPending = viewInput.busy;
+    viewCanLoadMore = viewInput.canLoadMore;
     viewInputError = viewInput.inputError;
     viewQuery = viewInput.queryText;
     if (disposed || !application)
@@ -542,6 +547,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
         {#if navigation.current}
             {#key navigation.current.routeId}
                 <ExtensionView
+                    canLoadMore={viewCanLoadMore}
                     snapshot={navigation.current}
                     resourceOrigin={application?.resourceOrigin ?? ""}
                     query={viewQuery}
@@ -568,9 +574,9 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 searchState={rootSearchState}
                 {hasCompletedSearch}
                 appMenuOpen={menuOpen && contextMenu?.request === null}
-                onAppMenu={() =>
+                onAppMenu={trigger =>
                 {
-                    void showAppMenu();
+                    void showAppMenu(trigger);
                 }}
                 inputError={queryFailure}
                 busy={invoking || navigation.busy || !application
@@ -608,6 +614,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 <ContextMenu
     actions={contextMenu?.actions ?? []}
     position={contextMenu?.position ?? null}
+    anchor={contextMenu?.anchor}
     heading={contextMenu?.heading}
     shortcuts={contextMenu?.shortcuts}
     open={menuOpen}
@@ -623,7 +630,11 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
     {
         void invokeContextMenu(id, confirmed);
     }}
-/>
+>
+    {#snippet footer()}
+        {#if application}<AppMenuBrand version={application.version} />{/if}
+    {/snippet}
+</ContextMenu>
 
 <style>
 .fatal {

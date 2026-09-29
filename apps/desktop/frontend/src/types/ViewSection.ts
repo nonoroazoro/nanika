@@ -3,5 +3,7 @@ export interface ViewSection
 {
     id: string;
     title: string | null;
+    offset: number;
+    total: number;
     items: ViewItem[];
 }

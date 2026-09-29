@@ -87,12 +87,14 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                         &config,
                     )
                     .unwrap();
-                assert!(
+                let next = store.present(current.state.clone(), None).unwrap();
+                assert_eq!(
                     store
-                        .present(current.state.clone(), Some(current.data_revision))
-                        .is_err()
+                        .present(current.state.clone(), Some(current.collection_revision))
+                        .is_err(),
+                    current.collection_revision != next.collection_revision
                 );
-                current = store.present(current.state, None).unwrap();
+                current = next;
                 assert_eq!(
                     *current.matching_ids,
                     database.matching_ids(query, filter).unwrap()
@@ -177,15 +179,63 @@ fn unmatched_capture_and_removal_preserve_query_identity() {
             },
         )
         .unwrap();
-    let after_capture = store.present(current.state.clone(), None).unwrap();
+    let after_capture = store
+        .present(current.state.clone(), Some(current.collection_revision))
+        .unwrap();
+    assert_eq!(
+        current.collection_revision,
+        after_capture.collection_revision
+    );
     assert!(Arc::ptr_eq(
         &current.matching_ids,
         &after_capture.matching_ids
     ));
     store.clear(&["unmatched".into()]).unwrap();
-    let after_clear = store.present(current.state, None).unwrap();
+    let after_clear = store
+        .present(current.state, Some(current.collection_revision))
+        .unwrap();
+    assert_eq!(current.collection_revision, after_clear.collection_revision);
     assert!(Arc::ptr_eq(
         &current.matching_ids,
         &after_clear.matching_ids
     ));
+}
+
+#[test]
+fn closing_a_view_releases_all_transient_query_and_preview_caches() {
+    let mut store = crate::ClipboardStore::open(":memory:").unwrap();
+    store
+        .capture(
+            &ClipboardEntry {
+                entry_id: "entry".into(),
+                title: "Entry".into(),
+                content: ClipboardContent::Text {
+                    value: "Document".into(),
+                },
+                byte_size: 8,
+                captured_at: 1,
+            },
+            1,
+            &ClipboardConfig {
+                max_entries: None,
+                max_age_days: None,
+            },
+        )
+        .unwrap();
+    store
+        .present(crate::ClipboardViewState::new(), None)
+        .unwrap();
+    assert!(store._preview.is_some());
+    assert!(store._query.is_some());
+    assert!(store._window.is_some());
+    store.close_view();
+    assert!(store._query.is_none());
+    assert!(store._window.is_none());
+    assert!(store._preview.is_none());
+    assert_eq!(
+        store.content("entry").unwrap(),
+        ClipboardContent::Text {
+            value: "Document".into()
+        }
+    );
 }

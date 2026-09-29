@@ -125,9 +125,6 @@ pub use catalog_publisher::CatalogPublisher;
 mod catalog_publication;
 use catalog_publication::CatalogPublication;
 
-#[path = "ViewPagination.rs"]
-mod view_pagination;
-pub use view_pagination::*;
-#[path = "ViewPageTarget.rs"]
-mod view_page_target;
-pub use view_page_target::*;
+#[path = "ListSelection.rs"]
+mod list_selection;
+pub use list_selection::*;

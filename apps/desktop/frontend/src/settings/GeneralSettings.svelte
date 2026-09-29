@@ -1,6 +1,6 @@
 <script lang="ts">
-import Switch from "../components/Switch.svelte";
-import Select from "../components/Select.svelte";
+import Switch from "../components/ui/Switch.svelte";
+import Select from "../components/ui/Select.svelte";
 import ShortcutRecorder from "./ShortcutRecorder.svelte";
 import SettingsField from "./SettingsField.svelte";
 import type { SettingsState } from "./SettingsState.svelte";

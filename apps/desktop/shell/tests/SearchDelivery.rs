@@ -118,7 +118,9 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             detail: nanika_protocol::DetailView {
                 title: None,
                 content: nanika_protocol::DetailContent::Text {
-                    pagination: None,
+                    text_id: "test.text".into(),
+                    chunk_index: 0,
+                    total_chunks: 1,
                     value: "detail".repeat(16000),
                 },
                 metadata: Vec::new(),

@@ -1,7 +1,9 @@
 use super::*;
 use crate::ApplicationEntryData;
+#[cfg(windows)]
 use crate::ScanReport;
 
+#[cfg(windows)]
 fn scan(
     index: &mut ApplicationIndex,
     config: &ApplicationConfig,

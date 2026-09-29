@@ -1,23 +1,36 @@
-pub const CLIPBOARD_PAGE_SIZE: usize = 10;
+pub const CLIPBOARD_BATCH_SIZE: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardViewState {
     pub query: String,
     pub selected_item_id: Option<String>,
     pub content_type: String,
-    pub page_offset: usize,
-    pub text_offset: usize,
+    pub offset: usize,
+    pub count: usize,
+    pub anchor_id: Option<String>,
+    pub text_chunk: usize,
     pub revision: u64,
 }
 
 impl ClipboardViewState {
+    /// Replace the result scope with a bounded window sized for the host viewport.
+    pub fn reset_results(&mut self, minimum_items: std::num::NonZeroU32) {
+        self.count = minimum_items.get() as usize;
+        self.offset = 0;
+        self.anchor_id = None;
+        self.selected_item_id = None;
+        self.text_chunk = 0;
+    }
+
     pub fn new() -> Self {
         Self {
             query: String::new(),
             selected_item_id: None,
             content_type: "all".to_owned(),
-            page_offset: 0,
-            text_offset: 0,
+            offset: 0,
+            count: CLIPBOARD_BATCH_SIZE,
+            anchor_id: None,
+            text_chunk: 0,
             revision: 1,
         }
     }

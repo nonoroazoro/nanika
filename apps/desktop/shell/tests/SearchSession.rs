@@ -62,7 +62,9 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                     detail: DetailView {
                         title: None,
                         content: DetailContent::Text {
-                            pagination: None,
+                            text_id: "test.text".into(),
+                            chunk_index: 0,
+                            total_chunks: 1,
                             value: "test".into(),
                         },
                         metadata: vec![],
@@ -76,11 +78,15 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                     list: Box::new(ListView {
                         title: "Test".into(),
                         search_placeholder: "Search".into(),
+                        empty_title: "No items".to_owned(),
+                        empty_description: "Items will appear here when available.".to_owned(),
                         search_text: String::new(),
                         layout: ListLayout::Split,
                         sections: vec![ListSection {
                             id: "items".into(),
                             title: None,
+                            offset: 0,
+                            total: 1,
                             items: vec![ListItem {
                                 id: "item".into(),
                                 title: "Test".into(),
@@ -89,10 +95,10 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                                 actions,
                             }],
                         }],
-                        selected_item_id: Some("item".into()),
+                        collection_id: "test.collection".into(),
+                        selection: None,
                         detail: None,
                         filter: None,
-                        pagination: None,
                     }),
                 },
                 Some("item".into()),

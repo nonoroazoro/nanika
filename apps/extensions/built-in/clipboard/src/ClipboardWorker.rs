@@ -60,6 +60,16 @@ impl ClipboardWorker {
         })?
     }
 
+    pub fn close_view(&self) -> Result<(), String> {
+        let (response, result) = mpsc::sync_channel(1);
+        self.commands
+            .send(ClipboardCommand::CloseView { response })
+            .map_err(|_| "clipboard owner is closed".to_owned())?;
+        result
+            .recv()
+            .map_err(|_| "clipboard owner closed without releasing the view".to_owned())
+    }
+
     pub fn present(
         &self,
         state: crate::ClipboardViewState,
@@ -158,6 +168,10 @@ impl ClipboardWorker {
                                     "clipboard configuration requester closed before receiving result"
                                 );
                             }
+                        }
+                        ClipboardCommand::CloseView { response } => {
+                            store.close_view();
+                            let _ = response.send(());
                         }
                         ClipboardCommand::Present { state, expected_revision, response } => {
                             let _ = response.send(store.present(state, expected_revision));

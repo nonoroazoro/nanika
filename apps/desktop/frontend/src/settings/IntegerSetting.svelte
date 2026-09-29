@@ -1,7 +1,7 @@
 <script lang="ts">
 import InfinityIcon from "../components/icons/InfinityIcon.svelte";
-import Button from "../components/Button.svelte";
-import Input from "../components/Input.svelte";
+import Button from "../components/ui/Button.svelte";
+import Input from "../components/ui/Input.svelte";
 import { integerError } from "./integerValue";
 import { emptyValue } from "./values";
 import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";

@@ -86,3 +86,10 @@ mod clipboard_database_tests;
 #[cfg(test)]
 #[path = "../tests/view.rs"]
 mod view_tests;
+
+#[path = "ClipboardPreview.rs"]
+mod clipboard_preview;
+pub(crate) use clipboard_preview::ClipboardPreview;
+#[path = "ClipboardWindow.rs"]
+mod clipboard_window;
+pub(crate) use clipboard_window::ClipboardWindow;

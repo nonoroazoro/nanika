@@ -29,12 +29,16 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         true,
     )?;
     validate_view_search_text(&list.search_text)?;
+    validate_text("view empty title", &list.empty_title, 256, false)?;
+    validate_text("view empty description", &list.empty_description, 512, true)?;
     if list.sections.len() > 32 {
         return Err("view has too many list sections".to_owned());
     }
+    validate_id("view collection id", &list.collection_id)?;
+    let mut total = 0usize;
+    let mut delivered = 0usize;
     let mut section_ids = HashSet::new();
     let mut item_ids = HashSet::new();
-    let mut item_count = 0_usize;
     for section in &list.sections {
         validate_id("list section id", &section.id)?;
         if !section_ids.insert(section.id.as_str()) {
@@ -43,31 +47,41 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         if let Some(title) = &section.title {
             validate_text("list section title", title, 256, false)?;
         }
-        item_count = item_count.saturating_add(section.items.len());
+        total = total
+            .checked_add(section.total)
+            .filter(|total| *total <= u32::MAX as usize)
+            .ok_or("list total exceeds the supported range")?;
+        delivered += section.items.len();
+        if section.offset > section.total || section.items.len() > section.total - section.offset {
+            return Err("list section window is outside its collection".into());
+        }
         for item in &section.items {
-            validate_id("list item id", &item.id)?;
+            validate_item(item)?;
             if !item_ids.insert(item.id.as_str()) {
                 return Err("view list item ids must be unique".to_owned());
             }
-            validate_text("list item title", &item.title, 512, false)?;
-            if let Some(subtitle) = &item.subtitle {
-                validate_text("list item subtitle", subtitle, 512, true)?;
-            }
-            validate_actions(&item.actions)?;
-            if let Some(crate::ViewItemIcon::Native(reference)) = &item.icon
-                && !reference.is_valid()
-            {
-                return Err("list item icon reference is invalid".to_owned());
-            }
         }
     }
-    if item_count > 500 {
-        return Err("view has too many list items".to_owned());
+    if delivered > crate::MAX_VIEW_ITEMS {
+        return Err("view has too many delivered list items".into());
     }
-    if let Some(selected) = &list.selected_item_id
-        && !item_ids.contains(selected.as_str())
-    {
-        return Err("view selection does not reference a list item".to_owned());
+    if let Some(selection) = &list.selection {
+        validate_item(&selection.item)?;
+        if selection.index >= total {
+            return Err("view selection is outside its collection".into());
+        }
+        let mut base = 0;
+        for section in &list.sections {
+            for (local, item) in section.items.iter().enumerate() {
+                let index = base + section.offset + local;
+                if (index == selection.index || item.id == selection.item.id)
+                    && (index != selection.index || item != &selection.item)
+                {
+                    return Err("view selection disagrees with its delivered row".into());
+                }
+            }
+            base += section.total;
+        }
     }
     if let Some(detail) = &list.detail {
         validate_detail(detail)?;
@@ -94,7 +108,6 @@ fn validate_list(list: &ListView) -> Result<(), String> {
             return Err("view filter selection is invalid".to_owned());
         }
     }
-    validate_pagination(list.pagination.as_ref())?;
     Ok(())
 }
 
@@ -103,12 +116,21 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
         validate_text("detail title", title, 512, true)?;
     }
     match &detail.content {
-        DetailContent::Text { value, pagination } => {
-            // Content is plain text, not a label: preserve control characters and original text.
-            if value.chars().count() > crate::MAX_DETAIL_TEXT_CHARS {
-                return Err("detail text exceeds the page size".to_owned());
+        DetailContent::Text {
+            value,
+            text_id,
+            chunk_index,
+            total_chunks,
+        } => {
+            validate_id("detail text identity", text_id)?;
+            if *total_chunks == 0
+                || *total_chunks > crate::MAX_DETAIL_TEXT_CHUNKS
+                || chunk_index >= total_chunks
+                || value.chars().count() > crate::DETAIL_TEXT_BATCH_CHARS
+                || (*total_chunks > 1 && value.is_empty())
+            {
+                return Err("detail text chunk is invalid".into());
             }
-            validate_pagination(pagination.as_deref())?;
         }
         DetailContent::Files { files } => {
             if files.is_empty() || files.len() > 256 {
@@ -215,20 +237,17 @@ fn validate_text(
     Ok(())
 }
 
-fn validate_pagination(pagination: Option<&crate::ViewPagination>) -> Result<(), String> {
-    let Some(pagination) = pagination else {
-        return Ok(());
-    };
-    validate_text("view page label", &pagination.label, 128, false)?;
-    for cursor in [&pagination.previous_cursor, &pagination.next_cursor]
-        .into_iter()
-        .flatten()
-    {
-        validate_text("view pagination cursor", cursor, 512, false)?;
+fn validate_item(item: &crate::ListItem) -> Result<(), String> {
+    validate_id("list item id", &item.id)?;
+    validate_text("list item title", &item.title, 512, false)?;
+    if let Some(subtitle) = &item.subtitle {
+        validate_text("list item subtitle", subtitle, 512, true)?;
     }
-    if pagination.previous_cursor.is_some() && pagination.previous_cursor == pagination.next_cursor
+    validate_actions(&item.actions)?;
+    if let Some(crate::ViewItemIcon::Native(reference)) = &item.icon
+        && !reference.is_valid()
     {
-        return Err("view page cursors must be distinct".to_owned());
+        return Err("list item icon reference is invalid".into());
     }
     Ok(())
 }

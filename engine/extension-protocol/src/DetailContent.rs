@@ -7,7 +7,11 @@ use crate::ImageSource;
 pub enum DetailContent {
     Text {
         value: String,
-        pagination: Option<Box<crate::ViewPagination>>,
+        /// Immutable content identity, independent of the enclosing view revision.
+        text_id: String,
+        /// Zero-based chunk position. A read returns this chunk only, never a growing prefix.
+        chunk_index: usize,
+        total_chunks: usize,
     },
     Files {
         files: Vec<crate::ViewFile>,

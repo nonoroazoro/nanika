@@ -17,7 +17,7 @@ export function viewInputScheduler()
     let blocking = 0;
     let requiredRevision = 0;
     let blockingRevision = 0;
-    let query: string | null = null;
+    let query: Extract<ViewEvent, { kind: "searchChanged"; }> | null = null;
     let draft: string | null = null;
     let resumeRequested = false;
     let inputError: string | null = null;
@@ -25,7 +25,15 @@ export function viewInputScheduler()
     return {
         get busy(): boolean
         {
-            return blocking > 0 || navigation.revision < blockingRevision || (pending === 0 && navigation.busy);
+            // A receipt can arrive before the Channel clears the operation's old busy snapshot.
+            // Only fresh authority may introduce host-owned blocking after our requests finish.
+            return blocking > 0 || navigation.revision < blockingRevision
+                || (pending === 0 && navigation.revision >= requiredRevision && navigation.busy);
+        },
+        get canLoadMore(): boolean
+        {
+            return pending === 0 && !navigation.busy && navigation.revision >= requiredRevision
+                && query === null && draft === null && !resumeRequested;
         },
         get queryText(): string
         {
@@ -55,9 +63,9 @@ export function viewInputScheduler()
             navigation = next;
             _settleDraft();
         },
-        query(text: string): void
+        query(text: string, minimumItems: number): void
         {
-            query = text;
+            query = { kind: "searchChanged", text, minimum_items: minimumItems };
             draft = text;
             // Match the Rust protocol's Unicode scalar count, not grapheme count.
             inputError = Array.from(text).length > 4096
@@ -70,7 +78,8 @@ export function viewInputScheduler()
         },
         begin(event: ViewEvent | null): boolean
         {
-            const isBlocking = event?.kind !== "selectionChanged" && event?.kind !== "resumed";
+            const isBlocking = event?.kind !== "selectionChanged" && event?.kind !== "resumed"
+                && event?.kind !== "listRangeChanged" && event?.kind !== "textChunkRequested";
             pending++;
             if (isBlocking)
             {
@@ -104,12 +113,12 @@ export function viewInputScheduler()
             }
             if (query !== null && !inputError && current.view.kind === "list")
             {
-                const text = query;
+                const event = query;
                 // Consume this intent without retry; newer queries remain eligible after completion.
                 query = null;
-                if (text !== current.view.list.search_text)
+                if (event.text !== current.view.list.search_text)
                 {
-                    return { kind: "searchChanged", text };
+                    return event;
                 }
                 _settleDraft();
             }

@@ -72,15 +72,6 @@ impl NavigationState {
         if menu_revision.is_some_and(|revision| revision != route.revision) {
             return Err("The view changed. Reopen the menu.".to_owned());
         }
-        if matches!(
-            &request.operation,
-            crate::ViewOperation::Event {
-                event: ViewEvent::PageChanged { .. }
-            }
-        ) && request.revision != route.revision
-        {
-            return Err("The page changed. Use its current navigation controls.".to_owned());
-        }
         if request.revision > route.revision {
             return Err("The extension view revision is ahead of the current state.".to_owned());
         }
@@ -159,43 +150,59 @@ impl NavigationState {
 pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(), String> {
     let valid = match (view, event) {
         (_, ViewEvent::Resumed) => true,
-        (View::List { .. }, ViewEvent::SearchChanged { text }) => {
+        (
+            View::List { .. },
+            ViewEvent::SearchChanged {
+                text,
+                minimum_items,
+            },
+        ) => {
             nanika_protocol::validate_view_search_text(text).is_ok()
+                && minimum_items.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
         }
-        (View::List { list }, ViewEvent::SelectionChanged { item_id }) => {
-            item_id.as_ref().is_none_or(|id| {
-                list.sections
-                    .iter()
-                    .flat_map(|section| &section.items)
-                    .any(|item| &item.id == id)
-            })
+        (
+            View::List { list },
+            ViewEvent::SelectionChanged {
+                collection_id,
+                index,
+            },
+        ) => collection_id == &list.collection_id && *index < list.total(),
+        (
+            View::List { list },
+            ViewEvent::FilterChanged {
+                filter_id,
+                value,
+                minimum_items,
+            },
+        ) => {
+            minimum_items.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
+                && list.filter.as_ref().is_some_and(|filter| {
+                    &filter.id == filter_id
+                        && filter.options.iter().any(|option| &option.value == value)
+                })
         }
-        (View::List { list }, ViewEvent::FilterChanged { filter_id, value }) => {
-            list.filter.as_ref().is_some_and(|filter| {
-                &filter.id == filter_id
-                    && filter.options.iter().any(|option| &option.value == value)
-            })
+        (
+            View::List { list },
+            ViewEvent::ListRangeChanged {
+                collection_id,
+                offset,
+                count,
+            },
+        ) => {
+            collection_id == &list.collection_id
+                && count.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
+                && (*offset < list.total() || (*offset == 0 && list.total() == 0))
         }
-        (_, ViewEvent::PageChanged { target, cursor }) => {
-            let pagination = match (view, target) {
-                (View::List { list }, nanika_protocol::ViewPageTarget::List) => {
-                    list.pagination.as_ref()
-                }
-                (_, nanika_protocol::ViewPageTarget::Detail) => {
-                    let detail = match view {
-                        View::List { list } => list.detail.as_ref(),
-                        View::Detail { detail } => Some(detail),
-                    };
-                    detail.and_then(|detail| match &detail.content {
-                        nanika_protocol::DetailContent::Text { pagination, .. } => {
-                            pagination.as_deref()
-                        }
-                        _ => None,
-                    })
-                }
-                _ => None,
+        (_, ViewEvent::TextChunkRequested { text_id, index }) => {
+            let detail = match view {
+                View::List { list } => list.detail.as_ref(),
+                View::Detail { detail } => Some(detail),
             };
-            pagination.is_some_and(|page| page.allows(cursor))
+            detail.is_some_and(|detail| {
+                matches!(&detail.content,
+                nanika_protocol::DetailContent::Text { text_id: current, total_chunks, .. }
+                    if current == text_id && index < total_chunks)
+            })
         }
         (
             View::List { list },
@@ -204,16 +211,11 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
                 action_id,
                 invocation,
             },
-        ) => list
-            .sections
-            .iter()
-            .flat_map(|section| &section.items)
-            .any(|item| {
-                &item.id == item_id
-                    && item.actions.iter().any(|action| {
-                        &action.id == action_id && action.allows_invocation(*invocation)
-                    })
-            }),
+        ) => list.item(item_id).is_some_and(|item| {
+            item.actions
+                .iter()
+                .any(|action| &action.id == action_id && action.allows_invocation(*invocation))
+        }),
         (
             View::Detail { detail },
             ViewEvent::ActionInvoked {

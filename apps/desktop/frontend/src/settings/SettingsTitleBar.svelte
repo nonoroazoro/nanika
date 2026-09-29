@@ -1,5 +1,5 @@
 <script lang="ts">
-import Button from "../components/Button.svelte";
+import Button from "../components/ui/Button.svelte";
 import { uiActivity } from "../ui/activity";
 import type { SettingsWindowAction } from "../types/SettingsWindowAction";
 

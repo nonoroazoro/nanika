@@ -421,7 +421,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 detail: nanika_protocol::DetailView {
                                     title: None,
                                     content: nanika_protocol::DetailContent::Text {
-                                        pagination: None,
+                                        text_id: "test.text".into(),
+                                        chunk_index: 0,
+                                        total_chunks: 1,
                                         value: "Fixture view".to_owned(),
                                     },
                                     metadata: Vec::new(),

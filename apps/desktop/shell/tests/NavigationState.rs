@@ -10,7 +10,9 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                pagination: None,
+                text_id: "test.text".into(),
+                chunk_index: 0,
+                total_chunks: 1,
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
@@ -60,7 +62,9 @@ fn resumed_events_are_authorized_for_every_host_rendered_view() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                pagination: None,
+                text_id: "test.text".into(),
+                chunk_index: 0,
+                total_chunks: 1,
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
@@ -77,7 +81,9 @@ fn text_view(value: &str) -> View {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                pagination: None,
+                text_id: "test.text".into(),
+                chunk_index: 0,
+                total_chunks: 1,
                 value: value.to_owned(),
             },
             metadata: Vec::new(),
@@ -265,7 +271,8 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
     let selection = _input_request(
         1,
         nanika_protocol::ViewEvent::SelectionChanged {
-            item_id: Some("two".to_owned()),
+            collection_id: "test.collection".into(),
+            index: 1,
         },
     );
     navigation.authorize_input(&selection, None).unwrap();
@@ -275,7 +282,10 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
     let View::List { list } = std::sync::Arc::make_mut(&mut route.view) else {
         unreachable!()
     };
-    list.selected_item_id = Some("two".to_owned());
+    list.selection = Some(nanika_protocol::ListSelection {
+        index: 1,
+        item: list.sections[0].items[1].clone(),
+    });
     navigation.finish(Ok(()));
 
     // Enter/double-click was captured before selection's RPC or Channel update.
@@ -377,11 +387,15 @@ fn _input_navigation() -> crate::NavigationState {
                     list: Box::new(nanika_protocol::ListView {
                         title: "Clipboard".to_owned(),
                         search_placeholder: "Search".to_owned(),
+                        empty_title: "No items".to_owned(),
+                        empty_description: "Items will appear here when available.".to_owned(),
                         search_text: String::new(),
                         layout: nanika_protocol::ListLayout::Plain,
                         sections: vec![nanika_protocol::ListSection {
                             id: "items".to_owned(),
                             title: None,
+                            offset: 0,
+                            total: 2,
                             items: ["one", "two"]
                                 .into_iter()
                                 .map(|id| nanika_protocol::ListItem {
@@ -393,10 +407,10 @@ fn _input_navigation() -> crate::NavigationState {
                                 })
                                 .collect(),
                         }],
-                        selected_item_id: Some("one".to_owned()),
+                        collection_id: "test.collection".into(),
+                        selection: None,
                         detail: None,
                         filter: None,
-                        pagination: None,
                     }),
                 }),
             },
@@ -485,94 +499,93 @@ fn new_search_clears_action_errors() {
 }
 
 #[test]
-fn page_cursors_are_authorized_for_their_exact_surface() {
-    use nanika_protocol::{ViewPageTarget, ViewPagination};
-    let mut navigation = _input_navigation();
-    let view = std::sync::Arc::make_mut(&mut navigation.stack.last_mut().unwrap().view);
-    let View::List { list } = view else {
-        unreachable!()
-    };
-    list.pagination = Some(ViewPagination {
-        label: "1-10 of 20".into(),
-        previous_cursor: None,
-        next_cursor: Some("rows-next".into()),
-    });
-    list.detail = Some(DetailView {
-        title: None,
-        content: DetailContent::Text {
-            value: "page".into(),
-            pagination: Some(Box::new(ViewPagination {
-                label: "1-4 of 8".into(),
-                previous_cursor: None,
-                next_cursor: Some("text-next".into()),
-            })),
-        },
-        metadata: vec![],
-        actions: vec![],
-    });
-    for (target, cursor, allowed) in [
-        (ViewPageTarget::List, "rows-next", true),
-        (ViewPageTarget::Detail, "text-next", true),
-        (ViewPageTarget::List, "text-next", false),
-        (ViewPageTarget::Detail, "rows-next", false),
-        (ViewPageTarget::List, "invented", false),
-    ] {
-        assert_eq!(
-            authorize_view_event(
-                view,
-                &ViewEvent::PageChanged {
-                    target,
-                    cursor: cursor.into()
-                }
-            )
-            .is_ok(),
-            allowed
-        );
-    }
-}
-
-#[test]
-fn page_request_from_an_older_revision_cannot_apply_to_a_new_selection() {
+fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
     let mut navigation = _input_navigation();
     let route = navigation.stack.last_mut().unwrap();
     route.revision = 2;
     let View::List { list } = std::sync::Arc::make_mut(&mut route.view) else {
         unreachable!()
     };
-    list.selected_item_id = Some("two".into());
     list.detail = Some(DetailView {
         title: None,
         content: DetailContent::Text {
             value: "second item".into(),
-            pagination: Some(Box::new(nanika_protocol::ViewPagination {
-                label: "1-10 of 20".into(),
-                previous_cursor: None,
-                next_cursor: Some("10".into()),
-            })),
+            text_id: "second".into(),
+            chunk_index: 0,
+            total_chunks: 3,
         },
         metadata: vec![],
         actions: vec![],
     });
-    let event = ViewEvent::PageChanged {
-        target: nanika_protocol::ViewPageTarget::Detail,
-        cursor: "10".into(),
-    };
-    assert!(
-        navigation
-            .authorize_input(&_input_request(1, event.clone()), None)
-            .is_err()
-    );
-    assert!(
-        navigation
-            .authorize_input(&_input_request(2, event), None)
-            .is_ok()
-    );
+    for (event, valid) in [
+        (
+            ViewEvent::ListRangeChanged {
+                collection_id: "test.collection".into(),
+                offset: 1,
+                count: std::num::NonZeroU32::new(30).unwrap(),
+            },
+            true,
+        ),
+        (
+            ViewEvent::ListRangeChanged {
+                collection_id: "obsolete".into(),
+                offset: 0,
+                count: std::num::NonZeroU32::new(30).unwrap(),
+            },
+            false,
+        ),
+        (
+            ViewEvent::ListRangeChanged {
+                collection_id: "test.collection".into(),
+                offset: 2,
+                count: std::num::NonZeroU32::new(30).unwrap(),
+            },
+            false,
+        ),
+        (
+            ViewEvent::ListRangeChanged {
+                collection_id: "test.collection".into(),
+                offset: 0,
+                count: std::num::NonZeroU32::new(501).unwrap(),
+            },
+            false,
+        ),
+        (
+            ViewEvent::TextChunkRequested {
+                text_id: "first".into(),
+                index: 1,
+            },
+            false,
+        ),
+        (
+            ViewEvent::TextChunkRequested {
+                text_id: "second".into(),
+                index: 1,
+            },
+            true,
+        ),
+        (
+            ViewEvent::TextChunkRequested {
+                text_id: "second".into(),
+                index: 3,
+            },
+            false,
+        ),
+    ] {
+        assert_eq!(
+            navigation
+                .authorize_input(&_input_request(1, event), None)
+                .is_ok(),
+            valid
+        );
+    }
 }
 
 #[test]
 fn pasted_control_characters_have_the_same_search_contract_as_view_state() {
     let navigation = _input_navigation();
     let event = ViewEvent::SearchChanged {
+        minimum_items: std::num::NonZeroU32::new(30).unwrap(),
         text: "\u{1b}[31m".into(),
     };
     assert!(
@@ -580,4 +593,45 @@ fn pasted_control_characters_have_the_same_search_contract_as_view_state() {
             .authorize_input(&_input_request(1, event), None)
             .is_ok()
     );
+}
+
+#[test]
+fn selection_authority_outlives_delivery_windows_but_not_collection_identity() {
+    let mut navigation = _input_navigation();
+    let request = _input_request(
+        1,
+        ViewEvent::SelectionChanged {
+            collection_id: "test.collection".into(),
+            index: 0,
+        },
+    );
+    let route = navigation.stack.last_mut().unwrap();
+    route.revision = 2;
+    let View::List { list } = std::sync::Arc::make_mut(&mut route.view) else {
+        unreachable!()
+    };
+    list.sections[0].offset = 1;
+    list.sections[0].items.remove(0);
+    navigation.authorize_input(&request, None).unwrap();
+    assert!(
+        navigation
+            .authorize_input(
+                &_input_request(
+                    1,
+                    ViewEvent::SelectionChanged {
+                        collection_id: "test.collection".into(),
+                        index: 2
+                    }
+                ),
+                None
+            )
+            .is_err()
+    );
+    let View::List { list } =
+        std::sync::Arc::make_mut(&mut navigation.stack.last_mut().unwrap().view)
+    else {
+        unreachable!()
+    };
+    list.collection_id = "new.collection".into();
+    assert!(navigation.authorize_input(&request, None).is_err());
 }

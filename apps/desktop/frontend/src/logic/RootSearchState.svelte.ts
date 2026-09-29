@@ -62,11 +62,13 @@ export class RootSearchState
      */
     activate(result: SearchResult): "confirmed" | "default" | null
     {
-        if (this.snapshot.phase !== "ready" || !this.snapshot.results.includes(result))
+        const index = this.snapshot.results.indexOf(result);
+        if (this.snapshot.phase !== "ready" || index < 0)
         {
             this.cancelConfirmation();
             return null;
         }
+        this.select(this.snapshot.resultOffset + index);
         if (result.allowDefaultExecution)
         {
             this.cancelConfirmation();
@@ -77,7 +79,6 @@ export class RootSearchState
             this.cancelConfirmation();
             return null;
         }
-        this.select(this.snapshot.resultOffset + this.snapshot.results.indexOf(result));
         const key = this._confirmationKey(result);
         if (this._confirmation === key)
         {

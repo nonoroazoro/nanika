@@ -9,13 +9,35 @@ use std::{
 pub struct ClipboardPresentation {
     pub state: ClipboardViewState,
     pub view: View,
-    pub data_revision: u64,
-    /// Clear acts on the reviewed query scope, including rows outside the current page.
+    pub collection_revision: u64,
+    /// Clear acts on the reviewed query scope, including rows outside the delivered window.
     pub matching_ids: Arc<Vec<String>>,
     pub(crate) paths: HashMap<String, Vec<String>>,
 }
 
 impl ClipboardPresentation {
+    /// Resolve an admitted position against the reviewed collection, even after its window moves.
+    pub fn select_index(
+        &self,
+        collection_id: &str,
+        index: usize,
+    ) -> Result<ClipboardViewState, String> {
+        let View::List { list } = &self.view else {
+            unreachable!()
+        };
+        let id = self
+            .matching_ids
+            .get(index)
+            .filter(|_| list.collection_id == collection_id)
+            .ok_or("The requested collection selection is no longer available.")?;
+        let mut state = self.state.clone();
+        if state.selected_item_id.as_ref() != Some(id) {
+            state.text_chunk = 0;
+        }
+        state.selected_item_id = Some(id.clone());
+        Ok(state)
+    }
+
     pub fn decorate_icons(
         &mut self,
         icon_for_path: &impl Fn(&Path) -> Option<Option<nanika_protocol::IconReference>>,
@@ -23,7 +45,7 @@ impl ClipboardPresentation {
         let View::List { list } = &mut self.view else {
             unreachable!()
         };
-        let selected = list.selected_item_id.as_ref();
+        let selected = list.selection.as_ref().map(|selection| &selection.item.id);
         let selected_references = selected
             .and_then(|id| self.paths.get(id))
             .into_iter()
@@ -47,6 +69,11 @@ impl ClipboardPresentation {
             if let Some(reference) = reference {
                 item.icon = Some(ViewItemIcon::Native(reference));
             }
+        }
+        if let Some(selection) = &mut list.selection
+            && let Some(reference) = selected_references.first().cloned().flatten().flatten()
+        {
+            selection.item.icon = Some(ViewItemIcon::Native(reference));
         }
         if let Some(DetailView {
             content: DetailContent::Files { files },

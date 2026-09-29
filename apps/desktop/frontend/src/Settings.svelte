@@ -1,10 +1,10 @@
 <script lang="ts">
-import ScrollArea from "./components/ScrollArea.svelte";
+import ScrollArea from "./components/ui/ScrollArea.svelte";
 import "./styles/settings.css";
-import Switch from "./components/Switch.svelte";
+import Switch from "./components/ui/Switch.svelte";
 import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
 import { SvelteMap } from "svelte/reactivity";
-import Button from "./components/Button.svelte";
+import Button from "./components/ui/Button.svelte";
 import { onMount, tick } from "svelte";
 
 import { settingsBridge } from "./bridge/settingsBridge";
@@ -22,7 +22,7 @@ import { ExtensionSettingsState } from "./settings/ExtensionSettingsState.svelte
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
 import type { SettingsWindowAction } from "./types/SettingsWindowAction";
 import { orderedProperties } from "./settings/properties";
-import ExtensionIcon from "./components/ExtensionIcon.svelte";
+import ExtensionIcon from "./components/extensions/ExtensionIcon.svelte";
 import type { ExtensionSettings, HostPreferences, SettingsApplicationUpdate, SettingsSnapshot } from "./types/Settings";
 
 let notification = $state<string | null>(null);

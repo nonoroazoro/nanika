@@ -8,4 +8,5 @@ export interface ContextMenuPresentation
     shortcuts?: Record<string, string[]>;
     actions: Action[];
     position: [number, number] | null;
+    anchor?: HTMLElement;
 }

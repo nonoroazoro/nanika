@@ -41,6 +41,18 @@ function _snapshot(ids: string[], update: Partial<RootSearchSnapshot> = {}): Roo
     };
 }
 
+test("explicit activation selects its reviewed target while stale targets cannot change selection", () =>
+{
+    const state = new RootSearchState(_snapshot(["clipboard", "app-store"]));
+    assert.equal(state.selectedIndex, 0);
+    const target = state.snapshot.results[1];
+    assert.ok(target);
+    assert.equal(state.activate(target), "default");
+    assert.equal(state.selectedIndex, 1);
+    assert.equal(state.activate(_result("obsolete")), null);
+    assert.equal(state.selectedIndex, 1);
+});
+
 test("pending input keeps the displayed page until the new query's first window arrives", () =>
 {
     const page = _snapshot(["a", "b", "c"], { resultOffset: 900, totalResults: 50_000 });

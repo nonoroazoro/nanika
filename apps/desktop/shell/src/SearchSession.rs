@@ -104,10 +104,7 @@ impl SearchSession {
                 }
                 let actions = match (&*route.view, item_id) {
                     (nanika_protocol::View::List { list }, Some(id)) => list
-                        .sections
-                        .iter()
-                        .flat_map(|section| &section.items)
-                        .find(|item| &item.id == id)
+                        .item(id)
                         .ok_or("The item is no longer available.")?
                         .actions
                         .as_slice(),

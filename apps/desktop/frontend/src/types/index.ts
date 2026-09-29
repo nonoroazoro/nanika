@@ -22,5 +22,3 @@ export * from "./ViewItem";
 export * from "./ViewItemIcon";
 export * from "./ViewMetadata";
 export * from "./ViewSection";
-
-export type { ViewPagination } from "./ViewPagination";

@@ -1,6 +1,9 @@
 use crate::{ClipboardEntry, ClipboardQueryEntry};
 use nanika_protocol::ClipboardContent;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 /// Only the active query's ordering metadata and immutable reviewed IDs are retained.
 pub(crate) struct ClipboardQuery {
@@ -8,10 +11,11 @@ pub(crate) struct ClipboardQuery {
     pub content_type: String,
     pub entries: Vec<ClipboardQueryEntry>,
     pub entry_ids: Arc<Vec<String>>,
+    pub positions: HashMap<String, usize>,
 }
 
 impl ClipboardQuery {
-    pub fn apply(&mut self, upsert: Option<&ClipboardEntry>, removed: &HashSet<String>) {
+    pub fn apply(&mut self, upsert: Option<&ClipboardEntry>, removed: &HashSet<String>) -> bool {
         let previous_len = self.entries.len();
         self.entries.retain(|entry| {
             !removed.contains(&entry.entry_id)
@@ -38,6 +42,12 @@ impl ClipboardQuery {
         }
         if changed {
             // Previously published IDs are also reviewed clear scopes and must never mutate.
+            self.positions = self
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| (entry.entry_id.clone(), index))
+                .collect();
             self.entry_ids = Arc::new(
                 self.entries
                     .iter()
@@ -45,6 +55,7 @@ impl ClipboardQuery {
                     .collect(),
             );
         }
+        changed
     }
 
     fn _matches(&self, entry: &ClipboardEntry) -> bool {

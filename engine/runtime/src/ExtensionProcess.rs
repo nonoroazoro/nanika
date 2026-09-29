@@ -700,7 +700,7 @@ impl ExtensionProcess {
             generation,
             view_id: view_id.clone(),
             revision,
-            event,
+            event: event.clone(),
         })?;
         let mut cancellation_sent = false;
         loop {
@@ -751,6 +751,9 @@ impl ExtensionProcess {
                             "extension view revision changed without a replacement view".to_owned(),
                         ));
                     }
+                    event
+                        .validate_response(view.as_ref())
+                        .map_err(SupervisorError::UnexpectedMessage)?;
                     return Ok((response_revision, effect, view));
                 }
                 Some(Message::HostRequest {

@@ -25,22 +25,22 @@ test("selection stays ordered before a captured action and only unsent selection
     {
         throw new Error("Unexpected menu invocation");
     }).event;
-    const two = enqueue(_request({ kind: "selectionChanged", item_id: "two" }));
-    const three = enqueue(_request({ kind: "selectionChanged", item_id: "three" }));
-    const four = enqueue(_request({ kind: "selectionChanged", item_id: "four" }));
+    const two = enqueue(_request({ kind: "selectionChanged", collection_id: "collection", index: 1 }));
+    const three = enqueue(_request({ kind: "selectionChanged", collection_id: "collection", index: 2 }));
+    const four = enqueue(_request({ kind: "selectionChanged", collection_id: "collection", index: 3 }));
     const action = enqueue(
         _request({ kind: "actionInvoked", invocation: "default", item_id: "four", action_id: "open" })
     );
-    const five = enqueue(_request({ kind: "selectionChanged", item_id: "five" }));
+    const five = enqueue(_request({ kind: "selectionChanged", collection_id: "collection", index: 4 }));
     assert.equal(await three, null);
-    assert.deepEqual(sent, [{ kind: "selectionChanged", item_id: "two" }]);
+    assert.deepEqual(sent, [{ kind: "selectionChanged", collection_id: "collection", index: 1 }]);
     finish(undefined);
     await Promise.all([two, four, action, five]);
     assert.deepEqual(sent, [
-        { kind: "selectionChanged", item_id: "two" },
-        { kind: "selectionChanged", item_id: "four" },
+        { kind: "selectionChanged", collection_id: "collection", index: 1 },
+        { kind: "selectionChanged", collection_id: "collection", index: 3 },
         { kind: "actionInvoked", invocation: "default", item_id: "four", action_id: "open" },
-        { kind: "selectionChanged", item_id: "five" }
+        { kind: "selectionChanged", collection_id: "collection", index: 4 }
     ]);
 });
 
@@ -60,7 +60,7 @@ test("a failed request retains its cause and does not lose an accepted following
     {
         throw new Error("Unexpected menu invocation");
     }).event;
-    const selection = enqueue(_request({ kind: "selectionChanged", item_id: "two" }));
+    const selection = enqueue(_request({ kind: "selectionChanged", collection_id: "collection", index: 1 }));
     const action = enqueue(
         _request({ kind: "actionInvoked", invocation: "default", item_id: "two", action_id: "open" })
     );
@@ -95,9 +95,9 @@ test("menu actions share FIFO order, preserve their snapshot and return completi
         sent.push("menu");
         return menu.promise;
     });
-    const selection = queue.event(_request({ kind: "selectionChanged", item_id: "two" }));
+    const selection = queue.event(_request({ kind: "selectionChanged", collection_id: "collection", index: 1 }));
     const action = queue.menu(request, "copy", true);
-    const after = queue.event(_request({ kind: "selectionChanged", item_id: "three" }));
+    const after = queue.event(_request({ kind: "selectionChanged", collection_id: "collection", index: 2 }));
     assert.deepEqual(sent, ["selectionChanged"]);
     first.resolve(undefined);
     await selection;

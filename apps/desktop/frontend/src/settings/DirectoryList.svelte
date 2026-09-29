@@ -2,8 +2,8 @@
 import PlusIcon from "../components/icons/PlusIcon.svelte";
 import FolderIcon from "../components/icons/FolderIcon.svelte";
 import CircleMinusIcon from "../components/icons/CircleMinusIcon.svelte";
-import ScrollArea from "../components/ScrollArea.svelte";
-import Button from "../components/Button.svelte";
+import ScrollArea from "../components/ui/ScrollArea.svelte";
+import Button from "../components/ui/Button.svelte";
 import { onDestroy } from "svelte";
 
 const { paths, maximum, label, titleId, description, onPick, onChange }: {

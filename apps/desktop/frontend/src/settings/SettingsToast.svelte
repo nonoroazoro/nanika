@@ -1,5 +1,5 @@
 <script lang="ts">
-import Button from "../components/Button.svelte";
+import Button from "../components/ui/Button.svelte";
 const { message, onDismiss }: { message: string | null; onDismiss: () => void; } = $props();
 </script>
 
