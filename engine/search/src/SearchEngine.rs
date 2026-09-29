@@ -1,16 +1,17 @@
-use crate::{Candidate, MatchContext, SearchSnapshot, UsageMap, ranking};
+use crate::{Candidate, SearchSnapshot, UsageMap, ranking};
+use nanika_text_search::TextMatcher;
 
 /// Query owner that reuses matcher scratch memory across generations.
 pub struct SearchEngine {
     generation: u64,
-    context: MatchContext,
+    context: TextMatcher,
 }
 
 impl SearchEngine {
     pub fn new() -> Self {
         Self {
             generation: 0,
-            context: MatchContext::new(),
+            context: TextMatcher::new(),
         }
     }
 

@@ -7,6 +7,7 @@ pub(crate) struct SettingsSnapshot {
     pub(crate) maximized: bool,
     pub(crate) version: &'static str,
     pub(crate) general: nanika_config::LauncherPreferences,
+    pub(crate) general_sections: Vec<crate::GeneralSettingsSection>,
     pub(crate) extensions: Vec<ExtensionSettings>,
 }
 

@@ -9,7 +9,6 @@ publish.workspace = true
 [dependencies]
 nanika-protocol = { path = "../extension-protocol" }
 nanika-text-search = { path = "../text-search" }
-nucleo-matcher.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

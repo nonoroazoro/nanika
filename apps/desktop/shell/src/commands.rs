@@ -176,6 +176,27 @@ pub(crate) async fn read_settings(
 }
 
 #[tauri::command]
+pub(crate) async fn search_settings(
+    window: tauri::WebviewWindow,
+    query: String,
+    results: tauri::ipc::JavaScriptChannelId,
+) -> Result<(), String> {
+    authorize_settings(&window)?;
+    if query.chars().count() > nanika_search::MAX_QUERY_CHARS {
+        return Err("Settings search query is too long.".into());
+    }
+    let channel: tauri::ipc::Channel<Vec<crate::SettingsSearchEntry>> =
+        results.channel_on(window.as_ref().clone());
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let entries = app.state::<DesktopState>().search_settings(&query);
+        channel.send(entries).map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub(crate) fn acknowledge_settings_delivery(
     window: tauri::WebviewWindow,
     delivery_id: u64,

@@ -165,6 +165,7 @@ pub fn run() -> Result<(), String> {
             view_event,
             open_settings,
             read_settings,
+            search_settings,
             acknowledge_settings_delivery,
             settings_ready,
             settings_window_action,
@@ -293,3 +294,23 @@ mod settings_snapshot_tests;
 #[path = "ExtensionLifecycle.rs"]
 mod extension_lifecycle;
 use extension_lifecycle::ExtensionLifecycle;
+
+mod general_settings;
+#[path = "GeneralSettingsField.rs"]
+mod general_settings_field;
+pub(crate) use general_settings_field::GeneralSettingsField;
+#[path = "GeneralSettingsSection.rs"]
+mod general_settings_section;
+pub(crate) use general_settings_section::GeneralSettingsSection;
+#[path = "SettingsSearchTarget.rs"]
+mod settings_search_target;
+pub(crate) use settings_search_target::SettingsSearchTarget;
+#[path = "SettingsSearchEntry.rs"]
+mod settings_search_entry;
+pub(crate) use settings_search_entry::SettingsSearchEntry;
+#[path = "SettingsSearchCatalog.rs"]
+mod settings_search_catalog;
+pub(crate) use settings_search_catalog::SettingsSearchCatalog;
+#[cfg(test)]
+#[path = "../tests/SettingsSearchCatalog.rs"]
+mod settings_search_catalog_tests;

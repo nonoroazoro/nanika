@@ -219,6 +219,7 @@ impl DesktopState {
         tracing::debug!(session_id = id, "frontend session opened");
         Ok(ApplicationSnapshot {
             session_id: id,
+            version: env!("CARGO_PKG_VERSION"),
             locale: nanika_platform::system_locale(),
             max_query_chars: nanika_search::MAX_QUERY_CHARS,
             resource_origin: crate::resource_protocol::origin().to_owned(),
@@ -754,8 +755,20 @@ impl DesktopState {
             maximized: false,
             version: env!("CARGO_PKG_VERSION"),
             general,
+            general_sections: crate::general_settings::sections(),
             extensions,
         })
+    }
+
+    pub(crate) fn search_settings(&self, query: &str) -> Vec<crate::SettingsSearchEntry> {
+        let catalog = {
+            let applications = self
+                .settings_applications
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            crate::SettingsSearchCatalog::new(&applications.lifecycle)
+        };
+        catalog.search(query)
     }
 
     pub(crate) fn set_extension_enabled(

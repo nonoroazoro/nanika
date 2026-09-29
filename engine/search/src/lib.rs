@@ -9,8 +9,6 @@ mod candidate_kind;
 mod constants;
 #[path = "InputHistory.rs"]
 mod input_history;
-#[path = "MatchContext.rs"]
-mod match_context;
 mod normalization;
 #[path = "PendingSearchQuery.rs"]
 mod pending_search_query;
@@ -41,7 +39,6 @@ mod usage_stat;
 pub use candidate::*;
 pub use candidate_kind::*;
 pub use input_history::*;
-pub(crate) use match_context::*;
 pub(crate) use pending_search_query::*;
 pub use ranked_candidate::*;
 pub(crate) use search_command::*;
@@ -56,7 +53,7 @@ pub use usage_map::*;
 pub use usage_stat::*;
 
 pub use constants::MAX_QUERY_CHARS;
-pub use normalization::{normalize_history_key, normalize_query};
+pub use normalization::normalize_history_key;
 
 #[path = "CandidateCatalog.rs"]
 mod candidate_catalog;

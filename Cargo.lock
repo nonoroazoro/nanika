@@ -2520,6 +2520,7 @@ dependencies = [
  "nanika-protocol",
  "nanika-search",
  "nanika-storage",
+ "nanika-text-search",
  "png 0.18.1",
  "serde",
  "serde_json",
@@ -2723,7 +2724,6 @@ dependencies = [
  "criterion",
  "nanika-protocol",
  "nanika-text-search",
- "nucleo-matcher",
  "tracing",
 ]
 
@@ -2744,6 +2744,7 @@ name = "nanika-text-search"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "nucleo-matcher",
  "pinyin",
 ]
 

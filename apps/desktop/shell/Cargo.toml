@@ -21,6 +21,7 @@ nanika-platform = { path = "../../../engine/platform" }
 nanika-protocol = { path = "../../../engine/extension-protocol" }
 nanika-host = { path = "../../../engine/runtime" }
 nanika-search = { path = "../../../engine/search" }
+nanika-text-search = { path = "../../../engine/text-search" }
 nanika-storage = { path = "../../../engine/storage" }
 serde.workspace = true
 serde_json.workspace = true

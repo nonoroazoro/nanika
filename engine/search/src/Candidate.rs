@@ -1,4 +1,5 @@
-use crate::{CandidateKind, normalize_query};
+use crate::CandidateKind;
+use nanika_text_search::normalize_query;
 
 /// A cheap immutable reference; updates replace only the affected payload.
 #[derive(Debug, Clone, PartialEq, Eq)]

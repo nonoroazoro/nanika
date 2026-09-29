@@ -11,6 +11,7 @@ const allowedCommands = new Set([
   'view_event',
   'open_settings',
   'read_settings',
+  'search_settings',
   'acknowledge_settings_delivery',
   'settings_ready',
   'settings_window_action',

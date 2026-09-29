@@ -1,6 +1,4 @@
-use nanika_search::{
-    Candidate, CandidateKind, SearchEngine, UsageKey, UsageMap, UsageStat, normalize_query,
-};
+use nanika_search::{Candidate, CandidateKind, SearchEngine, UsageKey, UsageMap, UsageStat};
 
 fn candidate(entry_id: &str, title: &str, action_id: &str) -> Candidate {
     Candidate::new(
@@ -12,11 +10,6 @@ fn candidate(entry_id: &str, title: &str, action_id: &str) -> Candidate {
         vec![nanika_protocol::Action::primary(action_id, "Open")],
         Vec::new(),
     )
-}
-
-#[test]
-fn normalization_collapses_punctuation_case_and_whitespace() {
-    assert_eq!(normalize_query("  Git-Hub   DESKTOP "), "git hub desktop");
 }
 
 #[test]
