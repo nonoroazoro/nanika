@@ -3,6 +3,26 @@ use nanika_protocol::{IconReference, IconSource};
 use nanika_search::{Candidate, CandidateKind};
 
 #[test]
+fn typed_entry_kinds_preserve_the_desktop_wire_values() {
+    for (kind, expected) in [
+        (CandidateKind::Action, "action"),
+        (CandidateKind::View, "view"),
+    ] {
+        let candidate = Candidate::new(
+            kind,
+            "test.extension",
+            "entry",
+            "Entry",
+            "open",
+            vec![nanika_protocol::Action::primary("open", "Open")],
+            Vec::new(),
+        );
+        let result = SearchResult::from_candidate(&candidate, None);
+        assert_eq!(serde_json::to_value(result).unwrap()["entryType"], expected);
+    }
+}
+
+#[test]
 fn results_inherit_package_icons_and_allow_item_overrides() {
     let candidate = Candidate::new(
         CandidateKind::Action,

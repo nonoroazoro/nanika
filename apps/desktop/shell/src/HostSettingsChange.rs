@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Deserialize)]
 #[serde(
     tag = "key",

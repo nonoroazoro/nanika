@@ -32,6 +32,9 @@ pub use platform_error::*;
 #[path = "contracts/PlatformEvent.rs"]
 mod platform_event;
 pub use platform_event::*;
+#[path = "contracts/TargetPlatform.rs"]
+mod target_platform;
+pub use target_platform::TargetPlatform;
 #[path = "contracts/PngResourceError.rs"]
 mod png_resource_error;
 pub use png_resource_error::*;

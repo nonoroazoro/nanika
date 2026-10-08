@@ -354,7 +354,9 @@ pub(crate) fn set_shortcut_recording(
 }
 
 #[tauri::command]
-pub(crate) async fn read_startup(window: tauri::WebviewWindow) -> Result<&'static str, String> {
+pub(crate) async fn read_startup(
+    window: tauri::WebviewWindow,
+) -> Result<nanika_platform::StartupStatus, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -371,7 +373,7 @@ pub(crate) async fn read_startup(window: tauri::WebviewWindow) -> Result<&'stati
 pub(crate) async fn set_startup(
     window: tauri::WebviewWindow,
     enabled: bool,
-) -> Result<&'static str, String> {
+) -> Result<nanika_platform::StartupStatus, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {

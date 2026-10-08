@@ -46,8 +46,8 @@ pub fn clipboard_revision_is_after(candidate: u64, baseline: u64) -> bool {
     distance != 0 && distance < (1_u64 << 63)
 }
 
-pub const fn target_platform() -> &'static str {
-    "macos"
+pub const fn target_platform() -> crate::TargetPlatform {
+    crate::TargetPlatform::Macos
 }
 
 /// Package target for this artifact, or an explicit unsupported architecture.

@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::resource_protocol;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SearchResult {
@@ -14,7 +15,7 @@ pub(crate) struct SearchResult {
     pub(crate) subtitle: Option<nanika_protocol::CandidateSubtitle>,
     pub(crate) icon: Option<crate::result_icon::ResultIcon>,
     pub(crate) kind: String,
-    pub(crate) entry_type: &'static str,
+    pub(crate) entry_type: nanika_search::CandidateKind,
 }
 
 impl SearchResult {
@@ -54,10 +55,7 @@ impl SearchResult {
             subtitle: candidate.subtitle().cloned(),
             icon,
             kind: "Extension".to_owned(),
-            entry_type: match candidate.kind() {
-                nanika_search::CandidateKind::Action => "action",
-                nanika_search::CandidateKind::View => "view",
-            },
+            entry_type: candidate.kind(),
         }
     }
 }

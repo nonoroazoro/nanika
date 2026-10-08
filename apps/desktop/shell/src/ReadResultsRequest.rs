@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 /// A viewport request bound to an immutable search result revision.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ReadResultsRequest {

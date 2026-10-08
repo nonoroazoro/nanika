@@ -119,7 +119,7 @@ fn export_diagnostics(app_data_root: &Path, destination: &Path) -> Result<(), St
                 writeln!(
                     archive,
                     "Platform: {}-{}",
-                    nanika_platform::target_platform(),
+                    nanika_platform::target_platform().as_str(),
                     std::env::consts::ARCH
                 )
             })

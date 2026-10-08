@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DetailView, ListLayout, ListSection, ViewFilter};
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListView {
     pub title: String,

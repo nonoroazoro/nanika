@@ -2,15 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::ConfigStore;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LauncherPreferences {
+    // validate rejects every version except the current v1 contract.
+    #[cfg_attr(feature = "typescript", ts(type = "1"))]
     pub format_version: u32,
     pub launcher_shortcut: String,
     pub theme: ThemePreference,
     pub hide_on_blur: bool,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ThemePreference {

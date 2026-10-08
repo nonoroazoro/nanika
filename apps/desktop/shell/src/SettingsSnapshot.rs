@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsSnapshot {
@@ -11,6 +12,7 @@ pub(crate) struct SettingsSnapshot {
     pub(crate) extensions: Vec<ExtensionSettings>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ExtensionSettings {
@@ -21,6 +23,7 @@ pub(crate) struct ExtensionSettings {
     pub(crate) application: Option<SettingsApplicationUpdate>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SaveSettingsRequest {
@@ -29,6 +32,7 @@ pub(crate) struct SaveSettingsRequest {
     pub(crate) value: serde_json::Value,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub(crate) enum SettingsSaveResult {
@@ -44,6 +48,7 @@ pub(crate) enum SettingsSaveResult {
     },
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsApplicationUpdate {
@@ -53,6 +58,7 @@ pub(crate) struct SettingsApplicationUpdate {
     pub(crate) result: SettingsSaveResult,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum SettingsEvent {
@@ -64,6 +70,7 @@ pub(crate) enum SettingsEvent {
     },
     Application {
         update: SettingsApplicationUpdate,
+        #[cfg_attr(feature = "typescript", ts(optional))]
         #[serde(rename = "deliveryId", skip_serializing_if = "Option::is_none")]
         delivery_id: Option<u64>,
     },

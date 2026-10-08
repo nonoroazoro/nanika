@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Task-owned work units, never an estimated duration. A null total is indeterminate.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationProgress {

@@ -5,7 +5,7 @@ import svelte from "eslint-plugin-svelte";
 export default [
     ...(await defineConfig({
         typescript: true,
-        ignores: ["apps/desktop/frontend/dist/**", "target/**"],
+        ignores: ["apps/desktop/frontend/dist/**", "apps/desktop/frontend/src/generated/**", "target/**"],
         languageOptions: {
             parserOptions: {
                 extraFileExtensions: [".svelte"],

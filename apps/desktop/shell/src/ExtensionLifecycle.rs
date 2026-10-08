@@ -1,4 +1,5 @@
 /// Authoritative lifecycle observation, including configuration of the current instance.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ExtensionLifecycle {

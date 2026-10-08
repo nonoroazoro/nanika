@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 const MAX_ICON_KEY_BYTES: usize = 128;
 
 /// An opaque machine-local icon cache reference scoped to one extension.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IconReference {
     key: String,

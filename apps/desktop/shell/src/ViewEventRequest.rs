@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum ViewOperation {
@@ -7,6 +8,7 @@ pub(crate) enum ViewOperation {
     Back,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ViewEventRequest {

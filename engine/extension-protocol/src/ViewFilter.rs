@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ViewFilterOption;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ViewFilter {
     pub id: String,

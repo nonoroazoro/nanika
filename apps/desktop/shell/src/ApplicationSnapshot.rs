@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationSnapshot {

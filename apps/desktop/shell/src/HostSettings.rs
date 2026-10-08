@@ -69,7 +69,10 @@ impl HostSettings {
         })
     }
 
-    pub(crate) fn startup(&self, enabled: Option<bool>) -> Result<&'static str, String> {
+    pub(crate) fn startup(
+        &self,
+        enabled: Option<bool>,
+    ) -> Result<nanika_platform::StartupStatus, String> {
         let startup = self
             .startup
             .try_lock()
@@ -86,13 +89,7 @@ impl HostSettings {
             .recv()
             .map_err(|error| error.to_string())?
             .map_err(|error| error.to_string())?;
-        Ok(match status {
-            nanika_platform::StartupStatus::Disabled => "disabled",
-            nanika_platform::StartupStatus::Enabled => "enabled",
-            nanika_platform::StartupStatus::RequiresApproval => "requiresApproval",
-            nanika_platform::StartupStatus::NeedsRepair => "needsRepair",
-            nanika_platform::StartupStatus::NotFound => "notFound",
-        })
+        Ok(status)
     }
 
     pub(crate) fn shutdown(&self) {

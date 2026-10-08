@@ -7,6 +7,7 @@ use crate::{ConfigurationProperty, validate_key};
 
 const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationContribution {
@@ -23,10 +24,6 @@ impl ConfigurationContribution {
         for (key, property) in &self.properties {
             validate_key(key)?;
             if property.platforms.len() > 2
-                || property
-                    .platforms
-                    .iter()
-                    .any(|platform| !matches!(platform.as_str(), "windows" | "macos"))
                 || (property.platforms.len() == 2 && property.platforms[0] == property.platforms[1])
             {
                 return Err(format!("invalid configuration platforms for {key}"));
@@ -61,14 +58,10 @@ impl ConfigurationContribution {
     }
 
     /// Select presentation properties while retaining the complete value contract separately.
-    pub fn for_platform(&self, platform: &str) -> Self {
+    pub fn for_platform(&self, platform: nanika_platform::TargetPlatform) -> Self {
         let mut visible = self.clone();
         visible.properties.retain(|_, property| {
-            property.platforms.is_empty()
-                || property
-                    .platforms
-                    .iter()
-                    .any(|candidate| candidate == platform)
+            property.platforms.is_empty() || property.platforms.contains(&platform)
         });
         visible
     }

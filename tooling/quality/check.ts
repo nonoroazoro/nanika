@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildExtensions } from "../build/build-extensions.ts";
 import { withBuildTarget } from "../build/with-build-target.ts";
+import { generateTypes } from "../types/generate.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const desktop = join(root, "apps/desktop");
@@ -46,6 +47,7 @@ await withBuildTarget(root, "check", async (target, run) =>
         TAURI_CONFIG: await buildExtensions(target, "debug", run, join(root, "target/cargo")),
         RUSTDOCFLAGS: `${process.env.RUSTDOCFLAGS ?? ""} -D warnings`.trim()
     };
+    await generateTypes(root, target, run, false);
     for (
         const script of [
             "format:check",

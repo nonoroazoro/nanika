@@ -143,6 +143,8 @@ async function _fixture(): Promise<string>
     const directory = await mkdtemp(join(fixtureRoot, "check-test-"));
     await mkdir(join(directory, "tooling/quality"), { recursive: true });
     await mkdir(join(directory, "tooling/build"), { recursive: true });
+    await mkdir(join(directory, "tooling/types"), { recursive: true });
+    await Bun.write(join(directory, "tooling/types/generate.ts"), "export async function generateTypes() {};");
     await mkdir(join(directory, "apps/desktop/frontend/src"), { recursive: true });
     await mkdir(join(directory, "engine"));
     for (

@@ -4,6 +4,8 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "types:update": "bun tooling/types/run.ts update",
+        "types:check": "bun tooling/types/run.ts check",
         "dev": "bun tooling/build/run.ts dev",
         "build": "bun tooling/build/run.ts build",
         "dev:computer-use": "bun tooling/build/run.ts computer-use",

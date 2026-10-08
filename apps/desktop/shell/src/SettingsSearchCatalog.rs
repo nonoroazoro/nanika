@@ -34,7 +34,7 @@ impl SettingsSearchCatalog {
                 catalog._add(
                     "general",
                     SettingsSearchTarget::Field {
-                        key: field.key.into(),
+                        key: field.key.as_str().into(),
                     },
                     field.title,
                     &["General", section.title],

@@ -11,6 +11,7 @@ const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const MAX_SAFE_INTEGER_MULTIPLE: u64 = MAX_SAFE_INTEGER as u64;
 
 /// The bounded JSON Schema subset supported by Nanika Settings.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationSchema {
@@ -276,6 +277,7 @@ impl ConfigurationSchema {
 }
 
 /// JSON value categories supported by the declarative Settings renderer.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ConfigurationValueType {
@@ -287,6 +289,7 @@ pub enum ConfigurationValueType {
 }
 
 /// Presentation hint for string values. It does not change JSON validation.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ConfigurationStringFormat {

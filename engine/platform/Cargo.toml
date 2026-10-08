@@ -11,6 +11,8 @@ autotests = false
 workspace = true
 
 [dependencies]
+serde.workspace = true
+ts-rs = { workspace = true, optional = true }
 async-process.workspace = true
 clipboard-rs.workspace = true
 directories.workspace = true
@@ -46,3 +48,6 @@ path = "tests/shared/ProcessLauncher.rs"
 [[test]]
 name = "lib"
 path = "tests/lib.rs"
+
+[features]
+typescript = ["dep:ts-rs"]

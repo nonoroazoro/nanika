@@ -11,7 +11,7 @@ fn general_render_definitions_are_all_searchable_without_extensions() {
             assert_eq!(
                 results[0].target,
                 SettingsSearchTarget::Field {
-                    key: field.key.into()
+                    key: field.key.as_str().into()
                 }
             );
         }
@@ -82,8 +82,10 @@ fn platform_filtering_and_configuration_failures_match_visible_rows() {
         .properties
         .get_mut("folders")
         .unwrap()
-        .platforms = vec!["macos".into()];
-    configuration.contribution = configuration.contribution.for_platform("windows");
+        .platforms = vec![nanika_platform::TargetPlatform::Macos];
+    configuration.contribution = configuration
+        .contribution
+        .for_platform(nanika_platform::TargetPlatform::Windows);
     let results = SettingsSearchCatalog::new(std::slice::from_ref(&extension)).search("folders");
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].title, "Other folders");

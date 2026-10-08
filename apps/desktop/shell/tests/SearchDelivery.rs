@@ -104,7 +104,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             confirmation_title: None,
 
             kind: "Extension".to_owned(),
-            entry_type: "action",
+            entry_type: nanika_search::CandidateKind::Action,
         })
         .collect();
     let route = crate::ExtensionViewSnapshot {

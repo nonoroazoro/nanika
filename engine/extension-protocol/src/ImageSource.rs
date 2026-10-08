@@ -4,6 +4,7 @@ pub const MAX_PNG_ENCODED_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PNG_DIMENSION: u32 = 8_192;
 pub const MAX_PNG_PIXELS: u64 = 16_777_216;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ImageSource {

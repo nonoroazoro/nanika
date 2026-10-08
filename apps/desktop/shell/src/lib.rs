@@ -299,6 +299,9 @@ mod general_settings;
 #[path = "GeneralSettingsField.rs"]
 mod general_settings_field;
 pub(crate) use general_settings_field::GeneralSettingsField;
+#[path = "GeneralSettingsFieldKey.rs"]
+mod general_settings_field_key;
+pub(crate) use general_settings_field_key::GeneralSettingsFieldKey;
 #[path = "GeneralSettingsSection.rs"]
 mod general_settings_section;
 pub(crate) use general_settings_section::GeneralSettingsSection;
@@ -314,3 +317,6 @@ pub(crate) use settings_search_catalog::SettingsSearchCatalog;
 #[cfg(test)]
 #[path = "../tests/SettingsSearchCatalog.rs"]
 mod settings_search_catalog_tests;
+
+#[cfg(all(test, feature = "typescript"))]
+mod bindings;

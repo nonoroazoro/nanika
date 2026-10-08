@@ -14,6 +14,7 @@ name = "nanika_desktop"
 tauri-build = { workspace = true, features = ["codegen", "isolation"] }
 
 [dependencies]
+ts-rs = { workspace = true, optional = true }
 async-channel.workspace = true
 nanika-foundation = { path = "../../../engine/foundation" }
 nanika-config = { path = "../../../engine/configuration" }
@@ -34,6 +35,7 @@ tracing.workspace = true
 png.workspace = true
 
 [features]
+typescript = ["dep:ts-rs", "nanika-host/typescript", "nanika-config/typescript", "nanika-protocol/typescript", "nanika-search/typescript", "nanika-platform/typescript"]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 

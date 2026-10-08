@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// A missing effective snapshot means unconfirmed application, not rollback.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationSaveOutcome {

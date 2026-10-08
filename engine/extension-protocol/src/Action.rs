@@ -2,13 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ActionInvocation, ActionStyle};
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Action {
     pub id: String,
     pub title: String,
+    #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<crate::ActionIcon>,
     /// Replacement label that requires a second click before invoking a destructive action.
+    #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirmation_title: Option<String>,
     pub style: ActionStyle,

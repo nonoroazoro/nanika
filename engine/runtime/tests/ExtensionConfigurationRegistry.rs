@@ -130,7 +130,7 @@ fn persistence_failure_before_application_never_starts_the_task() {
 #[test]
 fn admission_is_bounded_and_property_validation_preserves_hidden_values() {
     let (registry, store, root) = fixture("admission", "beforeApply");
-    let hidden = if nanika_platform::target_platform() == "windows" {
+    let hidden = if nanika_platform::target_platform() == nanika_platform::TargetPlatform::Windows {
         "macos"
     } else {
         "windows"

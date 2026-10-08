@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use nanika_extension_package::ConfigurationContribution;
 use serde_json::Value;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeExtensionConfiguration {

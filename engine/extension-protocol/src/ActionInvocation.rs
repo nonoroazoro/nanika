@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Host-reported intent, validated against the current action before dispatch.
 /// Confirmation is a trusted host UI acknowledgement, not an extension permission.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ActionInvocation {

@@ -8,6 +8,7 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+ts-rs = { workspace = true, optional = true }
 agent-client-protocol.workspace = true
 async-channel.workspace = true
 async-io.workspace = true
@@ -36,3 +37,6 @@ workspace = true
 [[bench]]
 name = "runtime"
 harness = false
+
+[features]
+typescript = ["dep:ts-rs", "nanika-extension-package/typescript", "nanika-config/typescript", "nanika-protocol/typescript"]
