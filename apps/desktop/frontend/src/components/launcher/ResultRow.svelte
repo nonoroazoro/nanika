@@ -26,7 +26,6 @@ const { result, active, confirmationTitle = null, position, total, onInvoke, onC
     aria-posinset={position}
     aria-setsize={total}
     class:active
-    onmousedown={(event => event.preventDefault())}
     onclick={onInvoke}
     oncontextmenu={onContextMenu}
     onkeydown={(event =>

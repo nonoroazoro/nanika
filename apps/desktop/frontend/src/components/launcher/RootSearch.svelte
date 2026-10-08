@@ -323,7 +323,17 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
         />
     </div>
 
-    <section class="results" aria-label="Results" aria-busy={busy && !inputError}>
+    <!-- Keep keyboard navigation and typing in the combobox across the whole results surface. -->
+    <section
+        class="results"
+        aria-label="Results"
+        aria-busy={busy && !inputError}
+        onmousedowncapture={event =>
+        {
+            event.preventDefault();
+            focusQuery();
+        }}
+    >
         {#if inputError}
             <div id="query-error" class="warning" role="alert">{inputError}</div>
         {/if}

@@ -633,7 +633,20 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
     {#if error}<div class="error" role="alert">{error}</div>{/if}
     <div class="content" class:split={list?.layout === "split"} aria-busy={busy}>
         {#if list}
-            <div class="list-pane" bind:this={listContainer}>
+            <!-- The combobox owns list navigation, including clicks on empty space. -->
+            <div
+                class="list-pane"
+                bind:this={listContainer}
+                onmousedowncapture={event =>
+                {
+                    if (event.target instanceof Element && event.target.closest("button"))
+                    {
+                        return;
+                    }
+                    event.preventDefault();
+                    focusSearch();
+                }}
+            >
                 <div class="row-measure" bind:this={rowMeasure} aria-hidden="true"></div>
                 <div class="heading-measure" bind:this={headingMeasure} aria-hidden="true">Section</div>
                 {#if totalItems > 0}
@@ -685,7 +698,6 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                                 {
                                                     void _openContextMenu(item.id, event);
                                                 }}
-                                                onmousedown={(event => event.preventDefault())}
                                                 onclick={() =>
                                                 {
                                                     cancelConfirmation();
