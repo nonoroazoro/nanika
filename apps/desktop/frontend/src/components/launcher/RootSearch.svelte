@@ -8,7 +8,7 @@ import Input from "../ui/Input.svelte";
 import { onMount, tick } from "svelte";
 
 import { RootSearchState } from "../../logic/RootSearchState.svelte";
-import type { SearchResult } from "../../types";
+import type { SearchResult } from "../../generated/SearchResult";
 import { clampIndex } from "../../logic";
 import StatusBar from "../ui/StatusBar.svelte";
 import ResultRow from "./ResultRow.svelte";

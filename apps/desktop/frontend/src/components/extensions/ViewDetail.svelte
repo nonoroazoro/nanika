@@ -1,6 +1,6 @@
 <script lang="ts">
 import TextPreview from "./TextPreview.svelte";
-import type { DetailView } from "../../types";
+import type { DetailView } from "../../generated/DetailView";
 import CachedFileIcon from "./CachedFileIcon.svelte";
 import FileCollectionPreview from "./FileCollectionPreview.svelte";
 const COLLECTION_PREVIEW_LIMIT = 3;

@@ -1,6 +1,6 @@
 import { listPrefetchDistance } from "./list-loading";
 
-import type { ViewSection } from "../types/ViewSection";
+import type { ListSection } from "../generated/ListSection";
 
 /**
  * Map native scroll geometry to a bounded entry range, retaining section headings.
@@ -11,7 +11,7 @@ import type { ViewSection } from "../types/ViewSection";
  * @param headingHeight Measured section heading height
  */
 export function collectionWindow(
-    sections: readonly ViewSection[],
+    sections: readonly ListSection[],
     top: number,
     height: number,
     rowHeight: number,
@@ -44,7 +44,7 @@ export function collectionWindow(
 /**
  * Locate a delivered row by absolute collection index without scanning unloaded records.
  */
-export function itemAt(sections: readonly ViewSection[], index: number)
+export function itemAt(sections: readonly ListSection[], index: number)
 {
     let base = 0;
     for (const section of sections)
@@ -62,7 +62,7 @@ export function itemAt(sections: readonly ViewSection[], index: number)
 /**
  * Resolve a delivered identity's absolute position.
  */
-export function itemIndex(sections: readonly ViewSection[], id: string): number | null
+export function itemIndex(sections: readonly ListSection[], id: string): number | null
 {
     let base = 0;
     for (const section of sections)
@@ -81,7 +81,7 @@ export function itemIndex(sections: readonly ViewSection[], id: string): number 
  * Locate a row in logical scroll geometry, including every preceding section heading.
  */
 export function itemTop(
-    sections: readonly ViewSection[],
+    sections: readonly ListSection[],
     index: number,
     rowHeight: number,
     headingHeight: number
@@ -102,7 +102,7 @@ export function itemTop(
     return top;
 }
 
-function _indexAt(sections: readonly ViewSection[], pixel: number, rowHeight: number, headingHeight: number): number
+function _indexAt(sections: readonly ListSection[], pixel: number, rowHeight: number, headingHeight: number): number
 {
     let base = 0;
     let remaining = pixel;

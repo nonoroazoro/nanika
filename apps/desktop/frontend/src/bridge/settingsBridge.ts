@@ -1,17 +1,16 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import type { SettingsWriteResult } from "../settings/SettingsWriteResult";
-import type { ExtensionLifecycle } from "../types/ExtensionLifecycle";
-import type {
-    ConfigurationValue,
-    HostPreferences,
-    SettingsApplicationUpdate,
-    SettingsSnapshot,
-    StartupStatus
-} from "../types/Settings";
-import type { SettingsEvent } from "../types/SettingsEvent";
-import type { SettingsSearchEntry } from "../types/SettingsSearchEntry";
-import type { SettingsWindowAction } from "../types/SettingsWindowAction";
+import type { ExtensionLifecycle } from "../generated/ExtensionLifecycle";
+import type { HostSettingsChange } from "../generated/HostSettingsChange";
+import type { LauncherPreferences } from "../generated/LauncherPreferences";
+import type { SaveSettingsRequest } from "../generated/SaveSettingsRequest";
+import type { SettingsApplicationUpdate } from "../generated/SettingsApplicationUpdate";
+import type { SettingsEvent } from "../generated/SettingsEvent";
+import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
+import type { SettingsSnapshot } from "../generated/SettingsSnapshot";
+import type { SettingsWindowAction } from "../generated/SettingsWindowAction";
+import type { SettingsWriteResult } from "../generated/SettingsWriteResult";
+import type { StartupStatus } from "../generated/StartupStatus";
 
 // A retained Settings WebView owns one channel, including across native closes.
 let updates: Channel<SettingsEvent> | undefined;
@@ -71,10 +70,8 @@ export const settingsBridge = {
     },
     ready: async (): Promise<boolean> => invoke("settings_ready"),
     windowAction: async (action: SettingsWindowAction): Promise<void> => invoke("settings_window_action", { action }),
-    saveHost: async (
-        key: keyof HostPreferences,
-        value: HostPreferences[keyof HostPreferences]
-    ): Promise<SettingsWriteResult<HostPreferences>> => invoke("save_host_settings", { request: { key, value } }),
+    saveHost: async (request: HostSettingsChange): Promise<SettingsWriteResult<LauncherPreferences>> =>
+        invoke("save_host_settings", { request }),
     recordShortcut: async (recording: boolean): Promise<boolean> => invoke("set_shortcut_recording", { recording }),
     listenShortcut: (handler: () => void): () => void =>
     {
@@ -91,8 +88,8 @@ export const settingsBridge = {
     setStartup: async (enabled: boolean): Promise<StartupStatus> => invoke("set_startup", { enabled }),
     setEnabled: async (extensionId: string, enabled: boolean): Promise<void> =>
         invoke("set_extension_enabled", { extensionId, enabled }),
-    save: async (extensionId: string, key: string, value: ConfigurationValue): Promise<SettingsApplicationUpdate> =>
-        invoke("save_settings", { request: { extensionId, key, value } }),
+    save: async (request: SaveSettingsRequest): Promise<SettingsApplicationUpdate> =>
+        invoke("save_settings", { request }),
     pickDirectory: async (extensionId: string, key: string): Promise<string | null> =>
         invoke("pick_settings_directory", { extensionId, key })
 };

@@ -1,6 +1,6 @@
+import type { ViewEventReceipt } from "../generated/ViewEventReceipt.ts";
 import type { NavigationSnapshot } from "../types/NavigationSnapshot.ts";
-import type { ViewEvent } from "../types/ViewEvent.ts";
-import type { ViewEventReceipt } from "../types/ViewEventReceipt.ts";
+import type { ViewInteraction } from "../types/ViewInteraction.ts";
 
 // RPC completion and Channel delivery are independent. Follow-up input needs
 // both, including the exact completed navigation revision rather than any update.
@@ -17,7 +17,7 @@ export function viewInputScheduler()
     let blocking = 0;
     let requiredRevision = 0;
     let blockingRevision = 0;
-    let query: Extract<ViewEvent, { kind: "searchChanged"; }> | null = null;
+    let query: Extract<ViewInteraction, { kind: "searchChanged"; }> | null = null;
     let draft: string | null = null;
     let resumeRequested = false;
     let inputError: string | null = null;
@@ -76,7 +76,7 @@ export function viewInputScheduler()
         {
             resumeRequested = true;
         },
-        begin(event: ViewEvent | null): boolean
+        begin(event: ViewInteraction | null): boolean
         {
             const isBlocking = event?.kind !== "selectionChanged" && event?.kind !== "resumed"
                 && event?.kind !== "listRangeChanged" && event?.kind !== "textChunkRequested";
@@ -104,7 +104,7 @@ export function viewInputScheduler()
             }
             _settleDraft();
         },
-        takeNext(): ViewEvent | null
+        takeNext(): ViewInteraction | null
         {
             const current = navigation.current;
             if (pending > 0 || navigation.busy || navigation.revision < requiredRevision || !current)

@@ -1,4 +1,4 @@
-import type { SettingsSearchTarget } from "../types/SettingsSearchTarget";
+import type { SettingsSearchTarget } from "../generated/SettingsSearchTarget";
 
 /**
  * Encode stable page and field identities without interpreting them as CSS selectors.

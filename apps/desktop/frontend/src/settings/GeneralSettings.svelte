@@ -4,13 +4,14 @@ import Select from "../components/ui/Select.svelte";
 import ShortcutRecorder from "./ShortcutRecorder.svelte";
 import SettingsField from "./SettingsField.svelte";
 import type { SettingsState } from "./SettingsState.svelte";
-import type { HostPreferences, StartupStatus } from "../types/Settings";
+import type { LauncherSettings } from "./LauncherSettings";
+import type { StartupStatus } from "../generated/StartupStatus";
 
-import type { GeneralSettingsSection } from "../types/GeneralSettingsSection";
+import type { GeneralSettingsSection } from "../generated/GeneralSettingsSection";
 import { settingsAnchor } from "./anchor";
 
 const { settings, startup, startupStatus, sections }: {
-    settings: SettingsState<HostPreferences>;
+    settings: SettingsState<LauncherSettings>;
     sections: GeneralSettingsSection[];
     startup: SettingsState<{ enabled: boolean; }> | null;
     startupStatus: StartupStatus | null;
@@ -89,7 +90,7 @@ const startupStatusMessage = $derived.by(() =>
                                             label={field.title}
                                             value={settings.values.theme}
                                             options={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]}
-                                            onChange={theme => settings.change("theme", theme as HostPreferences["theme"])}
+                                            onChange={theme => settings.change("theme", theme as LauncherSettings["theme"])}
                                         />
                                     {/if}
                                 </SettingsField>

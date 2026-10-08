@@ -2,7 +2,8 @@ import { integerError, normalizeSetting } from "./integerValue";
 import { stringError } from "./stringValue";
 
 import type { SettingsEditResult } from "./SettingsEditResult";
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 /**
  * Validate the complete draft, including array entries outside the rendered page.
@@ -10,7 +11,7 @@ import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings"
  */
 export function settingsError(
     properties: Record<string, ConfigurationSchema>,
-    values: Record<string, ConfigurationValue>
+    values: Record<string, JsonValue>
 ): string | null
 {
     for (const [key, schema] of Object.entries(properties))
@@ -31,8 +32,8 @@ export function settingsError(
 export function prepareSetting(
     properties: Record<string, ConfigurationSchema>,
     key: string,
-    draft: ConfigurationValue
-): SettingsEditResult<ConfigurationValue>
+    draft: JsonValue
+): SettingsEditResult<JsonValue>
 {
     const schema = Object.hasOwn(properties, key) ? properties[key] : undefined;
     if (!schema)
@@ -43,7 +44,7 @@ export function prepareSetting(
     return error ? { error: `${key}: ${error}` } : { value: normalizeSetting(schema, draft) };
 }
 
-function _valueError(schema: ConfigurationSchema, value: ConfigurationValue | undefined): string | null
+function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
 {
     if (schema.type === "integer")
     {

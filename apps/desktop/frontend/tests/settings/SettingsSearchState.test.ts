@@ -4,7 +4,7 @@ import { test } from "vitest";
 
 import { SettingsSearchState } from "../../src/settings/SettingsSearchState.svelte.ts";
 
-import type { SettingsSearchEntry } from "../../src/types/SettingsSearchEntry.ts";
+import type { SettingsSearchEntry } from "../../src/generated/SettingsSearchEntry.ts";
 
 const result: SettingsSearchEntry = {
     pageId: "general",

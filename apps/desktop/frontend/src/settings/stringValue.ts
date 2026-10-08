@@ -1,10 +1,11 @@
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 const encoder = new TextEncoder();
 
 export function stringError(
     schema: ConfigurationSchema,
-    value: ConfigurationValue | undefined
+    value: JsonValue | undefined
 ): string | null
 {
     const text = typeof value === "string" ? value : "";

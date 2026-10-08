@@ -1,12 +1,13 @@
 import { expect, test } from "vitest";
 
+import { configurationProperty } from "./schema";
 import { orderedProperties } from "../../src/settings/properties.ts";
 
-import type { ConfigurationProperty } from "../../src/types/Settings.ts";
+import type { ConfigurationProperty } from "../../src/generated/ConfigurationProperty";
 
 test("explicit field order is independent of serialized property insertion order", () =>
 {
-    const boolean: ConfigurationProperty = {
+    const boolean: ConfigurationProperty = configurationProperty({
         type: "boolean",
         persistence: "beforeApply",
         title: "Enabled",
@@ -14,7 +15,7 @@ test("explicit field order is independent of serialized property insertion order
         default: true,
         properties: {},
         required: []
-    };
+    });
     const properties = {
         folders: { ...boolean, order: 100 },
         user: { ...boolean, order: 20 },

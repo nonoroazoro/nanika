@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
+import { configurationSchema } from "./schema";
 import { integerError, normalizeSettings } from "../../src/settings/integerValue.ts";
 
-import type { ConfigurationSchema } from "../../src/types/Settings.ts";
+import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
 
-const schema: ConfigurationSchema = {
+const schema: ConfigurationSchema = configurationSchema({
     type: "integer",
     minimum: 1,
     maximum: 5000,
     allowUnlimited: true,
     properties: {},
     required: []
-};
+});
 
 test("integer drafts retain invalid input without clamping or coercing it to zero", () =>
 {
@@ -43,16 +44,19 @@ test("unlimited is explicit and requires schema support", () =>
 test("nested integer configuration preserves string properties and optional fields", () =>
 {
     const properties: Record<string, ConfigurationSchema> = {
-        entries: {
+        entries: configurationSchema({
             type: "array",
             properties: {},
             required: [],
-            items: {
+            items: configurationSchema({
                 type: "object",
-                properties: { limit: schema, name: { type: "string", properties: {}, required: [] } },
+                properties: {
+                    limit: schema,
+                    name: configurationSchema({ type: "string", properties: {}, required: [] })
+                },
                 required: []
-            }
-        }
+            })
+        })
     };
     assert.deepEqual(normalizeSettings(properties, { entries: [{ limit: "50", name: "001" }, { limit: null }] }), {
         entries: [{ limit: 50, name: "001" }, { limit: null }]

@@ -1,8 +1,9 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
+import type { SettingsChange } from "./SettingsChange";
 import type { SettingsEditResult } from "./SettingsEditResult";
-import type { SettingsWriteResult } from "./SettingsWriteResult";
-import type { OperationProgress } from "../types/OperationProgress";
+import type { OperationProgress } from "../generated/OperationProgress";
+import type { SettingsWriteResult } from "../generated/SettingsWriteResult";
 
 /**
  * Owns field edits and accepted operations across navigation and native hiding.
@@ -17,10 +18,7 @@ export class SettingsState<T extends object>
     readonly progress = new SvelteMap<keyof T, OperationProgress>();
     readonly startedAt = new SvelteMap<keyof T, number>();
     readonly errors = new SvelteMap<keyof T, string>();
-    private readonly _write: (
-        key: keyof T,
-        value: T[keyof T]
-    ) => Promise<SettingsWriteResult<T>>;
+    private readonly _write: (change: SettingsChange<T>) => Promise<SettingsWriteResult<T>>;
 
     private readonly _prepare: (key: keyof T, draft: T[keyof T]) => SettingsEditResult<T[keyof T]>;
     private readonly _notify: (error: string) => void;
@@ -34,7 +32,7 @@ export class SettingsState<T extends object>
 
     constructor(
         initial: SettingsWriteResult<T>,
-        write: (key: keyof T, value: T[keyof T]) => Promise<SettingsWriteResult<T>>,
+        write: (change: SettingsChange<T>) => Promise<SettingsWriteResult<T>>,
         prepare: (key: keyof T, draft: T[keyof T]) => SettingsEditResult<T[keyof T]> = (_key, value) => ({ value }),
         notify: (error: string) => void = () =>
         {}
@@ -111,7 +109,9 @@ export class SettingsState<T extends object>
         this.errors.delete(key);
         this.phase.set(key, "queued");
         this.startedAt.set(key, Date.now());
-        this._pending = this._pending.then(async () => this._run(key, async () => this._write(key, value)));
+        // The value was read and prepared for this same key; retain that correlation.
+        const change = { key, value } as SettingsChange<T>;
+        this._pending = this._pending.then(async () => this._run(key, async () => this._write(change)));
         await this._pending;
     }
 

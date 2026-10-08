@@ -1,6 +1,7 @@
 import { clampIndex } from "./clampIndex";
 
-import type { RootSearchSnapshot, SearchResult } from "../types";
+import type { SearchResult } from "../generated/SearchResult";
+import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
 
 /**
  * Keeps the displayed result window and selection coherent across Channel updates.

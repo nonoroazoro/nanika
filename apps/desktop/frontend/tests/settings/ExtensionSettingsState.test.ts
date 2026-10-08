@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
+import { configurationProperty } from "./schema";
 import { ExtensionSettingsState } from "../../src/settings/ExtensionSettingsState.svelte";
 
-import type { ConfigurationWriteResult } from "../../src/settings/ConfigurationWriteResult";
-import type { ExtensionSettings } from "../../src/types/Settings";
+import type { ConfigurationSaveOutcome } from "../../src/generated/ConfigurationSaveOutcome";
+import type { ExtensionSettings } from "../../src/generated/ExtensionSettings";
 
 function _configuration(revision: number, enabled: boolean): NonNullable<ExtensionSettings["configuration"]>
 {
@@ -17,7 +18,7 @@ function _configuration(revision: number, enabled: boolean): NonNullable<Extensi
         contribution: {
             title: "Test",
             properties: {
-                enabled: {
+                enabled: configurationProperty({
                     type: "boolean",
                     title: "Enabled",
                     description: null,
@@ -25,8 +26,8 @@ function _configuration(revision: number, enabled: boolean): NonNullable<Extensi
                     properties: {},
                     required: [],
                     persistence: "beforeApply"
-                },
-                title: {
+                }),
+                title: configurationProperty({
                     type: "string",
                     title: "Title",
                     description: null,
@@ -35,19 +36,19 @@ function _configuration(revision: number, enabled: boolean): NonNullable<Extensi
                     required: [],
                     persistence: "beforeApply",
                     maxLength: 100
-                }
+                })
             }
         }
     };
 }
 
 function _pending(): {
-    promise: Promise<ConfigurationWriteResult>;
-    resolve: (result: ConfigurationWriteResult) => void;
+    promise: Promise<ConfigurationSaveOutcome>;
+    resolve: (result: ConfigurationSaveOutcome) => void;
 }
 {
-    let resolve!: (result: ConfigurationWriteResult) => void;
-    const promise = new Promise<ConfigurationWriteResult>(complete =>
+    let resolve!: (result: ConfigurationSaveOutcome) => void;
+    const promise = new Promise<ConfigurationSaveOutcome>(complete =>
     {
         resolve = complete;
     });

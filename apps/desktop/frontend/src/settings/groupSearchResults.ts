@@ -1,4 +1,4 @@
-import type { SettingsSearchEntry } from "../types/SettingsSearchEntry";
+import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 import type { SettingsSearchGroup } from "../types/SettingsSearchGroup";
 
 /**

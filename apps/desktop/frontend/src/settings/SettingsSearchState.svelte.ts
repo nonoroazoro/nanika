@@ -1,4 +1,4 @@
-import type { SettingsSearchEntry } from "../types/SettingsSearchEntry";
+import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 
 /**
  * One in-flight search and one replaceable query. Results belong to a query revision,

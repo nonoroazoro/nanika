@@ -3,7 +3,8 @@ import { test } from "vitest";
 
 import { SettingsApplications } from "../../src/settings/SettingsApplications.ts";
 
-import type { SettingsApplicationUpdate, SettingsSaveResult } from "../../src/types/Settings.ts";
+import type { SettingsApplicationUpdate } from "../../src/generated/SettingsApplicationUpdate";
+import type { SettingsSaveResult } from "../../src/generated/SettingsSaveResult";
 
 function _update(requestId: number, result: SettingsSaveResult): SettingsApplicationUpdate
 {

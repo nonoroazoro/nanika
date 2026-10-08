@@ -1,4 +1,4 @@
-import type { ConfigurationProperty } from "../types/Settings";
+import type { ConfigurationProperty } from "../generated/ConfigurationProperty";
 
 /**
  * Order the declarative Settings fields without depending on JSON object insertion order.

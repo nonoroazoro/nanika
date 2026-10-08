@@ -3,12 +3,12 @@ import SettingsSidebar from "./settings/SettingsSidebar.svelte";
 import { SettingsSearchState } from "./settings/SettingsSearchState.svelte";
 import { settingsAnchor } from "./settings/anchor";
 import { revealSetting } from "./settings/reveal";
-import type { SettingsSearchTarget } from "./types/SettingsSearchTarget";
+import type { SettingsSearchTarget } from "./generated/SettingsSearchTarget";
 import ScrollArea from "./components/ui/ScrollArea.svelte";
 import SelectionHighlight from "./components/motion/SelectionHighlight.svelte";
 import "./styles/settings.css";
 import Switch from "./components/ui/Switch.svelte";
-import type { ExtensionLifecycle } from "./types/ExtensionLifecycle";
+import type { ExtensionLifecycle } from "./generated/ExtensionLifecycle";
 import { SvelteMap } from "svelte/reactivity";
 import Button from "./components/ui/Button.svelte";
 import { onMount, tick } from "svelte";
@@ -27,17 +27,20 @@ import { StartupSettings } from "./settings/StartupSettings.svelte";
 import { uiActivity } from "./ui/activity";
 import { ExtensionSettingsState } from "./settings/ExtensionSettingsState.svelte";
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
-import type { SettingsWindowAction } from "./types/SettingsWindowAction";
+import type { SettingsWindowAction } from "./generated/SettingsWindowAction";
 import { orderedProperties } from "./settings/properties";
 import ExtensionIcon from "./components/extensions/ExtensionIcon.svelte";
-import type { ExtensionSettings, HostPreferences, SettingsApplicationUpdate, SettingsSnapshot } from "./types/Settings";
+import type { ExtensionSettings } from "./generated/ExtensionSettings";
+import type { LauncherSettings } from "./settings/LauncherSettings";
+import type { SettingsApplicationUpdate } from "./generated/SettingsApplicationUpdate";
+import type { SettingsSnapshot } from "./generated/SettingsSnapshot";
 
 let notification = $state<string | null>(null);
 let customControls = $state(false);
 let maximized = $state(false);
 let windowError = $state<string | null>(null);
 let snapshot = $state.raw<SettingsSnapshot | null>(null);
-let host = $state.raw<SettingsState<HostPreferences> | null>(null);
+let host = $state.raw<SettingsState<LauncherSettings> | null>(null);
 const startup = new StartupSettings(settingsBridge.readStartup, settingsBridge.setStartup, _notify);
 let states = $state.raw<Record<string, ExtensionSettingsState>>({});
 let selection = $state("general");
@@ -125,7 +128,7 @@ async function _load(): Promise<void>
             lifecycle = snapshot.extensions;
         }
         maximized = snapshot.maximized;
-        host = new SettingsState(
+        host = new SettingsState<LauncherSettings>(
             { values: snapshot.general, saved: snapshot.general, effective: snapshot.general, error: null },
             settingsBridge.saveHost,
             undefined,
@@ -233,7 +236,7 @@ function _observeConfiguration(extension: Pick<ExtensionSettings, "id" | "config
     const state = new ExtensionSettingsState(
         configuration,
         previous && previous.status !== "running" ? previous.error : null,
-        async (key, value) => applications.completion(await settingsBridge.save(extension.id, key, value)),
+        async change => applications.completion(await settingsBridge.save({ extensionId: extension.id, ...change })),
         _notify
     );
     if (application?.result.status === "running")

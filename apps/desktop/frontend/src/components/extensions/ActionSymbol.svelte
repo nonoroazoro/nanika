@@ -1,6 +1,6 @@
 <script module lang="ts">
 import type { Component } from "svelte";
-import type { ActionIcon } from "../../types/ActionIcon";
+import type { ActionIcon } from "../../generated/ActionIcon";
 import type { IconProps } from "../../types/IconProps";
 import FolderOpenIcon from "../icons/FolderOpenIcon.svelte";
 import LockKeyholeIcon from "../icons/LockKeyholeIcon.svelte";

@@ -3,7 +3,7 @@ import { createAttachmentKey } from "svelte/attachments";
 import { styleMotion } from "../components/motion/style";
 import Button from "../components/ui/Button.svelte";
 
-import type { SettingsWindowAction } from "../types/SettingsWindowAction";
+import type { SettingsWindowAction } from "../generated/SettingsWindowAction";
 
 const motionKey = createAttachmentKey();
 const captionFeedback = styleMotion({

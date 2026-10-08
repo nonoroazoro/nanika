@@ -6,14 +6,15 @@ import IntegerSetting from "./IntegerSetting.svelte";
 import Switch from "../components/ui/Switch.svelte";
 import { emptyValue, fieldTitle } from "./values";
 import { stringError } from "./stringValue";
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 const { schema, value, label, id, onChange, onCommit }: {
     schema: ConfigurationSchema;
-    value: ConfigurationValue | undefined;
+    value: JsonValue | undefined;
     label: string;
     id: string;
-    onChange: (value: ConfigurationValue) => void;
+    onChange: (value: JsonValue) => void;
     onCommit: () => void;
 } = $props();
 const array = $derived(Array.isArray(value) ? value : []);
@@ -22,7 +23,7 @@ let visibleCount = $state(20);
 let stringInput = $state<HTMLInputElement>();
 const currentStringError = $derived(schema.type === "string" ? stringError(schema, value) : null);
 $effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
-function _change(next: ConfigurationValue): void
+function _change(next: JsonValue): void
 {
     onChange(next);
     onCommit();

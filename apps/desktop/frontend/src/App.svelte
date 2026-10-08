@@ -10,17 +10,15 @@ import { viewInputScheduler } from "./bridge/viewInputScheduler";
 import ContextMenu from "./components/ui/ContextMenu.svelte";
 import AppMenuBrand from "./components/launcher/AppMenuBrand.svelte";
 import type { ContextMenuPresentation } from "./types/ContextMenuPresentation";
-import type { MenuTarget } from "./types/MenuTarget";
+import type { MenuTarget } from "./generated/MenuTarget";
 import ExtensionView from "./components/extensions/ExtensionView.svelte";
 import RootSearch from "./components/launcher/RootSearch.svelte";
-import type {
-    ApplicationSnapshot,
-    NavigationSnapshot,
-    RootSearchSnapshot,
-    SearchResult,
-    ViewEvent,
-    ViewEventReceipt
-} from "./types";
+import type { ApplicationSnapshot } from "./generated/ApplicationSnapshot";
+import type { NavigationSnapshot } from "./types/NavigationSnapshot";
+import type { RootSearchSnapshot } from "./types/RootSearchSnapshot";
+import type { SearchResult } from "./generated/SearchResult";
+import type { ViewInteraction } from "./types/ViewInteraction";
+import type { ViewEventReceipt } from "./generated/ViewEventReceipt";
 import type { SearchObservation } from "./development";
 
 let application = $state<ApplicationSnapshot | null>(null);
@@ -452,7 +450,7 @@ function reconcileViewInput(): void
     }
 }
 
-async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
+async function sendViewEvent(event: ViewInteraction | null): Promise<number | null>
 {
     const current = navigation.current;
     if (!application || !current || viewInput.busy)
@@ -469,7 +467,7 @@ async function sendViewEvent(event: ViewEvent | null): Promise<number | null>
 }
 
 async function runViewInput(
-    event: ViewEvent | null,
+    event: ViewInteraction | null,
     submit: () => Promise<ViewEventReceipt | null>
 ): Promise<number | null>
 {

@@ -1,17 +1,17 @@
-import type { ContextMenuRequest } from "../types/ContextMenuRequest.ts";
-import type { ViewEventReceipt } from "../types/ViewEventReceipt.ts";
-import type { ViewEventRequest } from "../types/ViewEventRequest.ts";
+import type { ContextMenuRequest } from "../generated/ContextMenuRequest.ts";
+import type { ViewEventReceipt } from "../generated/ViewEventReceipt.ts";
+import type { ViewInteractionRequest } from "../types/ViewInteractionRequest.ts";
 
 // A selection is replaceable only before dispatch and before a following action.
 // The action keeps its captured item id and never overtakes earlier input.
 export function orderedViewEvents(
-    send: (request: ViewEventRequest) => Promise<ViewEventReceipt>,
+    send: (request: ViewInteractionRequest) => Promise<ViewEventReceipt>,
     sendMenu: (request: ContextMenuRequest, actionId: string, confirmed: boolean) => Promise<ViewEventReceipt | null>
 )
 {
     interface Pending
     {
-        request: ViewEventRequest | null;
+        request: ViewInteractionRequest | null;
         dispatch: () => Promise<ViewEventReceipt | null>;
         resolve: (receipt: ViewEventReceipt | null) => void;
         reject: (error: unknown) => void;
@@ -20,14 +20,14 @@ export function orderedViewEvents(
     let running = false;
 
     return {
-        event: async (request: ViewEventRequest) => _enqueue(request, async () => send(request)),
+        event: async (request: ViewInteractionRequest) => _enqueue(request, async () => send(request)),
         // A menu is an action barrier. Its frozen snapshot is never coalesced or rebased.
         menu: async (request: ContextMenuRequest, actionId: string, confirmed: boolean) =>
             _enqueue(null, async () => sendMenu(request, actionId, confirmed))
     };
 
     async function _enqueue(
-        request: ViewEventRequest | null,
+        request: ViewInteractionRequest | null,
         dispatch: () => Promise<ViewEventReceipt | null>
     ): Promise<ViewEventReceipt | null>
     {

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
+import { configurationSchema } from "./schema";
 import { SettingsState } from "../../src/settings/SettingsState.svelte.ts";
 import { prepareSetting } from "../../src/settings/validation.ts";
 
-import type { SettingsWriteResult } from "../../src/settings/SettingsWriteResult.ts";
-import type { ConfigurationSchema, ConfigurationValue } from "../../src/types/Settings.ts";
+import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
+import type { JsonValue } from "../../src/generated/serde_json/JsonValue";
+import type { SettingsWriteResult } from "../../src/generated/SettingsWriteResult.ts";
 
 function _result<T>(values: T): SettingsWriteResult<T>
 {
@@ -27,7 +29,7 @@ test("one operation per field, isolated patches, and independent editing", async
     const gate = _gate<undefined>();
     let saved = { enabled: false, title: "Before", nested: { limit: 10 } };
     const patches: unknown[] = [];
-    const state = new SettingsState(_result(saved), async (key, value) =>
+    const state = new SettingsState(_result(saved), async ({ key, value }) =>
     {
         patches.push({ key, value });
         await gate.promise;
@@ -110,7 +112,7 @@ test("reopened operation blocks repeated activation and serializes later edits",
 {
     const gate = _gate<SettingsWriteResult<{ enabled: boolean; title: string; }>>();
     const writes: unknown[] = [];
-    const state = new SettingsState(_result({ enabled: false, title: "Before" }), async (key, value) =>
+    const state = new SettingsState(_result({ enabled: false, title: "Before" }), async ({ key, value }) =>
     {
         writes.push({ key, value });
         return _result({ enabled: true, title: "After" });
@@ -140,7 +142,7 @@ test("transport failure clears pending, reports uncertainty, and leaves later ed
 test("afterApply storage failure can be reversed to the saved value", async () =>
 {
     let writes = 0;
-    const state = new SettingsState(_result({ enabled: false }), async (_key, enabled) =>
+    const state = new SettingsState(_result({ enabled: false }), async ({ value: enabled }) =>
     {
         writes++;
         return writes === 1
@@ -156,7 +158,7 @@ test("afterApply storage failure can be reversed to the saved value", async () =
 test("an explicit unchanged edit retries failed application, but navigation does not", async () =>
 {
     let writes = 0;
-    const state = new SettingsState(_result({ enabled: false }), async (_key, enabled) =>
+    const state = new SettingsState(_result({ enabled: false }), async ({ value: enabled }) =>
     {
         writes++;
         return { ..._result({ enabled }), error: writes === 1 ? "Application failed" : null };
@@ -196,7 +198,7 @@ test("schema-valid prototype names remain editable and field-local", async () =>
 {
     let saved = { constructor: false, toString: false };
     let writes = 0;
-    const state = new SettingsState(_result(saved), async (key, value) =>
+    const state = new SettingsState(_result(saved), async ({ key, value }) =>
     {
         writes++;
         saved = { ...saved, [key]: value };
@@ -214,7 +216,7 @@ test("external refresh preserves newer edits and serializes their write", async 
 {
     const gate = _gate<SettingsWriteResult<{ enabled: boolean; }>>();
     const writes: boolean[] = [];
-    const state = new SettingsState(_result({ enabled: false }), async (_key, enabled) =>
+    const state = new SettingsState(_result({ enabled: false }), async ({ value: enabled }) =>
     {
         writes.push(enabled);
         return _result({ enabled });
@@ -230,7 +232,7 @@ test("external refresh preserves newer edits and serializes their write", async 
     assert.equal(state.effective?.enabled, false);
 });
 
-const integer: ConfigurationSchema = {
+const integer: ConfigurationSchema = configurationSchema({
     type: "integer",
     minimum: 1,
     maximum: 5000,
@@ -238,19 +240,23 @@ const integer: ConfigurationSchema = {
     allowUnlimited: true,
     properties: {},
     required: []
-};
-const text: ConfigurationSchema = { type: "string", maxLength: 100, properties: {}, required: [] };
+});
+const text: ConfigurationSchema = configurationSchema({ type: "string", maxLength: 100, properties: {}, required: [] });
 
 test("equivalent numeric drafts never enter the operation queue, including nested values", async () =>
 {
-    const nested: ConfigurationSchema = {
+    const nested: ConfigurationSchema = configurationSchema({
         type: "array",
         maxItems: 10,
         properties: {},
         required: [],
-        items: { type: "object", properties: { limit: integer, name: text }, required: ["limit", "name"] }
-    };
-    const cases: Array<{ draft: ConfigurationValue; saved: ConfigurationValue; schema: ConfigurationSchema; }> = [
+        items: configurationSchema({
+            type: "object",
+            properties: { limit: integer, name: text },
+            required: ["limit", "name"]
+        })
+    });
+    const cases: Array<{ draft: JsonValue; saved: JsonValue; schema: ConfigurationSchema; }> = [
         { schema: integer, saved: 50, draft: "50" },
         { schema: integer, saved: 50, draft: "0050" },
         { schema: integer, saved: null, draft: null },
@@ -260,7 +266,7 @@ test("equivalent numeric drafts never enter the operation queue, including neste
     {
         const initial = { setting: saved, untouched: { title: "Keep" } };
         let writes = 0;
-        const state = new SettingsState<Record<string, ConfigurationValue>>(_result(initial), async () =>
+        const state = new SettingsState<Record<string, JsonValue>>(_result(initial), async () =>
         {
             writes++;
             return _result(initial);
@@ -279,9 +285,9 @@ test("equivalent numeric drafts never enter the operation queue, including neste
 
 test("writers receive the prepared value while string settings retain their type", async () =>
 {
-    let saved: Record<string, ConfigurationValue> = { limit: 50, name: "001" };
-    const writes: Array<{ key: string; value: ConfigurationValue; }> = [];
-    const state = new SettingsState(_result(saved), async (key, value) =>
+    let saved: Record<string, JsonValue> = { limit: 50, name: "001" };
+    const writes: Array<{ key: string; value: JsonValue; }> = [];
+    const state = new SettingsState(_result(saved), async ({ key, value }) =>
     {
         writes.push({ key, value });
         saved = { ...saved, [key]: value };
@@ -295,7 +301,7 @@ test("writers receive the prepared value while string settings retain their type
 test("preparation rejects incomplete numeric drafts without changing their text or admitting work", async () =>
 {
     let writes = 0;
-    const state = new SettingsState<Record<string, ConfigurationValue>>(_result({ limit: 50 }), async () =>
+    const state = new SettingsState<Record<string, JsonValue>>(_result({ limit: 50 }), async () =>
     {
         writes++;
         return _result({ limit: 50 });
@@ -317,7 +323,7 @@ test("preparation rejects incomplete numeric drafts without changing their text 
 test("canonical equality does not suppress an explicit retry after failed application", async () =>
 {
     let writes = 0;
-    const state = new SettingsState<Record<string, ConfigurationValue>>(_result({ limit: 50 }), async (_key, value) =>
+    const state = new SettingsState<Record<string, JsonValue>>(_result({ limit: 50 }), async ({ value }) =>
     {
         writes++;
         return { ..._result({ limit: value }), error: writes === 1 ? "Application failed" : null };

@@ -7,7 +7,7 @@ import { uiActivity } from "../../ui/activity";
 import ShortcutKeys from "./ShortcutKeys.svelte";
 
 import type { Snippet } from "svelte";
-import type { Action } from "../../types/Action";
+import type { Action } from "../../generated/Action";
 
 const motionKey = createAttachmentKey();
 

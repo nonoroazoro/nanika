@@ -1,14 +1,12 @@
-import type {
-    ApplicationSnapshot,
-    InvokeCandidateRequest,
-    PublishQueryRequest,
-    RootSearchSnapshot,
-    ViewEventReceipt,
-    ViewEventRequest
-} from "../types";
-import type { Action } from "../types/Action";
-import type { ContextMenuRequest } from "../types/ContextMenuRequest";
+import type { Action } from "../generated/Action";
+import type { ApplicationSnapshot } from "../generated/ApplicationSnapshot";
+import type { ContextMenuRequest } from "../generated/ContextMenuRequest";
+import type { InvokeCandidateRequest } from "../generated/InvokeCandidateRequest";
+import type { PublishQueryRequest } from "../generated/PublishQueryRequest";
+import type { ViewEventReceipt } from "../generated/ViewEventReceipt";
 import type { ReadResultsRequest } from "../types/ReadResultsRequest";
+import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
+import type { ViewInteractionRequest } from "../types/ViewInteractionRequest";
 
 export interface NanikaBridge
 {
@@ -26,7 +24,7 @@ export interface NanikaBridge
     readResults(request: ReadResultsRequest): Promise<void>;
     publishQuery(request: PublishQueryRequest): Promise<void>;
     invokeCandidate(request: InvokeCandidateRequest): Promise<void>;
-    viewEvent(request: ViewEventRequest): Promise<ViewEventReceipt>;
+    viewEvent(request: ViewInteractionRequest): Promise<ViewEventReceipt>;
     dismissLauncher(): Promise<void>;
     openSettings(): Promise<void>;
 }

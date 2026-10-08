@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { SearchResult } from "../../types";
+import type { SearchResult } from "../../generated/SearchResult";
 import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import ActionSymbol from "../extensions/ActionSymbol.svelte";
 import ShortcutKeys from "../ui/ShortcutKeys.svelte";

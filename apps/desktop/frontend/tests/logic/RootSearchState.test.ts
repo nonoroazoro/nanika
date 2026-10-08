@@ -3,7 +3,8 @@ import { test } from "vitest";
 
 import { RootSearchState } from "../../src/logic/RootSearchState.svelte";
 
-import type { RootSearchSnapshot, SearchResult } from "../../src/types";
+import type { SearchResult } from "../../src/generated/SearchResult";
+import type { RootSearchSnapshot } from "../../src/types/RootSearchSnapshot";
 
 function _result(id: string): SearchResult
 {

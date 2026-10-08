@@ -1,7 +1,7 @@
 <script lang="ts">
 import { untrack } from "svelte";
 import LoadMoreBoundary from "../ui/LoadMoreBoundary.svelte";
-import type { DetailContent } from "../../types/DetailContent";
+import type { DetailContent } from "../../generated/DetailContent";
 
 const { content, viewport, busy, revision, onRead }: {
     content: Extract<DetailContent, { kind: "text"; }>;

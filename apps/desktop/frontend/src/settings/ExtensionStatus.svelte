@@ -2,7 +2,7 @@
 import { styleMotion } from "../components/motion/style";
 import { untrack } from "svelte";
 
-import type { ExtensionSettings } from "../types/Settings";
+import type { ExtensionSettings } from "../generated/ExtensionSettings";
 
 const dotMotion = styleMotion({ properties: ["background-color"], scope: "[role=status]" });
 

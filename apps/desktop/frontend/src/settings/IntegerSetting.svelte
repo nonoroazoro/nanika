@@ -4,18 +4,20 @@ import Button from "../components/ui/Button.svelte";
 import Input from "../components/ui/Input.svelte";
 import { integerError } from "./integerValue";
 import { emptyValue } from "./values";
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationProperty } from "../generated/ConfigurationProperty";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 const { schema, value, label, id, onChange, onCommit }: {
-    schema: ConfigurationSchema;
-    value: ConfigurationValue | undefined;
+    schema: ConfigurationSchema | ConfigurationProperty;
+    value: JsonValue | undefined;
     label: string;
     id: string;
-    onChange: (value: ConfigurationValue) => void;
+    onChange: (value: JsonValue) => void;
     onCommit: () => void;
 } = $props();
 let input = $state<HTMLInputElement>();
-let previousLimit = $state<ConfigurationValue | undefined>();
+let previousLimit = $state<JsonValue | undefined>();
 const error = $derived(integerError(schema, value));
 const numericText = $derived(typeof value === "number" || typeof value === "string" ? value : "");
 // Native constraint validation is an external browser API, not derived state.
@@ -61,7 +63,7 @@ $effect(() =>
             {
                 if (value === null)
                 {
-                    onChange(previousLimit ?? schema.default ?? emptyValue(schema));
+                    onChange(previousLimit ?? ("default" in schema ? schema.default : undefined) ?? emptyValue(schema));
                 }
                 else
                 {

@@ -1,5 +1,5 @@
-import type { Action } from "./Action";
-import type { ContextMenuRequest } from "./ContextMenuRequest";
+import type { Action } from "../generated/Action";
+import type { ContextMenuRequest } from "../generated/ContextMenuRequest";
 
 export interface ContextMenuPresentation
 {

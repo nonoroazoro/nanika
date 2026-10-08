@@ -1,13 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { NanikaBridge } from "./index";
-import type { NavigationSnapshot, RootSearchSnapshot } from "../types";
-
-// Merge Channel deltas into coherent snapshots, preserving unchanged object identities.
-type SearchUpdate = {
-    navigation: { current?: NavigationSnapshot["current"]; } & Omit<NavigationSnapshot, "current">;
-    results?: RootSearchSnapshot["results"];
-} & Omit<RootSearchSnapshot, "navigation" | "results">;
+import type { RootSearchSnapshot as SearchUpdate } from "../generated/RootSearchSnapshot";
+import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
 
 let _rangeSequence = 0;
 

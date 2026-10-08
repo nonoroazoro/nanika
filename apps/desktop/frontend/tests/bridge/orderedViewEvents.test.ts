@@ -3,14 +3,14 @@ import { test } from "vitest";
 
 import { orderedViewEvents } from "../../src/bridge/orderedViewEvents.ts";
 
-import type { ContextMenuRequest } from "../../src/types/ContextMenuRequest.ts";
-import type { ViewEvent } from "../../src/types/ViewEvent.ts";
-import type { ViewEventReceipt } from "../../src/types/ViewEventReceipt.ts";
-import type { ViewEventRequest } from "../../src/types/ViewEventRequest.ts";
+import type { ContextMenuRequest } from "../../src/generated/ContextMenuRequest.ts";
+import type { ViewEventReceipt } from "../../src/generated/ViewEventReceipt.ts";
+import type { ViewInteraction } from "../../src/types/ViewInteraction.ts";
+import type { ViewInteractionRequest } from "../../src/types/ViewInteractionRequest.ts";
 
 test("selection stays ordered before a captured action and only unsent selections coalesce", async () =>
 {
-    const sent: ViewEvent[] = [];
+    const sent: ViewInteraction[] = [];
     const { promise: first, resolve: finish } = Promise.withResolvers<undefined>();
     const enqueue = orderedViewEvents(async value =>
     {
@@ -47,7 +47,7 @@ test("selection stays ordered before a captured action and only unsent selection
 test("a failed request retains its cause and does not lose an accepted following action", async () =>
 {
     const cause = new Error("extension rejected selection");
-    const sent: ViewEventRequest[] = [];
+    const sent: ViewInteractionRequest[] = [];
     const enqueue = orderedViewEvents(async value =>
     {
         sent.push(value);
@@ -140,7 +140,7 @@ test("overflow rejects only the new request and preserves all accepted action ba
     assert.equal(count, 17);
 });
 
-function _request(event: ViewEvent): ViewEventRequest
+function _request(event: ViewInteraction): ViewInteractionRequest
 {
     return { sessionId: 1, routeId: 1, revision: 1, operation: { kind: "event", event } };
 }

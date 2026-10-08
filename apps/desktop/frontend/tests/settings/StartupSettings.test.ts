@@ -3,7 +3,7 @@ import { test } from "vitest";
 
 import { StartupSettings } from "../../src/settings/StartupSettings.svelte.ts";
 
-import type { StartupStatus } from "../../src/types/Settings.ts";
+import type { StartupStatus } from "../../src/generated/StartupStatus";
 
 test("activation refresh observes OS changes and shares concurrent reads", async () =>
 {

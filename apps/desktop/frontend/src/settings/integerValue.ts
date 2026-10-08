@@ -1,6 +1,7 @@
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
-export function integerError(schema: ConfigurationSchema, value: ConfigurationValue | undefined): string | null
+export function integerError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
 {
     if (value === null && schema.allowUnlimited)
     {
@@ -27,7 +28,7 @@ export function integerError(schema: ConfigurationSchema, value: ConfigurationVa
     return null;
 }
 
-export function normalizeSetting(schema: ConfigurationSchema, value: ConfigurationValue): ConfigurationValue
+export function normalizeSetting(schema: ConfigurationSchema, value: JsonValue): JsonValue
 {
     if (schema.type === "integer" && value !== null && integerError(schema, value) === null)
     {
@@ -47,8 +48,8 @@ export function normalizeSetting(schema: ConfigurationSchema, value: Configurati
 
 export function normalizeSettings(
     properties: Record<string, ConfigurationSchema>,
-    values: Record<string, ConfigurationValue>
-): Record<string, ConfigurationValue>
+    values: Record<string, JsonValue>
+): Record<string, JsonValue>
 {
     return Object.fromEntries(
         Object.entries(values).map((

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { IconReference } from "../../types";
+import type { IconReference } from "../../generated/IconReference";
 import fileIcon from "../../assets/clipboard-file.png";
 
 const { reference, resourceOrigin, extensionId, preview = false, collection = false, onReady }: {

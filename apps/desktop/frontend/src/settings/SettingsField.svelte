@@ -4,7 +4,7 @@ import { repeatMotion } from "../components/motion/repeat";
 import { uiActivity } from "../ui/activity";
 
 import type { Snippet } from "svelte";
-import type { OperationProgress } from "../types/OperationProgress";
+import type { OperationProgress } from "../generated/OperationProgress";
 
 const sweep = repeatMotion({
     transform: ["translateX(0%)", "translateX(185%)"],

@@ -3,9 +3,9 @@ import { test } from "vitest";
 
 import { collectionWindow, itemAt, itemIndex } from "../../src/ui/collection-window";
 
-import type { ViewSection } from "../../src/types/ViewSection";
+import type { ListSection } from "../../src/generated/ListSection";
 
-function section(id: string, total: number, offset: number, count: number, title: string | null = null): ViewSection
+function section(id: string, total: number, offset: number, count: number, title: string | null = null): ListSection
 {
     return {
         id,

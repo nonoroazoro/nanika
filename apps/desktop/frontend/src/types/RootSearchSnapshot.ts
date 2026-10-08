@@ -1,18 +1,7 @@
-import type { NavigationSnapshot, SearchPhase, SearchResult } from "./index";
+import type { NavigationSnapshot } from "./NavigationSnapshot";
+import type { RootSearchSnapshot as SearchUpdate } from "../generated/RootSearchSnapshot";
 
-export interface RootSearchSnapshot
-{
-    navigation: NavigationSnapshot;
-    sessionId: number;
-    requestId: number;
-    revision: number;
-    query: string;
-    results: SearchResult[];
-    resultRevision: number;
-    resultOffset: number;
-    totalResults: number;
-    phase: SearchPhase;
-    error: string | null;
-    warnings: string[];
-    pendingExtensions: string[];
-}
+/**
+ * Complete search state after the bridge retains omitted results and navigation.
+ */
+export type RootSearchSnapshot = { navigation: NavigationSnapshot; } & Omit<Required<SearchUpdate>, "navigation">;

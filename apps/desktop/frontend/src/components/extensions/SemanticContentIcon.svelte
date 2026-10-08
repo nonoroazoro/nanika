@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { ViewItemIcon } from "../../types";
+import type { ViewItemIcon } from "../../generated/ViewItemIcon";
 import fileIcon from "../../assets/clipboard-file.png";
 import imageIcon from "../../assets/clipboard-image.png";
 import textIcon from "../../assets/clipboard-text.png";

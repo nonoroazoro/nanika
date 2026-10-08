@@ -1,4 +1,5 @@
-import type { ConfigurationSchema, ConfigurationValue } from "../types/Settings";
+import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
+import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 export function fieldTitle(key: string): string
 {
@@ -6,7 +7,7 @@ export function fieldTitle(key: string): string
     return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export function emptyValue(schema: ConfigurationSchema): ConfigurationValue
+export function emptyValue(schema: ConfigurationSchema): JsonValue
 {
     switch (schema.type)
     {

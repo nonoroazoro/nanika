@@ -3,7 +3,7 @@ import { test } from "vitest";
 
 import { groupSearchResults } from "../../src/settings/groupSearchResults";
 
-import type { SettingsSearchEntry } from "../../src/types/SettingsSearchEntry";
+import type { SettingsSearchEntry } from "../../src/generated/SettingsSearchEntry";
 
 const field: SettingsSearchEntry = {
     pageId: "applications",

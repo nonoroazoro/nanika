@@ -1,9 +1,6 @@
-import type { ExtensionViewSnapshot } from "./index";
-export interface NavigationSnapshot
-{
-    revision: number;
-    current: ExtensionViewSnapshot | null;
-    busy: boolean;
-    error: string | null;
-    dismissCount: number;
-}
+import type { NavigationSnapshot as NavigationUpdate } from "../generated/NavigationSnapshot";
+
+/**
+ * Complete navigation after the bridge applies an incremental update.
+ */
+export type NavigationSnapshot = Required<NavigationUpdate>;

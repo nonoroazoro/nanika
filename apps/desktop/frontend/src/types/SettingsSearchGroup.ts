@@ -1,4 +1,4 @@
-import type { SettingsSearchEntry } from "./SettingsSearchEntry";
+import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 
 export interface SettingsSearchGroup
 {

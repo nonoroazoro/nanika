@@ -1,7 +1,7 @@
 import { SettingsState } from "./SettingsState.svelte";
 
-import type { SettingsWriteResult } from "./SettingsWriteResult";
-import type { StartupStatus } from "../types/Settings";
+import type { SettingsWriteResult } from "../generated/SettingsWriteResult";
+import type { StartupStatus } from "../generated/StartupStatus";
 
 /**
  * Keeps native startup status current without replacing edits or racing OS writes.
@@ -22,7 +22,7 @@ export class StartupSettings
         const initial = { enabled: false };
         this.settings = new SettingsState(
             { values: initial, saved: initial, effective: null, error: null },
-            async (_key, enabled) =>
+            async ({ value: enabled }) =>
             {
                 let status: StartupStatus;
                 let error: string | null = null;

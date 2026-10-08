@@ -1,6 +1,6 @@
 <script lang="ts">
 import { settledGroups } from "./settledPreviewGroups";
-import type { DetailView } from "../../types";
+import type { DetailView } from "../../generated/DetailView";
 import fileIcon from "../../assets/clipboard-file.png";
 import CachedFileIcon from "./CachedFileIcon.svelte";
 
