@@ -32,6 +32,10 @@
   --text-primary: #17181a;
   --text-secondary: #5f636c;
   --text-tertiary: #676b74;
+  --text-chrome: var(--text-primary);
+  --text-chrome-inactive: #5a606b;
+  --icon-saturation: 1;
+  --control-inactive-fill: #697180;
   --surface-window: #eeeef0;
   --surface-popup: #f4f4f6;
   --surface-raised: #e8e9ed;
@@ -60,6 +64,7 @@
   --font-control: 0.75rem;
   --control-line-height: normal;
   --button-font-weight: 500;
+  --control-foreground: var(--text-primary);
   --control-border: var(--border-subtle);
   --control-border-hover: var(--border-window);
   --control-surface: var(--surface-form);
@@ -69,6 +74,20 @@
   --control-height: 2rem;
   --control-radius: 0.375rem;
   --control-padding: 0.3125rem 0.625rem;
+  --switch-track-width: 32px;
+  --switch-track-height: 20px;
+  --switch-thumb-size: 14px;
+  --switch-inset: 2px;
+  --switch-stroke: 1px;
+  --switch-thumb-travel: calc(var(--switch-track-width) - var(--switch-thumb-size) - 2 * (var(--switch-inset) + var(--switch-stroke)));
+  --switch-surface: #e7e9ef;
+  --switch-border: rgb(35 45 65 / 10%);
+  --switch-thumb: #697180;
+  --switch-thumb-hover: #515b6b;
+  --switch-thumb-on: #ffffff;
+  --switch-active: #3570e8;
+  --switch-active-hover: #2864df;
+  --switch-active-pressed: #2058ca;
   --popup-padding: 0.375rem;
   --popup-item-radius: calc(var(--radius-window) - var(--popup-padding) - 1px);
   --popup-item-height: 2rem;
@@ -108,6 +127,7 @@
     --text-primary: #f4f4f5;
     --text-secondary: #a9abb3;
     --text-tertiary: #9599a2;
+    --text-chrome-inactive: var(--text-secondary);
     --surface-window: #191a1e;
     --surface-popup: #232428;
     --shadow-popup: 0 6px 18px -6px rgb(0 0 0 / 32%);
@@ -125,7 +145,39 @@
     --border-danger-hover: rgba(255, 175, 165, 0.7);
     --accent-hover: #a5c5ff;
     --surface-accent: #2b3449;
+    --switch-surface: #383e49;
+    --switch-border: rgb(215 225 245 / 12%);
+    --switch-thumb: #aab3c2;
+    --switch-thumb-hover: #c5cddb;
+    --switch-active: #5789e8;
+    --switch-active-hover: #6091ee;
+    --switch-active-pressed: #4b7edc;
   }
+}
+
+/* Window activity is shared by WKWebView and WebView2 through uiActivity.
+   Keep content, status colors, editing and disabled states independent of it.
+   Root scope also reaches portaled controls. State changes are immediate. */
+:root[data-ui-active="false"] {
+  --accent: var(--text-secondary);
+  --accent-hover: var(--text-primary);
+  --surface-accent: var(--surface-selected);
+  --surface-selected: var(--surface-hovered);
+  /* Retain readable navigation on the denser sidebar selection surface. */
+  --text-chrome: var(--text-chrome-inactive);
+  --icon-saturation: 0;
+  --control-foreground: var(--text-chrome-inactive);
+  --control-surface: var(--surface-window);
+  --control-surface-hover: var(--surface-raised);
+  --control-surface-pressed: var(--surface-raised);
+  --switch-surface: var(--surface-raised);
+  --switch-border: var(--border-subtle);
+  --switch-thumb: var(--text-secondary);
+  --switch-thumb-hover: var(--text-secondary);
+  /* Keep a white checked thumb legible in both appearances. */
+  --switch-active: var(--control-inactive-fill);
+  --switch-active-hover: var(--control-inactive-fill);
+  --switch-active-pressed: var(--control-inactive-fill);
 }
 
 *,
@@ -162,6 +214,10 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
+input:is([type="checkbox"], [type="radio"]) {
+  accent-color: var(--accent);
+}
+
 /* Desktop controls use caret, fill and selection states instead of focus rings. */
 :focus {
   outline: none;
@@ -176,7 +232,7 @@ button {
   border: 1px solid transparent;
   border-radius: var(--radius-row);
   background: transparent;
-  color: var(--text-primary);
+  color: var(--control-foreground);
   padding: 0.25rem 0.375rem;
   gap: var(--space-2);
   font-size: var(--font-meta);
@@ -238,7 +294,7 @@ button:focus-visible {
   border: 1px solid var(--control-border);
   border-radius: var(--control-radius);
   background: var(--control-surface);
-  color: var(--text-primary);
+  color: var(--control-foreground);
   font-size: var(--font-control);
   line-height: var(--control-line-height);
 }

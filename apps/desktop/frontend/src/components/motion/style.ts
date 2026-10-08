@@ -2,6 +2,7 @@ import type { Attachment } from "svelte/attachments";
 
 import { Motion } from "./Motion";
 import { motionAppearance } from "./policy";
+import { uiActivity } from "../../ui/activity";
 
 import type { StyleMotionOptions } from "./StyleMotionOptions";
 
@@ -18,6 +19,19 @@ export function styleMotion(options: StyleMotionOptions): Attachment<HTMLElement
         const motion = new Motion(element, options.requireFocus);
         let destination = motion.read(options.properties);
         let alive = true;
+        let active: boolean | undefined;
+        const unsubscribeActivity = uiActivity.subscribe(activity =>
+        {
+            const next = activity.visible && activity.focused;
+            if (next !== active)
+            {
+                active = next;
+                // main.ts publishes the root activity attribute before controls observe it.
+                // Snap native activation changes and discard cached colors before the next hover.
+                motion.settle();
+                destination = motion.read(options.properties);
+            }
+        });
         const duration = (): string =>
         {
             return typeof options.duration === "function"
@@ -113,6 +127,7 @@ export function styleMotion(options: StyleMotionOptions): Attachment<HTMLElement
             scope.removeEventListener("keydown", keyboard);
             scope.removeEventListener("keyup", keyboard);
             unsubscribeAppearance();
+            unsubscribeActivity();
             observer.disconnect();
             for (const event of events)
             {

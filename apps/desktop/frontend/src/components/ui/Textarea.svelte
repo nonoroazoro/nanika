@@ -14,6 +14,6 @@ let { ref = $bindable(), value = $bindable(""), variant = "field", class: classN
 ></textarea>
 
 <style>
-.ui-textarea { display: block; width: 100%; color: var(--text-primary); font: inherit; line-height: 1.45; }
+.ui-textarea { display: block; width: 100%; color: var(--control-foreground); font: inherit; line-height: 1.45; }
 .ui-textarea[data-variant="plain"] { margin: 0; resize: none; appearance: none; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: var(--font-row); }
 </style>

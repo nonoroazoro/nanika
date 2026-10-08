@@ -80,7 +80,7 @@ function _drag(event: MouseEvent): void
 
 <style>
 /* Controls and separator occupy disjoint grid rows, never overlapping layers. */
-.titlebar { display: grid; grid-template-columns: minmax(0, 1fr) 138px; grid-template-rows: minmax(0, 1fr) 1px; min-width: 0; height: 2.75rem; flex-shrink: 0; color: var(--text-secondary); }
+.titlebar { display: grid; grid-template-columns: minmax(0, 1fr) 138px; grid-template-rows: minmax(0, 1fr) 1px; min-width: 0; height: 2.75rem; flex-shrink: 0; color: var(--text-chrome); }
 .titlebar-separator { grid-column: 1 / -1; background: var(--border-subtle); }
 .drag-region { display: flex; min-width: 0; align-items: center; padding-left: var(--space-5); cursor: default; }
 .drag-region span { pointer-events: none; font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); font-weight: var(--settings-heading-weight); }

@@ -3,13 +3,17 @@ import { afterEach, beforeEach, test, vi } from "vitest";
 
 import { styleMotion } from "../../../src/components/motion/style";
 
+import type { UiActivity } from "../../../src/types/UiActivity";
+
 const harness = vi.hoisted(() => ({
     color: "rest",
     rendered: null as string | null,
     running: false,
     observations: [] as Array<{ options?: MutationObserverInit; update: () => void; }>,
     between: vi.fn(),
-    destroy: vi.fn()
+    destroy: vi.fn(),
+    settle: vi.fn(),
+    activity: null as ((activity: UiActivity) => void) | null
 }));
 vi.mock("../../../src/components/motion/Motion", () => ({
     Motion: class
@@ -21,8 +25,22 @@ vi.mock("../../../src/components/motion/Motion", () => ({
 
         between = harness.between;
         destroy = harness.destroy;
+        settle = harness.settle;
         read = () => ({ color: harness.rendered ?? harness.color });
         destination = () => ({ color: harness.color });
+    }
+}));
+vi.mock("../../../src/ui/activity", () => ({
+    uiActivity: {
+        subscribe: (update: (activity: UiActivity) => void) =>
+        {
+            harness.activity = update;
+            update({ visible: true, focused: true });
+            return () =>
+            {
+                harness.activity = null;
+            };
+        }
     }
 }));
 vi.mock("../../../src/components/motion/policy", () => ({
@@ -41,6 +59,11 @@ beforeEach(() =>
     harness.observations = [];
     harness.between.mockReset();
     harness.destroy.mockReset();
+    harness.settle.mockReset().mockImplementation(() =>
+    {
+        harness.running = false;
+        harness.rendered = null;
+    });
     vi.stubGlobal("KeyboardEvent", Event);
     vi.stubGlobal("MutationObserver", _observer);
 });
@@ -106,6 +129,33 @@ test("unmount cancels queued keyboard work and releases listeners", () =>
     vi.runAllTimers();
     assert.equal(harness.between.mock.calls.length, 0);
     assert.equal(harness.destroy.mock.calls.length, 1);
+    assert.equal(harness.activity, null);
+});
+
+test("window activation settles interrupted feedback and refreshes colors before further input", async () =>
+{
+    const element = Object.assign(new EventTarget(), { closest: () => null }) as unknown as HTMLElement;
+    const cleanup = styleMotion({ properties: ["color"], requireFocus: false })(element);
+    harness.running = true;
+    harness.rendered = "mid-hover";
+    harness.color = "inactive";
+    harness.activity?.({ visible: true, focused: false });
+    assert.equal(harness.running, false);
+    assert.equal(harness.between.mock.calls.length, 0);
+    element.dispatchEvent(new Event("pointerleave"));
+    await Promise.resolve();
+    assert.equal(harness.between.mock.calls.length, 0);
+
+    harness.color = "rest";
+    harness.activity?.({ visible: true, focused: true });
+    harness.color = "hover";
+    element.dispatchEvent(new Event("pointerenter"));
+    await Promise.resolve();
+    assert.deepEqual(harness.between.mock.calls[0]?.slice(0, 2), [{ color: "rest" }, { color: "hover" }]);
+    const settled = harness.settle.mock.calls.length;
+    harness.activity?.({ visible: true, focused: true });
+    assert.equal(harness.settle.mock.calls.length, settled);
+    cleanup?.();
 });
 
 test("ARIA control state changes animate immediately without replaying on the next pointer event", async () =>

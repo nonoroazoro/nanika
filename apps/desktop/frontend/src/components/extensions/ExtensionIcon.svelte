@@ -50,6 +50,6 @@ $effect(() =>
 {/if}
 
 <style>
-img, svg { display: block; width: var(--icon-size); height: var(--icon-size); object-fit: contain; color: var(--text-secondary); }
+img, svg { display: block; width: var(--icon-size); height: var(--icon-size); object-fit: contain; color: var(--text-secondary); filter: saturate(var(--icon-saturation)); }
 .pending { visibility: hidden; }
 </style>

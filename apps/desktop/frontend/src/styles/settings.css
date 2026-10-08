@@ -7,8 +7,9 @@
 }
 
 /* Settings-specific visual tokens.
-   Keep the scope on the document so portaled controls inherit the same tokens. */
-:root[data-surface="settings"] {
+   Keep the scope on the document so portaled controls inherit the same tokens.
+   Surface defaults have lower specificity than shared window activity states. */
+:root:where([data-surface="settings"]) {
   --settings-sidebar-surface: #e5e5e7;
   --settings-caption-hover: rgb(0 0 0 / 10%);
   --settings-caption-close-hover: rgb(232 17 35 / 90%);
@@ -30,27 +31,13 @@
   --settings-nav-icon-size: 20px;
   --settings-nav-height: 36px;
   --settings-control-width: 128px;
-  --switch-track-width: 32px;
-  --switch-track-height: 20px;
-  --switch-thumb-size: 14px;
-  --switch-inset: 2px;
-  --switch-stroke: 1px;
-  --switch-thumb-travel: calc(var(--switch-track-width) - var(--switch-thumb-size) - 2 * (var(--switch-inset) + var(--switch-stroke)));
-  --switch-surface: #e7e9ef;
-  --switch-border: rgb(35 45 65 / 10%);
-  --switch-thumb: #697180;
-  --switch-thumb-hover: #515b6b;
-  --switch-thumb-on: #ffffff;
-  --switch-active: #3570e8;
-  --switch-active-hover: #2864df;
-  --switch-active-pressed: #2058ca;
   --popup-padding: 4px;
   --popup-item-padding: 6px 8px;
   --popup-item-height: 32px;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-surface="settings"] {
+  :root:where([data-surface="settings"]) {
     --settings-sidebar-surface: #1f2024;
     --settings-caption-hover: rgb(255 255 255 / 10%);
     --text-primary: #dce0e7;
@@ -62,13 +49,6 @@
     --control-surface: #292c33;
     --control-surface-hover: #30343c;
     --control-surface-pressed: #383d47;
-    --switch-surface: #383e49;
-    --switch-border: rgb(215 225 245 / 12%);
-    --switch-thumb: #aab3c2;
-    --switch-thumb-hover: #c5cddb;
-    --switch-active: #5789e8;
-    --switch-active-hover: #6091ee;
-    --switch-active-pressed: #4b7edc;
   }
 }
 

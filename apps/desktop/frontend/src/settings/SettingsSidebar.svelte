@@ -220,7 +220,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
 nav { position: relative; isolation: isolate; display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; }
 nav :global(button) { position: relative; z-index: 2; justify-content: flex-start; gap: var(--space-2); flex: 0 0 auto; width: 100%; min-height: var(--settings-nav-height); border: 0; border-radius: var(--control-radius); padding: 6px 10px; background: transparent; color: var(--text-secondary); text-align: left; font-size: var(--font-control); line-height: 20px; }
 /* Hover uses foreground contrast; only SelectionHighlight paints a selection surface. */
-nav :global(button:hover:not(:disabled, [aria-disabled="true"])), nav :global(button:focus-visible), nav :global(button.active) { background: transparent; color: var(--text-primary); }
+nav :global(button:hover:not(:disabled, [aria-disabled="true"])), nav :global(button:focus-visible), nav :global(button.active) { background: transparent; color: var(--control-foreground); }
 .nav-icon { --icon-size: var(--settings-nav-icon-size); display: grid; width: var(--settings-nav-icon-size); height: var(--settings-nav-icon-size); flex-shrink: 0; place-items: center; color: inherit; }
 .nav-heading { display: flex; justify-content: space-between; margin: var(--space-5) 10px var(--space-2); color: var(--text-secondary); font-size: 12px; font-weight: var(--settings-heading-weight); }
 .nav-group-start { margin-top: var(--space-5); }
