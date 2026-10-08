@@ -569,6 +569,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
             {/key}
         {:else}
             <RootSearch
+                platform={application?.platform ?? null}
                 searchState={rootSearchState}
                 {hasCompletedSearch}
                 appMenuOpen={menuOpen && contextMenu?.request === null}

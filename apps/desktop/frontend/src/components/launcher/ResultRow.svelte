@@ -1,11 +1,13 @@
 <script lang="ts">
 import type { SearchResult } from "../../generated/SearchResult";
+import type { TargetPlatform } from "../../generated/TargetPlatform";
 import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import ActionSymbol from "../extensions/ActionSymbol.svelte";
 import ShortcutKeys from "../ui/ShortcutKeys.svelte";
 
 interface Props
 {
+    platform: TargetPlatform | null;
     result: SearchResult;
     active: boolean;
     confirmationTitle?: string | null;
@@ -15,7 +17,8 @@ interface Props
     onContextMenu: (event: MouseEvent) => void;
 }
 
-const { result, active, confirmationTitle = null, position, total, onInvoke, onContextMenu }: Props = $props();
+const { platform, result, active, confirmationTitle = null, position, total, onInvoke, onContextMenu }: Props =
+    $props();
 </script>
 
 <li
@@ -46,7 +49,7 @@ const { result, active, confirmationTitle = null, position, total, onInvoke, onC
 >
     <span class="collection-icon" aria-hidden="true">
         {#if result.icon?.kind === "symbol"}
-            <span class="result-symbol"><ActionSymbol name={result.icon.name} /></span>
+            {#if platform}<ActionSymbol {platform} name={result.icon.name} />{/if}
         {:else}
             <ExtensionIcon src={result.icon?.url ?? null} />
         {/if}
@@ -83,10 +86,6 @@ li:hover:not(.active) {
 li.active {
   background: var(--surface-selected);
 }
-
-
-.result-symbol { display: block; width: 100%; height: 100%; color: var(--text-secondary); }
-
 .copy {
   display: flex;
   min-width: 0;

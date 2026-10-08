@@ -221,6 +221,7 @@ impl DesktopState {
             session_id: id,
             version: env!("CARGO_PKG_VERSION"),
             locale: nanika_platform::system_locale(),
+            platform: nanika_platform::target_platform(),
             max_query_chars: nanika_search::MAX_QUERY_CHARS,
             resource_origin: crate::resource_protocol::origin().to_owned(),
         })

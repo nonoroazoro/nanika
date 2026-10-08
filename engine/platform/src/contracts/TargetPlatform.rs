@@ -1,4 +1,4 @@
-/// Supported operating-system identities used by extension configuration.
+/// Supported operating-system identities shared by configuration and desktop presentation.
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]

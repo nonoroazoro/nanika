@@ -9,12 +9,14 @@ import { onMount, tick } from "svelte";
 
 import { RootSearchState } from "../../logic/RootSearchState.svelte";
 import type { SearchResult } from "../../generated/SearchResult";
+import type { TargetPlatform } from "../../generated/TargetPlatform";
 import { clampIndex } from "../../logic";
 import StatusBar from "../ui/StatusBar.svelte";
 import ResultRow from "./ResultRow.svelte";
 
 interface Props
 {
+    platform: TargetPlatform | null;
     searchState: RootSearchState;
     hasCompletedSearch: boolean;
     busy?: boolean;
@@ -29,6 +31,7 @@ interface Props
 }
 
 const {
+    platform,
     searchState,
     hasCompletedSearch,
     busy = false,
@@ -360,6 +363,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                     </li>
                     {#each results as result, index (RootSearchState.identity(result))}
                         <ResultRow
+                            {platform}
                             {result}
                             confirmationTitle={activeResult === result ? searchState.confirmationTitle : null}
                             position={snapshot.resultOffset + index + 1}

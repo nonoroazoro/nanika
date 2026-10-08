@@ -1,5 +1,6 @@
 <script lang="ts">
 import { styleMotion } from "../motion/style";
+import ReturnIcon from "../icons/ReturnIcon.svelte";
 
 const keyMotion = styleMotion({ properties: ["background-color", "color"], scope: ".shortcut-keys" });
 const separatorMotion = styleMotion({ properties: ["color"], scope: ".shortcut-keys" });
@@ -19,10 +20,14 @@ function needsOpticalLift(key: string): boolean
 
 <span class="shortcut-keys" class:success aria-hidden="true">
     {#each keys as key, index (`${index}:${key}`)}
-        {#if index > 0}<span {@attach separatorMotion} class="separator">+</span>{/if}<kbd {@attach keyMotion}><span
-                class="key-label"
-                class:optical-lift={needsOpticalLift(key)}
-            >{key}</span></kbd>
+        {#if index > 0}<span {@attach separatorMotion} class="separator">+</span>{/if}<kbd {@attach keyMotion}>
+            {#if key === "↵"}
+                <ReturnIcon size="0.875rem" />
+            {:else}<span
+                    class="key-label"
+                    class:optical-lift={needsOpticalLift(key)}
+                >{key}</span>{/if}
+        </kbd>
     {/each}
 </span>
 
