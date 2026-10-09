@@ -5,13 +5,13 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND,
+    ERROR_ALREADY_EXISTS, ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW, GetMessageW, HWND_MESSAGE, MSG,
-    PostMessageW, RegisterClassW, WM_APP, WNDCLASSW,
+    PostMessageW, RegisterClassW, WM_APP, WNDCLASSW
 };
 
 use crate::{InstanceRole, PlatformError, PlatformEvent, SingleInstance};
@@ -23,14 +23,14 @@ unsafe extern "system" fn window_proc(
     window: HWND,
     message: u32,
     word: usize,
-    data: isize,
+    data: isize
 ) -> isize {
     unsafe { DefWindowProcW(window, message, word, data) }
 }
 
 pub fn acquire(
     identity: &str,
-    _app_data_root: &std::path::Path,
+    _app_data_root: &std::path::Path
 ) -> Result<InstanceRole, PlatformError> {
     let mutex_name = to_wide(&format!("Local\\{identity}"));
     let mutex = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
@@ -81,13 +81,13 @@ pub fn acquire(
         events: Some(event_receiver),
         event_thread: Some(event_thread),
         mutex: mutex as isize,
-        activation_window,
+        activation_window
     }))
 }
 
 pub fn signal_activate(
     identity: &str,
-    _app_data_root: &std::path::Path,
+    _app_data_root: &std::path::Path
 ) -> Result<(), PlatformError> {
     let class_name = to_wide(&format!("{identity}.activation"));
     let window_name = to_wide(identity);
@@ -98,7 +98,7 @@ pub fn signal_activate(
                 HWND_MESSAGE,
                 std::ptr::null_mut(),
                 class_name.as_ptr(),
-                window_name.as_ptr(),
+                window_name.as_ptr()
             )
         };
         if !window.is_null() {
@@ -123,7 +123,7 @@ pub(crate) fn stop(window: isize) {
 fn run_event_loop(
     identity: &str,
     events: mpsc::Sender<PlatformEvent>,
-    ready: mpsc::SyncSender<Result<isize, PlatformError>>,
+    ready: mpsc::SyncSender<Result<isize, PlatformError>>
 ) {
     let window = match create_activation_window(identity) {
         Ok(window) => window,
@@ -173,7 +173,7 @@ fn create_activation_window(identity: &str) -> Result<HWND, PlatformError> {
         if code != ERROR_CLASS_ALREADY_EXISTS {
             return Err(PlatformError::OsCode {
                 operation: "RegisterClassW",
-                code,
+                code
             });
         }
     }
@@ -190,7 +190,7 @@ fn create_activation_window(identity: &str) -> Result<HWND, PlatformError> {
             HWND_MESSAGE,
             std::ptr::null_mut(),
             module,
-            std::ptr::null(),
+            std::ptr::null()
         )
     };
     if window.is_null() {
@@ -206,6 +206,6 @@ fn to_wide(value: &str) -> Vec<u16> {
 fn os_error(operation: &'static str) -> PlatformError {
     PlatformError::OsCode {
         operation,
-        code: unsafe { GetLastError() },
+        code: unsafe { GetLastError() }
     }
 }

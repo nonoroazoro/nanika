@@ -12,13 +12,13 @@ pub(crate) struct ConfigurationOperation {
     pub(crate) key: String,
     pub(crate) value: Value,
     pub(crate) persistence: ConfigurationPersistence,
-    pub(crate) configuration: ExtensionConfiguration,
+    pub(crate) configuration: ExtensionConfiguration
 }
 
 impl ConfigurationOperation {
     pub(crate) fn run(
         self,
-        apply: impl FnOnce(ExtensionConfiguration, bool) -> Result<ConfigurationApplication, String>,
+        apply: impl FnOnce(ExtensionConfiguration, bool) -> Result<ConfigurationApplication, String>
     ) -> ConfigurationSaveOutcome {
         let error = self._run(apply).err();
         self.registry.outcome(&self.extension_id, error)
@@ -26,7 +26,7 @@ impl ConfigurationOperation {
 
     fn _run(
         &self,
-        apply: impl FnOnce(ExtensionConfiguration, bool) -> Result<ConfigurationApplication, String>,
+        apply: impl FnOnce(ExtensionConfiguration, bool) -> Result<ConfigurationApplication, String>
     ) -> Result<(), String> {
         let apply_first = self.persistence == ConfigurationPersistence::AfterApply;
         if !apply_first {

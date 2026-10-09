@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
-    ExtensionProtocol, InstalledExtension, resolve_installed_extensions,
+    ExtensionProtocol, InstalledExtension, resolve_installed_extensions
 };
 use nanika_platform::companion_executable;
 use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat};
@@ -13,7 +13,7 @@ use nanika_storage::{NanikaPaths, SearchStorageWorker};
 use crate::{
     BuiltInExtensionInventory, ExtensionConfigurationRegistry, ExtensionInvocationOutcome,
     ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter,
-    RuntimeOutputUpdate, RuntimeUpdateBatch, RuntimeViewCompletion,
+    RuntimeOutputUpdate, RuntimeUpdateBatch, RuntimeViewCompletion
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
@@ -34,14 +34,14 @@ pub struct RuntimeService {
     _recovery_wake: std::sync::mpsc::SyncSender<()>,
     _supervisor: Mutex<Option<std::thread::JoinHandle<()>>>,
     _closing: std::sync::atomic::AtomicBool,
-    _restarted: Mutex<std::collections::HashMap<String, String>>,
+    _restarted: Mutex<std::collections::HashMap<String, String>>
 }
 
 impl RuntimeService {
     pub fn start(
         paths: &NanikaPaths,
         built_in_manifests: &[&str],
-        built_in_resources: &Path,
+        built_in_resources: &Path
     ) -> Result<Arc<Self>, String> {
         let inventory = BuiltInExtensionInventory::parse(built_in_manifests)?;
         let mut diagnostics = Vec::new();
@@ -62,12 +62,12 @@ impl RuntimeService {
                         &stored.extension_id,
                         &stored.entry_id,
                         &stored.action_id,
-                        &stored.query_context,
+                        &stored.query_context
                     ),
                     UsageStat {
                         execution_count: stored.execution_count,
-                        last_executed_at: stored.last_executed_at,
-                    },
+                        last_executed_at: stored.last_executed_at
+                    }
                 )
             })
             .collect::<UsageMap>();
@@ -111,7 +111,7 @@ impl RuntimeService {
             installed_extensions.push(InstalledExtension::from_manifest(
                 manifest,
                 program,
-                resource_root,
+                resource_root
             ));
         }
 
@@ -127,12 +127,12 @@ impl RuntimeService {
             let enabled = registry.is_enabled(&extension.extension_id);
             let configuration = configurations.register(
                 &extension.extension_id,
-                extension.contributes.configuration.as_ref(),
+                extension.contributes.configuration.as_ref()
             );
             // Fingerprint once on the startup worker, independently of extension activation.
             let icon_hash = match nanika_platform::read_png_resource(
                 &extension.resource_root.join(&extension.icon),
-                &extension.resource_root,
+                &extension.resource_root
             ) {
                 Ok(bytes) => Some(nanika_platform::png_resource_hash(&bytes)),
                 Err(error) => {
@@ -158,7 +158,7 @@ impl RuntimeService {
                 },
                 instance_id: None,
                 lifecycle_error: None,
-                configuration_error: configuration.as_ref().err().cloned(),
+                configuration_error: configuration.as_ref().err().cloned()
             });
             if let Err(error) = configuration {
                 diagnostics.push(format!(
@@ -206,7 +206,7 @@ impl RuntimeService {
             _recovery_wake: recovery_wake,
             _supervisor: Mutex::new(None),
             _closing: std::sync::atomic::AtomicBool::new(false),
-            _restarted: Mutex::new(std::collections::HashMap::new()),
+            _restarted: Mutex::new(std::collections::HashMap::new())
         };
         for info in runtime.extension_info() {
             if info.enabled
@@ -309,7 +309,7 @@ impl RuntimeService {
         entry_id: &str,
         action_id: &str,
         query_context: &str,
-        invocation: nanika_protocol::ActionInvocation,
+        invocation: nanika_protocol::ActionInvocation
     ) -> Result<std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, String>>, String> {
         if !self.search.is_current(snapshot.authority()) {
             return Err("Search changed. Select a current result.".to_owned());
@@ -345,7 +345,7 @@ impl RuntimeService {
                 snapshot.generation,
                 candidate.entry_id(),
                 action_id,
-                query_context,
+                query_context
             )
             .map_err(|error| error.to_string())
     }
@@ -359,7 +359,7 @@ impl RuntimeService {
         entry_id: &str,
         action_id: &str,
         query_context: &str,
-        invocation: nanika_protocol::ActionInvocation,
+        invocation: nanika_protocol::ActionInvocation
     ) -> Result<crate::RuntimeInvocationCompletion, String> {
         let instance_id = self
             .instance_id(extension_id)
@@ -377,7 +377,7 @@ impl RuntimeService {
                 entry_id,
                 action_id,
                 query_context,
-                invocation,
+                invocation
             )?
             .recv()
             .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
@@ -390,7 +390,7 @@ impl RuntimeService {
         }
         Ok(crate::RuntimeInvocationCompletion {
             instance_id,
-            outcome,
+            outcome
         })
     }
 
@@ -399,7 +399,7 @@ impl RuntimeService {
         extension_id: &str,
         entry_id: &str,
         action_id: &str,
-        query_context: &str,
+        query_context: &str
     ) -> Result<nanika_storage::StorageCommit, String> {
         let storage = self
             .storage
@@ -411,7 +411,7 @@ impl RuntimeService {
                 entry_id,
                 action_id,
                 query_context,
-                unix_timestamp(),
+                unix_timestamp()
             )
         } else {
             storage.record_execution(
@@ -419,7 +419,7 @@ impl RuntimeService {
                 query_context,
                 UsageKey::new(extension_id, entry_id, action_id, query_context),
                 unix_timestamp_millis(),
-                unix_timestamp(),
+                unix_timestamp()
             )
         };
         result.map_err(|error| format!("could not record completed action: {error}"))
@@ -478,12 +478,12 @@ impl RuntimeService {
         self.installed
             .get(extension_id)
             .map(|extension| nanika_protocol::IconSource::Package {
-                path: extension.icon.clone(),
+                path: extension.icon.clone()
             })
     }
 
     pub fn extension_resource_roots(
-        &self,
+        &self
     ) -> std::collections::HashMap<String, std::path::PathBuf> {
         self.installed
             .iter()
@@ -532,7 +532,7 @@ impl RuntimeService {
         &self,
         extension_id: &str,
         instance_id: u64,
-        publish: impl FnOnce() -> T,
+        publish: impl FnOnce() -> T
     ) -> Option<T> {
         let worker = self.extensions.worker(extension_id)?;
         if worker.instance.id != instance_id {
@@ -545,7 +545,7 @@ impl RuntimeService {
     pub fn set_extension_enabled(
         self: &Arc<Self>,
         extension_id: &str,
-        enabled: bool,
+        enabled: bool
     ) -> Result<std::sync::mpsc::Receiver<Result<(), String>>, String> {
         if !self.installed.contains_key(extension_id) {
             return Err("Unknown installed extension.".into());
@@ -622,7 +622,7 @@ impl RuntimeService {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
-        event: nanika_protocol::ViewEvent,
+        event: nanika_protocol::ViewEvent
     ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
         self.extensions
             .view_event(
@@ -631,7 +631,7 @@ impl RuntimeService {
                 generation,
                 view_id,
                 revision,
-                event,
+                event
             )
             .map_err(|error| error.to_string())
     }
@@ -642,7 +642,7 @@ impl RuntimeService {
         instance_id: u64,
         generation: u64,
         view_id: impl Into<String>,
-        revision: u64,
+        revision: u64
     ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
         self.extensions
             .close_view(extension_id, instance_id, generation, view_id, revision)
@@ -657,7 +657,7 @@ impl RuntimeService {
         request_id: impl Into<String>,
         key: String,
         value: serde_json::Value,
-        progress: crate::ConfigurationProgressHandler,
+        progress: crate::ConfigurationProgressHandler
     ) -> Result<crate::ConfigurationSaveReceipt, String> {
         let operation = self.configurations.prepare(extension_id, key, value)?;
         let extensions = Arc::clone(&self.extensions);
@@ -675,13 +675,13 @@ impl RuntimeService {
                         configuration,
                         require_live,
                         progress,
-                        applied,
+                        applied
                     ) {
                         Ok(true) => application.recv().map_err(|_| {
                             "Extension closed without a configuration result.".to_owned()
                         })?,
                         Ok(false) => Ok(crate::ConfigurationApplication::Deferred),
-                        Err(error) => Err(error.to_string()),
+                        Err(error) => Err(error.to_string())
                     }
                 });
                 extensions.notify();
@@ -701,7 +701,7 @@ impl RuntimeService {
                 invocation_id: update.invocation_id,
                 extension_id: update.extension_id,
                 generation: update.generation,
-                text: update.text,
+                text: update.text
             })
             .collect();
         RuntimeUpdateBatch { outputs }
@@ -925,9 +925,9 @@ impl RuntimeService {
                     owned_descriptor.protocol,
                     &owned_descriptor.program,
                     &paths,
-                    configuration,
+                    configuration
                 )
-            }),
+            })
         };
         self.extensions
             .register_source(
@@ -935,7 +935,7 @@ impl RuntimeService {
                 source,
                 self.search.clone(),
                 descriptor.contributes.clone(),
-                configuration,
+                configuration
             )
             .map_err(|error| error.to_string())?;
         if let Some((generation, query)) = self
@@ -962,7 +962,7 @@ fn spawn_runtime(
     protocol: ExtensionProtocol,
     program: &Path,
     paths: &NanikaPaths,
-    configuration: nanika_protocol::ExtensionConfiguration,
+    configuration: nanika_protocol::ExtensionConfiguration
 ) -> Result<ExtensionRuntime, std::io::Error> {
     ExtensionRuntime::spawn_with_configuration(
         extension_id,
@@ -970,19 +970,19 @@ fn spawn_runtime(
         program,
         extension_arguments(protocol, paths),
         Default::default(),
-        configuration,
+        configuration
     )
 }
 
 fn extension_arguments(protocol: ExtensionProtocol, paths: &NanikaPaths) -> Vec<OsString> {
     match protocol {
         ExtensionProtocol::Nanika {
-            protocol_version: 1,
+            protocol_version: 1
         } => vec![
             path_argument("data-root", paths.app_data_root()),
             path_argument("cache-root", paths.cache_root()),
         ],
-        _ => Vec::new(),
+        _ => Vec::new()
     }
 }
 

@@ -52,7 +52,7 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
     window
         .set_position(PhysicalPosition::new(
             position.x.round() as i32,
-            position.y.round() as i32,
+            position.y.round() as i32
         ))
         .map_err(|error| error.to_string())?;
     show_window(&window)?;

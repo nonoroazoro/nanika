@@ -65,7 +65,7 @@ fn baseline_schema_is_the_only_initial_version() {
                 WHERE type = 'index' AND name = 'input_history_last_used'
              )",
             [],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .expect("history ordering index should load");
     assert!(history_ordering_index);
@@ -76,7 +76,7 @@ fn baseline_schema_is_the_only_initial_version() {
                 WHERE type = 'table' AND name LIKE '%migration%'
              )",
             [],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .expect("migration table check should load");
     assert!(!migration_table_exists);
@@ -98,7 +98,7 @@ fn external_package_metadata_round_trips_without_affecting_builtins() {
         "com.example.extension",
         "1.2.3",
         std::path::Path::new("C:/nanika/extensions/com.example.extension/1.2.3"),
-        "digest",
+        "digest"
     )
     .expect("external extension should install");
 
@@ -136,7 +136,7 @@ fn obsolete_schema_is_rejected_without_rewriting_user_records() {
         .query_row(
             "SELECT state FROM extensions WHERE extension_id = 'com.example.saved'",
             [],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .unwrap();
     assert_eq!(saved, "disabled");
@@ -162,7 +162,7 @@ fn table_is_strict(connection: &rusqlite::Connection, table: &str) -> bool {
         .query_row(
             "SELECT strict FROM pragma_table_list WHERE name = ?1",
             [table],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .expect("table strictness should load")
 }

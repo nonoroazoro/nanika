@@ -7,33 +7,33 @@ fn diagnostic_codes_are_unique_and_stably_categorized() {
     let codes = [
         (
             DiagnosticCode::ConfigurationUnavailable,
-            DiagnosticCategory::Configuration,
+            DiagnosticCategory::Configuration
         ),
         (
             DiagnosticCode::DiagnosticsUnavailable,
-            DiagnosticCategory::Internal,
+            DiagnosticCategory::Internal
         ),
         (
             DiagnosticCode::ExtensionUnavailable,
-            DiagnosticCategory::Extension,
+            DiagnosticCategory::Extension
         ),
         (
             DiagnosticCode::InternalFailure,
-            DiagnosticCategory::Internal,
+            DiagnosticCategory::Internal
         ),
         (DiagnosticCode::LaunchFailed, DiagnosticCategory::Launch),
         (
             DiagnosticCode::PermissionDenied,
-            DiagnosticCategory::Permission,
+            DiagnosticCategory::Permission
         ),
         (
             DiagnosticCode::PlatformUnavailable,
-            DiagnosticCategory::Platform,
+            DiagnosticCategory::Platform
         ),
         (
             DiagnosticCode::StorageUnavailable,
-            DiagnosticCategory::Storage,
-        ),
+            DiagnosticCategory::Storage
+        )
     ];
     let unique = codes
         .into_iter()

@@ -13,7 +13,7 @@ pub struct InstalledExtension {
     pub protocol: ExtensionProtocol,
     pub activation: crate::ExtensionActivation,
     pub permissions: Vec<String>,
-    pub contributes: ExtensionContributions,
+    pub contributes: ExtensionContributions
 }
 
 impl InstalledExtension {
@@ -21,7 +21,7 @@ impl InstalledExtension {
     pub fn from_manifest(
         manifest: ExtensionManifest,
         program: PathBuf,
-        resource_root: PathBuf,
+        resource_root: PathBuf
     ) -> Self {
         Self {
             extension_id: manifest.id,
@@ -32,7 +32,7 @@ impl InstalledExtension {
             protocol: manifest.runtime,
             activation: manifest.activation,
             permissions: manifest.permissions,
-            contributes: manifest.contributes,
+            contributes: manifest.contributes
         }
     }
 }

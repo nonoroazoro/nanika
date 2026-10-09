@@ -10,5 +10,5 @@ pub struct CatalogBatch {
     pub replace: bool,
     pub complete: bool,
     pub entries: Vec<Candidate>,
-    pub removed: Vec<String>,
+    pub removed: Vec<String>
 }

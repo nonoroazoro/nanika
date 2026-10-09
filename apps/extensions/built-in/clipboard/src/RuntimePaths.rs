@@ -4,7 +4,7 @@ use crate::EXTENSION_ID;
 
 pub struct RuntimePaths {
     pub data_root: PathBuf,
-    pub cache_root: PathBuf,
+    pub cache_root: PathBuf
 }
 
 impl RuntimePaths {
@@ -32,7 +32,7 @@ impl RuntimePaths {
         }
         Ok(Self {
             data_root: data_root.ok_or_else(|| "clipboard data root is missing".to_owned())?,
-            cache_root: cache_root.ok_or_else(|| "clipboard cache root is missing".to_owned())?,
+            cache_root: cache_root.ok_or_else(|| "clipboard cache root is missing".to_owned())?
         })
     }
 

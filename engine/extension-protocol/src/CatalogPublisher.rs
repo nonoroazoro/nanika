@@ -9,14 +9,14 @@ pub struct CatalogPublisher {
     _dirty: HashSet<String>,
     _pending: Option<CatalogPublication>,
     _revision: u64,
-    _established: bool,
+    _established: bool
 }
 
 impl CatalogPublisher {
     pub fn update(
         &mut self,
         entries: impl IntoIterator<Item = Candidate>,
-        removed: impl IntoIterator<Item = String>,
+        removed: impl IntoIterator<Item = String>
     ) -> bool {
         let mut changed = false;
         for id in removed {
@@ -70,7 +70,7 @@ impl CatalogPublisher {
                 _replace: !self._established,
                 _complete: false,
                 _entries: entries,
-                _removed: removed,
+                _removed: removed
             });
         }
         let pending = self._pending.as_mut().expect("publication established");
@@ -94,7 +94,7 @@ impl CatalogPublisher {
             replace: pending._replace,
             complete: pending._complete,
             entries,
-            removed,
+            removed
         };
         pending._index += 1;
         Ok(batch)

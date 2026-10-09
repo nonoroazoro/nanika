@@ -23,7 +23,7 @@ fn null_disables_each_retention_limit_independently() {
     for (count, age) in [(None, None), (Some(50), None), (None, Some(7))] {
         let configuration = ExtensionConfiguration::new(BTreeMap::from([
             ("clipboard.maxEntries".to_owned(), serde_json::json!(count)),
-            ("clipboard.maxAgeDays".to_owned(), serde_json::json!(age)),
+            ("clipboard.maxAgeDays".to_owned(), serde_json::json!(age))
         ]));
         let config = ClipboardConfig::from_configuration(&configuration).unwrap();
         assert_eq!(config.max_entries, count);

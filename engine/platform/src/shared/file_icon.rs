@@ -3,7 +3,7 @@
 pub fn file_icon_pixels(
     path: &std::path::Path,
     icon_index: i32,
-    size: u32,
+    size: u32
 ) -> std::io::Result<Vec<u8>> {
     if !path.is_absolute()
         || path.as_os_str().as_encoded_bytes().contains(&0)
@@ -11,7 +11,7 @@ pub fn file_icon_pixels(
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "invalid file icon path or size",
+            "invalid file icon path or size"
         ));
     }
     path.metadata()?;
@@ -27,7 +27,7 @@ pub fn shell_file_icon_pixels(path: &std::path::Path, size: u32) -> std::io::Res
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "invalid Shell file icon path or size",
+            "invalid Shell file icon path or size"
         ));
     }
     path.metadata()?;
@@ -37,7 +37,7 @@ pub fn shell_file_icon_pixels(path: &std::path::Path, size: u32) -> std::io::Res
 /// List artwork is independent of content previews on both supported platforms.
 pub(crate) fn cached_list_pixels(
     path: &std::path::Path,
-    preview: &[u8],
+    preview: &[u8]
 ) -> std::io::Result<Vec<u8>> {
     let _ = preview;
     crate::adapter::file_icon::list_pixels(path, 128)
@@ -47,12 +47,12 @@ pub(crate) fn cached_list_pixels(
 /// Other platforms reject this request explicitly. Run on a blocking owner.
 pub fn windows_application_icon_pixels(
     app_user_model_id: &str,
-    size: u32,
+    size: u32
 ) -> std::io::Result<Vec<u8>> {
     if !(1..=512).contains(&size) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "invalid application icon size",
+            "invalid application icon size"
         ));
     }
     crate::adapter::file_icon::application_pixels(app_user_model_id, size)

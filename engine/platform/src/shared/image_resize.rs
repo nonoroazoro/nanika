@@ -3,7 +3,7 @@ pub(crate) fn resize_rgba(
     source_width: u32,
     source_height: u32,
     target_width: u32,
-    target_height: u32,
+    target_height: u32
 ) -> Vec<u8> {
     if source_width == target_width && source_height == target_height {
         return source.to_vec();
@@ -22,20 +22,20 @@ pub(crate) fn resize_rgba(
             let samples = [
                 (
                     pixel(source, source_width, left, top),
-                    (1.0 - horizontal) * (1.0 - vertical),
+                    (1.0 - horizontal) * (1.0 - vertical)
                 ),
                 (
                     pixel(source, source_width, right, top),
-                    horizontal * (1.0 - vertical),
+                    horizontal * (1.0 - vertical)
                 ),
                 (
                     pixel(source, source_width, left, bottom),
-                    (1.0 - horizontal) * vertical,
+                    (1.0 - horizontal) * vertical
                 ),
                 (
                     pixel(source, source_width, right, bottom),
-                    horizontal * vertical,
-                ),
+                    horizontal * vertical
+                )
             ];
             let mut premultiplied = [0.0_f32; 3];
             let mut alpha = 0.0_f32;

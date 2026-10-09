@@ -8,7 +8,7 @@ use crate::normalization::path_key;
 use crate::platform;
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationError, DiscoveryState,
-    IconCache, ScanReport,
+    IconCache, ScanReport
 };
 
 /// Cancellable discovery and transactional indexing boundary.
@@ -16,7 +16,7 @@ pub struct ApplicationIndex {
     database: ApplicationDatabase,
     discovery_state: DiscoveryState,
     prepared_entries: Option<HashMap<String, ApplicationEntry>>,
-    sources: Option<crate::application_sources::ApplicationSources>,
+    sources: Option<crate::application_sources::ApplicationSources>
 }
 
 impl ApplicationIndex {
@@ -25,7 +25,7 @@ impl ApplicationIndex {
             database,
             discovery_state: DiscoveryState::new(),
             prepared_entries: None,
-            sources: None,
+            sources: None
         }
     }
 
@@ -41,7 +41,7 @@ impl ApplicationIndex {
                 entries
                     .into_iter()
                     .map(|entry| (entry.entry_id.clone(), entry))
-                    .collect(),
+                    .collect()
             );
         }
         let mut entries = self
@@ -65,12 +65,12 @@ impl ApplicationIndex {
         generation: u64,
         cancelled_through: &AtomicU64,
         mut progress: impl FnMut(nanika_protocol::OperationProgress),
-        mut publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+        mut publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>)
     ) -> Result<ScanReport, ApplicationError> {
         progress(nanika_protocol::OperationProgress {
             label: "Finding application sources".to_owned(),
             completed: 0,
-            total: None,
+            total: None
         });
         self.discovery_state.begin_scan();
         let exclusions = config
@@ -98,7 +98,7 @@ impl ApplicationIndex {
 
         let mut coverage = crate::scan_coverage::ScanCoverage::new(
             roots.iter().map(|(path, _)| path_key(path)),
-            roots_resolved,
+            roots_resolved
         );
         for path in standard_roots
             .failures
@@ -145,7 +145,7 @@ impl ApplicationIndex {
             progress(nanika_protocol::OperationProgress {
                 label: "Scanning application sources".to_owned(),
                 completed: index as u32,
-                total: Some(total),
+                total: Some(total)
             });
             if is_cancelled(cancelled_through, generation) {
                 break;
@@ -184,7 +184,7 @@ impl ApplicationIndex {
                         &mut self.discovery_state,
                         &mut root_entries,
                         &mut warnings,
-                        &mut coverage,
+                        &mut coverage
                     );
                     break 'root_scan;
                 }
@@ -231,7 +231,7 @@ impl ApplicationIndex {
                             &mut self.discovery_state,
                             &mut root_entries,
                             &mut warnings,
-                            &mut coverage,
+                            &mut coverage
                         );
                         walker.skip_current_dir();
                     } else if entry.file_type().is_file() && platform::is_application_path(path) {
@@ -241,7 +241,7 @@ impl ApplicationIndex {
                             &mut self.discovery_state,
                             &mut root_entries,
                             &mut warnings,
-                            &mut coverage,
+                            &mut coverage
                         );
                     }
                 }
@@ -275,7 +275,7 @@ impl ApplicationIndex {
         progress(nanika_protocol::OperationProgress {
             label: "Updating application index".to_owned(),
             completed: total - 1,
-            total: Some(total),
+            total: Some(total)
         });
         let was_cancelled = is_cancelled(cancelled_through, generation);
         complete &= !was_cancelled;
@@ -284,7 +284,7 @@ impl ApplicationIndex {
             discovered: discovered.len(),
             warnings,
             complete,
-            cancelled: was_cancelled,
+            cancelled: was_cancelled
         };
         if !was_cancelled {
             let configured = roots
@@ -321,7 +321,7 @@ impl ApplicationIndex {
         &mut self,
         key: &str,
         entries: Vec<ApplicationEntry>,
-        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>)
     ) -> Result<(), ApplicationError> {
         let mut replacement = HashMap::new();
         for entry in entries {
@@ -354,7 +354,7 @@ impl ApplicationIndex {
         &mut self,
         root: String,
         mut replacement: HashMap<String, ApplicationEntry>,
-        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>),
+        publish: &mut impl FnMut(Vec<ApplicationEntry>, Vec<String>)
     ) -> Result<(), ApplicationError> {
         let sources = self.sources.as_ref().expect("sources initialized");
         if let Some(previous) = sources.entries(&root) {
@@ -407,7 +407,7 @@ impl ApplicationIndex {
     fn _apply_committed(
         &mut self,
         updated: Vec<ApplicationEntry>,
-        removed: &[String],
+        removed: &[String]
     ) -> Vec<ApplicationEntry> {
         let current = self.prepared_entries.as_mut().expect("catalog loaded");
         let mut visible = Vec::with_capacity(updated.len());
@@ -432,7 +432,7 @@ fn collect_entry(
     discovery_state: &mut DiscoveryState,
     entries: &mut HashMap<String, ApplicationEntry>,
     warnings: &mut usize,
-    coverage: &mut crate::scan_coverage::ScanCoverage,
+    coverage: &mut crate::scan_coverage::ScanCoverage
 ) -> bool {
     match platform::read_entry(discovery_state, path, priority) {
         Ok(Some(entry)) => _insert_preferred(entries, entry),

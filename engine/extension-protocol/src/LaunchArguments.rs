@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LaunchArguments {
     Structured { values: Vec<String> },
-    WindowsRaw { value: String },
+    WindowsRaw { value: String }
 }
 
 impl Default for LaunchArguments {

@@ -7,5 +7,5 @@ pub enum StartupStatus {
     Enabled,
     RequiresApproval,
     NeedsRepair,
-    NotFound,
+    NotFound
 }

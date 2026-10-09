@@ -9,7 +9,7 @@ pub enum DiagnosticCode {
     LaunchFailed,
     PermissionDenied,
     PlatformUnavailable,
-    StorageUnavailable,
+    StorageUnavailable
 }
 
 impl DiagnosticCode {
@@ -22,7 +22,7 @@ impl DiagnosticCode {
             Self::LaunchFailed => "host.launch.failed",
             Self::PermissionDenied => "host.permission.denied",
             Self::PlatformUnavailable => "host.platform.unavailable",
-            Self::StorageUnavailable => "host.storage.unavailable",
+            Self::StorageUnavailable => "host.storage.unavailable"
         }
     }
 
@@ -34,7 +34,7 @@ impl DiagnosticCode {
             Self::LaunchFailed => DiagnosticCategory::Launch,
             Self::PermissionDenied => DiagnosticCategory::Permission,
             Self::PlatformUnavailable => DiagnosticCategory::Platform,
-            Self::StorageUnavailable => DiagnosticCategory::Storage,
+            Self::StorageUnavailable => DiagnosticCategory::Storage
         }
     }
 }

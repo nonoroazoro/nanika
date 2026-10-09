@@ -6,16 +6,16 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use agent_client_protocol::schema::{
     ProtocolVersion,
-    v1::{CancelNotification, InitializeRequest, PromptRequest, SessionId},
+    v1::{CancelNotification, InitializeRequest, PromptRequest, SessionId}
 };
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, Client, ConnectionTo, Error};
 use futures_lite::future;
 use nanika_config::ConfigStore;
 use nanika_extension_package::{
-    ExtensionContributions, ExtensionProtocol, install_package, resolve_installed_extensions,
+    ExtensionContributions, ExtensionProtocol, install_package, resolve_installed_extensions
 };
 use nanika_host::{
-    ExtensionLimits, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchCoordinator,
+    ExtensionLimits, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchCoordinator
 };
 use nanika_search::{SearchOwner, UsageMap};
 use nanika_storage::{HostDatabase, NanikaPaths};
@@ -31,13 +31,13 @@ fn acp_session_receives_nanika_configuration_metadata() {
     let mut runtime = ExtensionRuntime::spawn_with_configuration(
         "com.example.acp-dummy",
         ExtensionProtocol::Acp {
-            protocol_version: 1,
+            protocol_version: 1
         },
         dummy_executable(),
         [format!("--configuration-marker={}", marker.display()).into()],
         ExtensionLimits::default(),
         serde_json::from_value(serde_json::json!({ "fixture.count": 42 }))
-            .expect("valid extension configuration"),
+            .expect("valid extension configuration")
     )
     .expect("spawn ACP runtime");
 
@@ -60,11 +60,11 @@ fn coordinator_shutdown_interrupts_acp_initialization() {
     let runtime = ExtensionRuntime::spawn_with(
         "com.example.acp-dummy",
         ExtensionProtocol::Acp {
-            protocol_version: 1,
+            protocol_version: 1
         },
         dummy_executable(),
         [format!("--hang-initialize={}", marker.display()).into()],
-        ExtensionLimits::default(),
+        ExtensionLimits::default()
     )
     .unwrap();
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
@@ -74,7 +74,7 @@ fn coordinator_shutdown_interrupts_acp_initialization() {
             "com.example.acp-dummy",
             runtime,
             owner.handle(),
-            ExtensionContributions::default(),
+            ExtensionContributions::default()
         )
         .unwrap();
     let deadline = Instant::now() + TEST_TIMEOUT;
@@ -111,7 +111,7 @@ fn negotiates_acp_v1_with_unique_sessions_and_cancellation() {
                 let unknown_prompt = connection
                     .send_request(PromptRequest::new(
                         SessionId::new("unknown"),
-                        vec!["hello".into()],
+                        vec!["hello".into()]
                     ))
                     .block_task()
                     .await;
@@ -133,7 +133,7 @@ fn negotiates_acp_v1_with_unique_sessions_and_cancellation() {
                 assert_eq!(first.read_to_string().await?, "Hello World");
                 connection.send_notification_to(
                     Agent,
-                    CancelNotification::new(first.session_id().clone()),
+                    CancelNotification::new(first.session_id().clone())
                 )?;
                 Ok(())
             })
@@ -148,7 +148,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("dummy.nanika");
@@ -173,7 +173,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
         extension.protocol,
         extension.program,
         std::iter::empty(),
-        ExtensionLimits::default(),
+        ExtensionLimits::default()
     )
     .expect("spawn ACP runtime");
     runtime
@@ -192,7 +192,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
                     .unwrap_or_else(|error| error.into_inner()) = entries.entries;
                 Ok(())
             },
-            || false,
+            || false
         )
         .expect("query ACP runtime");
     let candidates = candidates.lock().unwrap_or_else(|error| error.into_inner());
@@ -209,7 +209,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
                 1,
                 "prompt",
                 "prompt",
-                "@com.example.acp-dummy hello",
+                "@com.example.acp-dummy hello"
             ),
             Arc::new(move |chunk| {
                 published_output
@@ -217,7 +217,7 @@ fn package_install_resolution_and_host_adapter_round_trip() {
                     .unwrap_or_else(|error| error.into_inner())
                     .push_str(&chunk);
             }),
-            || nanika_host::ExtensionInterruption::None,
+            || nanika_host::ExtensionInterruption::None
         )
         .expect("invoke ACP prompt");
     assert!(has_output);
@@ -275,7 +275,7 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
             "com.example.acp-dummy",
             hanging_runtime_with_arguments([argument.into()]),
             owner.handle(),
-            ExtensionContributions::default(),
+            ExtensionContributions::default()
         )
         .expect("register ACP extension");
     coordinator
@@ -288,7 +288,7 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
             format!(
                 "@com.example.acp-dummy hang-after|{}",
                 invocation_started.display()
-            ),
+            )
         )
         .expect("enqueue hanging prompt");
     let invocation_deadline = Instant::now() + Duration::from_secs(3);
@@ -364,16 +364,16 @@ fn dummy_executable() -> PathBuf {
 }
 
 fn hanging_runtime_with_arguments(
-    arguments: impl IntoIterator<Item = std::ffi::OsString>,
+    arguments: impl IntoIterator<Item = std::ffi::OsString>
 ) -> ExtensionRuntime {
     let mut runtime = ExtensionRuntime::spawn_with(
         "com.example.acp-dummy",
         ExtensionProtocol::Acp {
-            protocol_version: 1,
+            protocol_version: 1
         },
         dummy_executable(),
         arguments,
-        ExtensionLimits::default(),
+        ExtensionLimits::default()
     )
     .expect("spawn ACP runtime");
     runtime
@@ -416,11 +416,11 @@ fn graceful_stop_waits_for_eof_cleanup_and_preserves_cleanup_failures() {
         let mut runtime = ExtensionRuntime::spawn_with(
             "com.example.acp-dummy",
             ExtensionProtocol::Acp {
-                protocol_version: 1,
+                protocol_version: 1
             },
             dummy_executable(),
             arguments,
-            ExtensionLimits::default(),
+            ExtensionLimits::default()
         )
         .unwrap();
         runtime.initialize("init-cleanup").unwrap();
@@ -467,7 +467,7 @@ fn graceful_stop_waits_for_descendants_without_killing_them() {
     let mut runtime = ExtensionRuntime::spawn_with(
         "com.example.acp-dummy",
         ExtensionProtocol::Acp {
-            protocol_version: 1,
+            protocol_version: 1
         },
         dummy_executable(),
         [format!(
@@ -476,7 +476,7 @@ fn graceful_stop_waits_for_descendants_without_killing_them() {
             descendant.display()
         )
         .into()],
-        ExtensionLimits::default(),
+        ExtensionLimits::default()
     )
     .unwrap();
     runtime.initialize("init-descendant").unwrap();

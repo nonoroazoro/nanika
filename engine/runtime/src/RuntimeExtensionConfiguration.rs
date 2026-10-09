@@ -12,5 +12,5 @@ pub struct RuntimeExtensionConfiguration {
     pub contribution: ConfigurationContribution,
     pub values: BTreeMap<String, Value>,
     pub saved: BTreeMap<String, Value>,
-    pub effective: Option<BTreeMap<String, Value>>,
+    pub effective: Option<BTreeMap<String, Value>>
 }

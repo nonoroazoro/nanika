@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProductPaths {
     app_data_root: PathBuf,
-    cache_root: PathBuf,
+    cache_root: PathBuf
 }
 
 impl ProductPaths {
     pub(crate) fn new(app_data_root: PathBuf, cache_root: PathBuf) -> Self {
         Self {
             app_data_root,
-            cache_root,
+            cache_root
         }
     }
 

@@ -34,7 +34,7 @@ fn host_saves_preserve_comments_and_do_not_touch_extension_configuration() {
     store
         .save(
             &extension,
-            &serde_json::json!({"formatVersion": 1, "values": {"enabled": true}}),
+            &serde_json::json!({"formatVersion": 1, "values": {"enabled": true}})
         )
         .unwrap();
     let original_extension = std::fs::read(&extension).unwrap();

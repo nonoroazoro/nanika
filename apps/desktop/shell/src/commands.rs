@@ -2,13 +2,13 @@ use tauri::Manager;
 
 use crate::{
     ApplicationSnapshot, DesktopState, InvokeCandidateRequest, PublishQueryRequest,
-    RootSearchSnapshot,
+    RootSearchSnapshot
 };
 
 #[tauri::command]
 pub(crate) fn read_context_menu(
     window: tauri::WebviewWindow,
-    request: crate::ContextMenuRequest,
+    request: crate::ContextMenuRequest
 ) -> Result<Vec<nanika_protocol::Action>, String> {
     authorize_launcher(&window)?;
     window.state::<crate::DesktopState>().menu_actions(&request)
@@ -19,7 +19,7 @@ pub(crate) async fn invoke_context_menu(
     window: tauri::WebviewWindow,
     request: crate::ContextMenuRequest,
     action_id: String,
-    confirmed: bool,
+    confirmed: bool
 ) -> Result<Option<crate::ViewEventReceipt>, String> {
     authorize_launcher(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -35,7 +35,7 @@ pub(crate) async fn invoke_context_menu(
 pub(crate) async fn open_session(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
-    updates: tauri::ipc::Channel<RootSearchSnapshot>,
+    updates: tauri::ipc::Channel<RootSearchSnapshot>
 ) -> Result<ApplicationSnapshot, String> {
     authorize_launcher(&window)?;
     state.open_session(updates)
@@ -45,7 +45,7 @@ pub(crate) async fn open_session(
 pub(crate) async fn publish_query(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
-    request: PublishQueryRequest,
+    request: PublishQueryRequest
 ) -> Result<(), String> {
     authorize_launcher(&window)?;
     state.publish_query(request)
@@ -56,7 +56,7 @@ pub(crate) async fn acknowledge_search(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
     session_id: u64,
-    revision: u64,
+    revision: u64
 ) -> Result<(), String> {
     authorize_launcher(&window)?;
     state.acknowledge_search(session_id, revision)
@@ -66,7 +66,7 @@ pub(crate) async fn acknowledge_search(
 pub(crate) async fn close_session(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
-    session_id: u64,
+    session_id: u64
 ) -> Result<(), String> {
     authorize_launcher(&window)?;
     state.close_session(session_id);
@@ -76,7 +76,7 @@ pub(crate) async fn close_session(
 #[tauri::command]
 pub(crate) async fn invoke_candidate(
     window: tauri::WebviewWindow,
-    request: InvokeCandidateRequest,
+    request: InvokeCandidateRequest
 ) -> Result<(), String> {
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
@@ -87,7 +87,7 @@ pub(crate) async fn invoke_candidate(
                 nanika_protocol::ActionInvocation::Confirmed
             } else {
                 nanika_protocol::ActionInvocation::Default
-            },
+            }
         )
     })
     .await
@@ -97,7 +97,7 @@ pub(crate) async fn invoke_candidate(
 #[tauri::command]
 pub(crate) async fn view_event(
     window: tauri::WebviewWindow,
-    request: crate::ViewEventRequest,
+    request: crate::ViewEventRequest
 ) -> Result<crate::ViewEventReceipt, String> {
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
@@ -146,7 +146,7 @@ pub(crate) fn settings_ready(window: tauri::WebviewWindow) -> Result<bool, Strin
 #[tauri::command]
 pub(crate) fn settings_window_action(
     window: tauri::WebviewWindow,
-    action: crate::SettingsWindowAction,
+    action: crate::SettingsWindowAction
 ) -> Result<(), String> {
     authorize_settings(&window)?;
     crate::settings::action(&window, action)
@@ -155,7 +155,7 @@ pub(crate) fn settings_window_action(
 #[tauri::command]
 pub(crate) async fn read_settings(
     window: tauri::WebviewWindow,
-    updates: Option<tauri::ipc::JavaScriptChannelId>,
+    updates: Option<tauri::ipc::JavaScriptChannelId>
 ) -> Result<crate::SettingsSnapshot, String> {
     authorize_settings(&window)?;
     // Window presentation must remain available even when reading configuration fails.
@@ -179,7 +179,7 @@ pub(crate) async fn read_settings(
 pub(crate) async fn search_settings(
     window: tauri::WebviewWindow,
     query: String,
-    results: tauri::ipc::JavaScriptChannelId,
+    results: tauri::ipc::JavaScriptChannelId
 ) -> Result<(), String> {
     authorize_settings(&window)?;
     if query.chars().count() > nanika_search::MAX_QUERY_CHARS {
@@ -199,7 +199,7 @@ pub(crate) async fn search_settings(
 #[tauri::command]
 pub(crate) fn acknowledge_settings_delivery(
     window: tauri::WebviewWindow,
-    delivery_id: u64,
+    delivery_id: u64
 ) -> Result<(), String> {
     authorize_settings(&window)?;
     window
@@ -211,7 +211,7 @@ pub(crate) fn acknowledge_settings_delivery(
 #[tauri::command]
 pub(crate) async fn save_settings(
     window: tauri::WebviewWindow,
-    request: crate::SaveSettingsRequest,
+    request: crate::SaveSettingsRequest
 ) -> Result<crate::SettingsApplicationUpdate, String> {
     authorize_settings(&window)?;
     crate::validate_settings_request(&request)?;
@@ -229,10 +229,10 @@ pub(crate) async fn save_settings(
                         extension_id: extension_id.to_owned(),
                         key: key.to_owned(),
                         result: crate::SettingsSaveResult::Running {
-                            progress: Some(progress),
-                        },
+                            progress: Some(progress)
+                        }
                     });
-            },
+            }
         )
     })
     .await
@@ -242,7 +242,7 @@ pub(crate) async fn save_settings(
         let result = receipt.wait();
         let error = match &result {
             Ok(outcome) => outcome.error.as_ref(),
-            Err(error) => Some(error),
+            Err(error) => Some(error)
         };
         if let Some(error) = error {
             tracing::error!(extension_id = completion.extension_id, %error, "settings operation failed");
@@ -258,7 +258,7 @@ pub(crate) async fn save_settings(
 pub(crate) async fn pick_settings_directory(
     window: tauri::WebviewWindow,
     extension_id: String,
-    key: String,
+    key: String
 ) -> Result<Option<String>, String> {
     authorize_settings(&window)?;
     if !nanika_foundation::is_valid_extension_id(&extension_id) || key.len() > 128 {
@@ -320,7 +320,7 @@ fn authorize_settings(window: &tauri::WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 pub(crate) async fn save_host_settings(
     window: tauri::WebviewWindow,
-    request: crate::HostSettingsChange,
+    request: crate::HostSettingsChange
 ) -> Result<crate::SettingsWriteResult<nanika_config::LauncherPreferences>, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
@@ -337,7 +337,7 @@ pub(crate) async fn save_host_settings(
 #[tauri::command]
 pub(crate) fn set_shortcut_recording(
     window: tauri::WebviewWindow,
-    recording: bool,
+    recording: bool
 ) -> Result<bool, String> {
     authorize_settings(&window)?;
     let desktop = window.state::<DesktopState>();
@@ -371,8 +371,8 @@ pub(crate) async fn read_startup(
 
 #[tauri::command]
 pub(crate) async fn set_startup(
-    window: tauri::WebviewWindow,
-    enabled: bool,
+    window: tauri::WebviewWindow
+    enabled: bool
 ) -> Result<nanika_platform::StartupStatus, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
@@ -390,7 +390,7 @@ pub(crate) async fn set_startup(
 pub(crate) async fn set_extension_enabled(
     window: tauri::WebviewWindow,
     extension_id: String,
-    enabled: bool,
+    enabled: bool
 ) -> Result<(), String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
@@ -406,7 +406,7 @@ pub(crate) async fn set_extension_enabled(
 pub(crate) async fn read_results(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
-    request: crate::ReadResultsRequest,
+    request: crate::ReadResultsRequest
 ) -> Result<(), String> {
     authorize_launcher(&window)?;
     state.read_results(request)

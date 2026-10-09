@@ -6,5 +6,5 @@ use serde::{Deserialize, Serialize};
 pub enum ExtensionActivation {
     #[default]
     Startup,
-    OnDemand,
+    OnDemand
 }

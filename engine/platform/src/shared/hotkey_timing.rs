@@ -9,7 +9,7 @@ pub(crate) fn record_hotkey_delivery(hotkey_id: u32, delivery: Duration) {
     HOTKEY_ID.store(hotkey_id, Ordering::Relaxed);
     DELIVERY_NANOS.store(
         delivery.as_nanos().min(u64::MAX as u128) as u64,
-        Ordering::Relaxed,
+        Ordering::Relaxed
     );
     AVAILABLE.store(true, Ordering::Release);
 }

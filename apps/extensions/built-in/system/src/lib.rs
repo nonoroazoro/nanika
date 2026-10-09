@@ -11,6 +11,6 @@ pub fn action_for_entry(entry_id: &str) -> Option<SystemAction> {
         "shutdown" => SystemAction::ShutDown,
         "trash.open" => SystemAction::OpenTrash,
         "trash.empty" => SystemAction::EmptyTrash,
-        _ => return None,
+        _ => return None
     })
 }

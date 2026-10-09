@@ -50,7 +50,7 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
                     "Tool",
                     "open",
                     Vec::new(),
-                    Vec::new(),
+                    Vec::new()
                 ),
                 Candidate::new(
                     CandidateKind::Action,
@@ -59,10 +59,10 @@ fn persisted_usage_is_the_authority_for_in_memory_ranking() {
                     "Tool",
                     "open",
                     Vec::new(),
-                    Vec::new(),
+                    Vec::new()
                 ),
             ],
-            true,
+            true
         )
         .expect("snapshot should enqueue");
     worker
@@ -177,7 +177,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
             "INSERT INTO extensions (
                 extension_id, kind
              ) VALUES ('com.example.invalid', 'corrupt')",
-            [],
+            []
         )
         .expect("invalid fixture should be inserted");
     connection
@@ -185,7 +185,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
             "INSERT INTO extensions (
                 extension_id, kind
              ) VALUES ('com.example.incomplete-package', 'external')",
-            [],
+            []
         )
         .expect("incomplete package fixture should be inserted");
     connection
@@ -193,7 +193,7 @@ fn malformed_extension_metadata_is_isolated_from_storage_startup() {
             "INSERT INTO extensions (
                 extension_id, kind
              ) VALUES ('../escape', 'external')",
-            [],
+            []
         )
         .expect("invalid id fixture should be inserted");
     drop(connection);
@@ -247,7 +247,7 @@ fn committed_execution_and_reset_survive_projection_failure() {
             "Query",
             nanika_search::UsageKey::new("test.extension", "entry", "open", "query"),
             1,
-            1,
+            1
         )
         .unwrap()
         .wait()
@@ -311,7 +311,7 @@ fn commit_receipt_precedes_projection_backpressure_and_shutdown_drains_accepted_
         drop(
             worker
                 .record_usage("test.extension", "entry", "open", "tool", 2)
-                .unwrap(),
+                .unwrap()
         );
     }
     release.send(()).unwrap();

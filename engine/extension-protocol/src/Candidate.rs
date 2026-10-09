@@ -12,5 +12,5 @@ pub struct Candidate {
     pub action_id: String,
     pub actions: Vec<crate::Action>,
     pub aliases: Vec<String>,
-    pub icon: Option<IconSource>,
+    pub icon: Option<IconSource>
 }

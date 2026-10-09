@@ -9,13 +9,13 @@ use nanika_protocol::{Candidate, ExtensionConfiguration};
 
 use crate::{
     AcpExtensionProcess, ExtensionInterruption, ExtensionLimits, ExtensionProcess,
-    ExtensionRuntimeInvocation, HostServiceHandler, SupervisorError,
+    ExtensionRuntimeInvocation, HostServiceHandler, SupervisorError
 };
 
 /// Protocol-aware process supervisor shared by built-in and external extensions.
 pub enum ExtensionRuntime {
     Nanika(Box<ExtensionProcess>),
-    Acp(AcpExtensionProcess),
+    Acp(AcpExtensionProcess)
 }
 
 impl From<ExtensionProcess> for ExtensionRuntime {
@@ -28,14 +28,14 @@ impl ExtensionRuntime {
     pub(crate) fn observe_exit(&self, observer: Arc<dyn Fn(String) + Send + Sync>) {
         match self {
             Self::Nanika(process) => process.observe_exit(observer),
-            Self::Acp(process) => process.observe_exit(observer),
+            Self::Acp(process) => process.observe_exit(observer)
         }
     }
 
     pub(crate) fn set_shutdown_signal(&mut self, signal: Arc<AtomicBool>) {
         match self {
             Self::Nanika(process) => process.set_shutdown_signal(signal),
-            Self::Acp(process) => process.set_shutdown_signal(signal),
+            Self::Acp(process) => process.set_shutdown_signal(signal)
         }
     }
 
@@ -44,7 +44,7 @@ impl ExtensionRuntime {
         protocol: ExtensionProtocol,
         program: impl AsRef<Path>,
         arguments: impl IntoIterator<Item = OsString>,
-        limits: ExtensionLimits,
+        limits: ExtensionLimits
     ) -> io::Result<Self> {
         Self::spawn_with_configuration(
             extension_id,
@@ -52,7 +52,7 @@ impl ExtensionRuntime {
             program,
             arguments,
             limits,
-            Default::default(),
+            Default::default()
         )
     }
 
@@ -62,27 +62,27 @@ impl ExtensionRuntime {
         program: impl AsRef<Path>,
         arguments: impl IntoIterator<Item = OsString>,
         limits: ExtensionLimits,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         match protocol {
             ExtensionProtocol::Nanika {
-                protocol_version: 1,
+                protocol_version: 1
             } => ExtensionProcess::spawn_with(program, arguments, limits).map(Self::from),
             ExtensionProtocol::Acp {
-                protocol_version: 1,
+                protocol_version: 1
             } => AcpExtensionProcess::spawn_with_configuration(
                 extension_id,
                 program,
                 arguments,
                 limits,
-                configuration,
+                configuration
             )
             .map(Self::Acp),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "unsupported extension protocol",
-            )),
+                "unsupported extension protocol"
+            ))
         }
     }
 
@@ -101,7 +101,7 @@ impl ExtensionRuntime {
     pub(crate) fn set_host_services(
         &mut self,
         extension_id: String,
-        host_services: Arc<dyn HostServiceHandler>,
+        host_services: Arc<dyn HostServiceHandler>
     ) {
         if let Self::Nanika(process) = self {
             process.set_host_services(extension_id, host_services);
@@ -115,13 +115,13 @@ impl ExtensionRuntime {
     pub fn initialize_with_configuration(
         &mut self,
         request_id: impl Into<String>,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => {
                 process.initialize_with_configuration(request_id, configuration)
             }
-            Self::Acp(process) => process.initialize(),
+            Self::Acp(process) => process.initialize()
         }
     }
 
@@ -132,13 +132,13 @@ impl ExtensionRuntime {
     pub fn apply_configuration(
         &mut self,
         request_id: impl Into<String>,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.apply_configuration(request_id, configuration),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP does not support live configuration updates".to_owned(),
-            )),
+                "ACP does not support live configuration updates".to_owned()
+            ))
         }
     }
 
@@ -147,7 +147,7 @@ impl ExtensionRuntime {
         request_id: String,
         configuration: ExtensionConfiguration,
         progress: crate::ConfigurationProgressHandler,
-        completion: crate::ConfigurationCompletion,
+        completion: crate::ConfigurationCompletion
     ) {
         match self {
             Self::Nanika(process) => {
@@ -163,23 +163,23 @@ impl ExtensionRuntime {
         &mut self,
         request_id: String,
         generation: u64,
-        completion: crate::RefreshCompletion,
+        completion: crate::RefreshCompletion
     ) {
         match self {
             Self::Nanika(process) => process.start_refresh(request_id, generation, completion),
-            Self::Acp(_) => completion(Ok(())),
+            Self::Acp(_) => completion(Ok(()))
         }
     }
 
     pub(crate) fn read_catalog(
         &mut self,
-        request_id: String,
+        request_id: String
     ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
         match self {
             Self::Nanika(process) => process.read_catalog(request_id),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP does not publish catalogs".into(),
-            )),
+                "ACP does not publish catalogs".into()
+            ))
         }
     }
 
@@ -187,8 +187,8 @@ impl ExtensionRuntime {
         match self {
             Self::Nanika(process) => process.acknowledge_catalog(transaction),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP does not publish catalogs".into(),
-            )),
+                "ACP does not publish catalogs".into()
+            ))
         }
     }
 
@@ -198,7 +198,7 @@ impl ExtensionRuntime {
         generation: u64,
         query: impl Into<String>,
         mut publish: impl FnMut(nanika_protocol::CandidateUpdate) -> Result<(), SupervisorError>,
-        mut should_cancel: impl FnMut() -> bool,
+        mut should_cancel: impl FnMut() -> bool
     ) -> Result<bool, SupervisorError> {
         match self {
             Self::Nanika(process) => process.query_incremental(
@@ -207,7 +207,7 @@ impl ExtensionRuntime {
                 query,
                 true,
                 publish,
-                should_cancel,
+                should_cancel
             ),
             Self::Acp(_) if should_cancel() => Ok(false),
             Self::Acp(process) => {
@@ -218,15 +218,15 @@ impl ExtensionRuntime {
                         entry_id: "prompt".to_owned(),
                         title: format!("Ask {}", process.extension_id()),
                         subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                            "AI Command".to_owned(),
+                            "AI Command".to_owned()
                         )),
                         action_id: "prompt".to_owned(),
                         actions: vec![nanika_protocol::Action::primary(
                             "prompt".to_owned(),
-                            "Open",
+                            "Open"
                         )],
                         aliases: vec![query],
-                        icon: None,
+                        icon: None
                     }]
                 } else {
                     Vec::new()
@@ -235,7 +235,7 @@ impl ExtensionRuntime {
                     complete: true,
                     replace: true,
                     entries,
-                    removed: Vec::new(),
+                    removed: Vec::new()
                 })?;
                 Ok(true)
             }
@@ -245,11 +245,11 @@ impl ExtensionRuntime {
     pub(crate) fn prepare_entries(
         &mut self,
         generation: u64,
-        entry_ids: Vec<String>,
+        entry_ids: Vec<String>
     ) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.prepare_entries(generation, entry_ids),
-            Self::Acp(_) => Ok(()),
+            Self::Acp(_) => Ok(())
         }
     }
 
@@ -257,7 +257,7 @@ impl ExtensionRuntime {
         &mut self,
         invocation: ExtensionRuntimeInvocation,
         publish: Arc<dyn Fn(String) + Send + Sync>,
-        interruption: impl FnMut() -> ExtensionInterruption,
+        interruption: impl FnMut() -> ExtensionInterruption
     ) -> Result<(nanika_protocol::NavigationEffect, bool), SupervisorError> {
         match self {
             Self::Nanika(process) => process
@@ -266,19 +266,19 @@ impl ExtensionRuntime {
                     invocation.generation,
                     invocation.entry_id,
                     invocation.action_id,
-                    interruption,
+                    interruption
                 )
                 .map(|effect| (effect, false)),
             Self::Acp(process) => {
                 if invocation.entry_id != "prompt" || invocation.action_id != "prompt" {
                     return Err(SupervisorError::UnexpectedMessage(
-                        "ACP extension received an unknown action".to_owned(),
+                        "ACP extension received an unknown action".to_owned()
                     ));
                 }
                 let prompt = acp_prompt(process.extension_id(), &invocation.query_context)
                     .ok_or_else(|| {
                         SupervisorError::UnexpectedMessage(
-                            "ACP prompt does not match the extension activation prefix".to_owned(),
+                            "ACP prompt does not match the extension activation prefix".to_owned()
                         )
                     })?;
                 process
@@ -291,7 +291,7 @@ impl ExtensionRuntime {
     pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.ensure_running(),
-            Self::Acp(process) => process.ensure_running(),
+            Self::Acp(process) => process.ensure_running()
         }
     }
 
@@ -303,14 +303,14 @@ impl ExtensionRuntime {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-        interruption: impl FnMut() -> ExtensionInterruption,
+        interruption: impl FnMut() -> ExtensionInterruption
     ) -> Result<
         (
             u64,
             nanika_protocol::NavigationEffect,
-            Option<nanika_protocol::View>,
+            Option<nanika_protocol::View>
         ),
-        SupervisorError,
+        SupervisorError
     > {
         match self {
             Self::Nanika(process) => process.view_event_interruptible(
@@ -319,24 +319,24 @@ impl ExtensionRuntime {
                 view_id,
                 revision,
                 event,
-                interruption,
+                interruption
             ),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP extensions cannot own host-rendered views".to_owned(),
-            )),
+                "ACP extensions cannot own host-rendered views".to_owned()
+            ))
         }
     }
 
     pub(crate) fn close_view(
         &mut self,
         request_id: impl Into<String>,
-        view_id: impl Into<String>,
+        view_id: impl Into<String>
     ) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.close_view(request_id, view_id),
             Self::Acp(_) => Err(SupervisorError::UnexpectedMessage(
-                "ACP extensions cannot own host-rendered views".to_owned(),
-            )),
+                "ACP extensions cannot own host-rendered views".to_owned()
+            ))
         }
     }
 
@@ -347,21 +347,21 @@ impl ExtensionRuntime {
                 let stderr = process.stderr_tail();
                 (!stderr.trim().is_empty()).then(|| format!("stderr: {stderr}"))
             }
-            Self::Acp(process) => process.last_error(),
+            Self::Acp(process) => process.last_error()
         }
     }
 
     pub fn terminate(&mut self) -> io::Result<()> {
         match self {
             Self::Nanika(process) => process.terminate(),
-            Self::Acp(process) => process.terminate(),
+            Self::Acp(process) => process.terminate()
         }
     }
 
     pub fn shutdown(&mut self) -> Result<(), SupervisorError> {
         match self {
             Self::Nanika(process) => process.shutdown(),
-            Self::Acp(process) => process.shutdown(),
+            Self::Acp(process) => process.shutdown()
         }
     }
 }

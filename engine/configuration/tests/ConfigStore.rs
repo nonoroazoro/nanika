@@ -27,7 +27,7 @@ fn comments_are_accepted_at_the_typed_boundary() {
           "formatVersion": 1,
           "configRoot": "config",
           "machineId": "00000000-0000-0000-0000-000000000000"
-        }"#,
+        }"#
     )
     .expect("write JSONC");
     let value: BootstrapConfig = store.load(&file).expect("JSONC should parse");
@@ -55,7 +55,7 @@ fn valid_relocation_is_loaded_from_the_primary_bootstrap() {
     bootstrap.config_root = root.join("relocated-config");
     std::fs::write(
         store.bootstrap_path(),
-        serde_json::to_string_pretty(&bootstrap).expect("bootstrap should serialize"),
+        serde_json::to_string_pretty(&bootstrap).expect("bootstrap should serialize")
     )
     .expect("relocated bootstrap should save");
 
@@ -151,7 +151,7 @@ fn targeted_updates_preserve_comments_and_validate_the_result() {
     let file = store.config_file();
     std::fs::write(
         &file,
-        "{\n  // retained\n  \"formatVersion\": 1,\n  \"hotkey\": \"Ctrl+Space\"\n}\n",
+        "{\n  // retained\n  \"formatVersion\": 1,\n  \"hotkey\": \"Ctrl+Space\"\n}\n"
     )
     .expect("config should exist");
 
@@ -159,7 +159,7 @@ fn targeted_updates_preserve_comments_and_validate_the_result() {
         .update(
             &file,
             [("hotkey".to_owned(), serde_json::json!("Alt+Space"))],
-            |_| Ok(()),
+            |_| Ok(())
         )
         .expect("targeted update should succeed");
 
@@ -186,7 +186,7 @@ fn targeted_updates_create_missing_files() {
         .update(
             &file,
             [("enabled".to_owned(), serde_json::json!(true))],
-            |_| Ok(()),
+            |_| Ok(())
         )
         .expect("targeted update should create the file");
 
@@ -210,7 +210,7 @@ fn rejected_targeted_updates_leave_the_original_untouched() {
     let result = store.update::<serde_json::Value>(
         &file,
         [("enabled".to_owned(), serde_json::json!(true))],
-        |_| Err("rejected".to_owned()),
+        |_| Err("rejected".to_owned())
     );
 
     assert!(matches!(result, Err(ConfigError::Invalid(_))));

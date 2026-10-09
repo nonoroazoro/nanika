@@ -16,7 +16,7 @@ fn catalog() -> Vec<String> {
         "中国银行",
         "网易云音乐",
         "长安",
-        "同步 Sync",
+        "同步 Sync"
     ];
     (0..2_000)
         .map(|index| format!("{} {index:04}", NAMES[index % NAMES.len()]))

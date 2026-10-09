@@ -2,7 +2,7 @@ use crate::PreparedClipboardContent;
 use objc2::{rc::autoreleasepool, runtime::ProtocolObject};
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardItem, NSPasteboardTypePNG, NSPasteboardTypeString,
-    NSPasteboardWriting,
+    NSPasteboardWriting
 };
 use objc2_foundation::{NSArray, NSData, NSString, NSURL};
 
@@ -17,7 +17,7 @@ pub(crate) fn write(content: PreparedClipboardContent) -> Result<u64, String> {
                     return Err("Could not prepare clipboard text.".into());
                 }
                 NSArray::from_retained_slice(&[
-                    ProtocolObject::<dyn NSPasteboardWriting>::from_retained(item),
+                    ProtocolObject::<dyn NSPasteboardWriting>::from_retained(item)
                 ])
             }
             PreparedClipboardContent::Png(bytes) => {
@@ -27,7 +27,7 @@ pub(crate) fn write(content: PreparedClipboardContent) -> Result<u64, String> {
                     return Err("Could not prepare clipboard PNG.".into());
                 }
                 NSArray::from_retained_slice(&[
-                    ProtocolObject::<dyn NSPasteboardWriting>::from_retained(item),
+                    ProtocolObject::<dyn NSPasteboardWriting>::from_retained(item)
                 ])
             }
             PreparedClipboardContent::Files(paths) => {
@@ -37,7 +37,7 @@ pub(crate) fn write(content: PreparedClipboardContent) -> Result<u64, String> {
                         return Err(format!("Clipboard file does not exist: {path}"));
                     }
                     urls.push(ProtocolObject::<dyn NSPasteboardWriting>::from_retained(
-                        NSURL::fileURLWithPath(&NSString::from_str(&path)),
+                        NSURL::fileURLWithPath(&NSString::from_str(&path))
                     ));
                 }
                 NSArray::from_retained_slice(&urls)

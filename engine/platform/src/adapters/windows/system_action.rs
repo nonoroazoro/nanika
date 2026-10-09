@@ -4,26 +4,26 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, ERROR_SUCCESS, GetLastError},
     Security::{
         AdjustTokenPrivileges, ImpersonateSelf, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
-        SecurityImpersonation, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
+        SecurityImpersonation, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES
     },
     System::{
         Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize},
         Power::SetSuspendState,
         Shutdown::{
             EWX_LOGOFF, EWX_POWEROFF, EWX_REBOOT, ExitWindowsEx, LockWorkStation,
-            SHTDN_REASON_FLAG_PLANNED, SHTDN_REASON_MAJOR_OTHER,
+            SHTDN_REASON_FLAG_PLANNED, SHTDN_REASON_MAJOR_OTHER
         },
-        Threading::{GetCurrentThread, OpenThreadToken},
+        Threading::{GetCurrentThread, OpenThreadToken}
     },
     UI::{
         Shell::{
             SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, SHERB_NOCONFIRMATION,
-            SHEmptyRecycleBinW, ShellExecuteExW,
+            SHEmptyRecycleBinW, ShellExecuteExW
         },
         WindowsAndMessaging::{
-            HWND_BROADCAST, SC_MONITORPOWER, SW_SHOWNORMAL, SendNotifyMessageW, WM_SYSCOMMAND,
-        },
-    },
+            HWND_BROADCAST, SC_MONITORPOWER, SW_SHOWNORMAL, SendNotifyMessageW, WM_SYSCOMMAND
+        }
+    }
 };
 
 pub(crate) fn executor() -> std::io::Result<impl Fn(SystemAction) -> Result<(), String> + Send> {
@@ -50,13 +50,13 @@ fn _execute(action: SystemAction) -> Result<(), String> {
             unsafe {
                 SendNotifyMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER as usize, 2)
             } != 0,
-            "Turn off displays",
+            "Turn off displays"
         ),
         SystemAction::LogOut => _bool(unsafe { ExitWindowsEx(EWX_LOGOFF, 0) } != 0, "Log out"),
         SystemAction::OpenTrash | SystemAction::EmptyTrash => {
             _hresult(
                 unsafe { CoInitializeEx(null(), COINIT_APARTMENTTHREADED as u32) },
-                "Initialize Shell",
+                "Initialize Shell"
             )?;
             let result = if action == SystemAction::OpenTrash {
                 _open_trash()
@@ -72,12 +72,12 @@ fn _execute(action: SystemAction) -> Result<(), String> {
 fn _enable_shutdown_privilege() -> Result<(), String> {
     _bool(
         unsafe { ImpersonateSelf(SecurityImpersonation) } != 0,
-        "Create power request token",
+        "Create power request token"
     )?;
     let mut token = null_mut();
     _bool(
         unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES, 0, &mut token) } != 0,
-        "Open power request token",
+        "Open power request token"
     )?;
     let result = (|| {
         let mut privileges: TOKEN_PRIVILEGES = unsafe { std::mem::zeroed() };
@@ -85,12 +85,12 @@ fn _enable_shutdown_privilege() -> Result<(), String> {
         let name = windows_sys::w!("SeShutdownPrivilege");
         _bool(
             unsafe { LookupPrivilegeValueW(null(), name, &mut privileges.Privileges[0].Luid) } != 0,
-            "Resolve shutdown privilege",
+            "Resolve shutdown privilege"
         )?;
         privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
         _bool(
             unsafe { AdjustTokenPrivileges(token, 0, &privileges, 0, null_mut(), null_mut()) } != 0,
-            "Enable shutdown privilege",
+            "Enable shutdown privilege"
         )?;
         let error = unsafe { GetLastError() };
         if error != ERROR_SUCCESS {
@@ -118,10 +118,10 @@ fn _power(action: SystemAction) -> Result<(), String> {
                 unsafe {
                     ExitWindowsEx(flags, SHTDN_REASON_FLAG_PLANNED | SHTDN_REASON_MAJOR_OTHER)
                 } != 0,
-                "End system session",
+                "End system session"
             )
         }
-        _ => unreachable!("only power operations enter the privileged thread"),
+        _ => unreachable!("only power operations enter the privileged thread")
     }
 }
 
@@ -133,14 +133,14 @@ fn _open_trash() -> Result<(), String> {
     info.nShow = SW_SHOWNORMAL;
     _bool(
         unsafe { ShellExecuteExW(&mut info) } != 0,
-        "Open Recycle Bin",
+        "Open Recycle Bin"
     )
 }
 
 fn _empty_trash() -> Result<(), String> {
     _hresult(
         unsafe { SHEmptyRecycleBinW(null_mut(), null(), SHERB_NOCONFIRMATION) },
-        "Empty Recycle Bin",
+        "Empty Recycle Bin"
     )
 }
 

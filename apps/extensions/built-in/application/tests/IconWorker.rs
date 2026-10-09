@@ -8,7 +8,7 @@ fn cached_entries_publish_before_a_slow_native_icon_and_unrequested_entries_stay
         ["slow", "cached", "other"]
             .map(|id| (id.to_owned(), _entry(id)))
             .into_iter()
-            .collect::<HashMap<_, _>>(),
+            .collect::<HashMap<_, _>>()
     ));
     let (events, receiver) = mpsc::sync_channel(8);
     let (started, native_started) = mpsc::sync_channel(0);
@@ -25,7 +25,7 @@ fn cached_entries_publish_before_a_slow_native_icon_and_unrequested_entries_stay
             started.send(()).unwrap();
             native_finish.recv().unwrap();
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["slow".into(), "cached".into()]);
@@ -45,7 +45,7 @@ fn viewport_replacement_during_extraction_skips_old_pending_entries_and_keeps_it
         ["a", "b", "c"]
             .map(|id| (id.to_owned(), _entry(id)))
             .into_iter()
-            .collect::<HashMap<_, _>>(),
+            .collect::<HashMap<_, _>>()
     ));
     let (events, receiver) = mpsc::sync_channel(8);
     let (started, native_started) = mpsc::sync_channel(0);
@@ -61,7 +61,7 @@ fn viewport_replacement_during_extraction_skips_old_pending_entries_and_keeps_it
                 native_finish.recv().unwrap();
             }
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into(), "b".into()]);
@@ -125,7 +125,7 @@ fn shutdown_finishes_the_active_icon_and_does_not_start_remaining_work() {
         ["a", "b"]
             .map(|id| (id.to_owned(), _entry(id)))
             .into_iter()
-            .collect::<HashMap<_, _>>(),
+            .collect::<HashMap<_, _>>()
     ));
     let (events, receiver) = mpsc::sync_channel(8);
     let (started, native_started) = mpsc::sync_channel(0);
@@ -139,7 +139,7 @@ fn shutdown_finishes_the_active_icon_and_does_not_start_remaining_work() {
             started.send(()).unwrap();
             native_finish.recv().unwrap();
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into(), "b".into()]);
@@ -165,7 +165,7 @@ fn failed_preparation_is_not_retried_by_duplicate_viewports() {
         move |_| {
             count.fetch_add(1, Ordering::Relaxed);
             IconSource::Empty
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into()]);
@@ -184,7 +184,7 @@ fn shutdown_can_drain_an_icon_publication_blocked_by_backpressure() {
         ["a", "b", "c"]
             .map(|id| (id.to_owned(), _entry(id)))
             .into_iter()
-            .collect::<HashMap<_, _>>(),
+            .collect::<HashMap<_, _>>()
     ));
     let (events, receiver) = mpsc::sync_channel(1);
     let (started, native_started) = mpsc::channel();
@@ -195,7 +195,7 @@ fn shutdown_can_drain_an_icon_publication_blocked_by_backpressure() {
         move |entry| {
             started.send(entry.entry_id.clone()).unwrap();
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into(), "b".into(), "c".into()]);
@@ -253,7 +253,7 @@ fn refresh_during_a_failed_native_attempt_retries_after_its_completion() {
             } else {
                 _ready(entry)
             }
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into()]);
@@ -279,7 +279,7 @@ fn refresh_re_admits_offscreen_failures_and_preserves_successful_and_intentional
     unavailable._icon = Some(Arc::new(nanika_protocol::IconSource::Empty));
     let mut failed = _entry("failed");
     failed._icon = Some(Arc::new(nanika_protocol::IconSource::Cache(
-        nanika_protocol::IconReference::new(IconCache::fallback_key()).unwrap(),
+        nanika_protocol::IconReference::new(IconCache::fallback_key()).unwrap()
     )));
     let mut generic = _entry("generic");
     generic.icon_key = IconCache::fallback_key().into();
@@ -290,7 +290,7 @@ fn refresh_re_admits_offscreen_failures_and_preserves_successful_and_intentional
         [unavailable, failed, generic.clone(), successful.clone()]
             .into_iter()
             .map(|entry| (entry.entry_id.clone(), entry))
-            .collect(),
+            .collect()
     );
     _clear_failed_icons(&entries);
     let current = entries.read().unwrap();
@@ -316,7 +316,7 @@ fn discovery_source_replacement_wakes_work_even_when_the_old_completion_is_rejec
                 native_finish.recv().unwrap();
             }
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into()]);
@@ -341,7 +341,7 @@ fn same_generation_viewport_reordering_changes_the_next_native_entry() {
         ["a", "b", "c"]
             .map(|id| (id.to_owned(), _entry(id)))
             .into_iter()
-            .collect::<HashMap<_, _>>(),
+            .collect::<HashMap<_, _>>()
     ));
     let (events, receiver) = mpsc::sync_channel(8);
     let (started, native_started) = mpsc::sync_channel(0);
@@ -356,7 +356,7 @@ fn same_generation_viewport_reordering_changes_the_next_native_entry() {
                 native_finish.recv().unwrap();
             }
             _ready(entry)
-        },
+        }
     )
     .unwrap();
     worker.prepare_entries(1, vec!["a".into(), "b".into(), "c".into()]);
@@ -380,12 +380,12 @@ fn stale_cached_completions_reject_source_path_and_resource_index_changes() {
         if change_path {
             replacement.icon_source = Some(crate::ApplicationIconSource::File {
                 path: PathBuf::from("/replacement.exe"),
-                index: 0,
+                index: 0
             });
         } else {
             replacement.icon_source = Some(crate::ApplicationIconSource::File {
                 path: PathBuf::from("/a.exe"),
-                index: 1,
+                index: 1
             });
         }
         let entries = RwLock::new(HashMap::from([("a".into(), replacement.clone())]));
@@ -409,9 +409,9 @@ fn _entry(id: &str) -> ApplicationEntry {
         icon_key: id.into(),
         icon_source: Some(crate::ApplicationIconSource::File {
             path: PathBuf::from(format!("/{id}.exe")),
-            index: 0,
+            index: 0
         }),
-        priority: 0,
+        priority: 0
     })
 }
 
@@ -422,6 +422,6 @@ fn _ready(entry: &ApplicationEntry) -> IconSource {
 fn _receive(events: &mpsc::Receiver<RuntimeEvent>) -> Vec<String> {
     match events.recv_timeout(Duration::from_secs(5)).unwrap() {
         RuntimeEvent::CatalogUpdated { entry_ids } => entry_ids,
-        _ => panic!("expected icon publication"),
+        _ => panic!("expected icon publication")
     }
 }

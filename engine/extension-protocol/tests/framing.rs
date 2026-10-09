@@ -7,7 +7,7 @@ fn round_trips_a_message() {
     let message = Message::Initialize {
         request_id: "request-1".to_owned(),
         protocol: PROTOCOL_NAME.to_owned(),
-        configuration: Default::default(),
+        configuration: Default::default()
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &message).expect("frame should be written");
@@ -38,20 +38,20 @@ fn large_configuration_round_trips_for_initialization_and_live_changes() {
     let configuration = nanika_protocol::ExtensionConfiguration::new(
         [(
             "entries".to_owned(),
-            serde_json::json!(vec!["x".repeat(4000); 2400]),
+            serde_json::json!(vec!["x".repeat(4000); 2400])
         )]
-        .into(),
+        .into()
     );
     for message in [
         Message::Initialize {
             request_id: "initialize".into(),
             protocol: PROTOCOL_NAME.into(),
-            configuration: configuration.clone(),
+            configuration: configuration.clone()
         },
         Message::ConfigurationChanged {
             request_id: "change".into(),
-            configuration: configuration.clone(),
-        },
+            configuration: configuration.clone()
+        }
     ] {
         let mut bytes = Vec::new();
         write_frame(&mut bytes, &message).unwrap();
@@ -79,9 +79,9 @@ fn large_snapshot_round_trips_without_losing_the_following_frame() {
                 action_id: "open".into(),
                 actions: vec![nanika_protocol::Action::primary("open", "Open")],
                 aliases: Vec::new(),
-                icon: None,
+                icon: None
             })
-            .collect(),
+            .collect()
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &message).unwrap();
@@ -112,7 +112,7 @@ fn fragmented_messages_preserve_frame_boundaries() {
     let message = Message::Error {
         request_id: None,
         code: "fixture".into(),
-        message: "caf\u{e9}".into(),
+        message: "caf\u{e9}".into()
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &message).unwrap();
@@ -134,7 +134,7 @@ fn invalid_payloads_do_not_consume_the_next_frame() {
         b"".as_slice(),
         b"{",
         &[0xff],
-        br#"{"type":"candidatesChanged"} trailing"#,
+        br#"{"type":"candidatesChanged"} trailing"#
     ] {
         let mut bytes = (payload.len() as u32).to_le_bytes().to_vec();
         bytes.extend_from_slice(payload);

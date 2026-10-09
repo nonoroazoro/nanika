@@ -9,5 +9,5 @@ use uuid::Uuid;
 pub struct BootstrapConfig {
     pub format_version: u32,
     pub config_root: PathBuf,
-    pub machine_id: Uuid,
+    pub machine_id: Uuid
 }

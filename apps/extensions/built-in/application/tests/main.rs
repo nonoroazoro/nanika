@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use nanika_protocol::{
-    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+    ExtensionConfiguration, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame
 };
 
 #[test]
@@ -21,7 +21,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
     )))
     .args([
         argument("data-root", &data_root),
-        argument("cache-root", &cache_root),
+        argument("cache-root", &cache_root)
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -36,8 +36,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         &Message::Initialize {
             request_id: "initialize-application".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration: application_configuration(&applications),
-        },
+            configuration: application_configuration(&applications)
+        }
     )
     .expect("initialize should write");
     assert!(matches!(
@@ -49,8 +49,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         &mut input,
         &Message::Refresh {
             request_id: "refresh-application".to_owned(),
-            generation: 2,
-        },
+            generation: 2
+        }
     )
     .expect("refresh should write");
     assert!(matches!(
@@ -79,7 +79,7 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         .as_ref()
         .and_then(|icon| match icon {
             nanika_protocol::IconSource::Cache(reference) => Some(reference.key()),
-            _ => None,
+            _ => None
         })
         .expect("application candidate should reference its icon");
     assert!(
@@ -96,8 +96,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             request_id: "invoke-application".to_owned(),
             generation: 3,
             entry_id: entry.entry_id.clone(),
-            action_id: entry.action_id.clone(),
-        },
+            action_id: entry.action_id.clone()
+        }
     )
     .expect("invoke should write");
     let Some(Message::HostRequest {
@@ -115,8 +115,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             request_id: service_request_id,
             parent_request_id,
             generation,
-            response: HostServiceResponse::Launched,
-        },
+            response: HostServiceResponse::Launched
+        }
     )
     .expect("host response should write");
     assert!(matches!(
@@ -129,8 +129,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             request_id: "invoke-application-invalid".to_owned(),
             generation: 4,
             entry_id: entry.entry_id,
-            action_id: entry.action_id,
-        },
+            action_id: entry.action_id
+        }
     )
     .expect("second invoke should write");
     let Some(Message::HostRequest {
@@ -148,8 +148,8 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
             request_id: service_request_id,
             parent_request_id,
             generation: generation + 1,
-            response: HostServiceResponse::Launched,
-        },
+            response: HostServiceResponse::Launched
+        }
     )
     .expect("invalid host response should write");
     assert!(matches!(
@@ -182,7 +182,7 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     )))
     .args([
         argument("data-root", &data_root),
-        argument("cache-root", &cache_root),
+        argument("cache-root", &cache_root)
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -197,8 +197,8 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
         &Message::Initialize {
             request_id: "initialize-application-failure".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration: application_configuration(&applications),
-        },
+            configuration: application_configuration(&applications)
+        }
     )
     .expect("initialize should write");
     assert!(matches!(
@@ -238,7 +238,7 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     )))
     .args([
         argument("data-root", &data_root),
-        argument("cache-root", &cache_root),
+        argument("cache-root", &cache_root)
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -253,8 +253,8 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         &Message::Initialize {
             request_id: "initialize-configuration".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration: application_configuration(&initial_applications),
-        },
+            configuration: application_configuration(&initial_applications)
+        }
     )
     .expect("initialize should write");
     assert!(matches!(
@@ -266,8 +266,8 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "change-configuration".to_owned(),
-            configuration: application_configuration(&updated_applications),
-        },
+            configuration: application_configuration(&updated_applications)
+        }
     )
     .expect("configuration change should write");
     let progress = _read_configuration(&mut output, "change-configuration");
@@ -286,14 +286,14 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
 fn read_catalog(
     input: &mut impl std::io::Write,
     output: &mut impl std::io::Read,
-    catalog: &mut std::collections::HashMap<String, nanika_protocol::Candidate>,
+    catalog: &mut std::collections::HashMap<String, nanika_protocol::Candidate>
 ) -> Vec<nanika_protocol::Candidate> {
     loop {
         write_frame(
             &mut *input,
             &Message::CatalogRead {
-                request_id: "catalog".into(),
-            },
+                request_id: "catalog".into()
+            }
         )
         .unwrap();
         let Some(Message::CatalogBatch { batch, .. }) = read_response(output, "catalog batch")
@@ -313,8 +313,8 @@ fn read_catalog(
             write_frame(
                 &mut *input,
                 &Message::CatalogApplied {
-                    transaction: batch.transaction,
-                },
+                    transaction: batch.transaction
+                }
             )
             .unwrap();
             return catalog.values().cloned().collect();
@@ -326,7 +326,7 @@ fn catalog_until_candidate(
     input: &mut impl std::io::Write,
     output: &mut impl std::io::Read,
     catalog: &mut std::collections::HashMap<String, nanika_protocol::Candidate>,
-    title: &str,
+    title: &str
 ) -> Vec<nanika_protocol::Candidate> {
     loop {
         let entries = read_catalog(input, output, catalog);
@@ -344,7 +344,7 @@ fn catalog_until_candidate(
 fn prepare_entries(
     input: &mut impl std::io::Write,
     generation: u64,
-    entries: &[nanika_protocol::Candidate],
+    entries: &[nanika_protocol::Candidate]
 ) {
     write_frame(
         input,
@@ -354,8 +354,8 @@ fn prepare_entries(
                 .iter()
                 .take(10)
                 .map(|entry| entry.entry_id.clone())
-                .collect(),
-        },
+                .collect()
+        }
     )
     .expect("visible entry preparation should write");
 }
@@ -364,7 +364,7 @@ fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Messa
     loop {
         match read_frame(output).expect(context) {
             Some(Message::CandidatesChanged) => {}
-            response => return response,
+            response => return response
         }
     }
 }
@@ -372,7 +372,7 @@ fn read_response(output: &mut impl std::io::Read, context: &str) -> Option<Messa
 fn application_configuration(application_root: &Path) -> ExtensionConfiguration {
     ExtensionConfiguration::new(std::collections::BTreeMap::from([(
         "application.roots".to_owned(),
-        serde_json::json!([application_root]),
+        serde_json::json!([application_root])
     )]))
 }
 
@@ -394,14 +394,14 @@ fn create_application_fixture(root: &Path) {
     for (name, identifier) in [
         ("Nanika Sample", "com.nanika.test.sample"),
         ("音乐", "com.nanika.test.music"),
-        ("同步", "com.nanika.test.sync"),
+        ("同步", "com.nanika.test.sync")
     ] {
         let bundle = root.join(format!("{name}.app/Contents"));
         let executable = bundle.join("MacOS/nanika-sample");
         std::fs::create_dir_all(
             executable
                 .parent()
-                .expect("application executable should have a parent"),
+                .expect("application executable should have a parent")
         )
         .expect("application executable directory should exist");
         std::fs::write(
@@ -419,7 +419,7 @@ fn create_application_fixture(root: &Path) {
 </dict>
 </plist>
 "#
-            ),
+            )
         )
         .expect("application property list should exist");
         create_executable(&executable);
@@ -466,14 +466,14 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
     let broken = _broken_application(&root);
     let configuration = ExtensionConfiguration::new(std::collections::BTreeMap::from([(
         "application.roots".to_owned(),
-        serde_json::json!([broken, applications]),
+        serde_json::json!([broken, applications])
     )]));
     let data_root = root.join("data");
     let cache_root = root.join("cache");
     let mut child = Command::new(env!("CARGO_BIN_EXE_nanika-extension-application"))
         .args([
             argument("data-root", &data_root),
-            argument("cache-root", &cache_root),
+            argument("cache-root", &cache_root)
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -488,8 +488,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         &Message::Initialize {
             request_id: "initialize-partial".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration: configuration.clone(),
-        },
+            configuration: configuration.clone()
+        }
     )
     .unwrap();
     assert!(matches!(
@@ -501,8 +501,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         &mut input,
         &Message::ConfigurationChanged {
             request_id: "configure-partial".to_owned(),
-            configuration,
-        },
+            configuration
+        }
     )
     .unwrap();
     _read_configuration(&mut output, "configure-partial");
@@ -510,8 +510,8 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
         &mut input,
         &Message::Refresh {
             request_id: "refresh-partial".to_owned(),
-            generation: 3,
-        },
+            generation: 3
+        }
     )
     .unwrap();
     assert!(matches!(
@@ -548,14 +548,14 @@ fn _broken_application(root: &Path) -> PathBuf {
 
 fn _read_configuration(
     output: &mut impl std::io::Read,
-    expected: &str,
+    expected: &str
 ) -> Vec<nanika_protocol::OperationProgress> {
     let mut updates: Vec<nanika_protocol::OperationProgress> = Vec::new();
     loop {
         match read_response(output, "configuration response") {
             Some(Message::ConfigurationProgress {
                 request_id,
-                progress,
+                progress
             }) => {
                 assert_eq!(request_id, expected);
                 progress.validate().unwrap();
@@ -571,7 +571,7 @@ fn _read_configuration(
                 assert_eq!(request_id, expected);
                 return updates;
             }
-            response => panic!("unexpected configuration response: {response:?}"),
+            response => panic!("unexpected configuration response: {response:?}")
         }
     }
 }
@@ -584,14 +584,14 @@ fn graceful_discovery_shutdown_drains_a_full_event_queue() {
     std::fs::create_dir_all(&applications).unwrap();
     create_application_fixture(&applications);
     let config = nanika_extension_application::ApplicationConfig::from_configuration(
-        &application_configuration(&applications),
+        &application_configuration(&applications)
     )
     .unwrap();
     let (sender, events) = mpsc::sync_channel(1);
     // Deterministically occupy the only slot before the producer starts.
     sender
         .send(nanika_extension_application::RuntimeEvent::CatalogUpdated {
-            entry_ids: Vec::new(),
+            entry_ids: Vec::new()
         })
         .unwrap();
     let worker = nanika_extension_application::DiscoveryWorker::spawn(
@@ -599,7 +599,7 @@ fn graceful_discovery_shutdown_drains_a_full_event_queue() {
         root.join("icons"),
         Arc::new(RwLock::new(config)),
         Arc::new(RwLock::new(std::collections::HashMap::new())),
-        sender,
+        sender
     )
     .unwrap();
     for generation in 2..6 {
@@ -640,7 +640,7 @@ fn refresh_retries_failed_icon_preparation_after_cache_access_is_restored() {
         icon_root.clone(),
         Arc::new(RwLock::new(config)),
         Arc::clone(&entries),
-        sender,
+        sender
     )
     .unwrap();
     while !matches!(

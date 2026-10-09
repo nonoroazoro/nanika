@@ -20,7 +20,7 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError>
     match reader.read_exact(&mut length_bytes[..1]) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(error) => return Err(FrameError::Io(error)),
+        Err(error) => return Err(FrameError::Io(error))
     }
     reader.read_exact(&mut length_bytes[1..])?;
     let length = u32::from_le_bytes(length_bytes);

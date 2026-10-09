@@ -9,5 +9,5 @@ pub(crate) struct DiscoveryServices<'a> {
     pub(crate) entries: &'a RwLock<std::collections::HashMap<String, ApplicationEntry>>,
     pub(crate) events: &'a SyncSender<RuntimeEvent>,
     pub(crate) icon_wake: &'a (Mutex<crate::EntryPriority>, Condvar),
-    pub(crate) cancelled_through: &'a AtomicU64,
+    pub(crate) cancelled_through: &'a AtomicU64
 }

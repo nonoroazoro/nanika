@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct CandidateCatalog {
-    _entries: HashMap<String, HashMap<String, Candidate>>,
+    _entries: HashMap<String, HashMap<String, Candidate>>
 }
 
 impl CandidateCatalog {
@@ -17,7 +17,7 @@ impl CandidateCatalog {
         &mut self,
         extension_id: &str,
         candidates: Vec<Candidate>,
-        removed: Vec<String>,
+        removed: Vec<String>
     ) {
         for id in removed {
             self._entries.remove(&id);

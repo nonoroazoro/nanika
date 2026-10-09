@@ -6,7 +6,7 @@ use nanika_search::{Candidate, CandidateKind};
 fn typed_entry_kinds_preserve_the_desktop_wire_values() {
     for (kind, expected) in [
         (CandidateKind::Action, "action"),
-        (CandidateKind::View, "view"),
+        (CandidateKind::View, "view")
     ] {
         let candidate = Candidate::new(
             kind,
@@ -15,7 +15,7 @@ fn typed_entry_kinds_preserve_the_desktop_wire_values() {
             "Entry",
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            Vec::new(),
+            Vec::new()
         );
         let result = SearchResult::from_candidate(&candidate, None);
         assert_eq!(serde_json::to_value(result).unwrap()["entryType"], expected);
@@ -31,7 +31,7 @@ fn results_inherit_package_icons_and_allow_item_overrides() {
         "Result",
         "copy",
         vec![nanika_protocol::Action::primary("copy", "Copy")],
-        Vec::new(),
+        Vec::new()
     );
     for path in ["assets/icon.png", "images/custom.png"] {
         let icon = IconSource::Package { path: path.into() };
@@ -44,21 +44,21 @@ fn results_inherit_package_icons_and_allow_item_overrides() {
     for (icon, suffix) in [
         (
             IconSource::Package {
-                path: "assets/item.png".into(),
+                path: "assets/item.png".into()
             },
-            "/test.extension/package/assets/item.png",
+            "/test.extension/package/assets/item.png"
         ),
         (
             IconSource::Cache(IconReference::new("application-icon").unwrap()),
-            "/test.extension/cache/application-icon/128.png",
-        ),
+            "/test.extension/cache/application-icon/128.png"
+        )
     ] {
         let item = candidate.clone().with_icon(Some(icon));
         let result = SearchResult::from_candidate(
             &item,
             Some(IconSource::Package {
-                path: "assets/icon.png".into(),
-            }),
+                path: "assets/icon.png".into()
+            })
         );
         let Some(crate::result_icon::ResultIcon::Image { url }) = result.icon else {
             panic!("native and package icons must remain images");
@@ -69,8 +69,8 @@ fn results_inherit_package_icons_and_allow_item_overrides() {
     let result = SearchResult::from_candidate(
         &empty,
         Some(IconSource::Package {
-            path: "assets/icon.png".into(),
-        }),
+            path: "assets/icon.png".into()
+        })
     );
     assert!(
         result.icon.is_none(),
@@ -83,12 +83,12 @@ fn result_subtitles_preserve_declared_layout_semantics() {
     for (subtitle, kind) in [
         (
             nanika_protocol::CandidateSubtitle::Label("Application".into()),
-            "label",
+            "label"
         ),
         (
             nanika_protocol::CandidateSubtitle::Description("Application".into()),
-            "description",
-        ),
+            "description"
+        )
     ] {
         let candidate = Candidate::new(
             CandidateKind::Action,
@@ -97,7 +97,7 @@ fn result_subtitles_preserve_declared_layout_semantics() {
             "Title",
             "run",
             vec![nanika_protocol::Action::primary("run", "Run")],
-            Vec::new(),
+            Vec::new()
         )
         .with_subtitle(Some(subtitle));
         let result = SearchResult::from_candidate(&candidate, None);
@@ -123,7 +123,7 @@ fn root_confirmation_is_exposed_only_for_the_enabled_primary_action() {
             "Shut Down",
             "power",
             vec![action.clone()],
-            Vec::new(),
+            Vec::new()
         );
         let result = SearchResult::from_candidate(&candidate, None);
         assert!(!result.allow_default_execution);
@@ -145,10 +145,10 @@ fn native_images_take_priority_over_semantic_action_symbols() {
         "Power",
         "power",
         vec![action],
-        vec![],
+        vec![]
     );
     let package = Some(IconSource::Package {
-        path: "assets/icon.png".into(),
+        path: "assets/icon.png".into()
     });
     let result = SearchResult::from_candidate(&candidate, package.clone());
     assert!(matches!(
@@ -158,7 +158,7 @@ fn native_images_take_priority_over_semantic_action_symbols() {
         })
     ));
     let native = candidate.with_icon(Some(IconSource::Cache(
-        IconReference::new("native").unwrap(),
+        IconReference::new("native").unwrap()
     )));
     let result = SearchResult::from_candidate(&native, package);
     assert!(matches!(

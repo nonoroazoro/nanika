@@ -7,5 +7,5 @@ pub(crate) struct ExtensionViewRequest {
     pub(crate) generation: u64,
     pub(crate) view_id: String,
     pub(crate) revision: u64,
-    pub(crate) kind: ExtensionViewRequestKind,
+    pub(crate) kind: ExtensionViewRequestKind
 }

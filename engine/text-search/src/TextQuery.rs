@@ -3,7 +3,7 @@ use crate::normalize_query;
 /// Prepared query shared by launchers and Settings, without romanization or usage policy.
 pub struct TextQuery {
     _normalized: String,
-    pub(crate) _terms: Vec<String>,
+    pub(crate) _terms: Vec<String>
 }
 
 impl TextQuery {
@@ -15,7 +15,7 @@ impl TextQuery {
             .collect();
         Self {
             _normalized: normalized,
-            _terms: terms,
+            _terms: terms
         }
     }
 

@@ -16,7 +16,7 @@ pub(crate) struct PackageTransaction {
     pub(crate) operation: String,
     pub(crate) extension_id: String,
     pub(crate) version: Option<String>,
-    pub(crate) backup_name: String,
+    pub(crate) backup_name: String
 }
 
 impl PackageTransaction {
@@ -25,7 +25,7 @@ impl PackageTransaction {
             operation: "replace".to_owned(),
             extension_id: extension_id.to_owned(),
             version: Some(version.to_owned()),
-            backup_name: backup_name.to_owned(),
+            backup_name: backup_name.to_owned()
         }
     }
 
@@ -34,7 +34,7 @@ impl PackageTransaction {
             operation: "remove".to_owned(),
             extension_id: extension_id.to_owned(),
             version: None,
-            backup_name: backup_name.to_owned(),
+            backup_name: backup_name.to_owned()
         }
     }
 
@@ -47,7 +47,7 @@ impl PackageTransaction {
                 ))
             }),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error.into()),
+            Err(error) => Err(error.into())
         }
     }
 
@@ -55,7 +55,7 @@ impl PackageTransaction {
         let path = root.join(TRANSACTION_FILE);
         if path.exists() {
             return Err(ExtensionPackageError::Manifest(
-                "an incomplete package transaction requires explicit repair".to_owned(),
+                "an incomplete package transaction requires explicit repair".to_owned()
             ));
         }
         let temporary = root.join(format!(".package-transaction-{}.partial", Uuid::new_v4()));
@@ -85,14 +85,14 @@ impl PackageTransaction {
         match fs::remove_file(root.join(TRANSACTION_FILE)) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
+            Err(error) => Err(error.into())
         }
     }
 
     pub(crate) fn validate(&self) -> Result<(), ExtensionPackageError> {
         if !nanika_storage::is_valid_extension_id(&self.extension_id) {
             return Err(ExtensionPackageError::Manifest(
-                "package transaction journal has an invalid extension id".to_owned(),
+                "package transaction journal has an invalid extension id".to_owned()
             ));
         }
         let mut backup_components = Path::new(&self.backup_name).components();
@@ -100,14 +100,14 @@ impl PackageTransaction {
             || backup_components.next().is_some()
         {
             return Err(ExtensionPackageError::Manifest(
-                "package transaction journal has an invalid backup name".to_owned(),
+                "package transaction journal has an invalid backup name".to_owned()
             ));
         }
         match self.operation.as_str() {
             "replace" => {
                 let version = self.version.as_deref().ok_or_else(|| {
                     ExtensionPackageError::Manifest(
-                        "replacement transaction journal has no version".to_owned(),
+                        "replacement transaction journal has no version".to_owned()
                     )
                 })?;
                 semver::Version::parse(version)
@@ -116,12 +116,12 @@ impl PackageTransaction {
             "remove" if self.version.is_none() => {}
             "remove" => {
                 return Err(ExtensionPackageError::Manifest(
-                    "removal transaction journal unexpectedly has a version".to_owned(),
+                    "removal transaction journal unexpectedly has a version".to_owned()
                 ));
             }
             _ => {
                 return Err(ExtensionPackageError::Manifest(
-                    "package transaction journal has an invalid operation".to_owned(),
+                    "package transaction journal has an invalid operation".to_owned()
                 ));
             }
         }

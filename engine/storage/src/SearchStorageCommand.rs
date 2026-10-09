@@ -6,13 +6,13 @@ pub(crate) type StorageResponse = SyncSender<Result<(), String>>;
 pub(crate) enum SearchStorageCommand {
     RegisterBuiltInExtension {
         extension_id: String,
-        response: StorageResponse,
+        response: StorageResponse
     },
     RecordHistory {
         history_key: String,
         display_query: String,
         used_at: u64,
-        response: StorageResponse,
+        response: StorageResponse
     },
     RecordUsage {
         extension_id: String,
@@ -20,7 +20,7 @@ pub(crate) enum SearchStorageCommand {
         action_id: String,
         query_context: String,
         executed_at: u64,
-        response: StorageResponse,
+        response: StorageResponse
     },
     RecordExecution {
         history_key: String,
@@ -28,10 +28,10 @@ pub(crate) enum SearchStorageCommand {
         usage: UsageKey,
         history_used_at: u64,
         executed_at: u64,
-        response: StorageResponse,
+        response: StorageResponse
     },
     ResetUsage {
-        response: StorageResponse,
+        response: StorageResponse
     },
-    Shutdown,
+    Shutdown
 }

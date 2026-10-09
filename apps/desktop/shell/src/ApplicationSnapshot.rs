@@ -9,5 +9,5 @@ pub(crate) struct ApplicationSnapshot {
     pub(crate) locale: String,
     pub(crate) platform: nanika_platform::TargetPlatform,
     pub(crate) max_query_chars: usize,
-    pub(crate) resource_origin: String,
+    pub(crate) resource_origin: String
 }

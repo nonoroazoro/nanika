@@ -15,7 +15,7 @@ const DELAYED: &str = "com.nanika.script";
 struct Fixture {
     paths: NanikaPaths,
     binary: PathBuf,
-    manifests: Vec<String>,
+    manifests: Vec<String>
 }
 
 impl Fixture {
@@ -71,7 +71,7 @@ impl Fixture {
         Self {
             paths: NanikaPaths::from_roots(&root, root.join("cache"), root.join("config")),
             binary,
-            manifests: manifests.into(),
+            manifests: manifests.into()
         }
     }
 
@@ -80,7 +80,7 @@ impl Fixture {
             self.paths
                 .app_data_root()
                 .join(format!("{operation}.block")),
-            b"block",
+            b"block"
         )
         .unwrap();
     }
@@ -89,7 +89,7 @@ impl Fixture {
         std::fs::remove_file(
             self.paths
                 .app_data_root()
-                .join(format!("{operation}.block")),
+                .join(format!("{operation}.block"))
         )
         .unwrap();
     }
@@ -110,7 +110,7 @@ impl Fixture {
             let _ = sender.send(RuntimeService::start(
                 &paths,
                 &sources,
-                &paths.app_data_root().join("resources"),
+                &paths.app_data_root().join("resources")
             ));
         });
         let result = receiver.recv_timeout(WAIT);
@@ -219,7 +219,7 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
             .paths
             .app_data_root()
             .join(format!("fail-search-{DELAYED}")),
-        b"fail",
+        b"fail"
     )
     .unwrap();
     let generation = runtime.begin_query("failure").unwrap();
@@ -245,7 +245,7 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
             "fixture.entry",
             "fixture.run",
             "failure",
-            nanika_protocol::ActionInvocation::Default,
+            nanika_protocol::ActionInvocation::Default
         )
         .unwrap()
         .recv_timeout(WAIT)
@@ -277,7 +277,7 @@ fn shutdown_interrupts_a_pending_configuration_update() {
             "update-configuration",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap();
     wait_until(|| fixture.entered("update-configuration"));
@@ -296,7 +296,7 @@ fn live_configuration_updates_report_the_correlated_acknowledgement() {
             "update-configuration-success",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap();
     let outcome = receipt.wait().unwrap();
@@ -333,7 +333,7 @@ fn queries_continue_while_configuration_application_is_pending() {
             "deferred-settings",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap();
     wait_until(|| fixture.entered("deferred-settings"));
@@ -359,7 +359,7 @@ fn settings_save_returns_before_application_and_keeps_configuration_readable() {
             "settings-save",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         ))
         .unwrap();
     });
@@ -390,7 +390,7 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
     wait_until(|| has_result(&runtime, generation, HEALTHY));
     std::fs::write(
         fixture.paths.app_data_root().join("fail-settings-rejected"),
-        b"reject",
+        b"reject"
     )
     .unwrap();
     let outcome = runtime
@@ -399,7 +399,7 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
             "settings-rejected",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap()
         .wait()
@@ -422,7 +422,7 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
         "settings-invalid",
         "fixture.enabled".to_owned(),
         serde_json::json!("invalid"),
-        std::sync::Arc::new(|_| {}),
+        std::sync::Arc::new(|_| {})
     );
     assert!(invalid.is_err());
     assert_eq!(
@@ -463,7 +463,7 @@ fn shutdown_completes_a_waiting_settings_save() {
             "settings-pending",
             "fixture.enabled".to_owned(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         ))
         .unwrap();
     });
@@ -522,7 +522,7 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
                     "dormant-config",
                     "fixture.enabled".to_owned(),
                     serde_json::json!(false),
-                    std::sync::Arc::new(|_| {}),
+                    std::sync::Arc::new(|_| {})
                 )
                 .unwrap()
                 .wait()
@@ -559,7 +559,7 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
                 "fixture.entry",
                 nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
                 "fixture",
-                nanika_protocol::ActionInvocation::Default,
+                nanika_protocol::ActionInvocation::Default
             )
             .unwrap();
         assert!(matches!(
@@ -637,7 +637,7 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
     database
         .execute_batch(
             "CREATE TRIGGER reject_usage BEFORE INSERT ON usage_stats
-         BEGIN SELECT RAISE(ABORT, 'fixture recording failure'); END;",
+         BEGIN SELECT RAISE(ABORT, 'fixture recording failure'); END;"
         )
         .unwrap();
     let invoking = format!("invoke-{HEALTHY}-1");
@@ -652,7 +652,7 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
             "fixture.view",
             nanika_protocol::VIEW_OPEN_ACTION_ID,
             "fixture",
-            nanika_protocol::ActionInvocation::Default,
+            nanika_protocol::ActionInvocation::Default
         ))
         .unwrap();
     });
@@ -691,7 +691,7 @@ fn recording_failure_preserves_the_completed_view_and_its_close_contract() {
             runtime.instance_id(HEALTHY).unwrap(),
             generation,
             &view_id,
-            revision,
+            revision
         )
         .unwrap()
         .recv_timeout(WAIT)
@@ -734,7 +734,7 @@ fn restricted_candidates_stay_searchable_but_enforce_execution_policy() {
     let runtime = fixture.start();
     for (query, accepted) in [
         ("explicit-only", ActionInvocation::Explicit),
-        ("confirm-action", ActionInvocation::Confirmed),
+        ("confirm-action", ActionInvocation::Confirmed)
     ] {
         let generation = runtime.begin_query(query).unwrap();
         wait_until(|| has_result(&runtime, generation, HEALTHY));
@@ -745,7 +745,7 @@ fn restricted_candidates_stay_searchable_but_enforce_execution_policy() {
                 "fixture.entry",
                 "fixture.run",
                 query,
-                invocation,
+                invocation
             )
         };
         assert!(invoke(ActionInvocation::Default).is_err());
@@ -797,7 +797,7 @@ fn static_command_preserves_confirmation_policy_through_runtime_dispatch() {
             "fixture.entry",
             COMMAND_EXECUTE_ACTION_ID,
             "fixture",
-            invocation,
+            invocation
         )
     };
     assert!(invoke(ActionInvocation::Default).is_err());
@@ -838,7 +838,7 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
         "fixture.entry",
         "fixture.run",
         "confirm-action",
-        ActionInvocation::Confirmed,
+        ActionInvocation::Confirmed
     );
     assert!(matches!(rejected, Err(error) if error.contains("Search changed")));
     let stored = nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
@@ -852,7 +852,7 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
             "fixture.entry",
             "fixture.run",
             "confirm-action",
-            ActionInvocation::Confirmed,
+            ActionInvocation::Confirmed
         )
         .unwrap();
     assert!(matches!(
@@ -906,7 +906,7 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
             }
             let store = nanika_config::ConfigStore::open(
                 fixture.paths.app_data_root(),
-                fixture.paths.config_root(),
+                fixture.paths.config_root()
             )
             .unwrap();
             let mut registry = nanika_config::ExtensionRegistryTransaction::begin(&store).unwrap();
@@ -940,7 +940,7 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
                         "disabled-settings",
                         "fixture.enabled".to_owned(),
                         serde_json::json!(false),
-                        std::sync::Arc::new(|_| {}),
+                        std::sync::Arc::new(|_| {})
                     )
                     .unwrap();
                 let outcome = receipt.wait().unwrap();
@@ -1016,7 +1016,7 @@ fn invalid_configuration_keeps_installed_metadata_visible() {
     fixture.manifests.truncate(1);
     let store = nanika_config::ConfigStore::open(
         fixture.paths.app_data_root(),
-        fixture.paths.config_root(),
+        fixture.paths.config_root()
     )
     .unwrap();
     let path = store.extension_configuration_file(HEALTHY);
@@ -1028,7 +1028,7 @@ fn invalid_configuration_keeps_installed_metadata_visible() {
     assert!(runtime.extension_configurations().is_empty());
     std::fs::write(
         &path,
-        r#"{"formatVersion":1,"values":{"fixture.enabled":false}}"#,
+        r#"{"formatVersion":1,"values":{"fixture.enabled":false}}"#
     )
     .unwrap();
     runtime
@@ -1063,7 +1063,7 @@ fn apply_first_preserves_saved_value_until_ack_and_survives_dropped_receipt() {
             "apply-first",
             "fixture.enabled".into(),
             false.into(),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap();
     wait_until(|| fixture.entered("apply-first"));
@@ -1117,7 +1117,7 @@ fn progress_does_not_complete_an_operation_even_at_one_hundred_percent() {
             false.into(),
             std::sync::Arc::new(move |progress| {
                 sent.send(progress).unwrap();
-            }),
+            })
         )
         .unwrap();
     for expected in [0, 1, 2] {
@@ -1163,7 +1163,7 @@ fn large_configuration_is_applied_persisted_and_reloaded_for_both_policies() {
                 "large-settings",
                 "fixture.payload".into(),
                 payload.clone(),
-                std::sync::Arc::new(|_| {}),
+                std::sync::Arc::new(|_| {})
             )
             .unwrap()
             .wait()
@@ -1190,7 +1190,7 @@ fn large_configuration_is_applied_persisted_and_reloaded_for_both_policies() {
                 "small-edit-large-snapshot",
                 "fixture.enabled".into(),
                 false.into(),
-                std::sync::Arc::new(|_| {}),
+                std::sync::Arc::new(|_| {})
             )
             .unwrap()
             .wait()
@@ -1277,7 +1277,7 @@ fn lifecycle_and_configuration_share_admission_until_after_apply_persistence_fin
             "lifecycle-settings",
             "fixture.enabled".into(),
             false.into(),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap();
     wait_until(|| fixture.entered("lifecycle-settings"));
@@ -1312,9 +1312,9 @@ fn lifecycle_and_configuration_share_admission_until_after_apply_persistence_fin
                 .config_root()
                 .join("extensions")
                 .join(HEALTHY)
-                .join("settings.jsonc"),
+                .join("settings.jsonc")
         )
-        .unwrap(),
+        .unwrap()
     )
     .unwrap();
     assert_eq!(configured["values"]["fixture.enabled"], false);
@@ -1353,7 +1353,7 @@ fn failed_registry_persistence_keeps_live_instance_and_failed_cleanup_remains_vi
             .paths
             .app_data_root()
             .join(format!("fail-cleanup-{HEALTHY}")),
-        b"fail",
+        b"fail"
     )
     .unwrap();
     assert!(
@@ -1430,7 +1430,7 @@ fn disable_preserves_active_action_outcome_and_cancels_only_queued_actions() {
                 "fixture.entry",
                 "fixture.run",
                 "fixture",
-                nanika_protocol::ActionInvocation::Default,
+                nanika_protocol::ActionInvocation::Default
             )
             .unwrap()
     };
@@ -1538,7 +1538,7 @@ fn crash_restarts_with_new_authority_saved_configuration_and_current_query() {
             "saved-before-crash",
             "fixture.enabled".into(),
             serde_json::json!(false),
-            std::sync::Arc::new(|_| {}),
+            std::sync::Arc::new(|_| {})
         )
         .unwrap()
         .wait()
@@ -1566,7 +1566,7 @@ fn crash_restarts_with_new_authority_saved_configuration_and_current_query() {
         fixture
             .paths
             .app_data_root()
-            .join(format!("initialize-{HEALTHY}.starts")),
+            .join(format!("initialize-{HEALTHY}.starts"))
     )
     .unwrap();
     assert_eq!(starts.lines().count(), 2);
@@ -1582,7 +1582,7 @@ fn initialization_failure_retries_once_without_blocking_other_extensions() {
             .paths
             .app_data_root()
             .join(format!("fail-initialize-{DELAYED}")),
-        b"fail",
+        b"fail"
     )
     .unwrap();
     let runtime = fixture.start();
@@ -1633,7 +1633,7 @@ fn progress_only_publication_preserves_runtime_action_authority() {
             .paths
             .app_data_root()
             .join(format!("empty-search-{DELAYED}")),
-        b"empty",
+        b"empty"
     )
     .unwrap();
     let runtime = fixture.start();
@@ -1659,7 +1659,7 @@ fn progress_only_publication_preserves_runtime_action_authority() {
             "fixture.entry",
             "fixture.run",
             "fixture",
-            nanika_protocol::ActionInvocation::Default,
+            nanika_protocol::ActionInvocation::Default
         )
         .unwrap()
         .recv_timeout(WAIT)

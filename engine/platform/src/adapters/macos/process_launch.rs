@@ -4,14 +4,14 @@ use std::process::Command;
 pub(crate) fn windows_application(_path: &str) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "Windows application launch is unsupported on this platform",
+        "Windows application launch is unsupported on this platform"
     ))
 }
 
 pub(crate) fn apply_windows_raw(_command: &mut Command, _value: &str) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "Windows raw arguments are unsupported on this platform",
+        "Windows raw arguments are unsupported on this platform"
     ))
 }
 
@@ -26,7 +26,7 @@ pub(crate) fn mac_application(bundle_path: &str) -> std::io::Result<Command> {
     if !path.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("application bundle does not exist: {}", path.display()),
+            format!("application bundle does not exist: {}", path.display())
         ));
     }
     let mut command = Command::new("/usr/bin/open");
@@ -37,6 +37,6 @@ pub(crate) fn mac_application(bundle_path: &str) -> std::io::Result<Command> {
 pub(crate) fn windows_packaged_application(_id: &str) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "Windows packaged application activation is unsupported on this platform",
+        "Windows packaged application activation is unsupported on this platform"
     ))
 }

@@ -12,7 +12,7 @@ use crate::{
     ExtensionRefresh, ExtensionRuntime, ExtensionRuntimeInvocation, ExtensionSearchQuery,
     ExtensionSearchState, ExtensionSearchWorkerContext, ExtensionViewRequest,
     ExtensionViewRequestKind, ExtensionWork, HostDiagnostic, RuntimeViewCompletion,
-    SupervisorError, publish_extension_snapshot,
+    SupervisorError, publish_extension_snapshot
 };
 
 /// Fixed worker that keeps extension protocol I/O off the UI thread.
@@ -25,7 +25,7 @@ pub(crate) struct ExtensionSearchWorker {
     last_error: Arc<Mutex<Option<HostDiagnostic>>>,
     live_configuration: bool,
     root_search: bool,
-    thread: Mutex<Option<JoinHandle<()>>>,
+    thread: Mutex<Option<JoinHandle<()>>>
 }
 
 impl ExtensionSearchWorker {
@@ -35,7 +35,7 @@ impl ExtensionSearchWorker {
         search: SearchHandle,
         contributions: ExtensionContributions,
         configuration: nanika_protocol::ExtensionConfiguration,
-        context: ExtensionSearchWorkerContext,
+        context: ExtensionSearchWorkerContext
     ) -> io::Result<Self> {
         let extension_id = extension_id.into();
         let instance = Arc::new(crate::ExtensionInstance::new());
@@ -58,7 +58,7 @@ impl ExtensionSearchWorker {
             retained_search
                 .register_static_catalog(crate::search_candidates(
                     &extension_id,
-                    contribution_candidates(&contributions),
+                    contribution_candidates(&contributions)
                 ))
                 .map_err(io::Error::other)?;
         }
@@ -75,7 +75,7 @@ impl ExtensionSearchWorker {
                 },
                 ..Default::default()
             }),
-            Condvar::new(),
+            Condvar::new()
         ));
         let worker_state = Arc::clone(&state);
         let factory_extension_id = extension_id.clone();
@@ -116,8 +116,8 @@ impl ExtensionSearchWorker {
                     extension_id.clone(),
                     Arc::new(crate::InstanceHostServices {
                         instance: Arc::clone(&factory_instance),
-                        services: host_services,
-                    }),
+                        services: host_services
+                    })
                 );
             }
             runtime.set_shutdown_signal(Arc::clone(
@@ -125,7 +125,7 @@ impl ExtensionSearchWorker {
                     .0
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
-                    .shutdown,
+                    .shutdown
             ));
             if root_search {
                 let changed = Arc::clone(&state);
@@ -166,7 +166,7 @@ impl ExtensionSearchWorker {
                     Some(detail) => {
                         SupervisorError::UnexpectedMessage(format!("{error}; {detail}"))
                     }
-                    None => error,
+                    None => error
                 })?;
             let mut state = state.0.lock().unwrap_or_else(|error| error.into_inner());
             if !state.closed && state.lifecycle == crate::RuntimeExtensionState::Starting {
@@ -419,7 +419,7 @@ impl ExtensionSearchWorker {
             last_error,
             live_configuration,
             root_search: contributions.root_search.is_some(),
-            thread: Mutex::new(Some(thread)),
+            thread: Mutex::new(Some(thread))
         };
         Ok(worker)
     }
@@ -468,7 +468,7 @@ impl ExtensionSearchWorker {
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
         let query = ExtensionSearchQuery {
             generation,
-            query: query.into(),
+            query: query.into()
         };
         if state.closed
             || state
@@ -540,7 +540,7 @@ impl ExtensionSearchWorker {
         configuration: nanika_protocol::ExtensionConfiguration,
         require_live: bool,
         progress: crate::ConfigurationProgressHandler,
-        completion: std::sync::mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>,
+        completion: std::sync::mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>
     ) -> Result<(), SupervisorError> {
         let (lock, ready) = &*self.state;
         let mut state = wait_for_capacity(lock, ready)?;
@@ -551,7 +551,7 @@ impl ExtensionSearchWorker {
                 configuration,
                 require_live,
                 progress,
-                completion,
+                completion
             });
         ready.notify_one();
         Ok(())
@@ -631,7 +631,7 @@ impl ExtensionSearchWorker {
                 Some(error) => Err(format!(
                     "Extension failed before the action started: {error}"
                 )),
-                None => Ok(ExtensionInvocationOutcome::Cancelled),
+                None => Ok(ExtensionInvocationOutcome::Cancelled)
             });
         }
         for view in views {
@@ -730,7 +730,7 @@ fn run_view_event(
     runtime: &mut ExtensionRuntime,
     extension_id: &str,
     request: ExtensionViewRequest,
-    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>
 ) -> Result<RuntimeViewCompletion, SupervisorError> {
     runtime.ensure_running()?;
     let request_id = request.request_id;
@@ -754,23 +754,23 @@ fn run_view_event(
                     } else {
                         ExtensionInterruption::None
                     }
-                },
+                }
             )
             .map(|(revision, effect, view)| RuntimeViewCompletion {
                 revision,
                 effect,
-                view,
+                view
             }),
         ExtensionViewRequestKind::Close => runtime
             .close_view(
                 format!("close-view-{extension_id}-{request_id}"),
-                request.view_id,
+                request.view_id
             )
             .map(|()| RuntimeViewCompletion {
                 revision: request.revision,
                 effect: nanika_protocol::NavigationEffect::Pop,
-                view: None,
-            }),
+                view: None
+            })
     }
 }
 
@@ -778,9 +778,9 @@ fn run_configuration_update(
     runtime: &mut ExtensionRuntime,
     update: ExtensionConfigurationUpdate,
     extension_id: &str,
-    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>
     error: &Arc<Mutex<Option<HostDiagnostic>>>,
-    notifier: &ExtensionNotifier,
+    notifier: &ExtensionNotifier
 ) {
     let state = Arc::clone(state);
     let error = Arc::clone(error);
@@ -803,9 +803,9 @@ fn run_configuration_update(
                         &extension_id,
                         "apply configuration",
                         "Settings could not be applied.",
-                        cause,
-                    )),
-                ),
+                        cause
+                    ))
+                )
             }
             update.complete(completion);
             state
@@ -815,7 +815,7 @@ fn run_configuration_update(
                 .configuration_pending = false;
             state.1.notify_all();
             notify(&notifier);
-        }),
+        })
     );
 }
 
@@ -825,7 +825,7 @@ fn run_refresh(
     refresh: ExtensionRefresh,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     error: &Arc<Mutex<Option<HostDiagnostic>>>,
-    notifier: &ExtensionNotifier,
+    notifier: &ExtensionNotifier
 ) {
     let state = Arc::clone(state);
     let error = Arc::clone(error);
@@ -844,9 +844,9 @@ fn run_refresh(
                         &extension_id,
                         "refresh catalog",
                         "The catalog could not be refreshed.",
-                        cause,
-                    )),
-                ),
+                        cause
+                    ))
+                )
             }
             state
                 .0
@@ -856,7 +856,7 @@ fn run_refresh(
             state.1.notify_all();
             let _ = refresh.completion.send(completion);
             notify(&notifier);
-        }),
+        })
     );
 }
 
@@ -866,7 +866,7 @@ fn run_query(
     query: ExtensionSearchQuery,
     search: &nanika_search::SearchContributor,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-    contributions: &ExtensionContributions,
+    contributions: &ExtensionContributions
 ) -> Result<bool, SupervisorError> {
     runtime.ensure_running()?;
     if contributions.root_search.is_none() {
@@ -902,14 +902,14 @@ fn run_query(
                     search,
                     query.generation,
                     update.entries,
-                    update.complete,
+                    update.complete
                 )
             } else {
                 search.publish_extension_delta(
                     query.generation,
                     crate::search_candidates(extension_id, update.entries),
                     update.removed,
-                    update.complete,
+                    update.complete
                 )
             }
             .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))
@@ -925,27 +925,27 @@ fn run_query(
                     && !state.refreshes.is_empty())
                 || !state.invocations.is_empty()
                 || !state.view_events.is_empty()
-        },
+        }
     )
 }
 
 fn publish_contributions(
     search: &nanika_search::SearchContributor,
     generation: u64,
-    contributions: &ExtensionContributions,
+    contributions: &ExtensionContributions
 ) -> Result<bool, SupervisorError> {
     publish_extension_snapshot(
         search,
         generation,
         contribution_candidates(contributions),
-        true,
+        true
     )
     .map_err(|error| SupervisorError::UnexpectedMessage(error.to_string()))?;
     Ok(true)
 }
 
 pub(crate) fn contribution_candidates(
-    contributions: &ExtensionContributions,
+    contributions: &ExtensionContributions
 ) -> Vec<nanika_protocol::Candidate> {
     let commands = contributions.commands.iter().map(|command| {
         let mut aliases = command.keywords.clone();
@@ -968,7 +968,7 @@ pub(crate) fn contribution_candidates(
             icon: command
                 .icon
                 .as_ref()
-                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() }),
+                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() })
         }
     });
     let views = contributions.views.iter().map(|view| {
@@ -989,13 +989,13 @@ pub(crate) fn contribution_candidates(
             action_id: nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
             actions: vec![nanika_protocol::Action::primary(
                 nanika_protocol::VIEW_OPEN_ACTION_ID.to_owned(),
-                "Open",
+                "Open"
             )],
             aliases,
             icon: view
                 .icon
                 .as_ref()
-                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() }),
+                .map(|path| nanika_protocol::IconSource::Package { path: path.clone() })
         }
     });
     commands.chain(views).collect()
@@ -1007,7 +1007,7 @@ fn run_invocation(
     invocation: &ExtensionInvocation,
     state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     invocation_output: &Arc<Mutex<ExtensionInvocationOutputState>>,
-    notifier: &ExtensionNotifier,
+    notifier: &ExtensionNotifier
 ) -> Result<ExtensionInvocationOutcome, SupervisorError> {
     let (extension_id, instance_id) = origin;
     {
@@ -1035,7 +1035,7 @@ fn run_invocation(
                 output_invocation_id,
                 &output_extension_id,
                 output_generation,
-                &chunk,
+                &chunk
             );
         if should_notify {
             notify(&output_notifier);
@@ -1047,7 +1047,7 @@ fn run_invocation(
             invocation.generation,
             invocation.entry_id.clone(),
             invocation.action_id.clone(),
-            invocation.query_context.clone(),
+            invocation.query_context.clone()
         ),
         publish,
         || {
@@ -1063,7 +1063,7 @@ fn run_invocation(
             } else {
                 ExtensionInterruption::None
             }
-        },
+        }
     );
     let (lock, _) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
@@ -1089,13 +1089,13 @@ fn extension_failure(
     extension_id: &str,
     operation: &'static str,
     user_message: &'static str,
-    source: SupervisorError,
+    source: SupervisorError
 ) -> HostDiagnostic {
     HostDiagnostic::from_error(
         DiagnosticCode::ExtensionUnavailable,
         operation,
         format!("{user_message} Extension: {extension_id}."),
-        source,
+        source
     )
     .with_safe_context(extension_id)
 }
@@ -1116,7 +1116,7 @@ const PENDING_WORK_CAPACITY: usize = 16;
 
 fn wait_for_capacity<'a>(
     lock: &'a Mutex<ExtensionSearchState>,
-    changed: &Condvar,
+    changed: &Condvar
 ) -> Result<MutexGuard<'a, ExtensionSearchState>, SupervisorError> {
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
     loop {
@@ -1125,7 +1125,7 @@ fn wait_for_capacity<'a>(
                 state
                     .lifecycle_error
                     .clone()
-                    .unwrap_or_else(|| "Extension worker failed.".into()),
+                    .unwrap_or_else(|| "Extension worker failed.".into())
             ));
         }
         if state.closed || state.shutdown.load(Ordering::Acquire) {
@@ -1149,10 +1149,10 @@ fn activate_runtime<'a, F>(
     runtime: &'a mut Option<ExtensionRuntime>,
     factory: &mut Option<F>,
     configuration: &nanika_protocol::ExtensionConfiguration,
-    failure: &mut Option<String>,
+    failure: &mut Option<String>
 ) -> Result<&'a mut ExtensionRuntime, SupervisorError>
 where
-    F: FnOnce(nanika_protocol::ExtensionConfiguration) -> Result<ExtensionRuntime, SupervisorError>,
+    F: FnOnce(nanika_protocol::ExtensionConfiguration) -> Result<ExtensionRuntime, SupervisorError>
 {
     if runtime.is_none() {
         if let Some(error) = failure {

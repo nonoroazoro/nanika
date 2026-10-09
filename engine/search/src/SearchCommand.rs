@@ -6,7 +6,7 @@ pub(crate) enum SearchCommand {
     RegisterExtension {
         extension_id: String,
         instance_id: u64,
-        completion: std::sync::mpsc::SyncSender<Result<(), crate::SearchQueueError>>,
+        completion: std::sync::mpsc::SyncSender<Result<(), crate::SearchQueueError>>
     },
     CatalogCommit {
         extension_id: String,
@@ -14,30 +14,30 @@ pub(crate) enum SearchCommand {
         replace: bool,
         candidates: Vec<Candidate>,
         removed: Vec<String>,
-        completion: std::sync::mpsc::SyncSender<Result<(), crate::SearchQueueError>>,
+        completion: std::sync::mpsc::SyncSender<Result<(), crate::SearchQueueError>>
     },
     RemoveExtension {
         extension_id: String,
         instance_id: u64,
-        completion: std::sync::mpsc::SyncSender<()>,
+        completion: std::sync::mpsc::SyncSender<()>
     },
     RegisterStaticCatalog {
         extension_id: String,
         instance_id: u64,
-        candidates: Vec<Candidate>,
+        candidates: Vec<Candidate>
     },
     ExtensionQueryPending {
         generation: u64,
         extension_id: String,
         instance_id: u64,
-        pending: bool,
+        pending: bool
     },
     ExtensionSnapshot {
         complete: bool,
         generation: u64,
         extension_id: String,
         instance_id: u64,
-        candidates: Vec<Candidate>,
+        candidates: Vec<Candidate>
     },
     ExtensionDelta {
         complete: bool,
@@ -45,12 +45,12 @@ pub(crate) enum SearchCommand {
         extension_id: String,
         instance_id: u64,
         candidates: Vec<Candidate>,
-        removed: Vec<String>,
+        removed: Vec<String>
     },
     ApplyPersistedExecution {
         key: UsageKey,
-        executed_at: u64,
+        executed_at: u64
     },
     ResetPersistedUsage,
-    Shutdown,
+    Shutdown
 }

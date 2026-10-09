@@ -9,7 +9,7 @@ fn diagnostic_display_and_debug_redact_the_technical_source() {
         DiagnosticCode::ExtensionUnavailable,
         "initialize extension",
         "An extension could not start. Open diagnostics for details.",
-        secret,
+        secret
     );
 
     assert_eq!(

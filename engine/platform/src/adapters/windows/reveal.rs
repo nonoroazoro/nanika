@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf, Prefix};
 mod tests;
 
 use windows::Win32::System::Com::{
-    COINIT_APARTMENTTHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
+    COINIT_APARTMENTTHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize
 };
 use windows::Win32::UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName};
 use windows::core::PCWSTR;
@@ -25,7 +25,7 @@ pub(crate) fn reveal(path: &Path) -> std::io::Result<()> {
     let result = (|| {
         let mut item = std::ptr::null_mut();
         unsafe { SHParseDisplayName(PCWSTR(wide.as_ptr()), None, &mut item, 0, None) }.map_err(
-            |error| std::io::Error::other(format!("Could not resolve Shell item: {error}")),
+            |error| std::io::Error::other(format!("Could not resolve Shell item: {error}"))
         )?;
         // A fully qualified PIDL with no child list selects the item in its parent.
         let result = unsafe { SHOpenFolderAndSelectItems(item, None, 0) };
@@ -43,7 +43,7 @@ fn _shell_path(path: &Path) -> std::io::Result<PathBuf> {
     let mut parts = path.components();
     let Some(Component::Prefix(prefix)) = parts.next() else {
         return Err(std::io::Error::other(
-            "Shell location must be an absolute path",
+            "Shell location must be an absolute path"
         ));
     };
     let mut result = match prefix.kind() {
@@ -58,7 +58,7 @@ fn _shell_path(path: &Path) -> std::io::Result<PathBuf> {
         Prefix::Disk(_) | Prefix::UNC(_, _) => return Ok(path.to_path_buf()),
         _ => {
             return Err(std::io::Error::other(
-                "Unsupported Shell location namespace",
+                "Unsupported Shell location namespace"
             ));
         }
     };

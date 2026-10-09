@@ -9,7 +9,7 @@ use std::{ffi::OsStr, fs, io::Write, path::Path};
 use command::Command;
 use nanika_config::ConfigStore;
 use nanika_extension_package::{
-    install_package, remove_extension, set_extension_enabled, update_package,
+    install_package, remove_extension, set_extension_enabled, update_package
 };
 use nanika_platform::{InstanceRole, open_regular_file};
 
@@ -36,7 +36,7 @@ fn run() -> Result<String, String> {
     }
     let instance = nanika_platform::acquire_instance(
         nanika_foundation::PROJECT_IDENTITY.bundle_id,
-        paths.app_data_root(),
+        paths.app_data_root()
     )
     .map_err(|error| error.to_string())?;
     let InstanceRole::Primary(_instance) = instance else {
@@ -77,7 +77,7 @@ fn run() -> Result<String, String> {
             remove_extension(&extension_id, &paths, &store).map_err(|error| error.to_string())?;
             Ok(format!("removed {extension_id}"))
         }
-        Command::Diagnostics(_) => unreachable!("diagnostics returns before the mutation gate"),
+        Command::Diagnostics(_) => unreachable!("diagnostics returns before the mutation gate")
     }
 }
 

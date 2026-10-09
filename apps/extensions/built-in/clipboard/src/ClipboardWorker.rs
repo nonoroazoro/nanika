@@ -7,7 +7,7 @@ use clipboard_rs::ClipboardContext;
 
 use crate::{
     ClipboardCommand, ClipboardConfig, ClipboardContentLease, ClipboardEntry, ClipboardPayloads,
-    ClipboardStore, capture,
+    ClipboardStore, capture
 };
 
 /// Single owner for clipboard capture and database writes.
@@ -29,7 +29,7 @@ impl ClipboardWorker {
             payload_root,
             config,
             invalidated,
-            move |root| capture(&context, root, unix_timestamp_millis()),
+            move |root| capture(&context, root, unix_timestamp_millis())
         )
     }
 
@@ -42,7 +42,7 @@ impl ClipboardWorker {
         self.commands
             .send(ClipboardCommand::Clear {
                 entry_ids,
-                response,
+                response
             })
             .map_err(|_| "clipboard capture owner is closed".to_owned())?;
         result
@@ -73,14 +73,14 @@ impl ClipboardWorker {
     pub fn present(
         &self,
         state: crate::ClipboardViewState,
-        expected_revision: Option<u64>,
+        expected_revision: Option<u64>
     ) -> Result<crate::ClipboardPresentation, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
             .send(ClipboardCommand::Present {
                 state,
                 expected_revision,
-                response,
+                response
             })
             .map_err(|_| "clipboard owner is closed".to_owned())?;
         result
@@ -111,7 +111,7 @@ impl ClipboardWorker {
         invalidated: Arc<dyn Fn() + Send + Sync>,
         mut capture: impl FnMut(&std::path::Path) -> Result<Option<ClipboardEntry>, String>
         + Send
-        + 'static,
+        + 'static
     ) -> Result<Self, String> {
         let (commands, receiver) = mpsc::sync_channel(8);
         let (ready, initialized) = mpsc::sync_channel(1);

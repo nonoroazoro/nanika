@@ -3,7 +3,7 @@ use std::process::{Child, Command, Stdio};
 
 use crate::adapter::process_launch::{
     apply_windows_raw, mac_application, shell_command, windows_application,
-    windows_packaged_application,
+    windows_packaged_application
 };
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
 
@@ -12,12 +12,12 @@ pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<O
         LaunchDescriptor::Program {
             program,
             arguments,
-            working_directory,
+            working_directory
         } => {
             if program.trim().is_empty() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "launch program is empty",
+                    "launch program is empty"
                 ));
             }
             let mut command = Command::new(program);
@@ -25,19 +25,19 @@ pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<O
                 LaunchArguments::Structured { values } => {
                     command.args(values);
                 }
-                LaunchArguments::WindowsRaw { value } => apply_windows_raw(&mut command, value)?,
+                LaunchArguments::WindowsRaw { value } => apply_windows_raw(&mut command, value)?
             }
             apply_working_directory(&mut command, working_directory.as_deref())?;
             command
         }
         LaunchDescriptor::Shell {
             command,
-            working_directory,
+            working_directory
         } => {
             if command.trim().is_empty() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "shell command is empty",
+                    "shell command is empty"
                 ));
             }
             let mut process = shell_command(command);
@@ -74,7 +74,7 @@ fn apply_working_directory(command: &mut Command, directory: Option<&str>) -> st
             format!(
                 "launch working directory does not exist: {}",
                 path.display()
-            ),
+            )
         ));
     }
     command.current_dir(path);

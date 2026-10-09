@@ -38,7 +38,7 @@ fn eof_fails_pending_and_future_requests() {
     reply.register(
         "scan".to_owned(),
         1,
-        Box::new(move |result| sender.send(result).unwrap()),
+        Box::new(move |result| sender.send(result).unwrap())
     );
     assert!(!reply.dispatch(&Ok(None)));
     assert!(receiver.recv().unwrap().is_err());
@@ -58,7 +58,7 @@ fn refresh_failure_does_not_consume_another_operations_error() {
     reply.register(
         "scan".to_owned(),
         1,
-        Box::new(move |result| sender.send(result).unwrap()),
+        Box::new(move |result| sender.send(result).unwrap())
     );
     assert!(!reply.dispatch(&Ok(Some(Message::Error {
         request_id: Some("query".to_owned()),

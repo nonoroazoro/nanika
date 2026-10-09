@@ -8,6 +8,6 @@ pub enum HostServiceResponse {
     PathRevealed,
     Launched,
     ClipboardWritten {
-        revision: u64,
-    },
+        revision: u64
+    }
 }

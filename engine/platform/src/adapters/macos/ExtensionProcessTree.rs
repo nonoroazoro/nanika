@@ -21,7 +21,7 @@ impl ExtensionProcessTree {
         match rustix::process::test_kill_process_group(process_id) {
             Ok(()) => Ok(false),
             Err(rustix::io::Errno::SRCH) => Ok(true),
-            Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error())),
+            Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error()))
         }
     }
 
@@ -30,7 +30,7 @@ impl ExtensionProcessTree {
         if let Some(process_id) = rustix::process::Pid::from_raw(process_id.cast_signed()) {
             handle_process_group_termination(rustix::process::kill_process_group(
                 process_id,
-                rustix::process::Signal::KILL,
+                rustix::process::Signal::KILL
             ))?;
         }
         Ok(())
@@ -47,7 +47,7 @@ pub fn configure_extension_command(command: &mut std::process::Command) {
 fn handle_process_group_termination(result: rustix::io::Result<()>) -> io::Result<()> {
     match result {
         Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
-        Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error())),
+        Err(error) => Err(io::Error::from_raw_os_error(error.raw_os_error()))
     }
 }
 

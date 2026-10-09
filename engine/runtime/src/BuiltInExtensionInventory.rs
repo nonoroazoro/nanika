@@ -8,7 +8,7 @@ use crate::BuiltInExtension;
 /// Host-owned selection of built-ins, each described by the ordinary extension manifest.
 #[derive(Debug, Clone)]
 pub struct BuiltInExtensionInventory {
-    pub extensions: Vec<BuiltInExtension>,
+    pub extensions: Vec<BuiltInExtension>
 }
 
 impl BuiltInExtensionInventory {
@@ -51,7 +51,7 @@ impl BuiltInExtensionInventory {
                 .to_owned();
             extensions.push(BuiltInExtension {
                 manifest,
-                binary_name,
+                binary_name
             });
         }
         Ok(Self { extensions })

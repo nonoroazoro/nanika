@@ -35,12 +35,12 @@ fn ranking_benchmark(criterion: &mut Criterion) {
                     "benchmark",
                     &format!("entry-{index}"),
                     "launch",
-                    "application 42",
+                    "application 42"
                 ),
                 UsageStat {
                     execution_count: 10,
-                    last_executed_at: 1_000,
-                },
+                    last_executed_at: 1_000
+                }
             );
         }
         bencher.iter(|| {
@@ -66,7 +66,7 @@ fn make_candidates(count: usize) -> Vec<Candidate> {
                 format!("Application {index}"),
                 "launch",
                 vec![nanika_protocol::Action::primary("launch", "Open")],
-                Vec::new(),
+                Vec::new()
             )
         })
         .collect()

@@ -5,11 +5,11 @@ use std::sync::Arc;
 
 fn fixture(
     name: &str,
-    persistence: &str,
+    persistence: &str
 ) -> (
     Arc<ExtensionConfigurationRegistry>,
     ConfigStore,
-    std::path::PathBuf,
+    std::path::PathBuf
 ) {
     let root = std::env::temp_dir().join(format!("nanika-settings-{name}-{}", std::process::id()));
     if root.exists() {
@@ -138,7 +138,7 @@ fn admission_is_bounded_and_property_validation_preserves_hidden_values() {
     for (key, value) in [
         ("unknown", true.into()),
         (hidden, false.into()),
-        ("enabled", "invalid".into()),
+        ("enabled", "invalid".into())
     ] {
         assert!(
             registry

@@ -3,5 +3,5 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 pub(crate) struct ProtocolInput {
     pub(crate) message: Message,
-    pub(crate) cancelled: Arc<AtomicBool>,
+    pub(crate) cancelled: Arc<AtomicBool>
 }

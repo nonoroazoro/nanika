@@ -10,21 +10,21 @@ pub struct HostDiagnostic {
     operation: &'static str,
     user_message: String,
     safe_context: Option<String>,
-    source: Option<Arc<dyn Error + Send + Sync>>,
+    source: Option<Arc<dyn Error + Send + Sync>>
 }
 
 impl HostDiagnostic {
     pub fn new(
         code: DiagnosticCode,
         operation: &'static str,
-        user_message: impl Into<String>,
+        user_message: impl Into<String>
     ) -> Self {
         Self {
             code,
             operation,
             user_message: user_message.into(),
             safe_context: None,
-            source: None,
+            source: None
         }
     }
 
@@ -32,17 +32,17 @@ impl HostDiagnostic {
         code: DiagnosticCode,
         operation: &'static str,
         user_message: impl Into<String>,
-        source: E,
+        source: E
     ) -> Self
     where
-        E: Error + Send + Sync + 'static,
+        E: Error + Send + Sync + 'static
     {
         Self {
             code,
             operation,
             user_message: user_message.into(),
             safe_context: None,
-            source: Some(Arc::new(source)),
+            source: Some(Arc::new(source))
         }
     }
 
@@ -50,13 +50,13 @@ impl HostDiagnostic {
         code: DiagnosticCode,
         operation: &'static str,
         user_message: impl Into<String>,
-        source: impl Into<String>,
+        source: impl Into<String>
     ) -> Self {
         Self::from_error(
             code,
             operation,
             user_message,
-            DiagnosticSource(source.into()),
+            DiagnosticSource(source.into())
         )
     }
 
@@ -81,7 +81,7 @@ impl HostDiagnostic {
     pub fn detailed_message(&self) -> String {
         self.source.as_ref().map_or_else(
             || self.user_message.clone(),
-            |source| format!("{} Cause: {source}", self.user_message),
+            |source| format!("{} Cause: {source}", self.user_message)
         )
     }
 

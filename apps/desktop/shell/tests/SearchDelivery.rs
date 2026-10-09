@@ -24,7 +24,7 @@ fn one_unacknowledged_message_coalesces_updates_and_surfaces_startup_failure() {
         run_delivery(
             &worker,
             receiver,
-            &Mutex::new(crate::SettingsApplications::default()),
+            &Mutex::new(crate::SettingsApplications::default())
         )
     });
     wakes.send(SearchDelivery::Wake).unwrap();
@@ -71,7 +71,7 @@ fn channel_callback_can_acknowledge_without_the_shared_state_lock() {
         run_delivery(
             &worker,
             receiver,
-            &Mutex::new(crate::SettingsApplications::default()),
+            &Mutex::new(crate::SettingsApplications::default())
         )
     });
     wakes.send(SearchDelivery::Wake).unwrap();
@@ -104,7 +104,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             confirmation_title: None,
 
             kind: "Extension".to_owned(),
-            entry_type: nanika_search::CandidateKind::Action,
+            entry_type: nanika_search::CandidateKind::Action
         })
         .collect();
     let route = crate::ExtensionViewSnapshot {
@@ -124,9 +124,9 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
                     value: "detail".repeat(16000),
                 },
                 metadata: Vec::new(),
-                actions: Vec::new(),
-            },
-        }),
+                actions: Vec::new()
+            }
+        })
     };
     let mut update = crate::RootSearchSnapshot {
         pending_extensions: Vec::new(),
@@ -146,7 +146,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         total_results: 2000,
         phase: crate::SearchPhase::Ready,
         error: None,
-        warnings: Vec::new(),
+        warnings: Vec::new()
     };
     let (output, received) = mpsc::channel();
     let channel = tauri::ipc::Channel::new(move |body| {
@@ -210,7 +210,7 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
     let runtime = nanika_host::RuntimeService::start(
         &paths,
         &[&manifest],
-        &paths.app_data_root().join("resources"),
+        &paths.app_data_root().join("resources")
     )
     .unwrap();
     let (wakes, receiver) = mpsc::sync_channel(1);
@@ -246,7 +246,7 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
                 // Reproduce the real worker's completion notification, including
                 // its arrival before the WebView acknowledges the new snapshot.
                 let _ = completion_wakes.try_send(SearchDelivery::Wake);
-            },
+            }
         );
     });
     let _ = wakes.try_send(SearchDelivery::Wake);
@@ -372,7 +372,7 @@ fn result_ranges_reject_stale_queries_rankings_sessions_and_reordered_scrolls() 
             result_revision,
             range_id,
             offset,
-            count,
+            count
         }
     };
     session

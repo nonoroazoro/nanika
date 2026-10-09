@@ -8,7 +8,7 @@ pub(crate) struct LauncherRefresh {
     _wakes: Option<SyncSender<()>>,
     _stopping: Arc<AtomicBool>,
     _busy: Arc<AtomicBool>,
-    _thread: Option<JoinHandle<()>>,
+    _thread: Option<JoinHandle<()>>
 }
 
 impl LauncherRefresh {
@@ -33,7 +33,7 @@ impl LauncherRefresh {
             _wakes: Some(wakes),
             _stopping: stopping,
             _busy: busy,
-            _thread: Some(thread),
+            _thread: Some(thread)
         })
     }
 

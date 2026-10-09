@@ -4,7 +4,7 @@ use nanika_text_search::normalize_query;
 /// A cheap immutable reference; updates replace only the affected payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
-    _data: std::sync::Arc<crate::CandidateData>,
+    _data: std::sync::Arc<crate::CandidateData>
 }
 
 impl Candidate {
@@ -15,7 +15,7 @@ impl Candidate {
         title: impl Into<String>,
         action_id: impl Into<String>,
         actions: Vec<nanika_protocol::Action>,
-        aliases: Vec<String>,
+        aliases: Vec<String>
     ) -> Self {
         let title = title.into();
         let action_id = action_id.into();
@@ -48,8 +48,8 @@ impl Candidate {
                 _aliases: aliases,
                 _icon: None,
                 _search_values: search_values,
-                _readings: readings,
-            }),
+                _readings: readings
+            })
         }
     }
 

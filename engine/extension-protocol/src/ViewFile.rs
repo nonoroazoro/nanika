@@ -6,5 +6,5 @@ use serde::{Deserialize, Serialize};
 pub struct ViewFile {
     pub name: String,
     pub path: String,
-    pub icon: Option<crate::IconReference>,
+    pub icon: Option<crate::IconReference>
 }

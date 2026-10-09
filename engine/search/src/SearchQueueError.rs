@@ -3,7 +3,7 @@ pub enum SearchQueueError {
     Closed,
     Retired,
     AlreadyRegistered,
-    QueryTooLong,
+    QueryTooLong
 }
 
 impl std::fmt::Display for SearchQueueError {
@@ -14,7 +14,7 @@ impl std::fmt::Display for SearchQueueError {
                 formatter.write_str("extension already has a search authority")
             }
             Self::Closed => formatter.write_str("search owner is closed"),
-            Self::QueryTooLong => formatter.write_str("search query exceeds the character limit"),
+            Self::QueryTooLong => formatter.write_str("search query exceeds the character limit")
         }
     }
 }

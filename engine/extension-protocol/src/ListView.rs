@@ -18,7 +18,7 @@ pub struct ListView {
     /// Independently delivered so moving the viewport never changes selection or actions.
     pub selection: Option<crate::ListSelection>,
     pub detail: Option<DetailView>,
-    pub filter: Option<ViewFilter>,
+    pub filter: Option<ViewFilter>
 }
 
 impl ListView {

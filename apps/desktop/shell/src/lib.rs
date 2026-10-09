@@ -133,7 +133,7 @@ pub fn run() -> Result<(), String> {
     let host_settings = host_settings::HostSettings::open(&paths)?;
     let icon_protocol = std::sync::Arc::new(icon_protocol::IconProtocol::spawn(
         paths.cache_root().to_path_buf(),
-        paths.payload_dir().to_path_buf(),
+        paths.payload_dir().to_path_buf()
     )?);
 
     let mut context = tauri::tauri_build_context!();
@@ -147,7 +147,7 @@ pub fn run() -> Result<(), String> {
             "nanika-icon",
             move |context, request, responder| {
                 icon_protocol.respond(context.webview_label(), request, responder);
-            },
+            }
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -191,12 +191,12 @@ pub fn run() -> Result<(), String> {
                         include_str!("../../../extensions/built-in/script/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
                         include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/system/manifest.jsonc"),
+                        include_str!("../../../extensions/built-in/system/manifest.jsonc")
                     ];
                     match nanika_host::RuntimeService::start(
                         &runtime_paths,
                         &built_in_manifests,
-                        &runtime_resources,
+                        &runtime_resources
                     ) {
                         Ok(runtime) => {
                             runtime_handle

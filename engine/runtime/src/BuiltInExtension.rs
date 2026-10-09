@@ -4,5 +4,5 @@ use nanika_extension_package::ExtensionManifest;
 #[derive(Debug, Clone)]
 pub struct BuiltInExtension {
     pub manifest: ExtensionManifest,
-    pub binary_name: String,
+    pub binary_name: String
 }

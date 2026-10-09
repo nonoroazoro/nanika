@@ -5,7 +5,7 @@ pub enum ConfigError {
     Io(io::Error),
     Parse(String),
     Serialize(serde_json::Error),
-    Invalid(String),
+    Invalid(String)
 }
 
 impl std::fmt::Display for ConfigError {
@@ -16,7 +16,7 @@ impl std::fmt::Display for ConfigError {
             Self::Serialize(error) => {
                 write!(formatter, "configuration serialization error: {error}")
             }
-            Self::Invalid(error) => write!(formatter, "invalid configuration: {error}"),
+            Self::Invalid(error) => write!(formatter, "invalid configuration: {error}")
         }
     }
 }

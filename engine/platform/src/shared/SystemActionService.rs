@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 /// Lazy owner of blocking OS operations. Dropping it drains all admitted work.
 pub struct SystemActionService {
     _commands: Option<SyncSender<SystemAction>>,
-    _thread: Option<JoinHandle<()>>,
+    _thread: Option<JoinHandle<()>>
 }
 
 impl SystemActionService {
@@ -15,7 +15,7 @@ impl SystemActionService {
 
     pub fn submit(
         &self,
-        action: SystemAction,
+        action: SystemAction
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let (response, receiver) = mpsc::sync_channel(1);
         self._commands
@@ -37,7 +37,7 @@ impl SystemActionService {
     }
 
     fn _spawn(
-        execute: impl Fn(SystemAction) -> Result<(), String> + Send + 'static,
+        execute: impl Fn(SystemAction) -> Result<(), String> + Send + 'static
     ) -> std::io::Result<Self> {
         let (commands, receiver) = mpsc::sync_channel::<SystemAction>(16);
         let thread = std::thread::Builder::new()
@@ -52,7 +52,7 @@ impl SystemActionService {
             })?;
         Ok(Self {
             _commands: Some(commands),
-            _thread: Some(thread),
+            _thread: Some(thread)
         })
     }
 }

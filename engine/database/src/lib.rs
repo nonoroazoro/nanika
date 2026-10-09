@@ -22,7 +22,7 @@ pub fn open(path: impl AsRef<Path>, schema: &str) -> Result<Connection> {
     if !initialize && (version != expected_version || objects != _objects(&expected)?) {
         return Err(rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_SCHEMA),
-            Some("unsupported database schema; existing data was not modified".to_owned()),
+            Some("unsupported database schema; existing data was not modified".to_owned())
         ));
     }
     connection.execute_batch(

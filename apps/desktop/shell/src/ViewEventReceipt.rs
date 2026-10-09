@@ -4,5 +4,5 @@
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ViewEventReceipt {
     pub(crate) view_revision: u64,
-    pub(crate) navigation_revision: u64,
+    pub(crate) navigation_revision: u64
 }

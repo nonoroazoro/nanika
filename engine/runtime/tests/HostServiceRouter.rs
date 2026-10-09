@@ -9,11 +9,11 @@ fn reveal_requires_its_own_permission_before_accessing_the_platform() {
         launcher: Err("launcher unavailable".to_owned()),
         clipboard: Err("clipboard unavailable".to_owned()),
         payload_root: Err("payload unavailable".to_owned()),
-        permissions: Default::default(),
+        permissions: Default::default()
     };
     router.register_permissions("com.nanika.test", ["process.launch".to_owned()]);
     let request = || HostServiceRequest::RevealPath {
-        path: "relative.exe".to_owned(),
+        path: "relative.exe".to_owned()
     };
     let error = _prepare(&router, "com.nanika.test", request()).unwrap_err();
     assert!(error.contains("files.reveal"));
@@ -29,7 +29,7 @@ fn clipboard_and_payload_unavailability_do_not_disable_process_launch() {
         launcher: Ok(ProcessLauncher::spawn().expect("launcher")),
         clipboard: Err("clipboard unavailable".to_owned()),
         payload_root: Err("payload unavailable".to_owned()),
-        permissions: Default::default(),
+        permissions: Default::default()
     };
     router.register_permissions("com.nanika.test", ["process.launch".to_owned()]);
     let result = _prepare(
@@ -39,9 +39,9 @@ fn clipboard_and_payload_unavailability_do_not_disable_process_launch() {
             descriptor: LaunchDescriptor::Program {
                 program: String::new(),
                 arguments: LaunchArguments::default(),
-                working_directory: None,
-            },
-        },
+                working_directory: None
+            }
+        }
     )
     .expect("launch service should remain available")
     .admit()
@@ -58,16 +58,16 @@ fn payload_roots_reject_invalid_extension_ids() {
         launcher: Err("launcher unavailable".to_owned()),
         clipboard: Err("clipboard unavailable".to_owned()),
         payload_root: Ok(std::env::temp_dir()),
-        permissions: Default::default(),
+        permissions: Default::default()
     };
     let result = _prepare(
         &router,
         "../escape",
         HostServiceRequest::WriteClipboard {
             content: ClipboardContent::PngFile {
-                path: "value.png".to_owned(),
-            },
-        },
+                path: "value.png".to_owned()
+            }
+        }
     );
     assert!(
         result
@@ -83,16 +83,16 @@ fn host_services_enforce_manifest_permissions() {
         launcher: Err("launcher unavailable".to_owned()),
         clipboard: Err("clipboard unavailable".to_owned()),
         payload_root: Ok(std::env::temp_dir()),
-        permissions: Default::default(),
+        permissions: Default::default()
     };
     let error = _prepare(
         &router,
         "com.nanika.test",
         HostServiceRequest::WriteClipboard {
             content: ClipboardContent::Text {
-                value: "value".to_owned(),
-            },
-        },
+                value: "value".to_owned()
+            }
+        }
     )
     .expect_err("missing permission should fail");
     assert!(error.contains("clipboard.write"));
@@ -106,7 +106,7 @@ fn system_permissions_are_action_specific_and_denied_requests_do_not_start_a_wor
         launcher: Err("unavailable".to_owned()),
         clipboard: Err("unavailable".to_owned()),
         payload_root: Err("unavailable".to_owned()),
-        permissions: Default::default(),
+        permissions: Default::default()
     };
     router.register_permissions("external.system", ["system.trash.open".to_owned()]);
     for action in [
@@ -116,7 +116,7 @@ fn system_permissions_are_action_specific_and_denied_requests_do_not_start_a_wor
         SystemAction::LogOut,
         SystemAction::Restart,
         SystemAction::ShutDown,
-        SystemAction::EmptyTrash,
+        SystemAction::EmptyTrash
     ] {
         assert!(
             _prepare(
@@ -146,7 +146,7 @@ fn system_permissions_are_action_specific_and_denied_requests_do_not_start_a_wor
 fn _prepare<'a>(
     router: &'a HostServiceRouter,
     extension_id: &str,
-    request: HostServiceRequest,
+    request: HostServiceRequest
 ) -> Result<crate::PreparedHostService<'a>, String> {
     router.prepare(extension_id, request, &mut || {
         crate::ExtensionInterruption::None

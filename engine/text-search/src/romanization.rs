@@ -6,14 +6,14 @@ use crate::han_readings::READINGS;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RomanizedReading {
     pub full: String,
-    pub initials: String,
+    pub initials: String
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RomanizedMatch<'a> {
     Exact,
     Prefix(&'a str),
-    Infix(&'a str),
+    Infix(&'a str)
 }
 
 impl RomanizedMatch<'_> {
@@ -21,7 +21,7 @@ impl RomanizedMatch<'_> {
         match self {
             Self::Exact => 3,
             Self::Prefix(_) => 2,
-            Self::Infix(_) => 1,
+            Self::Infix(_) => 1
         }
     }
 }
@@ -29,7 +29,7 @@ impl RomanizedMatch<'_> {
 /// Find the strongest contiguous spelling match without changing the cached readings.
 pub fn find_romanized_match<'a>(
     readings: &'a [RomanizedReading],
-    query: &[RomanizedReading],
+    query: &[RomanizedReading]
 ) -> Option<RomanizedMatch<'a>> {
     let mut best = None;
     for reading in readings {
@@ -58,7 +58,7 @@ pub fn find_romanized_match<'a>(
 enum Part<'a> {
     Phrase(&'a str, &'static [(&'static str, &'static str)]),
     Syllable(&'static str),
-    Literal(char),
+    Literal(char)
 }
 
 /// Prepare a name once, before publishing its search aliases. Latin-only names need none.
@@ -158,7 +158,7 @@ pub fn romanized_readings(value: &str) -> Vec<RomanizedReading> {
                     }
                     latin_run = false;
                 }
-                Part::Literal(_) => latin_run = false,
+                Part::Literal(_) => latin_run = false
             }
         }
         let variant = RomanizedReading { full, initials };
@@ -185,7 +185,7 @@ fn append_syllable(full: &mut String, initials: &mut String, syllable: &str) {
         full.push(match letter {
             'ü' => 'v',
             'ê' => 'e',
-            other => other,
+            other => other
         });
     }
     if let Some(first) = syllable.chars().next() {

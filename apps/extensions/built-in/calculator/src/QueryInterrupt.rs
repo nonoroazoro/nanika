@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) struct QueryInterrupt<'a> {
-    cancelled: &'a AtomicBool,
+    cancelled: &'a AtomicBool
 }
 
 impl<'a> QueryInterrupt<'a> {

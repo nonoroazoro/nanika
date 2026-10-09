@@ -6,7 +6,7 @@ use crate::ApplicationError;
 fn wrapped_application_errors_preserve_their_source() {
     let error = ApplicationError::Io(std::io::Error::new(
         std::io::ErrorKind::PermissionDenied,
-        "denied",
+        "denied"
     ));
 
     assert_eq!(

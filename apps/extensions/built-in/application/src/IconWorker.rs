@@ -10,14 +10,14 @@ use nanika_protocol::{IconReference, IconSource};
 /// One cache writer, independent of filesystem discovery and database transactions.
 pub(crate) struct IconWorker {
     _requests: Arc<(Mutex<EntryPriority>, Condvar)>,
-    _thread: Option<JoinHandle<()>>,
+    _thread: Option<JoinHandle<()>>
 }
 
 impl IconWorker {
     pub(crate) fn spawn(
         root: PathBuf,
         entries: Arc<RwLock<HashMap<String, ApplicationEntry>>>,
-        events: SyncSender<RuntimeEvent>,
+        events: SyncSender<RuntimeEvent>
     ) -> std::io::Result<Self> {
         let cache = Arc::new(IconCache::new(root));
         let reader = Arc::clone(&cache);
@@ -42,7 +42,7 @@ impl IconWorker {
                         }
                     }
                 }
-            },
+            }
         )
     }
 
@@ -81,7 +81,7 @@ impl IconWorker {
         entries: Arc<RwLock<HashMap<String, ApplicationEntry>>>,
         events: SyncSender<RuntimeEvent>,
         cached_icon: impl Fn(&ApplicationEntry) -> Option<IconReference> + Send + 'static,
-        mut prepare: impl FnMut(&ApplicationEntry) -> IconSource + Send + 'static,
+        mut prepare: impl FnMut(&ApplicationEntry) -> IconSource + Send + 'static
     ) -> std::io::Result<Self> {
         let requests = Arc::new((Mutex::new(EntryPriority::default()), Condvar::new()));
         let worker_requests = Arc::clone(&requests);
@@ -166,7 +166,7 @@ impl IconWorker {
             })?;
         Ok(Self {
             _requests: requests,
-            _thread: Some(thread),
+            _thread: Some(thread)
         })
     }
 }
@@ -180,7 +180,7 @@ fn _clear_failed_icons(entries: &RwLock<HashMap<String, ApplicationEntry>>) {
                 reference.key() == IconCache::fallback_key()
                     && entry.icon_key != IconCache::fallback_key()
             }
-            _ => false,
+            _ => false
         };
         if failed {
             entry._icon = None;
@@ -191,7 +191,7 @@ fn _clear_failed_icons(entries: &RwLock<HashMap<String, ApplicationEntry>>) {
 fn _publish(
     entries: &RwLock<HashMap<String, ApplicationEntry>>,
     events: &SyncSender<RuntimeEvent>,
-    prepared: impl IntoIterator<Item = (ApplicationEntry, IconSource)>,
+    prepared: impl IntoIterator<Item = (ApplicationEntry, IconSource)>
 ) -> bool {
     let mut current = entries.write().unwrap_or_else(|error| error.into_inner());
     let mut changed = Vec::new();

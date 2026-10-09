@@ -32,9 +32,9 @@ pub(super) fn write(output: &Path, config: &Config) {
                     total_chunks: 1,
                 },
                 metadata: Vec::new(),
-                actions: vec![action],
-            },
-        }),
+                actions: vec![action]
+            }
+        })
     }));
     _sample(&navigation, config, &mut samples);
     let mut search = crate::RootSearchSnapshot {
@@ -50,7 +50,7 @@ pub(super) fn write(output: &Path, config: &Config) {
         phase: crate::SearchPhase::Ready,
         error: None,
         warnings: Vec::new(),
-        pending_extensions: Vec::new(),
+        pending_extensions: Vec::new()
     };
     _sample(&search, config, &mut samples);
     search.results = Some(Vec::new());
@@ -68,18 +68,18 @@ pub(super) fn write(output: &Path, config: &Config) {
                             revision: 1,
                             values: [(
                                 "nested".into(),
-                                serde_json::json!([null, true, 1, {"x": "y"}]),
+                                serde_json::json!([null, true, 1, {"x": "y"}])
                             )]
                             .into(),
                             saved: Default::default(),
                             effective: None,
-                            error: None,
-                        },
-                    },
-                },
+                            error: None
+                        }
+                    }
+                }
             },
             config,
-            &mut samples,
+            &mut samples
         );
     }
     for section in crate::general_settings::sections() {
@@ -93,10 +93,10 @@ pub(super) fn write(output: &Path, config: &Config) {
         (nanika_platform::StartupStatus::Enabled, "enabled"),
         (
             nanika_platform::StartupStatus::RequiresApproval,
-            "requiresApproval",
+            "requiresApproval"
         ),
         (nanika_platform::StartupStatus::NeedsRepair, "needsRepair"),
-        (nanika_platform::StartupStatus::NotFound, "notFound"),
+        (nanika_platform::StartupStatus::NotFound, "notFound")
     ] {
         assert_eq!(serde_json::to_value(status).unwrap(), expected);
         _sample(&status, config, &mut samples);

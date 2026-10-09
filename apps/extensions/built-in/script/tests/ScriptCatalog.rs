@@ -19,7 +19,7 @@ impl Fixture {
     }
     fn config(&self) -> ScriptConfig {
         ScriptConfig {
-            roots: vec![self.0.clone()],
+            roots: vec![self.0.clone()]
         }
     }
 }
@@ -36,7 +36,7 @@ fn discovers_nested_scripts_deduplicates_roots_and_ignores_other_files() {
     std::fs::create_dir_all(&nested).unwrap();
     for path in [
         fixture.0.join("Build project.py"),
-        nested.join("Build project.PS1"),
+        nested.join("Build project.PS1")
     ] {
         std::fs::write(path, b"this file must never execute during discovery").unwrap();
     }
@@ -93,7 +93,7 @@ fn launch_keeps_paths_with_spaces_and_metacharacters_in_one_argument() {
 fn failed_root_is_an_error_and_empty_configuration_is_an_empty_catalog() {
     let fixture = Fixture::new();
     let config = ScriptConfig {
-        roots: vec![fixture.0.join("missing")],
+        roots: vec![fixture.0.join("missing")]
     };
     assert!(discover(&config).unwrap_err().contains("missing"));
     assert!(
@@ -104,7 +104,7 @@ fn failed_root_is_an_error_and_empty_configuration_is_an_empty_catalog() {
 }
 
 fn discover(
-    config: &ScriptConfig,
+    config: &ScriptConfig
 ) -> Result<std::collections::BTreeMap<String, nanika_extension_script::ScriptEntry>, String> {
     let mut catalog = ScriptCatalog::default();
     catalog.scan(config, || false, |_, _| {})?;
@@ -122,7 +122,7 @@ fn cancellation_preserves_unvisited_roots_and_failure_does_not_block_other_roots
     std::fs::write(first.join("nested/old-a.py"), "").unwrap();
     std::fs::write(second.join("old-b.py"), "").unwrap();
     let config = ScriptConfig {
-        roots: vec![first.clone(), second.clone()],
+        roots: vec![first.clone(), second.clone()]
     };
     let mut catalog = ScriptCatalog::default();
     catalog.scan(&config, || false, |_, _| {}).unwrap();
@@ -163,7 +163,7 @@ fn unchanged_script_catalog_does_not_publish_and_root_deletion_is_local() {
     std::fs::write(first.join("a.py"), "").unwrap();
     std::fs::write(second.join("b.py"), "").unwrap();
     let mut config = ScriptConfig {
-        roots: vec![first, second],
+        roots: vec![first, second]
     };
     let mut catalog = ScriptCatalog::default();
     catalog.scan(&config, || false, |_, _| {}).unwrap();
@@ -171,7 +171,7 @@ fn unchanged_script_catalog_does_not_publish_and_root_deletion_is_local() {
         .scan(
             &config,
             || false,
-            |_, _| panic!("unchanged roots must not publish"),
+            |_, _| panic!("unchanged roots must not publish")
         )
         .unwrap();
     config.roots.pop();
@@ -184,7 +184,7 @@ fn unchanged_script_catalog_does_not_publish_and_root_deletion_is_local() {
                 patches += 1;
                 assert!(updated.is_empty());
                 assert_eq!(removed.len(), 1);
-            },
+            }
         )
         .unwrap();
     assert_eq!(patches, 1);
@@ -211,7 +211,7 @@ fn large_roots_are_complete_and_can_be_replaced_by_a_different_directory() {
             |updated, removed| {
                 published += updated.len();
                 assert!(removed.is_empty());
-            },
+            }
         )
         .unwrap();
     assert_eq!(published, 5001);
@@ -223,7 +223,7 @@ fn large_roots_are_complete_and_can_be_replaced_by_a_different_directory() {
             || false,
             |_, removed| {
                 removed_count += removed.len();
-            },
+            }
         )
         .unwrap();
     assert_eq!(removed_count, 5001);

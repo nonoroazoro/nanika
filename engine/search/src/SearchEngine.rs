@@ -4,14 +4,14 @@ use nanika_text_search::TextMatcher;
 /// Query owner that reuses matcher scratch memory across generations.
 pub struct SearchEngine {
     generation: u64,
-    context: TextMatcher,
+    context: TextMatcher
 }
 
 impl SearchEngine {
     pub fn new() -> Self {
         Self {
             generation: 0,
-            context: TextMatcher::new(),
+            context: TextMatcher::new()
         }
     }
 
@@ -24,7 +24,7 @@ impl SearchEngine {
         query: &str,
         candidates: &[Candidate],
         usage: &UsageMap,
-        now: u64,
+        now: u64
     ) -> SearchSnapshot {
         self.generation = self.generation.wrapping_add(1).max(1);
         self.rank(
@@ -33,7 +33,7 @@ impl SearchEngine {
             candidates.iter(),
             usage,
             now,
-            || false,
+            || false
         )
         .expect("uncancelled search")
     }
@@ -45,7 +45,7 @@ impl SearchEngine {
         candidates: impl Iterator<Item = &'a Candidate>,
         usage: &UsageMap,
         now: u64,
-        cancelled: impl Fn() -> bool,
+        cancelled: impl Fn() -> bool
     ) -> Option<SearchSnapshot> {
         ranking::rank(
             generation,
@@ -54,7 +54,7 @@ impl SearchEngine {
             usage,
             now,
             &mut self.context,
-            cancelled,
+            cancelled
         )
     }
 }
@@ -71,7 +71,7 @@ pub fn rank_candidates(
     query: &str,
     candidates: &[Candidate],
     usage: &UsageMap,
-    now: u64,
+    now: u64
 ) -> SearchSnapshot {
     SearchEngine::new()
         .rank(generation, query, candidates.iter(), usage, now, || false)

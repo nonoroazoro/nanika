@@ -4,14 +4,14 @@
 #[serde(rename_all = "lowercase")]
 pub enum TargetPlatform {
     Macos,
-    Windows,
+    Windows
 }
 
 impl TargetPlatform {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Macos => "macos",
-            Self::Windows => "windows",
+            Self::Windows => "windows"
         }
     }
 }

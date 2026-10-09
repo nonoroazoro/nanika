@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use nanika_search::{
-    Candidate, CandidateKind, MAX_QUERY_CHARS, SearchOwner, SearchQueueError, UsageMap,
+    Candidate, CandidateKind, MAX_QUERY_CHARS, SearchOwner, SearchQueueError, UsageMap
 };
 
 #[test]
@@ -22,9 +22,9 @@ fn owner_drops_stale_extension_snapshots() {
                 "Old",
                 "open",
                 vec![nanika_protocol::Action::primary("open", "Open")],
-                Vec::new(),
+                Vec::new()
             )],
-            true,
+            true
         )
         .expect("stale snapshot should enqueue");
     source_test_extension
@@ -37,9 +37,9 @@ fn owner_drops_stale_extension_snapshots() {
                 "Tool",
                 "open",
                 vec![nanika_protocol::Action::primary("open", "Open")],
-                Vec::new(),
+                Vec::new()
             )],
-            true,
+            true
         )
         .expect("current snapshot should enqueue");
 
@@ -71,7 +71,7 @@ fn static_catalog_publishes_while_dynamic_contributors_are_pending() {
     let generation = handle
         .begin_query_with_expected_extensions(
             "tool",
-            ["static.extension".into(), "slow.extension".into()],
+            ["static.extension".into(), "slow.extension".into()]
         )
         .unwrap();
     let initial = _wait_snapshot(&handle, |snapshot| {
@@ -149,7 +149,7 @@ fn owner_publishes_each_contributor_and_preserves_earlier_snapshots() {
     let generation = handle
         .begin_query_with_expected_extensions(
             "tool",
-            ["first.extension".into(), "second.extension".into()],
+            ["first.extension".into(), "second.extension".into()]
         )
         .unwrap();
     source_first_extension
@@ -187,7 +187,7 @@ fn only_expected_identities_clear_pending_contributors() {
     let generation = handle
         .begin_query_with_expected_extensions(
             "tool",
-            ["first.extension".into(), "second.extension".into()],
+            ["first.extension".into(), "second.extension".into()]
         )
         .unwrap();
     source_unexpected_extension
@@ -222,7 +222,7 @@ fn concurrent_query_admission_cannot_publish_an_older_generation_last() {
                     entered.send(()).unwrap();
                     released.recv().unwrap();
                     None
-                }),
+                })
             )
             .unwrap()
     });
@@ -260,7 +260,7 @@ fn patches_change_only_their_entries_and_cannot_revive_a_retired_catalog() {
             title,
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            Vec::new(),
+            Vec::new()
         )
     };
     source_test
@@ -271,7 +271,7 @@ fn patches_change_only_their_entries_and_cannot_revive_a_retired_catalog() {
                 entry("b", "Keep"),
                 entry("c", "Remove"),
             ],
-            true,
+            true
         )
         .unwrap();
     _wait_snapshot(&handle, |snapshot| snapshot.results.len() == 3);
@@ -280,7 +280,7 @@ fn patches_change_only_their_entries_and_cannot_revive_a_retired_catalog() {
             generation,
             vec![entry("a", "Updated")],
             vec!["c".to_owned()],
-            true,
+            true
         )
         .unwrap();
     let snapshot = _wait_snapshot(&handle, |snapshot| snapshot.results.len() == 2);
@@ -327,7 +327,7 @@ fn catalog_commits_are_independent_of_queries_and_share_unchanged_metadata() {
             title,
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            Vec::new(),
+            Vec::new()
         )
     };
     source_catalog
@@ -399,13 +399,13 @@ fn _review_candidate(id: &str) -> Candidate {
         format!("{id} tool"),
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        Vec::new(),
+        Vec::new()
     )
 }
 
 fn _wait_snapshot(
     handle: &nanika_search::SearchHandle,
-    matches: impl Fn(&nanika_search::SearchSnapshot) -> bool,
+    matches: impl Fn(&nanika_search::SearchSnapshot) -> bool
 ) -> std::sync::Arc<nanika_search::SearchSnapshot> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
@@ -492,7 +492,7 @@ fn old_instance_publications_and_retirement_cannot_affect_its_replacement() {
         "New",
         "open",
         Vec::new(),
-        Vec::new(),
+        Vec::new()
     )])
     .unwrap();
     let generation = handle.begin_query("").unwrap();
@@ -506,9 +506,9 @@ fn old_instance_publications_and_retirement_cannot_affect_its_replacement() {
             "Old",
             "open",
             Vec::new(),
-            Vec::new(),
+            Vec::new()
         )],
-        true,
+        true
     )
     .unwrap();
     old.set_extension_query_pending(generation, true).unwrap();
@@ -566,7 +566,7 @@ fn off_query_changes_and_icons_preserve_authority_but_publish_new_presentation()
             title,
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            vec![],
+            vec![]
         )
     };
     source
@@ -598,7 +598,7 @@ fn off_query_changes_and_icons_preserve_authority_but_publish_new_presentation()
             vec![
                 candidate("visible", "needle").with_icon(Some(nanika_protocol::IconSource::Empty)),
             ],
-            vec![],
+            vec![]
         )
         .unwrap();
     received.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -627,7 +627,7 @@ fn reviewed_metadata_and_order_revoke_authority_while_score_only_changes_do_not(
             title,
             "open",
             vec![action],
-            vec![],
+            vec![]
         )
     };
     let action = nanika_protocol::Action::primary("open", "Open");
@@ -669,10 +669,10 @@ fn reviewed_metadata_and_order_revoke_authority_while_score_only_changes_do_not(
     for changed in [
         candidate("b", "Needle renamed", action.clone()),
         candidate("b", "Needle renamed", action.clone()).with_subtitle(Some(
-            nanika_protocol::CandidateSubtitle::Description("Changed path".into()),
+            nanika_protocol::CandidateSubtitle::Description("Changed path".into())
         )),
         candidate("b", "Needle renamed", disabled),
-        candidate("b", "Needle renamed", confirmed),
+        candidate("b", "Needle renamed", confirmed)
     ] {
         let reviewed = handle.latest_snapshot().unwrap();
         source.commit_catalog(false, vec![changed], vec![]).unwrap();

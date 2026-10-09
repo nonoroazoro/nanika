@@ -3,7 +3,7 @@ use nanika_protocol::{DetailContent, DetailView, View, ViewItemIcon};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::Arc
 };
 
 pub struct ClipboardPresentation {
@@ -12,7 +12,7 @@ pub struct ClipboardPresentation {
     pub collection_revision: u64,
     /// Clear acts on the reviewed query scope, including rows outside the delivered window.
     pub matching_ids: Arc<Vec<String>>,
-    pub(crate) paths: HashMap<String, Vec<String>>,
+    pub(crate) paths: HashMap<String, Vec<String>>
 }
 
 impl ClipboardPresentation {
@@ -20,7 +20,7 @@ impl ClipboardPresentation {
     pub fn select_index(
         &self,
         collection_id: &str,
-        index: usize,
+        index: usize
     ) -> Result<ClipboardViewState, String> {
         let View::List { list } = &self.view else {
             unreachable!()
@@ -40,7 +40,7 @@ impl ClipboardPresentation {
 
     pub fn decorate_icons(
         &mut self,
-        icon_for_path: &impl Fn(&Path) -> Option<Option<nanika_protocol::IconReference>>,
+        icon_for_path: &impl Fn(&Path) -> Option<Option<nanika_protocol::IconReference>>
     ) {
         let View::List { list } = &mut self.view else {
             unreachable!()

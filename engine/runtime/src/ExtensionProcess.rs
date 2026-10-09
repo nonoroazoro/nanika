@@ -15,7 +15,7 @@ use nanika_protocol::{ExtensionConfiguration, FrameError, Message, PROTOCOL_NAME
 
 use crate::{
     ExtensionCommand, ExtensionInterruption, ExtensionLimits, ExtensionNotifier,
-    HostServiceHandler, SupervisorError,
+    HostServiceHandler, SupervisorError
 };
 
 type ReceivePoll = Option<Option<Message>>;
@@ -38,7 +38,7 @@ pub struct ExtensionProcess {
     reader_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<io::Result<()>>>,
     extension_id: Option<String>,
-    host_services: Option<Arc<dyn HostServiceHandler>>,
+    host_services: Option<Arc<dyn HostServiceHandler>>
 }
 
 impl ExtensionProcess {
@@ -46,18 +46,18 @@ impl ExtensionProcess {
         Self::spawn_with(
             program,
             std::iter::empty::<OsString>(),
-            ExtensionLimits::default(),
+            ExtensionLimits::default()
         )
     }
 
     pub fn spawn_with(
         program: impl AsRef<Path>,
         arguments: impl IntoIterator<Item = OsString>,
-        limits: ExtensionLimits,
+        limits: ExtensionLimits
     ) -> io::Result<Self> {
         let command = ExtensionCommand {
             program: program.as_ref().to_path_buf(),
-            arguments: arguments.into_iter().collect(),
+            arguments: arguments.into_iter().collect()
         };
         Self::start(command, limits, Arc::new(Mutex::new(None)))
     }
@@ -65,7 +65,7 @@ impl ExtensionProcess {
     fn start(
         command: ExtensionCommand,
         limits: ExtensionLimits,
-        candidate_changes: ExtensionNotifier,
+        candidate_changes: ExtensionNotifier
     ) -> io::Result<Self> {
         let mut process = Command::new(&command.program);
         process
@@ -137,7 +137,7 @@ impl ExtensionProcess {
                     let finished = !matches!(frame, Ok(Some(_)));
                     let failure = match &frame {
                         Err(error) => error.to_string(),
-                        _ => "Extension protocol output closed.".to_owned(),
+                        _ => "Extension protocol output closed.".to_owned()
                     };
                     if sender.send(frame).is_err() || finished {
                         reader_exit.finish(failure);
@@ -199,7 +199,7 @@ impl ExtensionProcess {
             reader_thread: Some(reader_thread),
             stderr_thread: Some(stderr_thread),
             extension_id: None,
-            host_services: None,
+            host_services: None
         })
     }
 
@@ -224,7 +224,7 @@ impl ExtensionProcess {
     pub(crate) fn set_host_services(
         &mut self,
         extension_id: String,
-        host_services: Arc<dyn HostServiceHandler>,
+        host_services: Arc<dyn HostServiceHandler>
     ) {
         self.extension_id = Some(extension_id);
         self.host_services = Some(host_services);
@@ -257,7 +257,7 @@ impl ExtensionProcess {
             match input.completions.recv_timeout(Duration::from_millis(25)) {
                 Ok(result) => return result.map_err(SupervisorError::Protocol),
                 Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return Err(SupervisorError::ChannelClosed),
+                Err(RecvTimeoutError::Disconnected) => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
@@ -265,11 +265,11 @@ impl ExtensionProcess {
     pub(crate) fn prepare_entries(
         &mut self,
         generation: u64,
-        entry_ids: Vec<String>,
+        entry_ids: Vec<String>
     ) -> Result<(), SupervisorError> {
         self.send(Message::PrepareEntries {
             generation,
-            entry_ids,
+            entry_ids
         })
     }
 
@@ -283,7 +283,7 @@ impl ExtensionProcess {
         {
             Ok(frame) => frame.map(Some).map_err(SupervisorError::Protocol),
             Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Err(SupervisorError::ChannelClosed),
+            Err(RecvTimeoutError::Disconnected) => Err(SupervisorError::ChannelClosed)
         }
     }
 
@@ -303,7 +303,7 @@ impl ExtensionProcess {
     pub fn initialize_with_configuration(
         &mut self,
         request_id: impl Into<String>,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> Result<(), SupervisorError> {
         if self.initialized {
             return Ok(());
@@ -312,7 +312,7 @@ impl ExtensionProcess {
         if let Err(error) = self.send(Message::Initialize {
             request_id: request_id.clone(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration,
+            configuration
         }) {
             let _ = self.terminate();
             return Err(error);
@@ -321,7 +321,7 @@ impl ExtensionProcess {
             Err(error) => Err(error),
             Ok(Some(Message::Initialized {
                 request_id: response_id,
-                protocol,
+                protocol
             })) if response_id == request_id && protocol == PROTOCOL_NAME => {
                 self.initialized = true;
                 Ok(())
@@ -329,16 +329,16 @@ impl ExtensionProcess {
             Ok(Some(Message::Error {
                 request_id: response_id,
                 code,
-                message,
+                message
             })) => Err(extension_reported_error(
                 "initialize",
                 &request_id,
                 response_id.as_deref(),
                 &code,
-                &message,
+                &message
             )),
             Ok(Some(message)) => Err(SupervisorError::UnexpectedMessage(format!("{message:?}"))),
-            Ok(None) => Err(SupervisorError::ChannelClosed),
+            Ok(None) => Err(SupervisorError::ChannelClosed)
         };
         if result.is_err() {
             let _ = self.terminate();
@@ -350,7 +350,7 @@ impl ExtensionProcess {
         &mut self,
         request_id: impl Into<String>,
         generation: u64,
-        query: impl Into<String>,
+        query: impl Into<String>
     ) -> Result<Vec<nanika_protocol::Candidate>, SupervisorError> {
         let mut latest = Vec::new();
         self.query_incremental(
@@ -362,7 +362,7 @@ impl ExtensionProcess {
                 latest = update.entries;
                 Ok(())
             },
-            || false,
+            || false
         )?;
         Ok(latest)
     }
@@ -372,7 +372,7 @@ impl ExtensionProcess {
         request_id: impl Into<String>,
         generation: u64,
         entry_id: impl Into<String>,
-        action_id: impl Into<String>,
+        action_id: impl Into<String>
     ) -> Result<(), SupervisorError> {
         self.invoke_interruptible(request_id, generation, entry_id, action_id, || {
             ExtensionInterruption::None
@@ -383,7 +383,7 @@ impl ExtensionProcess {
     pub fn refresh(
         &mut self,
         request_id: impl Into<String>,
-        generation: u64,
+        generation: u64
     ) -> Result<(), SupervisorError> {
         let (completion, response) = mpsc::sync_channel(1);
         self.start_refresh(
@@ -391,7 +391,7 @@ impl ExtensionProcess {
             generation,
             Box::new(move |result| {
                 let _ = completion.send(result);
-            }),
+            })
         );
         response
             .recv()
@@ -407,7 +407,7 @@ impl ExtensionProcess {
         let request_id = request_id.into();
         self.send(Message::ConfigurationChanged {
             request_id: request_id.clone(),
-            configuration,
+            configuration
         })?;
         self.receive_configuration_applied(request_id)
     }
@@ -415,9 +415,9 @@ impl ExtensionProcess {
     pub(crate) fn start_configuration_update(
         &mut self,
         request_id: String,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
         progress: crate::ConfigurationProgressHandler,
-        completion: crate::ConfigurationCompletion,
+        completion: crate::ConfigurationCompletion
     ) {
         if let Err(error) = self.ensure_initialized() {
             completion(Err(error));
@@ -431,7 +431,7 @@ impl ExtensionProcess {
         }
         if let Err(error) = self.send(Message::ConfigurationChanged {
             request_id,
-            configuration,
+            configuration
         }) {
             self.configuration_reply.fail(error);
         }
@@ -441,7 +441,7 @@ impl ExtensionProcess {
         &mut self,
         request_id: String,
         generation: u64,
-        completion: crate::RefreshCompletion,
+        completion: crate::RefreshCompletion
     ) {
         if let Err(error) = self.ensure_initialized() {
             completion(Err(error));
@@ -467,16 +467,16 @@ impl ExtensionProcess {
         generation: u64,
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
-        mut interruption: impl FnMut() -> ExtensionInterruption,
+        mut interruption: impl FnMut() -> ExtensionInterruption
     ) -> Result<nanika_protocol::NavigationEffect, SupervisorError> {
         self._admit_operation(interruption(), "action")?;
         self.ensure_initialized()?;
         let request_id = request_id.into();
         self.send(Message::Invoke {
             request_id: request_id.clone(),
-            generation,
+            generation
             entry_id: entry_id.into(),
-            action_id: action_id.into(),
+            action_id: action_id.into()
         })?;
         let mut cancellation_sent = false;
         loop {
@@ -485,7 +485,7 @@ impl ExtensionProcess {
                 ExtensionInterruption::Cancel if !cancellation_sent => {
                     self.send(Message::Cancel {
                         request_id: request_id.clone(),
-                        generation,
+                        generation
                     })?;
                     cancellation_sent = true;
                 }
@@ -497,13 +497,13 @@ impl ExtensionProcess {
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
                 Some(message) => message,
-                None => continue,
+                None => continue
             };
             match message {
                 Some(Message::Result {
                     request_id: response_id,
                     generation: response_generation,
-                    effect,
+                    effect
                 }) if response_id == request_id && response_generation == generation => {
                     effect
                         .validate()
@@ -514,20 +514,20 @@ impl ExtensionProcess {
                     request_id: service_request_id,
                     parent_request_id,
                     generation: service_generation,
-                    request,
+                    request
                 }) if parent_request_id == request_id && service_generation == generation => {
                     self.handle_host_request(
                         service_request_id,
                         parent_request_id,
                         service_generation,
                         request,
-                        &mut interruption,
+                        &mut interruption
                     )?;
                 }
                 Some(Message::Error {
                     request_id: response_id,
                     code,
-                    message,
+                    message
                 }) => {
                     if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
                         return Err(SupervisorError::Cancelled("action"));
@@ -537,18 +537,18 @@ impl ExtensionProcess {
                         &request_id,
                         response_id.as_deref(),
                         &code,
-                        &message,
+                        &message
                     ));
                 }
                 Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
+                None => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
 
     pub(crate) fn read_catalog(
         &mut self,
-        request_id: String,
+        request_id: String
     ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
         self.ensure_initialized()?;
         self.send(Message::CatalogRead {
@@ -557,15 +557,15 @@ impl ExtensionProcess {
         match self.receive()? {
             Some(Message::CatalogBatch {
                 request_id: response,
-                batch,
+                batch
             }) if response == request_id => Ok(batch),
             Some(Message::Error { code, message, .. }) => Err(SupervisorError::UnexpectedMessage(
-                format!("{code}: {message}"),
+                format!("{code}: {message}")
             )),
             None => Err(SupervisorError::ChannelClosed),
             _ => Err(SupervisorError::UnexpectedMessage(
-                "expected correlated catalog batch".into(),
-            )),
+                "expected correlated catalog batch".into()
+            ))
         }
     }
 
@@ -580,7 +580,7 @@ impl ExtensionProcess {
         query: impl Into<String>,
         incremental: bool,
         mut publish: impl FnMut(nanika_protocol::CandidateUpdate) -> Result<(), SupervisorError>,
-        mut should_cancel: impl FnMut() -> bool,
+        mut should_cancel: impl FnMut() -> bool
     ) -> Result<bool, SupervisorError> {
         self.ensure_initialized()?;
         // A request consumes its baseline until every accepted response has been published.
@@ -590,22 +590,22 @@ impl ExtensionProcess {
         let request_id = request_id.into();
         self.send(Message::Query {
             incremental,
-            request_id: request_id.clone(),
+            request_id: request_id.clone()
             generation,
-            query: query.into(),
+            query: query.into()
         })?;
         let mut cancellation_sent = false;
         loop {
             if should_cancel() && !cancellation_sent {
                 self.send(Message::Cancel {
                     request_id: request_id.clone(),
-                    generation,
+                    generation
                 })?;
                 cancellation_sent = true;
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
                 Some(message) => message,
-                None => continue,
+                None => continue
             };
             match message {
                 Some(Message::Snapshot {
@@ -614,7 +614,7 @@ impl ExtensionProcess {
                     complete,
                     replace,
                     removed,
-                    entries,
+                    entries
                 }) if response_id == request_id && response_generation == generation => {
                     for entry in &entries {
                         nanika_protocol::validate_actions(&entry.actions)
@@ -625,21 +625,21 @@ impl ExtensionProcess {
                             .any(|action| action.id == entry.action_id)
                         {
                             return Err(SupervisorError::UnexpectedMessage(
-                                "candidate default action is not declared".to_owned(),
+                                "candidate default action is not declared".to_owned()
                             ));
                         }
                     }
                     if !cancellation_sent {
                         if !incremental && !replace {
                             return Err(SupervisorError::UnexpectedMessage(
-                                "query requires a replacement snapshot".to_owned(),
+                                "query requires a replacement snapshot".to_owned()
                             ));
                         }
                         publish(nanika_protocol::CandidateUpdate {
                             complete,
                             replace,
                             removed,
-                            entries,
+                            entries
                         })?;
                     }
                     if complete {
@@ -652,7 +652,7 @@ impl ExtensionProcess {
                 Some(Message::Error {
                     request_id: response_id,
                     code,
-                    message,
+                    message
                 }) => {
                     if cancellation_sent && response_id.as_deref() == Some(&request_id) {
                         if code != "cancelled" {
@@ -665,11 +665,11 @@ impl ExtensionProcess {
                         &request_id,
                         response_id.as_deref(),
                         &code,
-                        &message,
+                        &message
                     ));
                 }
                 Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
+                None => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
@@ -682,14 +682,14 @@ impl ExtensionProcess {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent,
-        mut interruption: impl FnMut() -> ExtensionInterruption,
+        mut interruption: impl FnMut() -> ExtensionInterruption
     ) -> Result<
         (
             u64,
             nanika_protocol::NavigationEffect,
-            Option<nanika_protocol::View>,
+            Option<nanika_protocol::View>
         ),
-        SupervisorError,
+        SupervisorError
     > {
         self._admit_operation(interruption(), "view event")?;
         self.ensure_initialized()?;
@@ -700,7 +700,7 @@ impl ExtensionProcess {
             generation,
             view_id: view_id.clone(),
             revision,
-            event: event.clone(),
+            event: event.clone()
         })?;
         let mut cancellation_sent = false;
         loop {
@@ -709,7 +709,7 @@ impl ExtensionProcess {
                 ExtensionInterruption::Cancel if !cancellation_sent => {
                     self.send(Message::Cancel {
                         request_id: request_id.clone(),
-                        generation,
+                        generation
                     })?;
                     cancellation_sent = true;
                 }
@@ -721,7 +721,7 @@ impl ExtensionProcess {
             }
             let message = match self.poll_receive(Duration::from_millis(25))? {
                 Some(message) => message,
-                None => continue,
+                None => continue
             };
             match message {
                 Some(Message::ViewUpdated {
@@ -730,7 +730,7 @@ impl ExtensionProcess {
                     view_id: response_view_id,
                     revision: response_revision,
                     effect,
-                    view,
+                    view
                 }) if response_id == request_id
                     && response_generation == generation
                     && response_view_id == view_id =>
@@ -741,14 +741,14 @@ impl ExtensionProcess {
                     if let Some(view) = &view {
                         if response_revision <= revision {
                             return Err(SupervisorError::UnexpectedMessage(
-                                "extension view revision did not advance".to_owned(),
+                                "extension view revision did not advance".to_owned()
                             ));
                         }
                         view.validate()
                             .map_err(SupervisorError::UnexpectedMessage)?;
                     } else if response_revision != revision {
                         return Err(SupervisorError::UnexpectedMessage(
-                            "extension view revision changed without a replacement view".to_owned(),
+                            "extension view revision changed without a replacement view".to_owned()
                         ));
                     }
                     event
@@ -760,20 +760,20 @@ impl ExtensionProcess {
                     request_id: service_request_id,
                     parent_request_id,
                     generation: service_generation,
-                    request,
+                    request
                 }) if parent_request_id == request_id && service_generation == generation => {
                     self.handle_host_request(
                         service_request_id,
                         parent_request_id,
                         service_generation,
                         request,
-                        &mut interruption,
+                        &mut interruption
                     )?;
                 }
                 Some(Message::Error {
                     request_id: response_id,
                     code,
-                    message,
+                    message
                 }) => {
                     if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
                         return Err(SupervisorError::Cancelled("view event"));
@@ -783,11 +783,11 @@ impl ExtensionProcess {
                         &request_id,
                         response_id.as_deref(),
                         &code,
-                        &message,
+                        &message
                     ));
                 }
                 Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
+                None => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
@@ -795,36 +795,36 @@ impl ExtensionProcess {
     pub(crate) fn close_view(
         &mut self,
         request_id: impl Into<String>,
-        view_id: impl Into<String>,
+        view_id: impl Into<String>
     ) -> Result<(), SupervisorError> {
         self.ensure_initialized()?;
         let request_id = request_id.into();
         let view_id = view_id.into();
         self.send(Message::ViewClose {
             request_id: request_id.clone(),
-            view_id: view_id.clone(),
+            view_id: view_id.clone()
         })?;
         loop {
             match self.receive()? {
                 Some(Message::ViewClosed {
                     request_id: response_id,
-                    view_id: response_view_id,
+                    view_id: response_view_id
                 }) if response_id == request_id && response_view_id == view_id => return Ok(()),
                 Some(Message::Error {
                     request_id: response_id,
                     code,
-                    message,
+                    message
                 }) => {
                     return Err(extension_reported_error(
                         "view close",
                         &request_id,
                         response_id.as_deref(),
                         &code,
-                        &message,
+                        &message
                     ));
                 }
                 Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
+                None => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
@@ -909,7 +909,7 @@ impl ExtensionProcess {
                         .get_or_insert(format!("extension cleanup failed with {code}: {message}"));
                 }
                 Some(_) => {}
-                None => break,
+                None => break
             }
         }
         let status = loop {
@@ -934,7 +934,7 @@ impl ExtensionProcess {
         }
         match failure {
             Some(error) => Err(SupervisorError::UnexpectedMessage(error)),
-            None => Ok(()),
+            None => Ok(())
         }
     }
 
@@ -964,7 +964,7 @@ impl ExtensionProcess {
             Ok(())
         } else {
             Err(SupervisorError::UnexpectedMessage(
-                "extension is not initialized".to_owned(),
+                "extension is not initialized".to_owned()
             ))
         }
     }
@@ -976,20 +976,20 @@ impl ExtensionProcess {
                     request_id: response_id,
                 }) if response_id == request_id => return Ok(()),
                 Some(Message::Error {
-                    request_id: response_id,
+                    request_id: response_id
                     code,
-                    message,
+                    message
                 }) => {
                     return Err(extension_reported_error(
                         "configuration",
                         &request_id,
                         response_id.as_deref(),
                         &code,
-                        &message,
+                        &message
                     ));
                 }
                 Some(_) => {}
-                None => return Err(SupervisorError::ChannelClosed),
+                None => return Err(SupervisorError::ChannelClosed)
             }
         }
     }
@@ -1000,7 +1000,7 @@ impl ExtensionProcess {
         parent_request_id: String,
         generation: u64,
         request: nanika_protocol::HostServiceRequest,
-        interruption: &mut impl FnMut() -> ExtensionInterruption,
+        interruption: &mut impl FnMut() -> ExtensionInterruption
     ) -> Result<(), SupervisorError> {
         match interruption() {
             ExtensionInterruption::None => {}
@@ -1008,7 +1008,7 @@ impl ExtensionProcess {
                 return self.send(Message::Error {
                     request_id: Some(request_id),
                     code: "cancelled".to_owned(),
-                    message: "action was cancelled before host service admission".to_owned(),
+                    message: "action was cancelled before host service admission".to_owned()
                 });
             }
             ExtensionInterruption::Terminate => {
@@ -1034,7 +1034,7 @@ impl ExtensionProcess {
                     return self.send(Message::Error {
                         request_id: Some(request_id),
                         code: "cancelled".into(),
-                        message: "action was cancelled before host service admission".into(),
+                        message: "action was cancelled before host service admission".into()
                     });
                 }
                 ExtensionInterruption::Terminate => {
@@ -1067,26 +1067,26 @@ impl ExtensionProcess {
                     }
                 }
             },
-            Err(error) => Err(error),
+            Err(error) => Err(error)
         };
         match result {
             Ok(response) => self.send(Message::HostResponse {
                 request_id,
                 parent_request_id,
                 generation,
-                response,
+                response
             }),
             Err(message) => self.send(Message::Error {
                 request_id: Some(request_id),
                 code: "host_service_failed".to_owned(),
-                message,
-            }),
+                message
+            })
         }
     }
     fn _admit_operation(
         &mut self,
         interruption: ExtensionInterruption,
-        operation: &'static str,
+        operation: &'static str
     ) -> Result<(), SupervisorError> {
         match interruption {
             ExtensionInterruption::None => Ok(()),
@@ -1111,7 +1111,7 @@ fn drain_stderr(
     mut stderr: impl Read,
     output: &Arc<Mutex<VecDeque<u8>>>,
     byte_limit: usize,
-    source: &str,
+    source: &str
 ) -> io::Result<()> {
     let mut chunk = [0; 4096];
     loop {
@@ -1122,7 +1122,7 @@ fn drain_stderr(
                     "could not read extension stderr: {error}"
                 )));
             }
-            Ok(read) => read,
+            Ok(read) => read
         };
         tracing::info!(
             extension_process = source,
@@ -1155,7 +1155,7 @@ fn extension_reported_error(
     expected_request_id: &str,
     response_request_id: Option<&str>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> SupervisorError {
     let correlation = match response_request_id {
         Some(response_request_id) if response_request_id == expected_request_id => String::new(),
@@ -1164,7 +1164,7 @@ fn extension_reported_error(
         ),
         None => format!(
             "uncorrelated error response without a request id while waiting for {expected_request_id}: "
-        ),
+        )
     };
     SupervisorError::UnexpectedMessage(format!(
         "{correlation}extension {operation} failed with {code}: {message}"

@@ -51,7 +51,7 @@ pub const fn target_platform() -> crate::TargetPlatform {
 pub fn target_triple() -> &'static str {
     match std::env::consts::ARCH {
         "x86_64" => "x86_64-pc-windows-msvc",
-        _ => "unsupported",
+        _ => "unsupported"
     }
 }
 

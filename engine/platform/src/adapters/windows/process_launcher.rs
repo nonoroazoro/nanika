@@ -9,7 +9,7 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, _notifier: ()) {
         match command {
             LauncherCommand::Launch {
                 descriptor,
-                response,
+                response
             } => {
                 let result = process_launch(&descriptor)
                     .map(|child| {

@@ -4,5 +4,5 @@ pub(crate) struct ExtensionInvocationOutput {
     pub(crate) invocation_id: u64,
     pub(crate) extension_id: String,
     pub(crate) generation: u64,
-    pub(crate) text: String,
+    pub(crate) text: String
 }

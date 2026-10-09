@@ -11,7 +11,7 @@ pub(crate) fn status(_executable: &Path) -> Result<StartupStatus, PlatformError>
 
 pub(crate) fn set_enabled(
     executable: &Path,
-    enabled: bool,
+    enabled: bool
 ) -> Result<StartupStatus, PlatformError> {
     let service = unsafe { SMAppService::mainAppService() };
     let current = map_status(unsafe { service.status() });
@@ -25,7 +25,7 @@ pub(crate) fn set_enabled(
             }
             StartupStatus::NotFound => {
                 return Err(PlatformError::Message(
-                    "macOS could not find the signed Nanika application bundle".to_owned(),
+                    "macOS could not find the signed Nanika application bundle".to_owned()
                 ));
             }
             StartupStatus::Enabled | StartupStatus::NeedsRepair => {}
@@ -43,6 +43,6 @@ fn map_status(status: SMAppServiceStatus) -> StartupStatus {
         SMAppServiceStatus::Enabled => StartupStatus::Enabled,
         SMAppServiceStatus::RequiresApproval => StartupStatus::RequiresApproval,
         SMAppServiceStatus::NotFound => StartupStatus::NotFound,
-        _ => StartupStatus::NotFound,
+        _ => StartupStatus::NotFound
     }
 }

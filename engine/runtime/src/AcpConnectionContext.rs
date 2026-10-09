@@ -15,5 +15,5 @@ pub(crate) struct AcpConnectionContext {
     pub(crate) commands: async_channel::Receiver<AcpExtensionCommand>,
     pub(crate) shutdown: async_channel::Receiver<()>,
     pub(crate) ready: SyncSender<Result<(), String>>,
-    pub(crate) ready_reported: Arc<AtomicBool>,
+    pub(crate) ready_reported: Arc<AtomicBool>
 }

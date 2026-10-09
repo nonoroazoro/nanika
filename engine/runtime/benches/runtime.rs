@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use nanika_config::ConfigStore;
 use nanika_search::{
-    Candidate, CandidateKind, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat,
+    Candidate, CandidateKind, SearchOwner, SearchSnapshot, UsageKey, UsageMap, UsageStat
 };
 use nanika_storage::SearchStorageWorker;
 
@@ -32,7 +32,7 @@ fn query_delivery_benchmark(criterion: &mut Criterion) {
                     .expect("snapshot should be accepted");
                 wait_for_generation(&search, generation)
             },
-            BatchSize::PerIteration,
+            BatchSize::PerIteration
         );
     });
 
@@ -51,7 +51,7 @@ fn runtime_foundation_startup_benchmark(criterion: &mut Criterion) {
                 let store = ConfigStore::open(&machine_root, &config_root)
                     .expect("configuration should open");
                 let (storage, state) = SearchStorageWorker::spawn(
-                    root.join("data").join("databases").join("nanika.db"),
+                    root.join("data").join("databases").join("nanika.db")
                 )
                 .expect("storage owner should start");
                 let usage = state
@@ -63,12 +63,12 @@ fn runtime_foundation_startup_benchmark(criterion: &mut Criterion) {
                                 &stored.extension_id,
                                 &stored.entry_id,
                                 &stored.action_id,
-                                &stored.query_context,
+                                &stored.query_context
                             ),
                             UsageStat {
                                 execution_count: stored.execution_count,
-                                last_executed_at: stored.last_executed_at,
-                            },
+                                last_executed_at: stored.last_executed_at
+                            }
                         )
                     })
                     .collect();
@@ -86,7 +86,7 @@ fn runtime_foundation_startup_benchmark(criterion: &mut Criterion) {
 
 fn wait_for_generation(
     search: &nanika_search::SearchHandle,
-    generation: u64,
+    generation: u64
 ) -> std::sync::Arc<SearchSnapshot> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -111,7 +111,7 @@ fn make_candidates(count: usize) -> Vec<Candidate> {
                 format!("Application {index}"),
                 "launch",
                 vec![nanika_protocol::Action::primary("launch", "Open")],
-                Vec::new(),
+                Vec::new()
             )
         })
         .collect()

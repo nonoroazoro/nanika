@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    CoUninitialize, IPersistFile, STGM_READ,
+    CoUninitialize, IPersistFile, STGM_READ
 };
 use windows::Win32::UI::Shell::{IShellLinkW, SLGP_RAWPATH, ShellLink};
 use windows::core::{Interface, PCWSTR};
@@ -17,7 +17,7 @@ use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows_sys::Win32::UI::Shell::{
     FOLDERID_CommonPrograms, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_Programs,
-    KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+    KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath
 };
 
 use super::DiscoveryRoots;
@@ -31,25 +31,25 @@ const SCOOP_DIRECTORY: &str = "scoop";
 const SCOOP_SHIMS_DIRECTORY: &str = "shims";
 
 pub(super) fn standard_roots(
-    enabled: impl Fn(&str) -> bool,
+    enabled: impl Fn(&str) -> bool
 ) -> Result<DiscoveryRoots, ApplicationError> {
     let mut roots = DiscoveryRoots::default();
     if enabled(USER_PROGRAMS_KEY) {
         roots.include(
             USER_PROGRAMS_KEY,
-            known_folder(&FOLDERID_Programs).map(Some),
+            known_folder(&FOLDERID_Programs).map(Some)
         );
     }
     if enabled(SYSTEM_PROGRAMS_KEY) {
         roots.include(
             SYSTEM_PROGRAMS_KEY,
-            known_folder(&FOLDERID_CommonPrograms).map(Some),
+            known_folder(&FOLDERID_CommonPrograms).map(Some)
         );
     }
     if enabled(SCOOP_USER_KEY) {
         roots.include(
             SCOOP_USER_KEY,
-            scoop_shim_root(std::env::var_os(SCOOP_ENVIRONMENT), &FOLDERID_Profile).map(Some),
+            scoop_shim_root(std::env::var_os(SCOOP_ENVIRONMENT), &FOLDERID_Profile).map(Some)
         );
     }
     if enabled(SCOOP_GLOBAL_KEY) {
@@ -57,9 +57,9 @@ pub(super) fn standard_roots(
             SCOOP_GLOBAL_KEY,
             scoop_shim_root(
                 std::env::var_os(SCOOP_GLOBAL_ENVIRONMENT),
-                &FOLDERID_ProgramData,
+                &FOLDERID_ProgramData
             )
-            .map(Some),
+            .map(Some)
         );
     }
     Ok(roots)
@@ -83,7 +83,7 @@ pub(super) fn is_application_bundle(_path: &Path) -> bool {
 pub(super) fn read_entry(
     state: &mut DiscoveryState,
     path: &Path,
-    priority: usize,
+    priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     let extension = path
         .extension()
@@ -101,14 +101,14 @@ pub(super) fn read_entry(
 pub(super) fn icon_cache_key(
     source: &Path,
     icon_index: i32,
-    state: &mut DiscoveryState,
+    state: &mut DiscoveryState
 ) -> Result<String, ApplicationError> {
     let metadata = state.metadata(source)?;
     Ok(_icon_key_from_stamp(
         source,
         icon_index,
         metadata.len(),
-        crate::normalization::timestamp_nanos(metadata.modified()?),
+        crate::normalization::timestamp_nanos(metadata.modified()?)
     ))
 }
 
@@ -116,14 +116,14 @@ pub(super) fn extract_icons(
     source: &Path,
     icon_index: i32,
     sizes: &[u32],
-    directory: &Path,
+    directory: &Path
 ) -> Result<(), ApplicationError> {
     for &size in sizes {
         extract_icon(
             source,
             icon_index,
             size,
-            &directory.join(format!("{size}.png")),
+            &directory.join(format!("{size}.png"))
         )?;
     }
     Ok(())
@@ -133,7 +133,7 @@ fn extract_icon(
     source: &Path,
     icon_index: i32,
     size: u32,
-    target: &Path,
+    target: &Path
 ) -> Result<(), ApplicationError> {
     if source.metadata().is_ok_and(|metadata| metadata.len() == 0) {
         return Err(std::io::Error::other("Windows application source is empty").into());
@@ -147,7 +147,7 @@ fn extract_icon(
 fn read_shell_link(
     state: &mut DiscoveryState,
     path: &Path,
-    priority: usize,
+    priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     let Some(link) = load_shell_link(path)? else {
         return Ok(None);
@@ -156,7 +156,7 @@ fn read_shell_link(
     let target = match target.canonicalize() {
         Ok(target) => target,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error.into())
     };
     let Some((executable_length, executable_modified)) = state.windows_executable_stamp(&target)?
     else {
@@ -185,21 +185,21 @@ fn read_shell_link(
             &icon_resource,
             link.icon_index,
             resource_stamp.len(),
-            timestamp_nanos(resource_stamp.modified()?),
+            timestamp_nanos(resource_stamp.modified()?)
         );
         let shortcut_stamp = state.metadata(path)?;
         let shortcut_key = _icon_key_from_stamp(
             path,
             link.icon_index,
             shortcut_stamp.len(),
-            timestamp_nanos(shortcut_stamp.modified()?),
+            timestamp_nanos(shortcut_stamp.modified()?)
         );
         let target_key_for_icon =
             _icon_key_from_stamp(&target, 0, executable_length, executable_modified);
         Ok(stable_hash(&[
             &shortcut_key,
             &resource_key,
-            &target_key_for_icon,
+            &target_key_for_icon
         ]))
     })()
     .unwrap_or_else(|error| {
@@ -224,16 +224,16 @@ fn read_shell_link(
         // asking for the DLL itself can return its generic file-type icon.
         icon_source: Some(crate::ApplicationIconSource::File {
             path: path.to_path_buf(),
-            index: 0,
+            index: 0
         }),
-        priority,
+        priority
     })))
 }
 
 fn read_executable(
     state: &mut DiscoveryState,
     path: &Path,
-    priority: usize,
+    priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     let target = path.canonicalize()?;
     let Some((executable_length, executable_modified)) = state.windows_executable_stamp(&target)?
@@ -260,9 +260,9 @@ fn read_executable(
         icon_key: _icon_key_from_stamp(&target, 0, executable_length, executable_modified),
         icon_source: Some(crate::ApplicationIconSource::File {
             path: target,
-            index: 0,
+            index: 0
         }),
-        priority,
+        priority
     })))
 }
 
@@ -275,12 +275,12 @@ fn known_folder(id: &windows_sys::core::GUID) -> Result<PathBuf, ApplicationErro
             id,
             KF_FLAG_DONT_VERIFY as u32,
             std::ptr::null_mut::<c_void>() as HANDLE,
-            &mut value,
+            &mut value
         )
     };
     if result < 0 || value.is_null() {
         return Err(ApplicationError::Io(std::io::Error::from_raw_os_error(
-            result,
+            result
         )));
     }
     let length = unsafe {
@@ -357,7 +357,7 @@ fn load_shell_link_initialized(path: &Path) -> Result<Option<ShellLinkMetadata>,
         target,
         arguments: wide_string(&arguments),
         icon_source: wide_string(&icon_source),
-        icon_index,
+        icon_index
     }))
 }
 
@@ -400,11 +400,11 @@ fn wide_null(value: &std::ffi::OsStr) -> Vec<u16> {
 
 fn scoop_shim_root(
     configured: Option<std::ffi::OsString>,
-    default_folder: &windows_sys::core::GUID,
+    default_folder: &windows_sys::core::GUID
 ) -> Result<PathBuf, ApplicationError> {
     let root = match configured {
         Some(root) => PathBuf::from(root),
-        None => known_folder(default_folder)?.join(SCOOP_DIRECTORY),
+        None => known_folder(default_folder)?.join(SCOOP_DIRECTORY)
     };
     if !root.is_absolute() {
         return Err(ApplicationError::Configuration(format!(
@@ -422,7 +422,7 @@ mod tests;
 fn _icon_key_from_stamp(source: &Path, icon_index: i32, length: u64, modified: i128) -> String {
     stable_hash(&[
         "windows-native-list-v1",
-        &crate::icon_cache::key_from_stamp(source, icon_index, length, modified),
+        &crate::icon_cache::key_from_stamp(source, icon_index, length, modified)
     ])
 }
 

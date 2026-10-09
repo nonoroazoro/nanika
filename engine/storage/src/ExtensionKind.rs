@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtensionKind {
     BuiltIn,
-    External,
+    External
 }
 
 impl ExtensionKind {
@@ -10,7 +10,7 @@ impl ExtensionKind {
         match value {
             "built-in" => Some(Self::BuiltIn),
             "external" => Some(Self::External),
-            _ => None,
+            _ => None
         }
     }
 }

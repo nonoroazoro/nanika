@@ -10,14 +10,14 @@ pub struct SearchSnapshot {
     pub normalized_query: String,
     pub pending_extensions: Vec<String>,
     /// Result identity is independent of progress-only publications.
-    pub results: Arc<[RankedCandidate]>,
+    pub results: Arc<[RankedCandidate]>
 }
 
 impl SearchSnapshot {
     pub fn authority(&self) -> crate::SearchAuthority {
         crate::SearchAuthority {
             generation: self.generation,
-            result_revision: self.result_revision,
+            result_revision: self.result_revision
         }
     }
 }

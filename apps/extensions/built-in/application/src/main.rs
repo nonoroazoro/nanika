@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, RwLock};
 
 use nanika_extension_application::{
-    ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths,
+    ApplicationConfig, ApplicationEntry, DiscoveryWorker, RuntimeEvent, RuntimePaths
 };
 use nanika_protocol::{HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame};
 
@@ -20,7 +20,7 @@ const EVENT_CAPACITY: usize = 8;
 
 struct PendingConfiguration {
     generation: u64,
-    previous: ApplicationConfig,
+    previous: ApplicationConfig
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,14 +32,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(Message::Initialize {
                 request_id,
                 protocol,
-                configuration,
+                configuration
             }) if protocol == PROTOCOL_NAME => (request_id, configuration),
             Some(Message::Initialize { request_id, .. }) => {
                 write_error(
                     &mut output,
                     Some(request_id),
                     "unsupported_protocol",
-                    "the requested extension protocol is unsupported",
+                    "the requested extension protocol is unsupported"
                 )?;
                 return Ok(());
             }
@@ -48,11 +48,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     request_id(&message),
                     "not_initialized",
-                    "initialize must be the first request",
+                    "initialize must be the first request"
                 )?;
                 return Ok(());
             }
-            None => return Ok(()),
+            None => return Ok(())
         }
     };
     let initial_config = match ApplicationConfig::from_configuration(&initial_configuration) {
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 Some(initialize_request_id),
                 "invalid_configuration",
-                &error.to_string(),
+                &error.to_string()
             )?;
             return Ok(());
         }
@@ -77,15 +77,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         icon_root,
         Arc::clone(&config),
         Arc::clone(&entries),
-        event_sender.clone(),
+        event_sender.clone()
     )?;
     let discovery = discovery_runtime::DiscoveryRuntime::new(events, worker);
     write_frame(
         &mut output,
         &Message::Initialized {
             request_id: initialize_request_id,
-            protocol: PROTOCOL_NAME.to_owned(),
-        },
+            protocol: PROTOCOL_NAME.to_owned()
+        }
     )?;
     let _reader = spawn_protocol_reader(event_sender)?;
     let mut startup_pending = true;
@@ -115,11 +115,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Message::PrepareEntries {
                     generation,
-                    entry_ids,
+                    entry_ids
                 } => discovery.worker.prepare_entries(generation, entry_ids),
                 Message::Refresh {
                     request_id,
-                    generation,
+                    generation
                 } => {
                     latest_generation = latest_generation.max(generation);
                     if startup_pending {
@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Message::Cancel {
                     request_id,
-                    generation,
+                    generation
                 } => {
                     if let Some((expected, scan)) = refresh_requests.get(&request_id)
                         && *expected == generation
@@ -150,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                     entry_id,
-                    action_id,
+                    action_id
                 } => {
                     latest_generation = latest_generation.max(generation);
                     let descriptor = entries
@@ -172,15 +172,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     request_id: service_request_id.clone(),
                                     parent_request_id: request_id.clone(),
                                     generation,
-                                    request: descriptor,
-                                },
+                                    request: descriptor
+                                }
                             )?;
                             pending_invocations.insert(
                                 service_request_id,
                                 PendingInvocation {
                                     request_id,
-                                    generation,
-                                },
+                                    generation
+                                }
                             );
                         }
                         Err(message) => {
@@ -190,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Message::ConfigurationChanged {
                     request_id,
-                    configuration,
+                    configuration
                 } => match ApplicationConfig::from_configuration(&configuration) {
                     Ok(updated) => {
                         let previous = {
@@ -208,8 +208,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     request_id,
                                     PendingConfiguration {
                                         generation: latest_generation,
-                                        previous,
-                                    },
+                                        previous
+                                    }
                                 );
                             }
                             Err(message) => {
@@ -219,7 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &mut output,
                                     Some(request_id),
                                     "configuration_apply_failed",
-                                    &message,
+                                    &message
                                 )?;
                             }
                         }
@@ -228,14 +228,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "invalid_configuration",
-                        &error.to_string(),
-                    )?,
+                        &error.to_string()
+                    )?
                 },
                 Message::HostResponse {
                     request_id,
                     parent_request_id,
                     generation: response_generation,
-                    response: HostServiceResponse::Launched | HostServiceResponse::PathRevealed,
+                    response: HostServiceResponse::Launched | HostServiceResponse::PathRevealed
                 } => {
                     if let Some(pending) = pending_invocations.remove(&request_id) {
                         if parent_request_id == pending.request_id
@@ -246,15 +246,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &Message::Result {
                                     request_id: pending.request_id,
                                     generation: pending.generation,
-                                    effect: nanika_protocol::NavigationEffect::Dismiss,
-                                },
+                                    effect: nanika_protocol::NavigationEffect::Dismiss
+                                }
                             )?;
                         } else {
                             write_error(
                                 &mut output,
                                 Some(pending.request_id),
                                 "invalid_host_response",
-                                "host response does not match the pending application invocation",
+                                "host response does not match the pending application invocation"
                             )?;
                         }
                     }
@@ -262,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Message::Error {
                     request_id: Some(service_request_id),
                     code,
-                    message,
+                    message
                 } if pending_invocations.contains_key(&service_request_id) => {
                     if let Some(pending) = pending_invocations.remove(&service_request_id) {
                         write_error(&mut output, Some(pending.request_id), &code, &message)?;
@@ -272,20 +272,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     request_id(&message),
                     "unsupported_message",
-                    "the application extension received an unsupported message",
-                )?,
+                    "the application extension received an unsupported message"
+                )?
             },
             RuntimeEvent::ScanProgress {
                 request_id,
-                progress,
+                progress
             } => {
                 if configuration_requests.contains_key(&request_id) {
                     write_frame(
                         &mut output,
                         &Message::ConfigurationProgress {
                             request_id,
-                            progress,
-                        },
+                            progress
+                        }
                     )?;
                 }
             }
@@ -315,7 +315,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             RuntimeEvent::ScanFinished {
                 request_id: Some(request_id),
                 response_generation,
-                result: Ok(report),
+                result: Ok(report)
             } if configuration_requests.contains_key(&request_id) => {
                 let pending = configuration_requests
                     .remove(&request_id)
@@ -326,7 +326,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "configuration_apply_failed",
-                        "application scan returned the wrong configuration generation",
+                        "application scan returned the wrong configuration generation"
                     )?;
                 } else if report.cancelled {
                     *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
@@ -334,7 +334,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "configuration_apply_failed",
-                        "application scan was cancelled before configuration was applied",
+                        "application scan was cancelled before configuration was applied"
                     )?;
                 } else {
                     if !report.complete || report.warnings > 0 {
@@ -349,7 +349,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             RuntimeEvent::ScanFinished {
                 request_id: Some(request_id),
                 response_generation,
-                result: Ok(report),
+                result: Ok(report)
             } if !report.cancelled => {
                 let Some((generation, expected_scan)) = refresh_requests.remove(&request_id) else {
                     continue;
@@ -359,7 +359,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "refresh_failed",
-                        "application scan returned the wrong generation",
+                        "application scan returned the wrong generation"
                     )?;
                     continue;
                 }
@@ -375,14 +375,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     &Message::Refreshed {
                         request_id,
-                        generation,
-                    },
+                        generation
+                    }
                 )?;
             }
             RuntimeEvent::ScanFinished {
                 request_id,
                 response_generation: _,
-                result: Err(message),
+                result: Err(message)
             } => {
                 if let Some(request_id) = request_id {
                     if let Some(pending) = configuration_requests.remove(&request_id) {
@@ -392,7 +392,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &mut output,
                             Some(request_id),
                             "configuration_apply_failed",
-                            &message,
+                            &message
                         )?;
                     } else {
                         refresh_requests.remove(&request_id);
@@ -415,7 +415,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "refresh_cancelled",
-                        "application scan was cancelled",
+                        "application scan was cancelled"
                     )?;
                 } else {
                     startup_pending = false;
@@ -426,15 +426,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &mut output,
                                 Some(request_id),
                                 "refresh_cancelled",
-                                "application scan was cancelled",
+                                "application scan was cancelled"
                             )?;
                         } else {
                             write_frame(
                                 &mut output,
                                 &Message::Refreshed {
                                     request_id,
-                                    generation,
-                                },
+                                    generation
+                                }
                             )?;
                         }
                     }
@@ -453,7 +453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn spawn_protocol_reader(
-    events: SyncSender<RuntimeEvent>,
+    events: SyncSender<RuntimeEvent>
 ) -> std::io::Result<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name("nanika-application-protocol".to_owned())
@@ -483,15 +483,15 @@ fn write_error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> Result<(), nanika_protocol::FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
             code: code.to_owned(),
-            message: message.to_owned(),
-        },
+            message: message.to_owned()
+        }
     )
 }
 

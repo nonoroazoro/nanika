@@ -12,7 +12,7 @@ fn shortcut_launch_preserves_arguments_and_working_directory() {
     let _ = std::fs::remove_file(&marker);
     std::fs::write(
         root.join("record.cmd"),
-        "@echo off\r\n>marker.txt echo %CD%\r\n",
+        "@echo off\r\n>marker.txt echo %CD%\r\n"
     )
     .unwrap();
     let shortcut = root.join("Record.lnk");
@@ -31,7 +31,7 @@ $link.Save()
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            script,
+            script
         ])
         .env("NANIKA_SHORTCUT_TEST_PATH", &shortcut)
         .env("NANIKA_SHORTCUT_TEST_ROOT", &root)
@@ -45,7 +45,7 @@ $link.Save()
     let launcher = ProcessLauncher::spawn().unwrap();
     launcher
         .launch(LaunchDescriptor::WindowsApplication {
-            path: shortcut.to_string_lossy().into_owned(),
+            path: shortcut.to_string_lossy().into_owned()
         })
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -75,7 +75,7 @@ fn invalid_or_deleted_shortcuts_return_errors() {
     for path in [
         "relative.lnk",
         "C:\\Windows\\not-an-application.txt",
-        "C:\\bad\0.lnk",
+        "C:\\bad\0.lnk"
     ] {
         assert!(
             launcher
@@ -106,7 +106,7 @@ fn native_application_accepts_canonical_executable_paths() {
     ProcessLauncher::spawn()
         .unwrap()
         .launch(LaunchDescriptor::WindowsApplication {
-            path: program.to_string_lossy().into_owned(),
+            path: program.to_string_lossy().into_owned()
         })
         .unwrap();
 }
@@ -117,7 +117,7 @@ fn windows_application_is_explicitly_unsupported() {
     let launcher = ProcessLauncher::spawn().unwrap();
     let error = launcher
         .launch(LaunchDescriptor::WindowsApplication {
-            path: "C:\\Example.lnk".to_owned(),
+            path: "C:\\Example.lnk".to_owned()
         })
         .unwrap_err();
     assert!(error.contains("unsupported"));
@@ -136,7 +136,7 @@ fn explicit_shell_launch_uses_the_platform_interpreter() {
     launcher
         .launch(LaunchDescriptor::Shell {
             command,
-            working_directory: None,
+            working_directory: None
         })
         .expect("shell command should launch");
 
@@ -164,7 +164,7 @@ fn shutdown_drains_every_accepted_launch_response() {
                 .submit(nanika_protocol::LaunchDescriptor::Program {
                     program: String::new(),
                     arguments: Default::default(),
-                    working_directory: None,
+                    working_directory: None
                 })
                 .unwrap()
         })
@@ -189,7 +189,7 @@ fn packaged_activation_rejects_paths_commands_and_invalid_native_identities() {
         "shell:AppsFolder",
         "app!",
         "app\0id",
-        "app && command",
+        "app && command"
     ] {
         assert!(
             launcher
@@ -210,8 +210,8 @@ fn registered_activation_reports_native_rejection_without_an_error_dialog() {
     let error = launcher
         .launch(
             nanika_protocol::LaunchDescriptor::WindowsPackagedApplication {
-                app_user_model_id: "Nanika.NotInstalled_0000000000000!App".into(),
-            },
+                app_user_model_id: "Nanika.NotInstalled_0000000000000!App".into()
+            }
         )
         .unwrap_err();
     assert!(

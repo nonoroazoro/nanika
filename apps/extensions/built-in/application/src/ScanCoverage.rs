@@ -6,7 +6,7 @@ use crate::normalization::path_key;
 pub(crate) struct ScanCoverage {
     roots: Vec<String>,
     failed: Vec<String>,
-    roots_resolved: bool,
+    roots_resolved: bool
 }
 
 impl ScanCoverage {
@@ -14,7 +14,7 @@ impl ScanCoverage {
         Self {
             roots: roots.collect(),
             failed: Vec::new(),
-            roots_resolved,
+            roots_resolved
         }
     }
 

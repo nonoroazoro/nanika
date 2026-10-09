@@ -2,5 +2,5 @@
 #[derive(Clone)]
 pub(crate) struct ClipboardQueryEntry {
     pub entry_id: String,
-    pub captured_at: i64,
+    pub captured_at: i64
 }

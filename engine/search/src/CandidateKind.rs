@@ -4,5 +4,5 @@
 #[serde(rename_all = "camelCase")]
 pub enum CandidateKind {
     Action,
-    View,
+    View
 }

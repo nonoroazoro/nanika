@@ -6,5 +6,5 @@ pub struct ClipboardEntry {
     pub title: String,
     pub content: ClipboardContent,
     pub byte_size: u64,
-    pub captured_at: u64,
+    pub captured_at: u64
 }

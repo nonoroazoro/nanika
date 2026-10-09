@@ -6,7 +6,7 @@ pub struct UsageKey {
     pub extension_id: String,
     pub entry_id: String,
     pub action_id: String,
-    pub query_context: String,
+    pub query_context: String
 }
 
 impl UsageKey {
@@ -15,7 +15,7 @@ impl UsageKey {
             extension_id: extension_id.to_owned(),
             entry_id: entry_id.to_owned(),
             action_id: action_id.to_owned(),
-            query_context: normalize_history_key(query_context),
+            query_context: normalize_history_key(query_context)
         }
     }
 }

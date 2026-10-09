@@ -16,8 +16,8 @@ fn batch(transaction: u64, index: u64, complete: bool, id: &str) -> CatalogBatch
             action_id: "open".into(),
             actions: vec![Action::primary("open", "Open")],
             aliases: Vec::new(),
-            icon: None,
-        }],
+            icon: None
+        }]
     }
 }
 

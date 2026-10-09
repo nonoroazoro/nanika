@@ -24,7 +24,7 @@ pub(crate) struct SearchSession {
     pub(crate) phase: Option<SearchPhase>,
     pub(crate) error: Option<String>,
     pub(crate) warnings: Vec<String>,
-    pub(crate) transport_error: Option<String>,
+    pub(crate) transport_error: Option<String>
 }
 
 impl SearchSession {
@@ -49,14 +49,14 @@ impl SearchSession {
             phase: None,
             error: None,
             warnings: Vec::new(),
-            transport_error: None,
+            transport_error: None
         }
     }
 
     /// Resolve menu entries from the session-authorized target, excluding row activation.
     pub(crate) fn menu_actions(
         &self,
-        request: &crate::ContextMenuRequest,
+        request: &crate::ContextMenuRequest
     ) -> Result<Vec<nanika_protocol::Action>, String> {
         self.authorize(request.session_id)?;
         if self.navigation.busy {
@@ -67,7 +67,7 @@ impl SearchSession {
                 request_id,
                 result_revision,
                 extension_id,
-                entry_id,
+                entry_id
             } => {
                 self.authorize_result(*request_id, *result_revision)?;
                 if !self.navigation.stack.is_empty() {
@@ -90,13 +90,13 @@ impl SearchSession {
                 });
                 (
                     candidate.actions(),
-                    primary.map(|action| action.id.as_str()),
+                    primary.map(|action| action.id.as_str())
                 )
             }
             crate::MenuTarget::View {
                 route_id,
                 revision,
-                item_id,
+                item_id
             } => {
                 let route = self.navigation.authorize_route(*route_id)?;
                 if route.revision != *revision {
@@ -109,7 +109,7 @@ impl SearchSession {
                         .actions
                         .as_slice(),
                     (nanika_protocol::View::Detail { detail }, None) => detail.actions.as_slice(),
-                    _ => return Err("The menu target is unavailable.".to_owned()),
+                    _ => return Err("The menu target is unavailable.".to_owned())
                 };
                 let primary = actions.iter().find(|action| {
                     action.style == nanika_protocol::ActionStyle::Primary
@@ -129,7 +129,7 @@ impl SearchSession {
 
     pub(crate) fn request_range(
         &mut self,
-        request: crate::ReadResultsRequest,
+        request: crate::ReadResultsRequest
     ) -> Result<(), String> {
         self.authorize(request.session_id)?;
         if request.count == 0
@@ -154,7 +154,7 @@ impl SearchSession {
     pub(crate) fn authorize_result(
         &self,
         request_id: u64,
-        result_revision: u64,
+        result_revision: u64
     ) -> Result<(), String> {
         if request_id != self.request_id || result_revision != self.result_revision {
             return Err("Search changed. Select a current result.".to_owned());

@@ -1,6 +1,6 @@
 use crate::{
     ClipboardChange, ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardPresentation,
-    ClipboardQuery, ClipboardViewState,
+    ClipboardQuery, ClipboardViewState
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 
@@ -25,7 +25,7 @@ impl ClipboardStore {
     }
 
     pub(crate) fn retained_images(
-        &self,
+        &self
     ) -> Result<std::collections::HashSet<std::path::PathBuf>, String> {
         self._database.retained_images()
     }
@@ -34,7 +34,7 @@ impl ClipboardStore {
         &mut self,
         entry: &ClipboardEntry,
         now: u64,
-        config: &ClipboardConfig,
+        config: &ClipboardConfig
     ) -> Result<ClipboardChange, String> {
         let change = self._database.upsert_with_retention(entry, now, config)?;
         self._changed(Some(entry), &change);
@@ -44,7 +44,7 @@ impl ClipboardStore {
     pub fn apply_retention(
         &mut self,
         now: u64,
-        config: &ClipboardConfig,
+        config: &ClipboardConfig
     ) -> Result<ClipboardChange, String> {
         let change = self._database.apply_retention(now, config)?;
         if !change.removed.is_empty() {
@@ -75,7 +75,7 @@ impl ClipboardStore {
     pub fn present(
         &mut self,
         mut state: ClipboardViewState,
-        expected_revision: Option<u64>,
+        expected_revision: Option<u64>
     ) -> Result<ClipboardPresentation, String> {
         if expected_revision.is_some_and(|revision| revision != self._query_revision) {
             return Err("Clipboard history changed. Use its current view.".into());
@@ -100,7 +100,7 @@ impl ClipboardStore {
                 content_type: state.content_type.clone(),
                 entries,
                 positions,
-                entry_ids: Arc::new(ids),
+                entry_ids: Arc::new(ids)
             });
         }
         if state.count == 0 || state.count > nanika_protocol::MAX_VIEW_ITEMS {
@@ -145,7 +145,7 @@ impl ClipboardStore {
                 collection_id: collection_id.clone(),
                 offset: state.offset,
                 count: state.count,
-                items: self._database.items(visible_ids)?,
+                items: self._database.items(visible_ids)?
             });
         }
         if self
@@ -172,7 +172,7 @@ impl ClipboardStore {
             entry_id,
             content:
                 nanika_protocol::ClipboardContent::Files {
-                    paths: selected_paths,
+                    paths: selected_paths
                 },
             ..
         }) = selected.map(|preview| &preview.entry)
@@ -183,7 +183,7 @@ impl ClipboardStore {
                     .iter()
                     .take(crate::FILE_COLLECTION_PREVIEW_LIMIT)
                     .cloned()
-                    .collect(),
+                    .collect()
             );
         }
         let view = crate::view::clipboard_view(
@@ -192,7 +192,7 @@ impl ClipboardStore {
             selected,
             selected_index,
             ids.len(),
-            collection_id,
+            collection_id
         )?;
         view.validate()?;
         Ok(ClipboardPresentation {
@@ -200,7 +200,7 @@ impl ClipboardStore {
             view,
             collection_revision: self._query_revision,
             matching_ids: ids,
-            paths,
+            paths
         })
     }
 

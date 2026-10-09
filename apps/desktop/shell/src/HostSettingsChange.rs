@@ -11,5 +11,5 @@ use serde::Deserialize;
 pub(crate) enum HostSettingsChange {
     LauncherShortcut(String),
     Theme(nanika_config::ThemePreference),
-    HideOnBlur(bool),
+    HideOnBlur(bool)
 }

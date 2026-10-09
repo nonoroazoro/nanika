@@ -7,7 +7,7 @@ use crate::{PlatformError, StartupCommand, StartupStatus};
 /// Owner for login startup status and mutations. Submission applies backpressure.
 pub struct StartupService {
     commands: Sender<StartupCommand>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 impl StartupService {
@@ -24,13 +24,13 @@ impl StartupService {
                         StartupCommand::SetEnabled { enabled, response } => {
                             let _ = response.send(crate::set_startup_enabled(&executable, enabled));
                         }
-                        StartupCommand::Shutdown => break,
+                        StartupCommand::Shutdown => break
                     }
                 }
             })?;
         Ok(Self {
             commands,
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 
@@ -42,7 +42,7 @@ impl StartupService {
 
     pub fn set_enabled(
         &self,
-        enabled: bool,
+        enabled: bool
     ) -> Result<Receiver<Result<StartupStatus, PlatformError>>, PlatformError> {
         let (response, receiver) = mpsc::sync_channel(1);
         self.submit(StartupCommand::SetEnabled { enabled, response })?;

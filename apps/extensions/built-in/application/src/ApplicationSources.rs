@@ -7,7 +7,7 @@ use crate::ApplicationEntry;
 #[derive(Default)]
 pub(crate) struct ApplicationSources {
     _sources: HashMap<String, HashMap<String, ApplicationEntry>>,
-    _owners: HashMap<String, Vec<Arc<str>>>,
+    _owners: HashMap<String, Vec<Arc<str>>>
 }
 
 impl ApplicationSources {
@@ -40,7 +40,7 @@ impl ApplicationSources {
     pub(crate) fn resolve<'a>(
         &'a self,
         root: &str,
-        replacement: &'a HashMap<String, ApplicationEntry>,
+        replacement: &'a HashMap<String, ApplicationEntry>
     ) -> (Vec<&'a ApplicationEntry>, Vec<String>) {
         let affected = self
             ._sources
@@ -67,7 +67,7 @@ impl ApplicationSources {
                 });
             match winner {
                 Some(entry) => winners.push(entry),
-                None => removed.push(id.clone()),
+                None => removed.push(id.clone())
             }
         }
         (winners, removed)

@@ -4,5 +4,5 @@ use crate::ExtensionInvocationOutcome;
 #[derive(Debug)]
 pub struct RuntimeInvocationCompletion {
     pub instance_id: u64,
-    pub outcome: ExtensionInvocationOutcome,
+    pub outcome: ExtensionInvocationOutcome
 }

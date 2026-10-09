@@ -43,7 +43,7 @@ pub fn acquire(_identity: &str, app_data_root: &Path) -> Result<InstanceRole, Pl
         events: Some(event_receiver),
         event_thread: Some(event_thread),
         lock_file,
-        activation_path,
+        activation_path
     }))
 }
 
@@ -63,7 +63,7 @@ pub fn signal_activate(_identity: &str, app_data_root: &Path) -> Result<(), Plat
             {
                 std::thread::sleep(Duration::from_millis(10));
             }
-            Err(error) => return Err(PlatformError::Io(error)),
+            Err(error) => return Err(PlatformError::Io(error))
         }
     }
 }
@@ -75,7 +75,7 @@ fn run_event_loop(socket: UnixDatagram, events: mpsc::Sender<PlatformEvent>) {
             Ok(1) => {}
             Ok(_) => continue,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Err(_) => break,
+            Err(_) => break
         };
         match request[0] {
             ACTIVATE_REQUEST => {

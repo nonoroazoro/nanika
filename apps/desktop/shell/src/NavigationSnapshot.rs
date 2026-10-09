@@ -13,5 +13,5 @@ pub(crate) struct NavigationSnapshot {
     pub(crate) current: Option<Option<ExtensionViewSnapshot>>,
     pub(crate) busy: bool,
     pub(crate) error: Option<String>,
-    pub(crate) dismiss_count: u64,
+    pub(crate) dismiss_count: u64
 }

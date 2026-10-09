@@ -3,7 +3,7 @@ use nanika_protocol::{Candidate, IconReference};
 #[test]
 fn aliases_are_required_by_protocol_v1() {
     let candidate = serde_json::from_str::<Candidate>(
-        r#"{"entry_id":"entry","title":"Title","action_id":"open","icon":null}"#,
+        r#"{"entry_id":"entry","title":"Title","action_id":"open","icon":null}"#
     );
     assert!(candidate.is_err());
 }
@@ -11,7 +11,7 @@ fn aliases_are_required_by_protocol_v1() {
 #[test]
 fn candidate_kind_is_required_by_protocol_v1() {
     let candidate = serde_json::from_str::<Candidate>(
-        r#"{"entry_id":"entry","title":"Title","action_id":"open","aliases":[],"icon":null}"#,
+        r#"{"entry_id":"entry","title":"Title","action_id":"open","aliases":[],"icon":null}"#
     );
     assert!(candidate.is_err());
 }

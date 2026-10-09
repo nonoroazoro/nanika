@@ -9,7 +9,7 @@ pub enum PngResourceError {
     Cancelled,
     Dimensions { width: u32, height: u32 },
     Decode(png::DecodingError),
-    Io(std::io::Error),
+    Io(std::io::Error)
 }
 
 impl Display for PngResourceError {
@@ -27,7 +27,7 @@ impl Display for PngResourceError {
                 "PNG resource exceeds the dimension limit: {width} x {height}"
             ),
             Self::Decode(error) => write!(formatter, "PNG resource is invalid: {error}"),
-            Self::Io(error) => write!(formatter, "PNG resource could not be read: {error}"),
+            Self::Io(error) => write!(formatter, "PNG resource could not be read: {error}")
         }
     }
 }
@@ -37,7 +37,7 @@ impl std::error::Error for PngResourceError {
         match self {
             Self::Decode(error) => Some(error),
             Self::Io(error) => Some(error),
-            _ => None,
+            _ => None
         }
     }
 }

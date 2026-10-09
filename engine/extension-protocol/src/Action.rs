@@ -18,7 +18,7 @@ pub struct Action {
     pub enabled: bool,
     /// Permit direct activation without choosing an action. Incompatible with confirmation.
     pub allow_default_execution: bool,
-    pub group: Option<String>,
+    pub group: Option<String>
 }
 
 impl Action {
@@ -30,7 +30,7 @@ impl Action {
                     self.allow_default_execution && self.confirmation_title.is_none()
                 }
                 ActionInvocation::Explicit => self.confirmation_title.is_none(),
-                ActionInvocation::Confirmed => true,
+                ActionInvocation::Confirmed => true
             }
     }
 
@@ -44,7 +44,7 @@ impl Action {
             style: ActionStyle::Primary,
             enabled: true,
             allow_default_execution: true,
-            group: None,
+            group: None
         }
     }
 }

@@ -10,14 +10,14 @@ use crate::ExtensionPackageError;
 /// Immutable local copy whose digest describes the bytes used for extraction.
 pub(crate) struct StagedPackage {
     path: PathBuf,
-    digest: String,
+    digest: String
 }
 
 impl StagedPackage {
     pub(crate) fn create(
         source: &Path,
         path: PathBuf,
-        maximum_bytes: u64,
+        maximum_bytes: u64
     ) -> Result<Self, ExtensionPackageError> {
         let result = (|| {
             let mut input = File::open(source)?;
@@ -44,7 +44,7 @@ impl StagedPackage {
             }
             if total == 0 {
                 return Err(ExtensionPackageError::Manifest(
-                    "extension package is empty".to_owned(),
+                    "extension package is empty".to_owned()
                 ));
             }
             output.sync_all()?;
@@ -56,7 +56,7 @@ impl StagedPackage {
             }
             Ok(Self {
                 path: path.clone(),
-                digest,
+                digest
             })
         })();
         if result.is_err() {

@@ -23,7 +23,7 @@ fn image_resources_are_bounded_and_content_addressed() {
         &payload_root,
         &Default::default(),
         "launcher",
-        &request(&format!("/com.nanika.clipboard/payload/{RESOURCE_NAME}")),
+        &request(&format!("/com.nanika.clipboard/payload/{RESOURCE_NAME}"))
     );
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
@@ -36,7 +36,7 @@ fn image_resources_are_bounded_and_content_addressed() {
         &payload_root,
         &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/payload/preview.png"),
+        &request("/com.nanika.clipboard/payload/preview.png")
     );
     assert_eq!(mutable_name.status(), StatusCode::BAD_REQUEST);
 
@@ -54,7 +54,7 @@ fn image_resources_are_bounded_and_content_addressed() {
         &request(&format!(
             "/com.nanika.clipboard/payload/{}",
             oversized_path.file_name().unwrap().to_string_lossy()
-        )),
+        ))
     );
     assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 
@@ -93,7 +93,7 @@ fn cached_file_icons_support_large_previews_and_reject_arbitrary_sizes() {
         &root.join("payloads"),
         &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/cache/file-icon/512.png"),
+        &request("/com.nanika.clipboard/cache/file-icon/512.png")
     );
     assert_eq!(response.status(), StatusCode::OK);
     let response = resolve_request(
@@ -101,7 +101,7 @@ fn cached_file_icons_support_large_previews_and_reject_arbitrary_sizes() {
         &root.join("payloads"),
         &Default::default(),
         "launcher",
-        &request("/com.nanika.clipboard/cache/file-icon/1024.png"),
+        &request("/com.nanika.clipboard/cache/file-icon/1024.png")
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     std::fs::remove_dir_all(root).expect("cleanup");
@@ -119,25 +119,25 @@ fn package_icons_are_scoped_shared_with_settings_and_fail_independently() {
         for (path, status) in [
             (
                 "/example.tools/package/assets/missing.png",
-                StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND
             ),
             (
                 "/example.tools/package/assets/broken.png",
-                StatusCode::UNPROCESSABLE_ENTITY,
+                StatusCode::UNPROCESSABLE_ENTITY
             ),
             (
                 "/example.other/package/assets/icon.png",
-                StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND
             ),
             (
                 "/example.tools/package/../outside.png",
-                StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST
             ),
             (
                 "/example.tools/package/%2e%2e/outside.png",
-                StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST
             ),
-            ("/example.tools/package/assets/icon.png", StatusCode::OK),
+            ("/example.tools/package/assets/icon.png", StatusCode::OK)
         ] {
             let response = resolve_request(&root, &root, &packages, surface, &request(path));
             assert_eq!(response.status(), status, "{surface}: {path}");
@@ -149,7 +149,7 @@ fn package_icons_are_scoped_shared_with_settings_and_fail_independently() {
     }
     for path in [
         "/example.tools/cache/file/128.png",
-        &format!("/example.tools/payload/{RESOURCE_NAME}"),
+        &format!("/example.tools/payload/{RESOURCE_NAME}")
     ] {
         assert_eq!(
             resolve_request(&root, &root, &packages, "settings", &request(path)).status(),
@@ -193,14 +193,14 @@ fn fingerprinted_package_icons_cache_only_matching_content() {
     for query in [
         "sha256=bad",
         "other=value",
-        &format!("sha256={hash}&extra=1"),
+        &format!("sha256={hash}&extra=1")
     ] {
         let response = resolve_request(
             &root,
             &root,
             &packages,
             "settings",
-            &request(&format!("/example.tools/package/icon.png?{query}")),
+            &request(&format!("/example.tools/package/icon.png?{query}"))
         );
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(response.headers()["Cache-Control"], "no-store");
@@ -228,7 +228,7 @@ fn fingerprinted_package_icons_cache_only_matching_content() {
         "settings",
         &request(&format!(
             "/example.tools/package/icon.png?sha256={new_hash}"
-        )),
+        ))
     );
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.body(), &new_bytes);

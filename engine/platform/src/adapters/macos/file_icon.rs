@@ -4,17 +4,17 @@ use objc2_app_kit::{NSCompositingOperation, NSGraphicsContext, NSImageInterpolat
 use objc2_core_foundation::{CFBoolean, CFDictionary, CFNumber, CFType, CFURL};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
-    CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceSRGB,
+    CGImageByteOrderInfo, CGInterpolationQuality, kCGColorSpaceSRGB
 };
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_image_io::{
     CGImageSource, kCGImageSourceCreateThumbnailFromImageAlways,
     kCGImageSourceCreateThumbnailWithTransform, kCGImageSourceShouldCache,
-    kCGImageSourceThumbnailMaxPixelSize,
+    kCGImageSourceThumbnailMaxPixelSize
 };
 use objc2_quick_look_thumbnailing::{
     QLThumbnailGenerationRequest, QLThumbnailGenerationRequestRepresentationTypes,
-    QLThumbnailGenerator, QLThumbnailRepresentation,
+    QLThumbnailGenerator, QLThumbnailRepresentation
 };
 use std::path::Path;
 
@@ -45,14 +45,14 @@ fn image_io_pixels(path: &Path, size: usize) -> std::io::Result<Vec<u8>> {
             unsafe { kCGImageSourceCreateThumbnailFromImageAlways }.as_ref(),
             unsafe { kCGImageSourceThumbnailMaxPixelSize }.as_ref(),
             unsafe { kCGImageSourceCreateThumbnailWithTransform }.as_ref(),
-            unsafe { kCGImageSourceShouldCache }.as_ref(),
+            unsafe { kCGImageSourceShouldCache }.as_ref()
         ],
         &[
             CFBoolean::new(true).as_ref(),
             max_size.as_ref(),
             CFBoolean::new(true).as_ref(),
-            CFBoolean::new(false).as_ref(),
-        ],
+            CFBoolean::new(false).as_ref()
+        ]
     );
     let image = unsafe { source.thumbnail_at_index(0, Some(options.as_ref())) }
         .ok_or_else(|| std::io::Error::other("Image I/O could not generate a thumbnail"))?;
@@ -68,7 +68,7 @@ fn quick_look_pixels(path: &Path, size: usize) -> std::io::Result<Vec<u8>> {
             &url,
             NSSize::new(size as f64, size as f64),
             1.0,
-            QLThumbnailGenerationRequestRepresentationTypes::Thumbnail,
+            QLThumbnailGenerationRequestRepresentationTypes::Thumbnail
         )
     };
     unsafe {
@@ -85,7 +85,7 @@ fn quick_look_pixels(path: &Path, size: usize) -> std::io::Result<Vec<u8>> {
                 cg_image_pixels(&image, size)
             });
             let _ = sender.send(result);
-        },
+        }
     );
     let generator = unsafe { QLThumbnailGenerator::sharedGenerator() };
     unsafe {
@@ -108,7 +108,7 @@ fn cg_image_pixels(image: &CGImage, size: usize) -> std::io::Result<Vec<u8>> {
     let source_height = CGImage::height(Some(image));
     if source_width == 0 || source_height == 0 {
         return Err(std::io::Error::other(
-            "Quick Look returned an empty thumbnail",
+            "Quick Look returned an empty thumbnail"
         ));
     }
     let side = size as f64;
@@ -117,7 +117,7 @@ fn cg_image_pixels(image: &CGImage, size: usize) -> std::io::Result<Vec<u8>> {
     let height = source_height as f64 * scale;
     let rectangle = NSRect::new(
         NSPoint::new((side - width) / 2.0, (side - height) / 2.0),
-        NSSize::new(width, height),
+        NSSize::new(width, height)
     );
     let color_space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }))
         .ok_or_else(|| std::io::Error::other("could not create the sRGB thumbnail color space"))?;
@@ -132,7 +132,7 @@ fn cg_image_pixels(image: &CGImage, size: usize) -> std::io::Result<Vec<u8>> {
                 8,
                 size * 4,
                 Some(&color_space),
-                CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0,
+                CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0
             )
         }
         .ok_or_else(|| std::io::Error::other("could not create the thumbnail bitmap context"))?;
@@ -144,7 +144,7 @@ fn cg_image_pixels(image: &CGImage, size: usize) -> std::io::Result<Vec<u8>> {
     unpremultiply(&mut pixels);
     if pixels.as_chunks::<4>().0.iter().all(|pixel| pixel[3] == 0) {
         return Err(std::io::Error::other(
-            "Quick Look returned a transparent thumbnail",
+            "Quick Look returned a transparent thumbnail"
         ));
     }
     Ok(pixels)
@@ -166,7 +166,7 @@ fn workspace_pixels(bundle: &Path, size: usize) -> std::io::Result<Vec<u8>> {
                 8,
                 size * 4,
                 Some(&color_space),
-                CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0,
+                CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0
             )
         }
         .ok_or_else(|| std::io::Error::other("could not create the system icon bitmap context"))?;
@@ -177,7 +177,7 @@ fn workspace_pixels(bundle: &Path, size: usize) -> std::io::Result<Vec<u8>> {
         graphics.setImageInterpolation(NSImageInterpolation::High);
         let rectangle = NSRect::new(
             NSPoint::new(0.0, 0.0),
-            NSSize::new(size as f64, size as f64),
+            NSSize::new(size as f64, size as f64)
         );
         // No hints are supplied, so there are no untyped Objective-C dictionary values to validate.
         unsafe {
@@ -187,7 +187,7 @@ fn workspace_pixels(bundle: &Path, size: usize) -> std::io::Result<Vec<u8>> {
                 NSCompositingOperation::Copy,
                 1.0,
                 false,
-                None,
+                None
             );
         }
     }
@@ -237,6 +237,6 @@ mod tests;
 pub(crate) fn application_pixels(_app_user_model_id: &str, _size: u32) -> std::io::Result<Vec<u8>> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "Windows application icons are unsupported on this platform",
+        "Windows application icons are unsupported on this platform"
     ))
 }

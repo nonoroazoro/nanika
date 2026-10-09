@@ -10,19 +10,19 @@ pub enum LaunchDescriptor {
         program: String,
         #[serde(default)]
         arguments: LaunchArguments,
-        working_directory: Option<String>,
+        working_directory: Option<String>
     },
     Shell {
         command: String,
-        working_directory: Option<String>,
+        working_directory: Option<String>
     },
     MacApplication {
-        bundle_path: String,
+        bundle_path: String
     },
     WindowsPackagedApplication {
-        app_user_model_id: String,
+        app_user_model_id: String
     },
     WindowsApplication {
-        path: String,
-    },
+        path: String
+    }
 }

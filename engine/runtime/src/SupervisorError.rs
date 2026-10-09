@@ -9,7 +9,7 @@ pub enum SupervisorError {
     ChannelClosed,
     Cancelled(&'static str),
     Terminated(&'static str),
-    UnexpectedMessage(String),
+    UnexpectedMessage(String)
 }
 
 impl std::fmt::Display for SupervisorError {
@@ -27,7 +27,7 @@ impl std::fmt::Display for SupervisorError {
                     "extension terminated during {operation}; accepted host effects may still complete"
                 )
             }
-            Self::UnexpectedMessage(message) => write!(formatter, "unexpected message: {message}"),
+            Self::UnexpectedMessage(message) => write!(formatter, "unexpected message: {message}")
         }
     }
 }
@@ -40,7 +40,7 @@ impl std::error::Error for SupervisorError {
             Self::ChannelClosed
             | Self::Cancelled(_)
             | Self::Terminated(_)
-            | Self::UnexpectedMessage(_) => None,
+            | Self::UnexpectedMessage(_) => None
         }
     }
 }

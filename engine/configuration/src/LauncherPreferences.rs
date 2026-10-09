@@ -11,7 +11,7 @@ pub struct LauncherPreferences {
     pub format_version: u32,
     pub launcher_shortcut: String,
     pub theme: ThemePreference,
-    pub hide_on_blur: bool,
+    pub hide_on_blur: bool
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -20,7 +20,7 @@ pub struct LauncherPreferences {
 pub enum ThemePreference {
     System,
     Light,
-    Dark,
+    Dark
 }
 
 impl LauncherPreferences {
@@ -34,9 +34,9 @@ impl LauncherPreferences {
                 format_version: 1,
                 launcher_shortcut: default_shortcut.to_owned(),
                 theme: ThemePreference::System,
-                hide_on_blur: true,
+                hide_on_blur: true
             },
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.to_string())
         };
         config.validate()?;
         Ok(config)
@@ -62,15 +62,15 @@ impl LauncherPreferences {
                     ("formatVersion".to_owned(), serde_json::json!(1)),
                     (
                         "launcherShortcut".to_owned(),
-                        serde_json::json!(self.launcher_shortcut),
+                        serde_json::json!(self.launcher_shortcut)
                     ),
                     ("theme".to_owned(), serde_json::json!(self.theme)),
                     (
                         "hideOnBlur".to_owned(),
-                        serde_json::json!(self.hide_on_blur),
-                    ),
+                        serde_json::json!(self.hide_on_blur)
+                    )
                 ],
-                Self::validate,
+                Self::validate
             )
             .map(|_| ())
             .map_err(|error| error.to_string())

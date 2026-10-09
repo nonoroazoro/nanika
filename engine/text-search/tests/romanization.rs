@@ -1,11 +1,11 @@
 use crate::{
-    RomanizedMatch, RomanizedReading, find_romanized_match, romanized_query, romanized_readings,
+    RomanizedMatch, RomanizedReading, find_romanized_match, romanized_query, romanized_readings
 };
 
 fn form(full: &str, initials: &str) -> RomanizedReading {
     RomanizedReading {
         full: full.to_owned(),
-        initials: initials.to_owned(),
+        initials: initials.to_owned()
     }
 }
 

@@ -147,7 +147,7 @@ fn settings_and_app_list_share_matching_except_romanized_aliases() {
             "Calculator",
             "launch",
             vec![nanika_protocol::Action::primary("launch", "Open")],
-            vec![],
+            vec![]
         );
         let app_match = !nanika_search::SearchEngine::new()
             .query(query, &[candidate], &nanika_search::UsageMap::new(), 0)
@@ -226,7 +226,7 @@ fn _extension() -> ExtensionLifecycle {
             lifecycle_error: None,
             configuration_error: None,
             icon: "icon.png".into(),
-            icon_hash: None,
+            icon_hash: None
         },
         icon_url: "".into(),
         configuration: Some(nanika_host::RuntimeExtensionConfiguration {
@@ -235,7 +235,7 @@ fn _extension() -> ExtensionLifecycle {
             contribution,
             values: BTreeMap::from([("folders".into(), serde_json::json!("private-secret"))]),
             saved: BTreeMap::new(),
-            effective: None,
-        }),
+            effective: None
+        })
     }
 }

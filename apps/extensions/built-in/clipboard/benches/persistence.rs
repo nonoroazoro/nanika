@@ -1,6 +1,6 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use nanika_extension_clipboard::{
-    ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore, ClipboardViewState,
+    ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore, ClipboardViewState
 };
 use nanika_protocol::ClipboardContent;
 
@@ -36,7 +36,7 @@ fn persistence(criterion: &mut Criterion) {
         for index in 0..count {
             let mut item = entry(index, index as u64);
             item.content = ClipboardContent::Text {
-                value: "x".repeat(4096),
+                value: "x".repeat(4096)
             };
             item.byte_size = 4096;
             history.upsert(&item).unwrap();
@@ -55,7 +55,7 @@ fn persistence(criterion: &mut Criterion) {
         });
         let config = ClipboardConfig {
             max_entries: None,
-            max_age_days: None,
+            max_age_days: None
         };
         criterion.bench_function(&format!("clipboard_capture_publish_{count}"), |bencher| {
             let mut item = entry(42, count as u64);
@@ -77,7 +77,7 @@ fn entry(index: usize, captured_at: u64) -> ClipboardEntry {
         title: value.clone(),
         byte_size: value.len() as u64,
         content: ClipboardContent::Text { value },
-        captured_at,
+        captured_at
     }
 }
 

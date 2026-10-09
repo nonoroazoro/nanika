@@ -5,6 +5,6 @@ pub(super) fn interpreter(extension: &str) -> Option<&'static str> {
         "py" => Some("python3"),
         "js" => Some("node"),
         "sh" => Some("/bin/bash"),
-        _ => None,
+        _ => None
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::{
     Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering}
 };
 
 static NEXT_INSTANCE: AtomicU64 = AtomicU64::new(1);
@@ -8,14 +8,14 @@ static NEXT_INSTANCE: AtomicU64 = AtomicU64::new(1);
 /// Host-owned identity and publication/admission barrier for one process lifetime.
 pub(crate) struct ExtensionInstance {
     pub(crate) id: u64,
-    _active: Mutex<bool>,
+    _active: Mutex<bool>
 }
 
 impl ExtensionInstance {
     pub(crate) fn new() -> Self {
         Self {
             id: NEXT_INSTANCE.fetch_add(1, Ordering::Relaxed),
-            _active: Mutex::new(true),
+            _active: Mutex::new(true)
         }
     }
 

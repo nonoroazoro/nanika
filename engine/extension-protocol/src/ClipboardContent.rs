@@ -5,5 +5,5 @@ use serde::{Deserialize, Serialize};
 pub enum ClipboardContent {
     Text { value: String },
     Files { paths: Vec<String> },
-    PngFile { path: String },
+    PngFile { path: String }
 }

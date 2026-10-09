@@ -8,8 +8,8 @@ pub enum ExtensionRuntimeSource {
     Factory {
         activation: ExtensionActivation,
         live_configuration: bool,
-        start: Box<dyn FnOnce(ExtensionConfiguration) -> std::io::Result<ExtensionRuntime> + Send>,
-    },
+        start: Box<dyn FnOnce(ExtensionConfiguration) -> std::io::Result<ExtensionRuntime> + Send>
+    }
 }
 
 impl ExtensionRuntimeSource {
@@ -28,17 +28,17 @@ impl ExtensionRuntimeSource {
             Self::Started(runtime) => runtime.supports_live_configuration(),
             Self::Factory {
                 live_configuration, ..
-            } => *live_configuration,
+            } => *live_configuration
         }
     }
 
     pub(crate) fn start(
         self,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> std::io::Result<ExtensionRuntime> {
         match self {
             Self::Started(runtime) => Ok(*runtime),
-            Self::Factory { start, .. } => start(configuration),
+            Self::Factory { start, .. } => start(configuration)
         }
     }
 }

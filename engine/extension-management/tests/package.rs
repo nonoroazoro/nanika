@@ -4,7 +4,7 @@ use nanika_config::{ConfigStore, ExtensionRegistryConfig};
 use nanika_extension_package::{
     CommandContribution, ExtensionContributions, ExtensionProtocol, ViewContribution,
     install_package, remove_extension, resolve_installed_extensions, set_extension_enabled,
-    update_package, validate_extension_contributions,
+    update_package, validate_extension_contributions
 };
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use zip::write::SimpleFileOptions;
@@ -16,7 +16,7 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -74,7 +74,7 @@ fn resolution_error_preserves_safe_extension_context() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let extension = StoredExtension {
         extension_id: "com.example.missing".to_owned(),
@@ -83,9 +83,9 @@ fn resolution_error_preserves_safe_extension_context() {
         install_path: Some(
             paths
                 .app_data_root()
-                .join("extensions/com.example.missing/1.0.0"),
+                .join("extensions/com.example.missing/1.0.0")
         ),
-        package_digest: None,
+        package_digest: None
     };
 
     let (active, errors) = resolve_installed_extensions(&paths, &[extension]);
@@ -104,7 +104,7 @@ fn manifest_preserves_acp_protocol_version() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("acp.nanika");
@@ -119,7 +119,7 @@ fn manifest_preserves_acp_protocol_version() {
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 1
-        })),
+        }))
     );
 
     let installed = install_package(&package, &paths, &store).expect("install ACP package");
@@ -140,7 +140,7 @@ fn manifest_preserves_nanika_protocol_version() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("nanika.nanika");
@@ -155,7 +155,7 @@ fn manifest_preserves_nanika_protocol_version() {
         Some(serde_json::json!({
             "protocol": "nanika",
             "protocolVersion": 1
-        })),
+        }))
     );
 
     let installed = install_package(&package, &paths, &store).expect("install Nanika package");
@@ -176,7 +176,7 @@ fn manifest_preserves_valid_command_contributions() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("commands.nanika");
@@ -201,7 +201,7 @@ fn manifest_preserves_valid_command_contributions() {
                 "description": "Open the example view.",
                 "keywords": ["sample"]
             }]
-        })),
+        }))
     );
 
     let installed = install_package(&package, &paths, &store).expect("install package");
@@ -219,7 +219,7 @@ fn manifest_preserves_valid_view_contributions() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("views.nanika");
@@ -242,7 +242,7 @@ fn manifest_preserves_valid_view_contributions() {
                 "description": "Browse examples.",
                 "keywords": ["sample"]
             }]
-        })),
+        }))
     );
 
     let installed = install_package(&package, &paths, &store).expect("install package");
@@ -260,7 +260,7 @@ fn manifest_preserves_valid_configuration_contributions() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("configuration.nanika");
@@ -287,7 +287,7 @@ fn manifest_preserves_valid_configuration_contributions() {
                     }
                 }
             }
-        })),
+        }))
     );
 
     let installed = install_package(&package, &paths, &store).expect("install package");
@@ -306,7 +306,7 @@ fn manifest_rejects_configuration_defaults_outside_the_declared_schema() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("configuration.nanika");
@@ -336,7 +336,7 @@ fn manifest_rejects_configuration_defaults_outside_the_declared_schema() {
                     }
                 }
             }
-        })),
+        }))
     );
 
     let error = install_package(&package, &paths, &store)
@@ -352,7 +352,7 @@ fn manifest_rejects_acp_command_contributions() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("acp-commands.nanika");
@@ -375,7 +375,7 @@ fn manifest_rejects_acp_command_contributions() {
                 "title": "Open Example",
                 "description": "Open the example view."
             }]
-        })),
+        }))
     );
 
     let error =
@@ -393,7 +393,7 @@ fn manifest_rejects_acp_command_contributions() {
 fn manifest_rejects_acp_view_contributions() {
     let error = validate_extension_contributions(
         ExtensionProtocol::Acp {
-            protocol_version: 1,
+            protocol_version: 1
         },
         &ExtensionContributions {
             views: vec![ViewContribution {
@@ -402,10 +402,10 @@ fn manifest_rejects_acp_view_contributions() {
                 description: "Browse examples.".to_owned(),
                 category: None,
                 keywords: Vec::new(),
-                icon: None,
+                icon: None
             }],
             ..ExtensionContributions::default()
-        },
+        }
     )
     .expect_err("ACP view contributions must fail");
     assert!(
@@ -419,20 +419,20 @@ fn manifest_rejects_acp_view_contributions() {
 fn manifest_rejects_ids_shared_by_commands_and_views() {
     let error = validate_extension_contributions(
         ExtensionProtocol::Nanika {
-            protocol_version: 1,
+            protocol_version: 1
         },
         &ExtensionContributions {
             commands: vec![CommandContribution {
                 action: nanika_protocol::Action::primary(
                     nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
-                    "Run",
+                    "Run"
                 ),
                 command: "example.open".to_owned(),
                 title: "Open Example".to_owned(),
                 description: "Open the example.".to_owned(),
                 category: None,
                 keywords: Vec::new(),
-                icon: None,
+                icon: None
             }],
             views: vec![ViewContribution {
                 id: "example.open".to_owned(),
@@ -440,10 +440,10 @@ fn manifest_rejects_ids_shared_by_commands_and_views() {
                 description: "Browse examples.".to_owned(),
                 category: None,
                 keywords: Vec::new(),
-                icon: None,
+                icon: None
             }],
             ..ExtensionContributions::default()
-        },
+        }
     )
     .expect_err("contribution IDs must be unique");
     assert!(
@@ -460,7 +460,7 @@ fn manifest_requires_runtime_protocol() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("missing-runtime.nanika");
@@ -480,7 +480,7 @@ fn manifest_rejects_unsupported_acp_protocol_version() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("acp.nanika");
@@ -495,7 +495,7 @@ fn manifest_rejects_unsupported_acp_protocol_version() {
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 2
-        })),
+        }))
     );
 
     let error = install_package(&package, &paths, &store)
@@ -516,7 +516,7 @@ fn unsupported_manifest_version_is_rejected() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("unsupported.nanika");
@@ -531,7 +531,7 @@ fn unsupported_manifest_version_is_rejected() {
         Some(serde_json::json!({
             "protocol": "acp",
             "protocolVersion": 1
-        })),
+        }))
     );
 
     let error = install_package(&package, &paths, &store)
@@ -548,7 +548,7 @@ fn package_rejects_path_traversal() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("traversal.nanika");
@@ -566,7 +566,7 @@ fn enablement_rejects_unknown_extensions_without_changing_config() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
 
@@ -590,7 +590,7 @@ fn same_version_update_repairs_content_and_preserves_disablement() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -623,7 +623,7 @@ fn removal_preflights_registry_before_mutating_artifacts_or_storage() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -650,7 +650,7 @@ fn unresolved_manifest_dependencies_are_rejected_explicitly() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("dependency.nanika");
@@ -669,7 +669,7 @@ fn install_and_update_enforce_existence_and_version_direction() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -698,7 +698,7 @@ fn manifest_rejects_unknown_fields() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("unknown.nanika");
@@ -717,7 +717,7 @@ fn package_rejects_unicode_filesystem_collisions() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("collision.nanika");
@@ -735,7 +735,7 @@ fn interrupted_same_version_replacement_fails_without_mutation() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -761,7 +761,7 @@ fn interrupted_same_version_replacement_fails_without_mutation() {
             "version": "1.2.3",
             "backupName": backup_name
         }))
-        .expect("journal"),
+        .expect("journal")
     )
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
@@ -791,7 +791,7 @@ fn interrupted_removal_fails_without_mutation() {
     let paths = NanikaPaths::from_roots(
         root.join("data"),
         root.join("cache"),
-        root.join("config-default"),
+        root.join("config-default")
     );
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
@@ -815,7 +815,7 @@ fn interrupted_removal_fails_without_mutation() {
             "version": null,
             "backupName": backup_name
         }))
-        .expect("journal"),
+        .expect("journal")
     )
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
@@ -839,7 +839,7 @@ fn create_package(path: &std::path::Path, traversal: bool) {
 fn create_package_with_dependencies(
     path: &std::path::Path,
     traversal: bool,
-    dependencies: &[&str],
+    dependencies: &[&str]
 ) {
     create_package_definition(path, traversal, dependencies, "1.2.3", false, false);
 }
@@ -850,7 +850,7 @@ fn create_package_definition(
     dependencies: &[&str],
     version: &str,
     unknown_field: bool,
-    unicode_collision: bool,
+    unicode_collision: bool
 ) {
     create_package_definition_with_runtime(
         path,
@@ -863,7 +863,7 @@ fn create_package_definition(
         Some(serde_json::json!({
             "protocol": "nanika",
             "protocolVersion": 1
-        })),
+        }))
     );
 }
 
@@ -876,7 +876,7 @@ fn create_package_definition_with_runtime(
     unknown_field: bool,
     unicode_collision: bool,
     manifest_version: u32,
-    runtime: Option<serde_json::Value>,
+    runtime: Option<serde_json::Value>
 ) {
     create_package_definition_with_runtime_and_contributions(
         path,
@@ -887,7 +887,7 @@ fn create_package_definition_with_runtime(
         unicode_collision,
         manifest_version,
         runtime,
-        None,
+        None
     );
 }
 
@@ -901,7 +901,7 @@ fn create_package_definition_with_runtime_and_contributions(
     unicode_collision: bool,
     manifest_version: u32,
     runtime: Option<serde_json::Value>,
-    contributions: Option<serde_json::Value>,
+    contributions: Option<serde_json::Value>
 ) {
     std::fs::create_dir_all(path.parent().expect("package parent")).expect("create parent");
     let file = std::fs::File::create(path).expect("create package");
@@ -944,7 +944,7 @@ fn create_package_definition_with_runtime_and_contributions(
         .write_all(
             serde_json::to_string_pretty(&manifest)
                 .expect("manifest")
-                .as_bytes(),
+                .as_bytes()
         )
         .expect("write manifest");
     archive
@@ -1041,7 +1041,7 @@ mod presentation {
             String::new(),
             "  ".into(),
             "a".repeat(129),
-            "Tools\n".into(),
+            "Tools\n".into()
         ] {
             let mut invalid = baseline.clone();
             invalid["name"] = name.into();
@@ -1077,7 +1077,7 @@ fn static_command_requires_valid_explicit_action_policy() {
         ..ExtensionContributions::default()
     };
     let protocol = ExtensionProtocol::Nanika {
-        protocol_version: 1,
+        protocol_version: 1
     };
     assert!(validate_extension_contributions(protocol, &contributions).is_err());
     contributions.commands[0].action.allow_default_execution = false;

@@ -41,7 +41,7 @@ pub fn read_png_resource(path: &Path, payload_root: &Path) -> Result<Vec<u8>, Pn
     if !png_dimensions_within_limits(info.width, info.height) {
         return Err(PngResourceError::Dimensions {
             width: info.width,
-            height: info.height,
+            height: info.height
         });
     }
     Ok(bytes)
@@ -59,7 +59,7 @@ pub fn png_resource_hash(bytes: &[u8]) -> String {
 /// Keep the original bytes and only a row-sized output buffer, including for Adam7.
 pub(crate) fn validate_png_pixels(
     bytes: &[u8],
-    cancelled: &mut dyn FnMut() -> bool,
+    cancelled: &mut dyn FnMut() -> bool
 ) -> Result<(), PngResourceError> {
     let mut reader = _decoder(bytes)
         .read_info()

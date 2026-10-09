@@ -4,7 +4,7 @@ use super::*;
 fn scheduling_is_ordered_deduplicated_and_bounded_at_capacity() {
     let worker = FileIconWorker {
         state: Arc::new((Mutex::new(State::default()), Condvar::new())),
-        thread: None,
+        thread: None
     };
     assert_eq!(
         worker.schedule([PathBuf::from("selected"), PathBuf::from("selected")]),
@@ -35,8 +35,8 @@ fn published_resolutions_are_bounded_in_insertion_order() {
             PathBuf::from(index.to_string()),
             crate::FileIconResolution {
                 source: Ok(nanika_protocol::IconReference::new(format!("{index:064x}")).unwrap()),
-                icon: Some(nanika_protocol::IconReference::new(format!("{index:064x}")).unwrap()),
-            },
+                icon: Some(nanika_protocol::IconReference::new(format!("{index:064x}")).unwrap())
+            }
         );
     }
     assert_eq!(state.resolved.len(), MAX_PENDING_PATHS);
@@ -58,8 +58,8 @@ fn failed_resolution_is_retained_without_exposing_an_icon() {
         path.clone(),
         crate::FileIconResolution {
             source: Err(std::io::ErrorKind::NotFound),
-            icon: None,
-        },
+            icon: None
+        }
     );
 
     assert!(state.resolved.contains_key(&path));
@@ -98,7 +98,7 @@ fn refresh_revalidates_sources_without_retrying_unchanged_failures() {
         for size in [128, 512] {
             std::fs::write(
                 directory.join(format!("{size}.png")),
-                include_bytes!("../assets/icon.png"),
+                include_bytes!("../assets/icon.png")
             )
             .unwrap();
         }

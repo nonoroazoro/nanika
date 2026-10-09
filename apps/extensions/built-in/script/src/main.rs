@@ -1,6 +1,6 @@
 use nanika_extension_script::{RUN_ACTION_ID, ScriptConfig, ScriptEntry};
 use nanika_protocol::{
-    HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame,
+    HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame, write_frame
 };
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufReader, BufWriter, stdin, stdout};
@@ -23,14 +23,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Message::Initialize {
             request_id,
             protocol,
-            configuration,
+            configuration
         }) if protocol == PROTOCOL_NAME => (request_id, configuration),
         Some(Message::Initialize { request_id, .. }) => {
             write_error(
                 &mut output,
                 Some(request_id),
                 "unsupported_protocol",
-                "the requested extension protocol is unsupported",
+                "the requested extension protocol is unsupported"
             )?;
             return Ok(());
         }
@@ -39,11 +39,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must be the first request",
+                "initialize must be the first request"
             )?;
             return Ok(());
         }
-        None => return Ok(()),
+        None => return Ok(())
     };
     let mut config = match ScriptConfig::from_configuration(&configuration) {
         Ok(config) => config,
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 Some(initialize_request_id),
                 "invalid_configuration",
-                &message,
+                &message
             )?;
             return Ok(());
         }
@@ -67,14 +67,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         request_id: None,
         generation: scan_generation,
         config: config.clone(),
-        configuration: false,
+        configuration: false
     })?;
     write_frame(
         &mut output,
         &Message::Initialized {
             request_id: initialize_request_id,
-            protocol: PROTOCOL_NAME.to_owned(),
-        },
+            protocol: PROTOCOL_NAME.to_owned()
+        }
     )?;
     let _reader = std::thread::Builder::new()
         .name("nanika-script-protocol".to_owned())
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let event = match read_frame(&mut input) {
                     Ok(Some(message)) => RuntimeEvent::Protocol(message),
                     Ok(None) => RuntimeEvent::ProtocolClosed,
-                    Err(error) => RuntimeEvent::ProtocolError(error.to_string()),
+                    Err(error) => RuntimeEvent::ProtocolError(error.to_string())
                 };
                 let finished = !matches!(event, RuntimeEvent::Protocol(_));
                 if sender.send(event).is_err() || finished {
@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                     entry_id,
-                    action_id,
+                    action_id
                 } => {
                     let descriptor = scripts
                         .read()
@@ -138,8 +138,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     request_id: service_id.clone(),
                                     parent_request_id: request_id.clone(),
                                     generation,
-                                    request: HostServiceRequest::Launch { descriptor },
-                                },
+                                    request: HostServiceRequest::Launch { descriptor }
+                                }
                             )?;
                             invocations.insert(service_id, (request_id, generation));
                         }
@@ -147,15 +147,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &mut output,
                             Some(request_id),
                             "script_unavailable",
-                            &message,
-                        )?,
+                            &message
+                        )?
                     }
                 }
                 Message::HostResponse {
                     request_id,
                     parent_request_id,
                     generation,
-                    response: HostServiceResponse::Launched,
+                    response: HostServiceResponse::Launched
                 } => {
                     if let Some((id, expected)) = invocations.remove(&request_id) {
                         if id == parent_request_id && expected == generation {
@@ -164,15 +164,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &Message::Result {
                                     request_id: id,
                                     generation,
-                                    effect: nanika_protocol::NavigationEffect::Dismiss,
-                                },
+                                    effect: nanika_protocol::NavigationEffect::Dismiss
+                                }
                             )?;
                         } else {
                             write_error(
                                 &mut output,
                                 Some(id),
                                 "invalid_host_response",
-                                "host response does not match the pending script invocation",
+                                "host response does not match the pending script invocation"
                             )?;
                         }
                     }
@@ -180,14 +180,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Message::Error {
                     request_id: Some(id),
                     code,
-                    message,
+                    message
                 } if invocations.contains_key(&id) => {
                     let (request_id, _) = invocations.remove(&id).expect("pending invocation");
                     write_error(&mut output, Some(request_id), &code, &message)?;
                 }
                 Message::Refresh {
                     request_id,
-                    generation,
+                    generation
                 } => {
                     if startup_pending {
                         refreshes.insert(request_id, (generation, 1));
@@ -197,14 +197,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             request_id: Some(request_id.clone()),
                             generation: scan_generation,
                             config: config.clone(),
-                            configuration: false,
+                            configuration: false
                         })?;
                         refreshes.insert(request_id, (generation, scan_generation));
                     }
                 }
                 Message::ConfigurationChanged {
                     request_id,
-                    configuration,
+                    configuration
                 } => match ScriptConfig::from_configuration(&configuration) {
                     Ok(updated) => {
                         scan_generation += 1;
@@ -212,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             request_id: Some(request_id.clone()),
                             generation: scan_generation,
                             config: updated.clone(),
-                            configuration: true,
+                            configuration: true
                         })?;
                         configurations.insert(request_id, updated);
                     }
@@ -220,12 +220,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "invalid_configuration",
-                        &message,
-                    )?,
+                        &message
+                    )?
                 },
                 Message::Cancel {
                     request_id,
-                    generation,
+                    generation
                 } => {
                     if let Some((expected, scan)) = refreshes.get(&request_id)
                         && *expected == generation
@@ -238,8 +238,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     request_id(&message),
                     "unsupported_message",
-                    "the script extension received an unsupported message",
-                )?,
+                    "the script extension received an unsupported message"
+                )?
             },
             RuntimeEvent::CatalogUpdated { entry_ids } => {
                 let current = scripts.read().unwrap_or_else(|error| error.into_inner());
@@ -265,15 +265,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 config = updated;
                                 write_frame(
                                     &mut output,
-                                    &Message::ConfigurationApplied { request_id: id },
+                                    &Message::ConfigurationApplied { request_id: id }
                                 )?;
                             }
                             Err(message) => write_error(
                                 &mut output,
                                 Some(id),
                                 "configuration_apply_failed",
-                                &message,
-                            )?,
+                                &message
+                            )?
                         }
                     } else if let Some((generation, _)) = refreshes.remove(&id) {
                         _write_refresh_result(&mut output, id, generation, &result)?;
@@ -302,17 +302,17 @@ fn _write_refresh_result(
     output: &mut impl std::io::Write,
     request_id: String,
     generation: u64,
-    result: &Result<(), String>,
+    result: &Result<(), String>
 ) -> Result<(), nanika_protocol::FrameError> {
     match result {
         Ok(()) => write_frame(
             output,
             &Message::Refreshed {
                 request_id,
-                generation,
-            },
+                generation
+            }
         ),
-        Err(message) => write_error(output, Some(request_id), "discovery_failed", message),
+        Err(message) => write_error(output, Some(request_id), "discovery_failed", message)
     }
 }
 
@@ -320,15 +320,15 @@ fn write_error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> Result<(), nanika_protocol::FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
             code: code.to_owned(),
-            message: message.to_owned(),
-        },
+            message: message.to_owned()
+        }
     )
 }
 

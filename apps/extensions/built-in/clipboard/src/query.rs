@@ -6,7 +6,7 @@ pub(crate) fn content_kind(content_type: &str) -> Result<Option<&'static str>, S
         "text" => Ok(Some("text")),
         "files" => Ok(Some("files")),
         "images" => Ok(Some("image")),
-        _ => Err("invalid clipboard content type".into()),
+        _ => Err("invalid clipboard content type".into())
     }
 }
 
@@ -18,6 +18,6 @@ pub(crate) fn matches(query: &str, title: &str, content: &ClipboardContent) -> b
             ClipboardContent::Files { paths } => {
                 paths.iter().any(|path| path.to_lowercase().contains(query))
             }
-            ClipboardContent::PngFile { .. } => false,
+            ClipboardContent::PngFile { .. } => false
         }
 }

@@ -6,7 +6,7 @@ use crate::ExtensionInvocationOutput;
 #[derive(Debug, Default)]
 pub(crate) struct ExtensionInvocationOutputState {
     pending: VecDeque<ExtensionInvocationOutput>,
-    dirty: bool,
+    dirty: bool
 }
 
 impl ExtensionInvocationOutputState {
@@ -16,7 +16,7 @@ impl ExtensionInvocationOutputState {
         invocation_id: u64,
         extension_id: &str,
         generation: u64,
-        chunk: &str,
+        chunk: &str
     ) -> bool {
         if let Some(output) = self.pending.back_mut().filter(|output| {
             output.invocation_id == invocation_id && output.instance_id == instance_id
@@ -28,7 +28,7 @@ impl ExtensionInvocationOutputState {
                 invocation_id,
                 extension_id: extension_id.to_owned(),
                 generation,
-                text: chunk.to_owned(),
+                text: chunk.to_owned()
             });
         }
         let should_notify = !self.dirty;

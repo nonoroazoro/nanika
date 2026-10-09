@@ -6,5 +6,5 @@ pub struct CandidateUpdate {
     pub replace: bool,
     pub complete: bool,
     pub removed: Vec<String>,
-    pub entries: Vec<Candidate>,
+    pub entries: Vec<Candidate>
 }

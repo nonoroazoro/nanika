@@ -25,5 +25,5 @@ pub struct ExtensionManifest {
     #[serde(default)]
     pub activation: crate::ExtensionActivation,
     #[serde(default)]
-    pub contributes: ExtensionContributions,
+    pub contributes: ExtensionContributions
 }

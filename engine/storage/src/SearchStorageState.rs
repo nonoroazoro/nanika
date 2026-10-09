@@ -6,5 +6,5 @@ pub struct SearchStorageState {
     pub input_history: Vec<String>,
     pub usage: Vec<StoredUsage>,
     pub extensions: Vec<StoredExtension>,
-    pub extension_errors: Vec<String>,
+    pub extension_errors: Vec<String>
 }

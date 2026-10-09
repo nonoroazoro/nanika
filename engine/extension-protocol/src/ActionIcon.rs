@@ -12,5 +12,5 @@ pub enum ActionIcon {
     Moon,
     Power,
     RotateCw,
-    Trash,
+    Trash
 }

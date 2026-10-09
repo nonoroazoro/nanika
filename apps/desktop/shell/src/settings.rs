@@ -67,7 +67,7 @@ pub(crate) fn request_close(window: &tauri::Window) -> Result<(), String> {
 
 pub(crate) fn action(
     window: &tauri::WebviewWindow,
-    action: SettingsWindowAction,
+    action: SettingsWindowAction
 ) -> Result<(), String> {
     match action {
         SettingsWindowAction::Drag => window.start_dragging().map_err(|error| error.to_string()),
@@ -79,7 +79,7 @@ pub(crate) fn action(
                 window.maximize().map_err(|error| error.to_string())
             }
         }
-        SettingsWindowAction::Close => request_close(&window.as_ref().window()),
+        SettingsWindowAction::Close => request_close(&window.as_ref().window())
     }
 }
 

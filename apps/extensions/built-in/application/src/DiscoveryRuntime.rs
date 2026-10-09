@@ -5,14 +5,14 @@ use std::sync::mpsc::{Receiver, RecvError};
 /// blocked event sends before joining the discovery thread.
 pub(crate) struct DiscoveryRuntime {
     _events: Receiver<RuntimeEvent>,
-    pub(crate) worker: DiscoveryWorker,
+    pub(crate) worker: DiscoveryWorker
 }
 
 impl DiscoveryRuntime {
     pub(crate) fn new(events: Receiver<RuntimeEvent>, worker: DiscoveryWorker) -> Self {
         Self {
             _events: events,
-            worker,
+            worker
         }
     }
 

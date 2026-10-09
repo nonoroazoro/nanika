@@ -1,12 +1,12 @@
 /// Lifetime guard for native hotkey timing observation.
 pub struct HotkeyTimingObserver {
-    handle: usize,
+    handle: usize
 }
 
 impl HotkeyTimingObserver {
     pub fn install() -> Option<Self> {
         super::hotkey_timing::install().map(|handle| Self {
-            handle: handle as usize,
+            handle: handle as usize
         })
     }
 }

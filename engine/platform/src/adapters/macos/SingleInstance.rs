@@ -7,7 +7,7 @@ pub struct SingleInstance {
     pub(super) events: Option<Receiver<crate::PlatformEvent>>,
     pub(super) event_thread: Option<JoinHandle<()>>,
     pub(super) lock_file: std::fs::File,
-    pub(super) activation_path: std::path::PathBuf,
+    pub(super) activation_path: std::path::PathBuf
 }
 
 impl SingleInstance {

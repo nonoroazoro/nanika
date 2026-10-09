@@ -2,5 +2,5 @@
 pub(crate) enum PreparedClipboardContent {
     Text(String),
     Files(Vec<String>),
-    Png(Vec<u8>),
+    Png(Vec<u8>)
 }

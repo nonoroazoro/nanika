@@ -13,7 +13,7 @@ use zip::{CompressionMethod, ZipArchive};
 use crate::{
     CommandContribution, ExtensionContributions, ExtensionManifest, ExtensionPackageError,
     ExtensionProtocol, ExtensionResolutionError, ExtensionTarget, InstalledExtension,
-    PackageOperation, PackageTransaction, StagedPackage, StagingDirectory, ViewContribution,
+    PackageOperation, PackageTransaction, StagedPackage, StagingDirectory, ViewContribution
 };
 
 const MANIFEST_FORMAT: &str = "nanika-extension";
@@ -31,7 +31,7 @@ const MAX_CONTRIBUTION_KEYWORDS: usize = 16;
 pub fn install_package(
     package_path: &Path,
     paths: &NanikaPaths,
-    store: &ConfigStore,
+    store: &ConfigStore
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     apply_package(package_path, paths, store, PackageOperation::Install)
 }
@@ -40,7 +40,7 @@ pub fn install_package(
 pub fn update_package(
     package_path: &Path,
     paths: &NanikaPaths,
-    store: &ConfigStore,
+    store: &ConfigStore
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     apply_package(package_path, paths, store, PackageOperation::Update)
 }
@@ -49,7 +49,7 @@ fn apply_package(
     package_path: &Path,
     paths: &NanikaPaths,
     store: &ConfigStore,
-    operation: PackageOperation,
+    operation: PackageOperation
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     validate_package_path(package_path)?;
     let extension_root = paths.app_data_root().join("extensions");
@@ -58,7 +58,7 @@ fn apply_package(
     let staged_package = StagedPackage::create(
         package_path,
         extension_root.join(format!(".package-{}.partial", Uuid::new_v4())),
-        MAX_PACKAGE_BYTES,
+        MAX_PACKAGE_BYTES
     )?;
     let digest = staged_package.digest().to_owned();
     let stage_path = extension_root.join(format!(".staging-{}", Uuid::new_v4()));
@@ -86,7 +86,7 @@ fn apply_package(
         .is_some_and(|extension| extension.kind == ExtensionKind::BuiltIn)
     {
         return Err(ExtensionPackageError::Manifest(
-            "an external package cannot replace a built-in extension".to_owned(),
+            "an external package cannot replace a built-in extension".to_owned()
         ));
     }
     validate_package_operation(operation, &manifest.version, previous.as_ref())?;
@@ -116,9 +116,9 @@ fn apply_package(
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| {
                     ExtensionPackageError::Manifest(
-                        "replacement backup name is not valid UTF-8".to_owned(),
+                        "replacement backup name is not valid UTF-8".to_owned()
                     )
-                })?,
+                })?
         );
         transaction.save(&extension_root)?;
         if let Err(error) = fs::rename(&version_root, &replaced) {
@@ -173,7 +173,7 @@ fn apply_package(
     Ok(InstalledExtension::from_manifest(
         manifest,
         version_root.join(entrypoint),
-        version_root,
+        version_root
     ))
 }
 
@@ -183,11 +183,11 @@ pub fn set_extension_enabled(
     extension_id: &str,
     enabled: bool,
     paths: &NanikaPaths,
-    store: &ConfigStore,
+    store: &ConfigStore
 ) -> Result<(), ExtensionPackageError> {
     if !nanika_storage::is_valid_extension_id(extension_id) {
         return Err(ExtensionPackageError::Manifest(
-            "invalid extension id".to_owned(),
+            "invalid extension id".to_owned()
         ));
     }
     reject_incomplete_package_transaction(paths)?;
@@ -205,11 +205,11 @@ pub fn set_extension_enabled(
 pub fn remove_extension(
     extension_id: &str,
     paths: &NanikaPaths,
-    store: &ConfigStore,
+    store: &ConfigStore
 ) -> Result<(), ExtensionPackageError> {
     if !nanika_storage::is_valid_extension_id(extension_id) {
         return Err(ExtensionPackageError::Manifest(
-            "invalid extension id".to_owned(),
+            "invalid extension id".to_owned()
         ));
     }
     reject_incomplete_package_transaction(paths)?;
@@ -219,7 +219,7 @@ pub fn remove_extension(
         .ok_or_else(|| ExtensionPackageError::Manifest("extension is not installed".to_owned()))?;
     if installed.kind != ExtensionKind::External {
         return Err(ExtensionPackageError::Manifest(
-            "built-in extensions cannot be removed".to_owned(),
+            "built-in extensions cannot be removed".to_owned()
         ));
     }
     let mut registry =
@@ -238,9 +238,9 @@ pub fn remove_extension(
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| {
                     ExtensionPackageError::Manifest(
-                        "removal backup name is not valid UTF-8".to_owned(),
+                        "removal backup name is not valid UTF-8".to_owned()
                     )
-                })?,
+                })?
         );
         transaction.save(&extensions_root)?;
         if let Err(error) = fs::rename(&extension_root, &removed_root) {
@@ -286,10 +286,10 @@ pub fn remove_extension(
         }
         return match database_result {
             Ok(false) => Err(ExtensionPackageError::Manifest(
-                "extension is not removable".to_owned(),
+                "extension is not removable".to_owned()
             )),
             Err(error) => Err(error.into()),
-            Ok(true) => unreachable!("successful removal returns before rollback"),
+            Ok(true) => unreachable!("successful removal returns before rollback")
         };
     }
     if removed_root.exists() {
@@ -304,14 +304,14 @@ pub fn remove_extension(
 /// Resolve installed external processes without allowing one broken package to block startup.
 pub fn resolve_installed_extensions(
     paths: &NanikaPaths,
-    installed: &[StoredExtension],
+    installed: &[StoredExtension]
 ) -> (Vec<InstalledExtension>, Vec<ExtensionResolutionError>) {
     let mut resolved = Vec::new();
     let mut errors = Vec::new();
     if let Err(error) = reject_incomplete_package_transaction(paths) {
         errors.push(ExtensionResolutionError::new(
             "package-transaction",
-            error.to_string(),
+            error.to_string()
         ));
         return (resolved, errors);
     }
@@ -323,8 +323,8 @@ pub fn resolve_installed_extensions(
             Ok(extension) => resolved.push(extension),
             Err(error) => errors.push(ExtensionResolutionError::new(
                 &extension.extension_id,
-                error.to_string(),
-            )),
+                error.to_string()
+            ))
         }
     }
     (resolved, errors)
@@ -332,7 +332,7 @@ pub fn resolve_installed_extensions(
 
 fn resolve_installed_extension(
     paths: &NanikaPaths,
-    installed: &StoredExtension,
+    installed: &StoredExtension
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     let install_path = installed.install_path.as_deref().ok_or_else(|| {
         ExtensionPackageError::Manifest("active install path is missing".to_owned())
@@ -348,7 +348,7 @@ fn resolve_installed_extension(
         || installed.version.as_deref() != Some(manifest.version.as_str())
     {
         return Err(ExtensionPackageError::Manifest(
-            "installed manifest identity does not match host state".to_owned(),
+            "installed manifest identity does not match host state".to_owned()
         ));
     }
     let entrypoint = target_entrypoint(&manifest, nanika_platform::target_triple())?;
@@ -356,7 +356,7 @@ fn resolve_installed_extension(
     validate_managed_path(&canonical_install, &program)?;
     if !program.is_file() {
         return Err(ExtensionPackageError::Manifest(
-            "active target entrypoint is missing".to_owned(),
+            "active target entrypoint is missing".to_owned()
         ));
     }
     let program = fs::canonicalize(program)?;
@@ -364,21 +364,21 @@ fn resolve_installed_extension(
     Ok(InstalledExtension::from_manifest(
         manifest,
         program,
-        canonical_install,
+        canonical_install
     ))
 }
 
 fn validate_package_operation(
     operation: PackageOperation,
     package_version: &str,
-    previous: Option<&StoredExtension>,
+    previous: Option<&StoredExtension>
 ) -> Result<(), ExtensionPackageError> {
     let Some(previous) = previous else {
         return if operation == PackageOperation::Install {
             Ok(())
         } else {
             Err(ExtensionPackageError::Manifest(
-                "update requires an installed external extension".to_owned(),
+                "update requires an installed external extension".to_owned()
             ))
         };
     };
@@ -391,12 +391,12 @@ fn validate_package_operation(
         .map_err(|error| ExtensionPackageError::Manifest(error.to_string()))?;
     match operation {
         PackageOperation::Install if package != current => Err(ExtensionPackageError::Manifest(
-            "extension is already installed; use update for a different version".to_owned(),
+            "extension is already installed; use update for a different version".to_owned()
         )),
         PackageOperation::Update if package < current => Err(ExtensionPackageError::Manifest(
-            format!("update cannot downgrade extension from {current} to {package}"),
+            format!("update cannot downgrade extension from {current} to {package}")
         )),
-        PackageOperation::Install | PackageOperation::Update => Ok(()),
+        PackageOperation::Install | PackageOperation::Update => Ok(())
     }
 }
 
@@ -416,7 +416,7 @@ fn reject_incomplete_package_transaction(paths: &NanikaPaths) -> Result<(), Exte
 fn validate_package_path(path: &Path) -> Result<(), ExtensionPackageError> {
     if path.extension().and_then(|value| value.to_str()) != Some("nanika") {
         return Err(ExtensionPackageError::Manifest(
-            "extension package must use the .nanika suffix".to_owned(),
+            "extension package must use the .nanika suffix".to_owned()
         ));
     }
     let size = fs::metadata(path)?.len();
@@ -445,7 +445,7 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
             CompressionMethod::Stored | CompressionMethod::Deflated
         ) {
             return Err(ExtensionPackageError::Manifest(
-                "package uses an unsupported compression method".to_owned(),
+                "package uses an unsupported compression method".to_owned()
             ));
         }
         if entry.size() > 1024 * 1024
@@ -456,13 +456,13 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
                     .saturating_mul(MAX_COMPRESSION_RATIO)
         {
             return Err(ExtensionPackageError::Manifest(
-                "package entry exceeds the compression ratio limit".to_owned(),
+                "package entry exceeds the compression ratio limit".to_owned()
             ));
         }
         expanded = expanded.saturating_add(entry.size());
         if expanded > MAX_EXPANDED_BYTES {
             return Err(ExtensionPackageError::Manifest(
-                "package exceeds the expanded size limit".to_owned(),
+                "package exceeds the expanded size limit".to_owned()
             ));
         }
         let relative = entry.enclosed_name().ok_or_else(|| {
@@ -475,7 +475,7 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
             .to_ascii_lowercase();
         if !names.insert(collision_key) {
             return Err(ExtensionPackageError::Manifest(
-                "package contains colliding paths".to_owned(),
+                "package contains colliding paths".to_owned()
             ));
         }
         if entry
@@ -483,7 +483,7 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
         {
             return Err(ExtensionPackageError::Manifest(
-                "package symlinks are not allowed".to_owned(),
+                "package symlinks are not allowed".to_owned()
             ));
         }
         let output = destination.join(&relative);
@@ -501,7 +501,7 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
             .map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     ExtensionPackageError::Manifest(
-                        "package contains filesystem-colliding paths".to_owned(),
+                        "package contains filesystem-colliding paths".to_owned()
                     )
                 } else {
                     error.into()
@@ -516,13 +516,13 @@ fn extract_package(path: &Path, destination: &Path) -> Result<(), ExtensionPacka
 fn ensure_package_directories(
     root: &Path,
     relative: &Path,
-    directories: &mut HashSet<PathBuf>,
+    directories: &mut HashSet<PathBuf>
 ) -> Result<(), ExtensionPackageError> {
     let mut current = PathBuf::new();
     for component in relative.components() {
         let Component::Normal(component) = component else {
             return Err(ExtensionPackageError::Manifest(
-                "package contains an unsafe directory path".to_owned(),
+                "package contains an unsafe directory path".to_owned()
             ));
         };
         current.push(component);
@@ -530,7 +530,7 @@ fn ensure_package_directories(
             fs::create_dir(root.join(&current)).map_err(|error| {
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     ExtensionPackageError::Manifest(
-                        "package contains filesystem-colliding paths".to_owned(),
+                        "package contains filesystem-colliding paths".to_owned()
                     )
                 } else {
                     error.into()
@@ -545,7 +545,7 @@ fn load_manifest(path: PathBuf) -> Result<ExtensionManifest, ExtensionPackageErr
     let metadata = fs::metadata(&path)?;
     if metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES {
         return Err(ExtensionPackageError::Manifest(
-            "manifest size is invalid".to_owned(),
+            "manifest size is invalid".to_owned()
         ));
     }
     let text = fs::read_to_string(path)?;
@@ -556,7 +556,7 @@ fn load_manifest(path: PathBuf) -> Result<ExtensionManifest, ExtensionPackageErr
 pub fn parse_extension_manifest(source: &str) -> Result<ExtensionManifest, ExtensionPackageError> {
     if source.is_empty() || source.len() as u64 > MAX_MANIFEST_BYTES {
         return Err(ExtensionPackageError::Manifest(
-            "manifest size is invalid".to_owned(),
+            "manifest size is invalid".to_owned()
         ));
     }
     let manifest = parse_to_serde_value(source, &ParseOptions::default())
@@ -567,11 +567,11 @@ pub fn parse_extension_manifest(source: &str) -> Result<ExtensionManifest, Exten
 
 /// Validate one extension manifest independently of its distribution identity.
 pub fn validate_extension_manifest(
-    manifest: &ExtensionManifest,
+    manifest: &ExtensionManifest
 ) -> Result<(), ExtensionPackageError> {
     if manifest.format != MANIFEST_FORMAT || manifest.manifest_version != MANIFEST_VERSION {
         return Err(ExtensionPackageError::Manifest(
-            "unsupported manifest format".to_owned(),
+            "unsupported manifest format".to_owned()
         ));
     }
     manifest
@@ -580,7 +580,7 @@ pub fn validate_extension_manifest(
         .map_err(ExtensionPackageError::Manifest)?;
     if !nanika_storage::is_valid_extension_id(&manifest.id) {
         return Err(ExtensionPackageError::Manifest(
-            "invalid extension id".to_owned(),
+            "invalid extension id".to_owned()
         ));
     }
     if manifest.name.trim().is_empty()
@@ -589,7 +589,7 @@ pub fn validate_extension_manifest(
     {
         return Err(ExtensionPackageError::Manifest(
             "extension name must contain 1 to 128 UTF-8 bytes without control characters"
-                .to_owned(),
+                .to_owned()
         ));
     }
     _validate_icon_path(&manifest.icon)?;
@@ -607,7 +607,7 @@ pub fn validate_extension_manifest(
     }
     if manifest.targets.is_empty() {
         return Err(ExtensionPackageError::Manifest(
-            "manifest has no target entrypoints".to_owned(),
+            "manifest has no target entrypoints".to_owned()
         ));
     }
     for (target, entrypoint) in &manifest.targets {
@@ -623,7 +623,7 @@ pub fn validate_extension_manifest(
     }
     if !manifest.capabilities.is_empty() {
         return Err(ExtensionPackageError::Manifest(
-            "extension capabilities are reserved for a future manifest version".to_owned(),
+            "extension capabilities are reserved for a future manifest version".to_owned()
         ));
     }
     let mut permissions = HashSet::new();
@@ -661,7 +661,7 @@ pub fn validate_extension_manifest(
         }
         if dependency == &manifest.id {
             return Err(ExtensionPackageError::Manifest(
-                "an extension cannot depend on itself".to_owned(),
+                "an extension cannot depend on itself".to_owned()
             ));
         }
         if !dependencies.insert(dependency) {
@@ -672,7 +672,7 @@ pub fn validate_extension_manifest(
     }
     if !manifest.dependencies.is_empty() {
         return Err(ExtensionPackageError::Manifest(
-            "extension dependencies require a future dependency resolver".to_owned(),
+            "extension dependencies require a future dependency resolver".to_owned()
         ));
     }
     if manifest.activation == crate::ExtensionActivation::OnDemand
@@ -681,7 +681,7 @@ pub fn validate_extension_manifest(
     {
         return Err(ExtensionPackageError::Manifest(
             "onDemand activation requires a Nanika extension without dynamic Root Search"
-                .to_owned(),
+                .to_owned()
         ));
     }
     validate_extension_contributions(manifest.runtime, &manifest.contributes)?;
@@ -689,11 +689,11 @@ pub fn validate_extension_manifest(
 }
 
 fn reject_external_builtin_identity(
-    manifest: &ExtensionManifest,
+    manifest: &ExtensionManifest
 ) -> Result<(), ExtensionPackageError> {
     if nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
         return Err(ExtensionPackageError::Manifest(
-            "external packages cannot use a built-in extension id".to_owned(),
+            "external packages cannot use a built-in extension id".to_owned()
         ));
     }
     Ok(())
@@ -702,13 +702,13 @@ fn reject_external_builtin_identity(
 /// Validate the shared contribution contract used by built-in and external extensions.
 pub fn validate_extension_contributions(
     protocol: ExtensionProtocol,
-    contributions: &ExtensionContributions,
+    contributions: &ExtensionContributions
 ) -> Result<(), ExtensionPackageError> {
     if (!contributions.commands.is_empty() || !contributions.views.is_empty())
         && !matches!(protocol, ExtensionProtocol::Nanika { .. })
     {
         return Err(ExtensionPackageError::Manifest(
-            "command and view contributions require the Nanika protocol".to_owned(),
+            "command and view contributions require the Nanika protocol".to_owned()
         ));
     }
     if contributions
@@ -717,7 +717,7 @@ pub fn validate_extension_contributions(
         && !matches!(protocol, ExtensionProtocol::Nanika { .. })
     {
         return Err(ExtensionPackageError::Manifest(
-            "catalog contributions require the Nanika protocol".into(),
+            "catalog contributions require the Nanika protocol".into()
         ));
     }
     validate_command_contributions(&contributions.commands)?;
@@ -733,7 +733,7 @@ pub fn validate_extension_contributions(
         .any(|view| command_ids.contains(view.id.as_str()))
     {
         return Err(ExtensionPackageError::Manifest(
-            "extension contribution ids must be unique across commands and views".to_owned(),
+            "extension contribution ids must be unique across commands and views".to_owned()
         ));
     }
     if let Some(configuration) = &contributions.configuration {
@@ -745,11 +745,11 @@ pub fn validate_extension_contributions(
 }
 
 fn validate_command_contributions(
-    commands: &[CommandContribution],
+    commands: &[CommandContribution]
 ) -> Result<(), ExtensionPackageError> {
     if commands.len() > MAX_COMMANDS {
         return Err(ExtensionPackageError::Manifest(
-            "extension contributes too many commands".to_owned(),
+            "extension contributes too many commands".to_owned()
         ));
     }
     let mut ids = HashSet::new();
@@ -761,17 +761,17 @@ fn validate_command_contributions(
             .map_err(ExtensionPackageError::Manifest)?;
         if command.action.id != nanika_protocol::COMMAND_EXECUTE_ACTION_ID {
             return Err(ExtensionPackageError::Manifest(
-                "static command action id must be command.execute".to_owned(),
+                "static command action id must be command.execute".to_owned()
             ));
         }
         if !is_valid_contribution_id(&command.command) {
             return Err(ExtensionPackageError::Manifest(
-                "extension command id is invalid".to_owned(),
+                "extension command id is invalid".to_owned()
             ));
         }
         if !ids.insert(command.command.as_str()) {
             return Err(ExtensionPackageError::Manifest(
-                "extension command ids must be unique".to_owned(),
+                "extension command ids must be unique".to_owned()
             ));
         }
         validate_contribution_text("command", "title", &command.title, 128)?;
@@ -781,7 +781,7 @@ fn validate_command_contributions(
         }
         if command.keywords.len() > MAX_CONTRIBUTION_KEYWORDS {
             return Err(ExtensionPackageError::Manifest(
-                "extension command has too many keywords".to_owned(),
+                "extension command has too many keywords".to_owned()
             ));
         }
         for keyword in &command.keywords {
@@ -794,7 +794,7 @@ fn validate_command_contributions(
 fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), ExtensionPackageError> {
     if views.len() > MAX_VIEWS {
         return Err(ExtensionPackageError::Manifest(
-            "extension contributes too many views".to_owned(),
+            "extension contributes too many views".to_owned()
         ));
     }
     let mut ids = HashSet::new();
@@ -804,12 +804,12 @@ fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), Extensi
         }
         if !is_valid_contribution_id(&view.id) {
             return Err(ExtensionPackageError::Manifest(
-                "extension view id is invalid".to_owned(),
+                "extension view id is invalid".to_owned()
             ));
         }
         if !ids.insert(view.id.as_str()) {
             return Err(ExtensionPackageError::Manifest(
-                "extension view ids must be unique".to_owned(),
+                "extension view ids must be unique".to_owned()
             ));
         }
         validate_contribution_text("view", "title", &view.title, 128)?;
@@ -819,7 +819,7 @@ fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), Extensi
         }
         if view.keywords.len() > MAX_CONTRIBUTION_KEYWORDS {
             return Err(ExtensionPackageError::Manifest(
-                "extension view has too many keywords".to_owned(),
+                "extension view has too many keywords".to_owned()
             ));
         }
         for keyword in &view.keywords {
@@ -833,7 +833,7 @@ fn validate_contribution_text(
     contribution: &str,
     field: &str,
     value: &str,
-    maximum_chars: usize,
+    maximum_chars: usize
 ) -> Result<(), ExtensionPackageError> {
     let count = value.chars().count();
     if value.trim().is_empty() || count > maximum_chars || value.chars().any(char::is_control) {
@@ -858,7 +858,7 @@ fn is_valid_contribution_id(value: &str) -> bool {
 
 fn target_entrypoint(
     manifest: &ExtensionManifest,
-    target: &str,
+    target: &str
 ) -> Result<PathBuf, ExtensionPackageError> {
     let target_entrypoint = manifest.targets.get(target).ok_or_else(|| {
         ExtensionPackageError::Manifest(format!("package does not support target {target}"))
@@ -869,7 +869,7 @@ fn target_entrypoint(
 
 fn validate_target_entrypoint(
     target: &str,
-    target_entrypoint: &ExtensionTarget,
+    target_entrypoint: &ExtensionTarget
 ) -> Result<(), ExtensionPackageError> {
     let ExtensionTarget { entrypoint } = target_entrypoint;
     let path = PathBuf::from(entrypoint);
@@ -880,7 +880,7 @@ fn validate_target_entrypoint(
     })?;
     if relative_entrypoint.as_os_str().is_empty() {
         return Err(ExtensionPackageError::Manifest(
-            "entrypoint must be under bin/<target>".to_owned(),
+            "entrypoint must be under bin/<target>".to_owned()
         ));
     }
     Ok(())
@@ -894,7 +894,7 @@ fn validate_relative_path(path: &Path) -> Result<(), ExtensionPackageError> {
             .any(|component| !matches!(component, Component::Normal(_)))
     {
         return Err(ExtensionPackageError::Manifest(
-            "package path is not a safe relative path".to_owned(),
+            "package path is not a safe relative path".to_owned()
         ));
     }
     Ok(())
@@ -903,7 +903,7 @@ fn validate_relative_path(path: &Path) -> Result<(), ExtensionPackageError> {
 fn validate_managed_path(root: &Path, path: &Path) -> Result<(), ExtensionPackageError> {
     if path == root || !path.starts_with(root) {
         return Err(ExtensionPackageError::Manifest(
-            "extension path escaped its managed root".to_owned(),
+            "extension path escaped its managed root".to_owned()
         ));
     }
     Ok(())
@@ -911,7 +911,7 @@ fn validate_managed_path(root: &Path, path: &Path) -> Result<(), ExtensionPackag
 
 fn prepare_extension_root(
     extensions_root: &Path,
-    extension_id: &str,
+    extension_id: &str
 ) -> Result<PathBuf, ExtensionPackageError> {
     let canonical_root = fs::canonicalize(extensions_root)?;
     let extension_root = extensions_root.join(extension_id);
@@ -919,7 +919,7 @@ fn prepare_extension_root(
         let metadata = fs::symlink_metadata(&extension_root)?;
         if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
             return Err(ExtensionPackageError::Manifest(
-                "extension root is not a managed directory".to_owned(),
+                "extension root is not a managed directory".to_owned()
             ));
         }
     } else {
@@ -932,12 +932,12 @@ fn prepare_extension_root(
 
 fn validate_version_directory(
     extensions_root: &Path,
-    version_root: &Path,
+    version_root: &Path
 ) -> Result<(), ExtensionPackageError> {
     let metadata = fs::symlink_metadata(version_root)?;
     if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
         return Err(ExtensionPackageError::Manifest(
-            "extension version is not a managed directory".to_owned(),
+            "extension version is not a managed directory".to_owned()
         ));
     }
     let canonical_root = fs::canonicalize(extensions_root)?;
@@ -947,7 +947,7 @@ fn validate_version_directory(
     let digest_metadata = fs::symlink_metadata(&digest)?;
     if !digest_metadata.file_type().is_file() || digest_metadata.file_type().is_symlink() {
         return Err(ExtensionPackageError::Manifest(
-            "extension digest marker is not a managed file".to_owned(),
+            "extension digest marker is not a managed file".to_owned()
         ));
     }
     Ok(())
@@ -966,7 +966,7 @@ fn rollback_version(version_root: &Path, replaced_root: Option<&Path>) -> std::i
 fn _validate_icon_path(path: &str) -> Result<(), ExtensionPackageError> {
     if !nanika_protocol::is_valid_package_icon_path(path) {
         return Err(ExtensionPackageError::Manifest(
-            "icon must name a PNG file inside the extension package".into(),
+            "icon must name a PNG file inside the extension package".into()
         ));
     }
     Ok(())

@@ -10,7 +10,7 @@ fn scan(
     generation: u64,
     cancelled: &AtomicU64,
     progress: impl FnMut(nanika_protocol::OperationProgress),
-    mut publish: impl FnMut(Vec<ApplicationEntry>),
+    mut publish: impl FnMut(Vec<ApplicationEntry>)
 ) -> Result<(ScanReport, Vec<ApplicationEntry>), ApplicationError> {
     let mut visible = index
         .load()?
@@ -30,7 +30,7 @@ fn scan(
                 visible.insert(entry.entry_id.clone(), entry);
             }
             publish(visible.values().cloned().collect());
-        },
+        }
     )?;
     Ok((report, index.load()?))
 }
@@ -45,18 +45,18 @@ mod windows {
     use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-        CoUninitialize, IPersistFile,
+        CoUninitialize, IPersistFile
     };
     use windows::Win32::UI::Shell::{IShellLinkDataList, IShellLinkW, SLDF_RUNAS_USER, ShellLink};
     use windows::Win32::UI::WindowsAndMessaging::{
-        SHOW_WINDOW_CMD, SW_SHOWMAXIMIZED, SW_SHOWNORMAL,
+        SHOW_WINDOW_CMD, SW_SHOWMAXIMIZED, SW_SHOWNORMAL
     };
     use windows::core::{Interface, PCWSTR};
 
     use super::scan;
     use crate::platform;
     use crate::{
-        ApplicationConfig, ApplicationDatabase, ApplicationIndex, DiscoveryState, IconCache,
+        ApplicationConfig, ApplicationDatabase, ApplicationIndex, DiscoveryState, IconCache
     };
 
     #[test]
@@ -71,7 +71,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let (report, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("scan should complete");
@@ -102,7 +102,7 @@ mod windows {
         let mut config = ApplicationConfig {
             roots: vec![valid.clone(), removed],
             exclusions: Vec::new(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         assert!(
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
@@ -141,7 +141,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first.clone(), second.clone()],
             exclusions: Vec::new(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
         std::fs::remove_file(first.join("OldFirst.exe")).unwrap();
@@ -172,12 +172,12 @@ mod windows {
                         .query_row(
                             "SELECT count(*) FROM app_sources WHERE display_name = 'NewFirst'",
                             [],
-                            |row| row.get(0),
+                            |row| row.get(0)
                         )
                         .unwrap();
                     assert_eq!(persisted, 1);
                     cancelled.store(2, Ordering::Release);
-                },
+                }
             )
             .unwrap();
         assert!(report.cancelled);
@@ -199,7 +199,7 @@ mod windows {
             3,
             &AtomicU64::new(0),
             |_| {},
-            |_| {},
+            |_| {}
         )
         .unwrap();
         assert!(
@@ -230,7 +230,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first.clone(), second],
             exclusions: Vec::new(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         index
             .scan(&config, 1, &AtomicU64::new(0), |_| {}, |_, _| {})
@@ -246,7 +246,7 @@ mod windows {
                 2,
                 &AtomicU64::new(0),
                 |_| {},
-                |_, _| panic!("unchanged roots must not publish"),
+                |_, _| panic!("unchanged roots must not publish")
             )
             .unwrap();
         let count: i64 = observer
@@ -272,7 +272,7 @@ mod windows {
                     patches += 1;
                     assert!(updated.is_empty());
                     assert_eq!(removed.len(), 1);
-                },
+                }
             )
             .unwrap();
         assert_eq!(patches, 1);
@@ -301,7 +301,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications.clone()],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("first scan should complete");
@@ -333,7 +333,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![removed.clone(), retained.clone()],
             exclusions: platform::standard_roots().unwrap(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let (report, initial) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -372,7 +372,7 @@ mod windows {
                 .iter()
                 .filter(|(_, property)| property["default"] == true)
                 .map(|(key, _)| key.clone())
-                .collect(),
+                .collect()
         };
         let (report, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
             .expect("standard application scan should complete");
@@ -428,7 +428,7 @@ mod windows {
         assert_eq!(
             shortcut_entry.launch_descriptor().unwrap(),
             nanika_protocol::LaunchDescriptor::WindowsApplication {
-                path: shortcut.to_string_lossy().into_owned(),
+                path: shortcut.to_string_lossy().into_owned()
             }
         );
         assert!(matches!(
@@ -442,7 +442,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
 
         let (_, entries) = scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {})
@@ -472,7 +472,7 @@ mod windows {
                 Some((&resource, index)),
                 false,
                 SW_SHOWNORMAL,
-                None,
+                None
             );
             let mut entry = platform::read_entry(&mut state, &shortcut, 0)
                 .unwrap()
@@ -509,7 +509,7 @@ mod windows {
                 PathBuf::from(applications.to_string_lossy().to_uppercase()),
             ],
             exclusions: platform::standard_roots().unwrap(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let mut index =
             ApplicationIndex::new(ApplicationDatabase::open(root.join("application.db")).unwrap());
@@ -537,7 +537,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
         assert!(
@@ -584,7 +584,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: ApplicationConfig::standard_roots().unwrap(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let database_path = root.join("application.db");
         let mut index = ApplicationIndex::new(ApplicationDatabase::open(&database_path).unwrap());
@@ -623,7 +623,7 @@ mod windows {
             .unwrap();
         for (name, elevated, show_command) in [
             ("Elevated", true, SW_SHOWNORMAL),
-            ("Maximized", false, SW_SHOWMAXIMIZED),
+            ("Maximized", false, SW_SHOWMAXIMIZED)
         ] {
             let shortcut = root.join(format!("{name}.lnk"));
             create_shell_link_configured(
@@ -632,7 +632,7 @@ mod windows {
                 None,
                 elevated,
                 show_command,
-                None,
+                None
             );
             let entry = platform::read_entry(&mut state, &shortcut, 0)
                 .unwrap()
@@ -641,7 +641,7 @@ mod windows {
             assert_eq!(
                 entry.launch_descriptor().unwrap(),
                 nanika_protocol::LaunchDescriptor::WindowsApplication {
-                    path: shortcut.to_string_lossy().into_owned(),
+                    path: shortcut.to_string_lossy().into_owned()
                 }
             );
         }
@@ -660,7 +660,7 @@ mod windows {
         let mut ids = std::collections::HashSet::from([direct.entry_id.clone()]);
         for (name, arguments) in [
             ("Work", "--profile work"),
-            ("Personal", "--profile personal"),
+            ("Personal", "--profile personal")
         ] {
             let shortcut = root.join(format!("{name}.lnk"));
             create_shell_link_configured(
@@ -669,7 +669,7 @@ mod windows {
                 None,
                 false,
                 SW_SHOWNORMAL,
-                Some(arguments),
+                Some(arguments)
             );
             let entry = platform::read_entry(&mut state, &shortcut, 0)
                 .unwrap()
@@ -740,7 +740,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: platform::standard_roots().expect("standard roots"),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
 
         assert!(scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).is_err());
@@ -770,7 +770,7 @@ mod windows {
         create_executable(&shim);
         std::fs::write(
             shim.with_extension("shim"),
-            format!("path = \"{}\"\r\n", target.display()),
+            format!("path = \"{}\"\r\n", target.display())
         )
         .unwrap();
         let mut state = DiscoveryState::new();
@@ -782,7 +782,7 @@ mod windows {
         assert_eq!(
             alias.launch_descriptor().unwrap(),
             nanika_protocol::LaunchDescriptor::WindowsApplication {
-                path: shim.canonicalize().unwrap().to_string_lossy().into_owned(),
+                path: shim.canonicalize().unwrap().to_string_lossy().into_owned()
             }
         );
         let link = root.join("shortcut.lnk");
@@ -805,7 +805,7 @@ mod windows {
 
         std::fs::write(
             shim.with_extension("shim"),
-            format!("path = \"{}\"\nargs = --profile work\n", target.display()),
+            format!("path = \"{}\"\nargs = --profile work\n", target.display())
         )
         .unwrap();
         let profile = platform::read_entry(&mut state, &shim, 0).unwrap().unwrap();
@@ -816,7 +816,7 @@ mod windows {
             None,
             false,
             SW_SHOWNORMAL,
-            Some("--profile work"),
+            Some("--profile work")
         );
         assert_eq!(
             platform::read_entry(&mut state, &link, 0)
@@ -830,7 +830,7 @@ mod windows {
         create_executable(&next);
         std::fs::write(
             shim.with_extension("shim"),
-            format!("path = \"{}\"\n", next.display()),
+            format!("path = \"{}\"\n", next.display())
         )
         .unwrap();
         let updated = platform::read_entry(&mut state, &shim, 0).unwrap().unwrap();
@@ -860,7 +860,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![applications],
             exclusions: Vec::new(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let (_, initial) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -909,7 +909,7 @@ mod windows {
         let config = ApplicationConfig {
             roots: vec![first, second, third.clone()],
             exclusions: Vec::new(),
-            enabled_builtin_sources: Default::default(),
+            enabled_builtin_sources: Default::default()
         };
         let (_, entries) =
             scan(&mut index, &config, 1, &AtomicU64::new(0), |_| {}, |_| {}).unwrap();
@@ -956,7 +956,7 @@ mod windows {
         icon: Option<(&std::path::Path, i32)>,
         elevated: bool,
         show_command: SHOW_WINDOW_CMD,
-        arguments: Option<&str>,
+        arguments: Option<&str>
     ) {
         let initialization = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
         assert!(initialization.is_ok() || initialization == RPC_E_CHANGED_MODE);
@@ -1121,7 +1121,7 @@ fn entry(id: &str) -> ApplicationEntry {
         arguments_json: "{\"kind\":\"structured\",\"values\":[]}".to_owned(),
         icon_key: id.to_owned(),
         icon_source: None,
-        priority: 0,
+        priority: 0
     })
 }
 

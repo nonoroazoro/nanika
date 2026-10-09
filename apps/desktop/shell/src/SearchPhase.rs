@@ -6,5 +6,5 @@ use serde::Serialize;
 pub(crate) enum SearchPhase {
     Searching,
     Ready,
-    Error,
+    Error
 }

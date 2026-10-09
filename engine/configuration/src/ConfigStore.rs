@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use jsonc_parser::{
     ParseOptions,
-    cst::{CstInputValue, CstRootNode},
+    cst::{CstInputValue, CstRootNode}
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     BootstrapConfig, CONFIG_FORMAT_VERSION, ConfigError, backup_path, copy_atomic, load_jsonc,
-    relative_config_path, save_jsonc, save_text_atomic, validate_bootstrap,
+    relative_config_path, save_jsonc, save_text_atomic, validate_bootstrap
 };
 
 /// Store for bootstrap metadata and the effective user configuration root.
@@ -19,19 +19,19 @@ use crate::{
 pub struct ConfigStore {
     bootstrap_path: PathBuf,
     config_root: PathBuf,
-    machine_root: PathBuf,
+    machine_root: PathBuf
 }
 
 impl ConfigStore {
     /// Open the bootstrap locator, creating a valid default on first run.
     pub fn open(
         machine_root: impl AsRef<Path>,
-        default_config_root: impl AsRef<Path>,
+        default_config_root: impl AsRef<Path>
     ) -> Result<Self, ConfigError> {
         let machine_root = machine_root.as_ref();
         if !is_normalized_absolute(machine_root) {
             return Err(ConfigError::Invalid(
-                "machine root must be a normalized absolute path".to_owned(),
+                "machine root must be a normalized absolute path".to_owned()
             ));
         }
         fs::create_dir_all(machine_root)?;
@@ -46,7 +46,7 @@ impl ConfigStore {
             let bootstrap = BootstrapConfig {
                 format_version: CONFIG_FORMAT_VERSION,
                 config_root: default_config_root.as_ref().to_path_buf(),
-                machine_id: Uuid::new_v4(),
+                machine_id: Uuid::new_v4()
             };
             validate_bootstrap(&bootstrap)?;
             save_jsonc(&bootstrap_path, &bootstrap, None)?;
@@ -57,7 +57,7 @@ impl ConfigStore {
         Ok(Self {
             bootstrap_path,
             config_root: bootstrap.config_root,
-            machine_root: machine_root.to_path_buf(),
+            machine_root: machine_root.to_path_buf()
         })
     }
 
@@ -98,7 +98,7 @@ impl ConfigStore {
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
-                "bootstrap updates require the relocation boundary".to_owned(),
+                "bootstrap updates require the relocation boundary".to_owned()
             ));
         }
         relative_config_path(&self.config_root, path)?;
@@ -111,12 +111,12 @@ impl ConfigStore {
         &self,
         path: impl AsRef<Path>,
         updates: impl IntoIterator<Item = (String, Value)>,
-        validate: impl FnOnce(&T) -> Result<(), String>,
+        validate: impl FnOnce(&T) -> Result<(), String>
     ) -> Result<T, ConfigError> {
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
-                "bootstrap updates require the relocation boundary".to_owned(),
+                "bootstrap updates require the relocation boundary".to_owned()
             ));
         }
         relative_config_path(&self.config_root, path)?;
@@ -155,12 +155,12 @@ impl ConfigStore {
         path: impl AsRef<Path>,
         object_name: &str,
         updates: impl IntoIterator<Item = (String, Option<Value>)>,
-        validate: impl FnOnce(&T) -> Result<(), String>,
+        validate: impl FnOnce(&T) -> Result<(), String>
     ) -> Result<T, ConfigError> {
         let path = path.as_ref();
         if path == self.bootstrap_path {
             return Err(ConfigError::Invalid(
-                "bootstrap updates require the relocation boundary".to_owned(),
+                "bootstrap updates require the relocation boundary".to_owned()
             ));
         }
         relative_config_path(&self.config_root, path)?;
@@ -207,7 +207,7 @@ fn cst_value(value: Value) -> Result<CstInputValue, ConfigError> {
             .into_iter()
             .map(|(key, value)| Ok((key, cst_value(value)?)))
             .collect::<Result<Vec<_>, ConfigError>>()
-            .map(CstInputValue::Object),
+            .map(CstInputValue::Object)
     }
 }
 

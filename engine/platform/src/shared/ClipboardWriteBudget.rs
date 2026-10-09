@@ -5,14 +5,14 @@ use std::sync::{Arc, Condvar, Mutex};
 #[derive(Default)]
 pub(crate) struct ClipboardWriteBudget {
     pub(crate) state: Mutex<(usize, bool)>,
-    pub(crate) changed: Condvar,
+    pub(crate) changed: Condvar
 }
 
 impl ClipboardWriteBudget {
     pub(crate) fn acquire(
         self: &Arc<Self>,
         image: bool,
-        cancelled: &mut dyn FnMut() -> bool,
+        cancelled: &mut dyn FnMut() -> bool
     ) -> Result<ClipboardWritePermit, String> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         // One PNG credit bounds encoded-image residency across preparation,
@@ -35,7 +35,7 @@ impl ClipboardWriteBudget {
         state.1 |= image;
         Ok(ClipboardWritePermit {
             budget: Arc::clone(self),
-            image,
+            image
         })
     }
 }

@@ -6,5 +6,5 @@ use serde::Deserialize;
 pub(crate) struct PublishQueryRequest {
     pub(crate) session_id: u64,
     pub(crate) request_id: u64,
-    pub(crate) query: String,
+    pub(crate) query: String
 }

@@ -9,7 +9,7 @@ use protocol_input::ProtocolInput;
 
 use nanika_extension_calculator::{COPY_ACTION_ID, CalculatorEngine};
 use nanika_protocol::{
-    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, write_frame,
+    ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, write_frame
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,21 +31,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     &Message::Initialized {
                         request_id,
-                        protocol: PROTOCOL_NAME.to_owned(),
-                    },
+                        protocol: PROTOCOL_NAME.to_owned()
+                    }
                 )?;
             }
             Message::Initialize { request_id, .. } => write_error(
                 &mut output,
                 Some(request_id),
                 "unsupported_protocol",
-                "the requested extension protocol is unsupported",
+                "the requested extension protocol is unsupported"
             )?,
             message if !initialized => write_error(
                 &mut output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must complete before other requests",
+                "initialize must complete before other requests"
             )?,
             Message::Query {
                 request_id,
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "cancelled",
-                        "query was cancelled",
+                        "query was cancelled"
                     )?;
                     continue;
                 }
@@ -78,15 +78,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_id,
                         generation,
                         complete: true,
-                        entries,
-                    },
+                        entries
+                    }
                 )?;
             }
             Message::Invoke {
                 request_id,
                 generation,
                 entry_id,
-                action_id,
+                action_id
             } => match results
                 .get(&entry_id)
                 .filter(|_| action_id == COPY_ACTION_ID)
@@ -97,18 +97,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     Some(request_id),
                     "unknown_action",
-                    "calculator entry or action does not exist",
-                )?,
+                    "calculator entry or action does not exist"
+                )?
             },
             Message::Refresh {
                 request_id,
-                generation,
+                generation
             } => write_frame(
                 &mut output,
                 &Message::Refreshed {
                     request_id,
-                    generation,
-                },
+                    generation
+                }
             )?,
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
@@ -116,8 +116,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 request_id(&message),
                 "unsupported_message",
-                "the calculator extension received an unsupported message",
-            )?,
+                "the calculator extension received an unsupported message"
+            )?
         }
     }
     Ok(())
@@ -128,7 +128,7 @@ fn invoke_host(
     output: &mut impl std::io::Write,
     request_id: String,
     generation: u64,
-    value: String,
+    value: String
 ) -> Result<(), nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
     write_frame(
@@ -138,9 +138,9 @@ fn invoke_host(
             parent_request_id: request_id.clone(),
             generation,
             request: HostServiceRequest::WriteClipboard {
-                content: ClipboardContent::Text { value },
-            },
-        },
+                content: ClipboardContent::Text { value }
+            }
+        }
     )?;
     loop {
         match input.recv().ok().transpose()?.map(|input| input.message) {
@@ -148,7 +148,7 @@ fn invoke_host(
                 request_id: response_id,
                 parent_request_id,
                 generation: response_generation,
-                response: HostServiceResponse::ClipboardWritten { .. },
+                response: HostServiceResponse::ClipboardWritten { .. }
             }) if response_id == service_request_id
                 && parent_request_id == request_id
                 && response_generation == generation =>
@@ -158,19 +158,19 @@ fn invoke_host(
                     &Message::Result {
                         request_id,
                         generation,
-                        effect: nanika_protocol::NavigationEffect::Dismiss,
-                    },
+                        effect: nanika_protocol::NavigationEffect::Dismiss
+                    }
                 );
             }
             Some(Message::Error {
                 request_id: Some(response_id),
                 code,
-                message,
+                message
             }) if response_id == service_request_id => {
                 return write_error(output, Some(request_id), &code, &message);
             }
             Some(_) => {}
-            None => return Ok(()),
+            None => return Ok(())
         }
     }
 }
@@ -179,15 +179,15 @@ fn write_error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> Result<(), nanika_protocol::FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
             code: code.to_owned(),
-            message: message.to_owned(),
-        },
+            message: message.to_owned()
+        }
     )
 }
 

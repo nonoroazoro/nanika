@@ -5,7 +5,7 @@ use nanika_text_search::{TextMatch, TextMatcher, TextQuery};
 use crate::constants::RECENCY_HALF_LIFE_DAYS;
 use crate::{
     Candidate, RankedCandidate, SearchSnapshot, UsageKey, UsageMap, UsageStat,
-    normalize_history_key,
+    normalize_history_key
 };
 
 pub(crate) fn rank<'a>(
@@ -15,7 +15,7 @@ pub(crate) fn rank<'a>(
     usage: &UsageMap,
     now: u64,
     context: &mut TextMatcher,
-    cancelled: impl Fn() -> bool,
+    cancelled: impl Fn() -> bool
 ) -> Option<SearchSnapshot> {
     let text_query = TextQuery::new(query);
     let mixed_query = nanika_text_search::romanized_query(query);
@@ -34,13 +34,13 @@ pub(crate) fn rank<'a>(
                 let (tier, score) = match matched {
                     nanika_text_search::RomanizedMatch::Exact => (3, u32::MAX),
                     nanika_text_search::RomanizedMatch::Prefix(_) => (2, u32::MAX - 1),
-                    nanika_text_search::RomanizedMatch::Infix(_) => (1, u32::MAX - 2),
+                    nanika_text_search::RomanizedMatch::Infix(_) => (1, u32::MAX - 2)
                 };
                 lexical = lexical.max(Some(TextMatch { tier, score }));
             }
             let TextMatch {
                 tier: lexical_tier,
-                score: fuzzy_score,
+                score: fuzzy_score
             } = lexical?;
             let contextual_boost = if usage.is_empty() {
                 0
@@ -48,7 +48,7 @@ pub(crate) fn rank<'a>(
                 for (target, value) in [
                     (&mut usage_key.extension_id, candidate.extension_id()),
                     (&mut usage_key.entry_id, candidate.entry_id()),
-                    (&mut usage_key.action_id, candidate.action_id()),
+                    (&mut usage_key.action_id, candidate.action_id())
                 ] {
                     target.clear();
                     target.push_str(value);
@@ -84,16 +84,16 @@ pub(crate) fn rank<'a>(
                     candidate: candidate.clone(),
                     lexical_tier,
                     fuzzy_score,
-                    contextual_boost,
-                },
+                    contextual_boost
+                }
             )
-            .collect(),
+            .collect()
     })
 }
 
 fn compare_scored(
     left: &(&Candidate, u8, u32, u32),
-    right: &(&Candidate, u8, u32, u32),
+    right: &(&Candidate, u8, u32, u32)
 ) -> Ordering {
     right
         .1

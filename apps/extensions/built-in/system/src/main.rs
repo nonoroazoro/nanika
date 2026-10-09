@@ -1,7 +1,7 @@
 use nanika_extension_system::action_for_entry;
 use nanika_protocol::{
     COMMAND_EXECUTE_ACTION_ID, FrameError, HostServiceRequest, HostServiceResponse, Message,
-    NavigationEffect, PROTOCOL_NAME, read_frame, write_frame,
+    NavigationEffect, PROTOCOL_NAME, read_frame, write_frame
 };
 use std::io::{BufReader, BufWriter, stdin, stdout};
 #[path = "PendingAction.rs"]
@@ -25,14 +25,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "already_initialized",
-                        "System is already initialized.",
+                        "System is already initialized."
                     )?;
                 } else if protocol != PROTOCOL_NAME {
                     _error(
                         &mut output,
                         Some(request_id),
                         "unsupported_protocol",
-                        "Unsupported extension protocol.",
+                        "Unsupported extension protocol."
                     )?;
                 } else {
                     initialized = true;
@@ -40,8 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Initialized {
                             request_id,
-                            protocol,
-                        },
+                            protocol
+                        }
                     )?;
                 }
             }
@@ -49,20 +49,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 _request_id(&message),
                 "not_initialized",
-                "Initialize System before sending requests.",
+                "Initialize System before sending requests."
             )?,
             Message::Invoke {
                 request_id,
                 generation,
                 entry_id,
-                action_id,
+                action_id
             } => {
                 if pending.is_some() {
                     _error(
                         &mut output,
                         Some(request_id),
                         "busy",
-                        "A system action is pending.",
+                        "A system action is pending."
                     )?;
                     continue;
                 }
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "unknown_action",
-                        "Unknown system action.",
+                        "Unknown system action."
                     )?;
                     continue;
                 };
@@ -84,20 +84,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_id: service_id.clone(),
                         parent_request_id: request_id.clone(),
                         generation,
-                        request: HostServiceRequest::SystemAction { action },
-                    },
+                        request: HostServiceRequest::SystemAction { action }
+                    }
                 )?;
                 pending = Some(PendingAction {
                     request_id,
                     service_id,
-                    generation,
+                    generation
                 });
             }
             Message::HostResponse {
                 request_id,
                 parent_request_id,
                 generation,
-                response,
+                response
             } => {
                 let Some(current) = pending.as_ref() else {
                     return Err("Unexpected system service response.".into());
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     return Err(
                         "System service response authority does not match the pending action."
-                            .into(),
+                            .into()
                     );
                 }
                 let current = pending.take().expect("pending action was validated");
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(current.request_id),
                         "invalid_response",
-                        "Unexpected system service response type.",
+                        "Unexpected system service response type."
                     )?;
                     continue;
                 };
@@ -126,14 +126,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &Message::Result {
                         request_id: current.request_id,
                         generation,
-                        effect: NavigationEffect::Dismiss,
-                    },
+                        effect: NavigationEffect::Dismiss
+                    }
                 )?;
             }
             Message::Error {
                 request_id,
                 code,
-                message,
+                message
             } => {
                 if pending
                     .as_ref()
@@ -150,13 +150,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Message::Cancel { .. } | Message::PrepareEntries { .. } => {}
             Message::Refresh {
                 request_id,
-                generation,
+                generation
             } => write_frame(
                 &mut output,
                 &Message::Refreshed {
                     request_id,
-                    generation,
-                },
+                    generation
+                }
             )?,
             Message::ConfigurationChanged { request_id, .. } => {
                 write_frame(&mut output, &Message::ConfigurationApplied { request_id })?
@@ -165,8 +165,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 _request_id(&message),
                 "unsupported_message",
-                "System received an unsupported message.",
-            )?,
+                "System received an unsupported message."
+            )?
         }
     }
     Ok(())
@@ -176,15 +176,15 @@ fn _error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> Result<(), FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
             code: code.to_owned(),
-            message: message.to_owned(),
-        },
+            message: message.to_owned()
+        }
     )
 }
 
@@ -211,6 +211,6 @@ fn _request_id(message: &Message) -> Option<String> {
         | Message::HostRequest { request_id, .. }
         | Message::HostResponse { request_id, .. } => Some(request_id.clone()),
         Message::Error { request_id, .. } => request_id.clone(),
-        _ => None,
+        _ => None
     }
 }

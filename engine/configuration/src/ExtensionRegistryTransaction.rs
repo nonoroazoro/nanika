@@ -8,7 +8,7 @@ pub struct ExtensionRegistryTransaction {
     _lock: File,
     _store: ConfigStore,
     _original: Option<ExtensionRegistryConfig>,
-    _current: ExtensionRegistryConfig,
+    _current: ExtensionRegistryConfig
 }
 
 impl ExtensionRegistryTransaction {
@@ -28,7 +28,7 @@ impl ExtensionRegistryTransaction {
             _lock: lock,
             _store: store.clone(),
             _original: original,
-            _current: current,
+            _current: current
         })
     }
 
@@ -56,7 +56,7 @@ impl ExtensionRegistryTransaction {
             match std::fs::remove_file(self._store.extensions_file()) {
                 Ok(()) => Ok(()),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(error.to_string()),
+                Err(error) => Err(error.to_string())
             }
         }
     }

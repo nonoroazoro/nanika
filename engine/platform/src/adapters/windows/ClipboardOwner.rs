@@ -1,10 +1,10 @@
 use windows_sys::Win32::{
     Foundation::HWND,
-    UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE},
+    UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE}
 };
 
 pub(crate) struct ClipboardOwner {
-    _window: HWND,
+    _window: HWND
 }
 impl ClipboardOwner {
     pub(crate) fn new() -> Result<Self, String> {
@@ -22,7 +22,7 @@ impl ClipboardOwner {
                 HWND_MESSAGE,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null(),
+                std::ptr::null()
             )
         };
         if window.is_null() {

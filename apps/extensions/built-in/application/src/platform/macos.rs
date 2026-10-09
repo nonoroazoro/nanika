@@ -24,14 +24,14 @@ const SYSTEM_APPLICATIONS_KEY: &str = "application.builtin.macos.systemApplicati
 const USER_APPLICATIONS_KEY: &str = "application.builtin.macos.userApplications";
 
 pub(super) fn standard_roots(
-    enabled: impl Fn(&str) -> bool,
+    enabled: impl Fn(&str) -> bool
 ) -> Result<DiscoveryRoots, ApplicationError> {
     let mut roots = DiscoveryRoots::default();
     if enabled(SYSTEM_APPLICATIONS_KEY) {
         roots.paths.extend(
             [SYSTEM_APPLICATION_ROOT, SYSTEM_APPLICATIONS_ROOT]
                 .into_iter()
-                .map(PathBuf::from),
+                .map(PathBuf::from)
         );
     }
     if enabled(USER_APPLICATIONS_KEY) {
@@ -43,7 +43,7 @@ pub(super) fn standard_roots(
                     Ok(Some(home.join(USER_APPLICATION_DIRECTORY)))
                 } else {
                     Err(ApplicationError::Configuration(
-                        "HOME must be an absolute path".to_owned(),
+                        "HOME must be an absolute path".to_owned()
                     ))
                 }
             });
@@ -67,7 +67,7 @@ pub(super) fn is_application_bundle(path: &Path) -> bool {
 pub(super) fn read_entry(
     state: &mut DiscoveryState,
     path: &Path,
-    priority: usize,
+    priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     if !is_application_bundle(path) {
         return Ok(None);
@@ -109,8 +109,8 @@ pub(super) fn read_entry(
             path.file_stem()
                 .map(|value| value.to_string_lossy())
                 .as_deref()
-                .unwrap_or_default(),
-        ],
+                .unwrap_or_default()
+        ]
     );
     let arguments_json = ApplicationArguments::empty().to_json()?;
     Ok(Some(ApplicationEntry::new(ApplicationEntryData {
@@ -125,9 +125,9 @@ pub(super) fn read_entry(
         icon_key: String::new(),
         icon_source: Some(crate::ApplicationIconSource::File {
             path: path.to_path_buf(),
-            index: 0,
+            index: 0
         }),
-        priority,
+        priority
     })))
 }
 
@@ -205,7 +205,7 @@ fn localization_candidates(localization: &str) -> Vec<String> {
 
 fn normalized_aliases<'a>(
     normalized_name: &str,
-    aliases: impl IntoIterator<Item = &'a str>,
+    aliases: impl IntoIterator<Item = &'a str>
 ) -> String {
     let mut normalized = Vec::<String>::new();
     for alias in aliases {
@@ -227,13 +227,13 @@ fn string_value(value: Option<&Value>) -> Option<&str> {
 
 pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> {
     Err(ApplicationError::Configuration(
-        "Windows shortcut targets are unavailable on this platform".to_owned(),
+        "Windows shortcut targets are unavailable on this platform".to_owned()
     ))
 }
 
 pub(super) fn inventories(
     _enabled: &std::collections::BTreeSet<String>,
-    _cancelled: &mut dyn FnMut() -> bool,
+    _cancelled: &mut dyn FnMut() -> bool
 ) -> Vec<super::DiscoveryInventory> {
     Vec::new()
 }

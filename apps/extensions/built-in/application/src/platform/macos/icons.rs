@@ -17,7 +17,7 @@ const RENDER_VERSION: &str = "macos-workspace-srgb-v1";
 pub(crate) fn icon_cache_key(
     bundle: &Path,
     _icon_index: i32,
-    state: &mut DiscoveryState,
+    state: &mut DiscoveryState
 ) -> Result<String, ApplicationError> {
     static OS_VERSION: OnceLock<String> = OnceLock::new();
     let os_version = OS_VERSION.get_or_init(|| {
@@ -40,7 +40,7 @@ pub(crate) fn icon_cache_key(
         contents.clone(),
         resources.clone(),
         resources.join("Assets.car"),
-        bundle.join("Icon\r"),
+        bundle.join("Icon\r")
     ] {
         append_optional_stamp(&mut stamps, state, &path)?;
     }
@@ -68,21 +68,21 @@ pub(crate) fn icon_cache_key(
         }
     }
     Ok(stable_hash(
-        &stamps.iter().map(String::as_str).collect::<Vec<_>>(),
+        &stamps.iter().map(String::as_str).collect::<Vec<_>>()
     ))
 }
 
 fn append_stamp(
     stamps: &mut Vec<String>,
     state: &mut DiscoveryState,
-    path: &Path,
+    path: &Path
 ) -> Result<(), ApplicationError> {
     let metadata = state.metadata(path)?;
     stamps.push(crate::icon_cache::key_from_stamp(
         path,
         0,
         metadata.len(),
-        timestamp_nanos(metadata.modified()?),
+        timestamp_nanos(metadata.modified()?)
     ));
     // ctime catches custom-icon xattrs; inode catches replacement with preserved timestamps.
     stamps.push(format!(
@@ -98,14 +98,14 @@ fn append_stamp(
 fn append_optional_stamp(
     stamps: &mut Vec<String>,
     state: &mut DiscoveryState,
-    path: &Path,
+    path: &Path
 ) -> Result<(), ApplicationError> {
     match append_stamp(stamps, state, path) {
         Err(ApplicationError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
             stamps.push(format!("missing:{}", path_key(path)));
             Ok(())
         }
-        result => result,
+        result => result
     }
 }
 
@@ -113,7 +113,7 @@ pub(crate) fn extract_icons(
     bundle: &Path,
     _icon_index: i32,
     sizes: &[u32],
-    directory: &Path,
+    directory: &Path
 ) -> Result<(), ApplicationError> {
     if sizes.is_empty() {
         return Ok(());
@@ -136,7 +136,7 @@ pub(crate) fn extract_icons(
             &directory.join(format!("{size}.png")),
             size,
             size,
-            &normalized,
+            &normalized
         )?;
     }
     Ok(())

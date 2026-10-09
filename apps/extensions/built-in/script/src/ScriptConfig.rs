@@ -4,7 +4,7 @@ use nanika_protocol::ExtensionConfiguration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptConfig {
-    pub roots: Vec<PathBuf>,
+    pub roots: Vec<PathBuf>
 }
 
 impl ScriptConfig {
@@ -25,7 +25,7 @@ impl ScriptConfig {
                 if !path.is_absolute() || value.len() > 4096 {
                     return Err(
                         "script directories must be absolute paths of at most 4096 bytes"
-                            .to_owned(),
+                            .to_owned()
                     );
                 }
                 Ok(path)

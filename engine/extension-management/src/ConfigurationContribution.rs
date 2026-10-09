@@ -12,7 +12,7 @@ const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationContribution {
     pub title: String,
-    pub properties: BTreeMap<String, ConfigurationProperty>,
+    pub properties: BTreeMap<String, ConfigurationProperty>
 }
 
 impl ConfigurationContribution {

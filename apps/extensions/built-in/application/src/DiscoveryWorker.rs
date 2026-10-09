@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 
 use crate::{
     ApplicationConfig, ApplicationDatabase, ApplicationEntry, ApplicationIndex, DiscoveryCommand,
-    DiscoveryServices, EntryPriority, IconWorker, RuntimeEvent,
+    DiscoveryServices, EntryPriority, IconWorker, RuntimeEvent
 };
 
 /// Named owner for filesystem discovery and application database writes.
@@ -14,7 +14,7 @@ pub struct DiscoveryWorker {
     commands: Sender<DiscoveryCommand>,
     cancelled_through: Arc<AtomicU64>,
     _icons: IconWorker,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 impl DiscoveryWorker {
@@ -23,7 +23,7 @@ impl DiscoveryWorker {
         icon_root: PathBuf,
         config: Arc<RwLock<ApplicationConfig>>,
         entries: Arc<RwLock<std::collections::HashMap<String, ApplicationEntry>>>,
-        events: SyncSender<RuntimeEvent>,
+        events: SyncSender<RuntimeEvent>
     ) -> std::io::Result<Self> {
         let (commands, receiver) = mpsc::channel();
         let cancelled_through = Arc::new(AtomicU64::new(0));
@@ -103,7 +103,7 @@ impl DiscoveryWorker {
             commands,
             cancelled_through,
             _icons: icons,
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 
@@ -111,7 +111,7 @@ impl DiscoveryWorker {
         self.commands
             .send(DiscoveryCommand::Refresh {
                 request_id,
-                generation,
+                generation
             })
             .map_err(|_| "application discovery worker is closed".to_owned())
     }
@@ -161,7 +161,7 @@ impl DiscoveryWorker {
                 failure = Some("application discovery worker panicked".to_owned());
             } else if !sent {
                 failure = Some(
-                    "application discovery worker closed before shutdown was requested".to_owned(),
+                    "application discovery worker closed before shutdown was requested".to_owned()
                 );
             }
         }
@@ -184,7 +184,7 @@ fn run_scan(
     mut index: ApplicationIndex,
     services: &DiscoveryServices<'_>,
     request_id: Option<String>,
-    generation: u64,
+    generation: u64
 ) -> Option<ApplicationIndex> {
     let config = services
         .config
@@ -209,7 +209,7 @@ fn run_scan(
             if let Some(request_id) = &request_id {
                 let _ = services.events.send(RuntimeEvent::ScanProgress {
                     request_id: request_id.clone(),
-                    progress,
+                    progress
                 });
             }
         },
@@ -219,9 +219,9 @@ fn run_scan(
                 services.events,
                 services.icon_wake,
                 updated,
-                removed,
+                removed
             )
-        },
+        }
     );
     match result {
         Ok(report) => {
@@ -230,14 +230,14 @@ fn run_scan(
                 .send(RuntimeEvent::ScanFinished {
                     request_id,
                     response_generation: generation,
-                    result: Ok(report),
+                    result: Ok(report)
                 })
                 .is_err()
             {
                 return None;
             }
         }
-        Err(error) => send_failure(services.events, request_id, generation, &error),
+        Err(error) => send_failure(services.events, request_id, generation, &error)
     }
     Some(index)
 }
@@ -246,13 +246,13 @@ fn send_failure(
     events: &SyncSender<RuntimeEvent>,
     request_id: Option<String>,
     generation: u64,
-    error: &crate::ApplicationError,
+    error: &crate::ApplicationError
 ) {
     if events
         .send(RuntimeEvent::ScanFinished {
             request_id,
             response_generation: generation,
-            result: Err(error.to_string()),
+            result: Err(error.to_string())
         })
         .is_err()
     {
@@ -265,7 +265,7 @@ fn publish_entries(
     events: &SyncSender<RuntimeEvent>,
     icon_wake: &(Mutex<EntryPriority>, Condvar),
     updated: Vec<ApplicationEntry>,
-    removed: Vec<String>,
+    removed: Vec<String>
 ) {
     let mut current = entries.write().unwrap_or_else(|error| error.into_inner());
     let mut changed = removed.clone();

@@ -10,5 +10,5 @@ pub(crate) struct InvokeCandidateRequest {
     pub(crate) extension_id: String,
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
-    pub(crate) confirmed: bool,
+    pub(crate) confirmed: bool
 }

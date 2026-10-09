@@ -7,5 +7,5 @@ pub(crate) struct SettingsSearchEntry {
     pub(crate) title: String,
     pub(crate) page_title: String,
     #[serde(skip)]
-    pub(crate) search_values: Vec<String>,
+    pub(crate) search_values: Vec<String>
 }

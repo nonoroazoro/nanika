@@ -54,7 +54,7 @@ fn transparent_margin_cropping_ignores_rgb_and_preserves_partial_alpha() {
     let mut source = [255, 255, 255, 0].repeat(6 * 4);
     let artwork = [
         0, 0, 0, 255, 255, 255, 255, 255, 40, 80, 120, 1, 40, 80, 120, 128, 40, 80, 120, 255, 40,
-        80, 120, 64, 255, 255, 255, 1, 0, 0, 0, 1,
+        80, 120, 64, 255, 255, 255, 1, 0, 0, 0, 1
     ];
     for row in 0..2 {
         let start = ((row + 1) * 6 + 1) * 4;
@@ -69,7 +69,7 @@ fn transparent_margin_cropping_ignores_rgb_and_preserves_partial_alpha() {
 #[test]
 fn visible_edge_pixels_are_preserved() {
     let source = [
-        255, 255, 255, 255, 40, 80, 120, 1, 40, 80, 120, 255, 0, 0, 0, 255,
+        255, 255, 255, 255, 40, 80, 120, 1, 40, 80, 120, 255, 0, 0, 0, 255
     ];
     assert_eq!(normalize_icon_rgba(&source, 2, 2, 2).unwrap(), source);
 }

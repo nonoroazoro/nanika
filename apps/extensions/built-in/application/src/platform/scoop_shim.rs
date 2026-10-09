@@ -8,12 +8,12 @@ const MAX_SHIM_BYTES: u64 = 64 * 1024;
 /// Resolve identity only; native activation continues to use the original wrapper.
 pub(super) fn identity(
     executable: &Path,
-    arguments: Option<String>,
+    arguments: Option<String>
 ) -> Result<Option<(PathBuf, ApplicationArguments)>, ApplicationError> {
     let original = || {
         Some((
             executable.to_path_buf(),
-            ApplicationArguments::from_windows_raw(arguments.clone()),
+            ApplicationArguments::from_windows_raw(arguments.clone())
         ))
     };
     if !executable
@@ -26,7 +26,7 @@ pub(super) fn identity(
     let file = match std::fs::File::open(executable.with_extension("shim")) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(original()),
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error.into())
     };
     let mut content = String::new();
     file.take(MAX_SHIM_BYTES + 1).read_to_string(&mut content)?;
@@ -52,7 +52,7 @@ pub(super) fn identity(
             "path" if target.is_none() => target = Some(value),
             "args" if prefix.is_none() => prefix = Some(value),
             "path" | "args" => return Err(_invalid("duplicate identity field")),
-            _ => return Ok(original()),
+            _ => return Ok(original())
         }
     }
     let target = target.ok_or_else(|| _invalid("missing target path"))?;
@@ -69,7 +69,7 @@ pub(super) fn identity(
     let target = match target.canonicalize() {
         Ok(target) => target,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error.into())
     };
     let arguments = [prefix, arguments.as_deref().unwrap_or_default()]
         .into_iter()
@@ -78,7 +78,7 @@ pub(super) fn identity(
         .join(" ");
     Ok(Some((
         target,
-        ApplicationArguments::from_windows_raw(Some(arguments)),
+        ApplicationArguments::from_windows_raw(Some(arguments))
     )))
 }
 

@@ -7,7 +7,7 @@ use nanika_search::{SearchHandle, UsageKey};
 
 use crate::{
     HostDatabase, SearchStorageCommand, SearchStorageFailure, SearchStorageState,
-    StorageQueueError, extension_id::is_valid_extension_id,
+    StorageQueueError, extension_id::is_valid_extension_id
 };
 
 /// Serialized owner for search-related host database writes.
@@ -15,7 +15,7 @@ pub struct SearchStorageWorker {
     commands: SyncSender<SearchStorageCommand>,
     last_failure: Arc<Mutex<Option<SearchStorageFailure>>>,
     search: Arc<Mutex<Option<SearchHandle>>>,
-    thread: Mutex<Option<JoinHandle<()>>>,
+    thread: Mutex<Option<JoinHandle<()>>>
 }
 
 impl SearchStorageWorker {
@@ -46,7 +46,7 @@ impl SearchStorageWorker {
                                     input_history,
                                     usage,
                                     extensions: extension_load.extensions,
-                                    extension_errors: extension_load.errors,
+                                    extension_errors: extension_load.errors
                                 }
                             })
                         })
@@ -61,23 +61,23 @@ impl SearchStorageWorker {
                     let (operation, result, response, projection) = match command {
                         SearchStorageCommand::RegisterBuiltInExtension {
                             extension_id,
-                            response,
+                            response
                         } => (
                             "register built-in extension metadata",
                             database.register_builtin_extension(&extension_id),
                             response,
-                            None,
+                            None
                         ),
                         SearchStorageCommand::RecordHistory {
                             history_key,
                             display_query,
                             used_at,
-                            response,
+                            response
                         } => (
                             "record input history",
                             database.record_input_history(&history_key, &display_query, used_at),
                             response,
-                            None,
+                            None
                         ),
                         SearchStorageCommand::RecordUsage {
                             extension_id,
@@ -85,7 +85,7 @@ impl SearchStorageWorker {
                             action_id,
                             query_context,
                             executed_at,
-                            response,
+                            response
                         } => (
                             "record action usage",
                             database.record_usage(
@@ -93,7 +93,7 @@ impl SearchStorageWorker {
                                 &entry_id,
                                 &action_id,
                                 &query_context,
-                                executed_at,
+                                executed_at
                             ),
                             response,
                             Some(crate::PersistedUsageChange::Execution {
@@ -101,10 +101,10 @@ impl SearchStorageWorker {
                                     &extension_id,
                                     &entry_id,
                                     &action_id,
-                                    &query_context,
+                                    &query_context
                                 ),
-                                executed_at,
-                            }),
+                                executed_at
+                            })
                         ),
                         SearchStorageCommand::RecordExecution {
                             history_key,
@@ -112,7 +112,7 @@ impl SearchStorageWorker {
                             usage,
                             history_used_at,
                             executed_at,
-                            response,
+                            response
                         } => (
                             "record completed action",
                             database.record_execution(
@@ -120,21 +120,21 @@ impl SearchStorageWorker {
                                 &display_query,
                                 &usage,
                                 history_used_at,
-                                executed_at,
+                                executed_at
                             ),
                             response,
                             Some(crate::PersistedUsageChange::Execution {
                                 key: usage,
-                                executed_at,
-                            }),
+                                executed_at
+                            })
                         ),
                         SearchStorageCommand::ResetUsage { response } => (
                             "reset action usage",
                             database.reset_usage(),
                             response,
-                            Some(crate::PersistedUsageChange::Reset),
+                            Some(crate::PersistedUsageChange::Reset)
                         ),
-                        SearchStorageCommand::Shutdown => break,
+                        SearchStorageCommand::Shutdown => break
                     };
                     let result = result.map_err(|error| error.to_string());
                     let committed = result.is_ok();
@@ -143,7 +143,7 @@ impl SearchStorageWorker {
                             &owner_failure,
                             &mut failure_sequence,
                             operation,
-                            error.clone(),
+                            error.clone()
                         );
                     }
                     // The database owns accepted work even when the caller does not await it.
@@ -157,7 +157,7 @@ impl SearchStorageWorker {
                             &owner_failure,
                             &mut failure_sequence,
                             "publish committed storage change",
-                            error,
+                            error
                         );
                     }
                 }
@@ -171,9 +171,9 @@ impl SearchStorageWorker {
                 commands,
                 last_failure,
                 search,
-                thread: Mutex::new(Some(thread)),
+                thread: Mutex::new(Some(thread))
             },
-            state,
+            state
         ))
     }
 
@@ -186,7 +186,7 @@ impl SearchStorageWorker {
 
     pub fn register_builtin_extension(
         &self,
-        extension_id: impl Into<String>,
+        extension_id: impl Into<String>
     ) -> Result<crate::StorageCommit, StorageQueueError> {
         let extension_id = extension_id.into();
         if !is_valid_extension_id(&extension_id) {
@@ -196,9 +196,9 @@ impl SearchStorageWorker {
         self.send(
             SearchStorageCommand::RegisterBuiltInExtension {
                 extension_id,
-                response,
+                response
             },
-            result,
+            result
         )
     }
 
@@ -206,7 +206,7 @@ impl SearchStorageWorker {
         &self,
         history_key: impl Into<String>,
         display_query: impl Into<String>,
-        used_at: u64,
+        used_at: u64
     ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
@@ -214,9 +214,9 @@ impl SearchStorageWorker {
                 history_key: history_key.into(),
                 display_query: display_query.into(),
                 used_at,
-                response,
+                response
             },
-            result,
+            result
         )
     }
 
@@ -226,7 +226,7 @@ impl SearchStorageWorker {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
         query_context: impl Into<String>,
-        executed_at: u64,
+        executed_at: u64
     ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
@@ -236,9 +236,9 @@ impl SearchStorageWorker {
                 action_id: action_id.into(),
                 query_context: query_context.into(),
                 executed_at,
-                response,
+                response
             },
-            result,
+            result
         )
     }
 
@@ -253,7 +253,7 @@ impl SearchStorageWorker {
         display_query: impl Into<String>,
         usage: UsageKey,
         history_used_at: u64,
-        executed_at: u64,
+        executed_at: u64
     ) -> Result<crate::StorageCommit, StorageQueueError> {
         let (response, result) = mpsc::sync_channel(1);
         self.send(
@@ -263,9 +263,9 @@ impl SearchStorageWorker {
                 usage,
                 history_used_at,
                 executed_at,
-                response,
+                response
             },
-            result,
+            result
         )
     }
 
@@ -283,7 +283,7 @@ impl SearchStorageWorker {
     fn send(
         &self,
         command: SearchStorageCommand,
-        response: Receiver<Result<(), String>>,
+        response: Receiver<Result<(), String>>
     ) -> Result<crate::StorageCommit, StorageQueueError> {
         self.commands
             .send(command)
@@ -314,7 +314,7 @@ fn _record_failure(
     failure: &Mutex<Option<SearchStorageFailure>>,
     sequence: &mut u64,
     operation: &'static str,
-    source: String,
+    source: String
 ) {
     *sequence = sequence.saturating_add(1);
     tracing::error!(operation, source, "storage operation failed");
@@ -324,7 +324,7 @@ fn _record_failure(
 
 fn _notify_search(
     search: &Mutex<Option<SearchHandle>>,
-    change: crate::PersistedUsageChange,
+    change: crate::PersistedUsageChange
 ) -> Result<(), String> {
     let search = search
         .lock()
@@ -337,7 +337,7 @@ fn _notify_search(
         crate::PersistedUsageChange::Execution { key, executed_at } => {
             search.apply_persisted_execution(key, executed_at)
         }
-        crate::PersistedUsageChange::Reset => search.reset_persisted_usage(),
+        crate::PersistedUsageChange::Reset => search.reset_persisted_usage()
     }
     .map_err(|error| error.to_string())
 }

@@ -9,5 +9,5 @@ pub struct ListItem {
     pub title: String,
     pub subtitle: Option<String>,
     pub icon: Option<ViewItemIcon>,
-    pub actions: Vec<Action>,
+    pub actions: Vec<Action>
 }

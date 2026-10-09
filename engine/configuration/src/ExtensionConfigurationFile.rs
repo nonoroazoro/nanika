@@ -10,14 +10,14 @@ use crate::CONFIG_FORMAT_VERSION;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionConfigurationFile {
     pub format_version: u32,
-    pub values: BTreeMap<String, Value>,
+    pub values: BTreeMap<String, Value>
 }
 
 impl ExtensionConfigurationFile {
     pub fn new(values: BTreeMap<String, Value>) -> Self {
         Self {
             format_version: CONFIG_FORMAT_VERSION,
-            values,
+            values
         }
     }
 

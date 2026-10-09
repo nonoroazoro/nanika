@@ -16,8 +16,8 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
-            actions: vec![disabled, nanika_protocol::Action::primary("open", "Open")],
-        },
+            actions: vec![disabled, nanika_protocol::Action::primary("open", "Open")]
+        }
     };
     for id in ["disabled", "unknown"] {
         assert!(
@@ -26,7 +26,7 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
                 &ViewEvent::ActionInvoked {
                     invocation: nanika_protocol::ActionInvocation::Default,
                     item_id: None,
-                    action_id: id.to_owned(),
+                    action_id: id.to_owned()
                 }
             )
             .is_err()
@@ -38,7 +38,7 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
             &ViewEvent::ActionInvoked {
                 invocation: nanika_protocol::ActionInvocation::Default,
                 item_id: None,
-                action_id: "open".to_owned(),
+                action_id: "open".to_owned()
             }
         )
         .is_ok()
@@ -49,7 +49,7 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
             &ViewEvent::ActionInvoked {
                 invocation: nanika_protocol::ActionInvocation::Default,
                 item_id: Some("another-item".to_owned()),
-                action_id: "open".to_owned(),
+                action_id: "open".to_owned()
             }
         )
         .is_err()
@@ -68,8 +68,8 @@ fn resumed_events_are_authorized_for_every_host_rendered_view() {
                 value: "content".to_owned(),
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
 
     authorize_view_event(&view, &ViewEvent::Resumed)
@@ -87,8 +87,8 @@ fn text_view(value: &str) -> View {
                 value: value.to_owned(),
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     }
 }
 
@@ -101,10 +101,10 @@ fn completed_view_is_presented() {
             effect: nanika_protocol::NavigationEffect::Push {
                 view_id: "created-view".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("created")),
+                view: Box::new(text_view("created"))
             },
-            has_output: false,
-        },
+            has_output: false
+        }
     };
     crate::apply_invocation_completion(completion, |effect| {
         navigation.apply("test.extension", 1, 1, effect)
@@ -122,10 +122,10 @@ fn completed_view_cleanup_failure_is_preserved() {
             effect: nanika_protocol::NavigationEffect::Push {
                 view_id: "retired-view".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("retired")),
+                view: Box::new(text_view("retired"))
             },
-            has_output: false,
-        },
+            has_output: false
+        }
     };
     let error = crate::apply_invocation_completion(completion, |effect| {
         assert!(matches!(
@@ -152,8 +152,8 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
                 nanika_protocol::NavigationEffect::Push {
                     view_id: format!("view-{index}"),
                     revision: 1,
-                    view: Box::new(text_view("existing")),
-                },
+                    view: Box::new(text_view("existing"))
+                }
             )
             .unwrap();
     }
@@ -180,7 +180,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
             "test.extension",
             1,
             1,
-            nanika_protocol::NavigationEffect::Pop,
+            nanika_protocol::NavigationEffect::Pop
         )
         .unwrap();
     navigation
@@ -191,8 +191,8 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
             nanika_protocol::NavigationEffect::Push {
                 view_id: "replacement".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("new")),
-            },
+                view: Box::new(text_view("new"))
+            }
         )
         .unwrap();
 }
@@ -208,8 +208,8 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
             nanika_protocol::NavigationEffect::Push {
                 view_id: "view".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("old")),
-            },
+                view: Box::new(text_view("old"))
+            }
         )
         .unwrap();
     let route = old.navigation.stack[0].clone();
@@ -222,8 +222,8 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
             nanika_protocol::NavigationEffect::Push {
                 view_id: "view".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("new")),
-            },
+                view: Box::new(text_view("new"))
+            }
         )
         .unwrap();
     let original = new.navigation.stack[0].view.clone();
@@ -238,14 +238,14 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
         1,
         &route,
         2,
-        text_view("stale"),
+        text_view("stale")
     );
     crate::view_invalidation_delivery::apply_completion(
         &mut state,
         2,
         &route,
         2,
-        text_view("wrong owner"),
+        text_view("wrong owner")
     );
     let current = &state.session.as_ref().unwrap().navigation.stack[0];
     assert!(std::sync::Arc::ptr_eq(&original, &current.view));
@@ -256,7 +256,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
         2,
         &current,
         2,
-        text_view("fresh"),
+        text_view("fresh")
     );
     assert_eq!(
         state.session.as_ref().unwrap().navigation.stack[0].revision,
@@ -272,8 +272,8 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
         1,
         nanika_protocol::ViewEvent::SelectionChanged {
             collection_id: "test.collection".into(),
-            index: 1,
-        },
+            index: 1
+        }
     );
     navigation.authorize_input(&selection, None).unwrap();
     navigation.begin().unwrap();
@@ -284,7 +284,7 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
     };
     list.selection = Some(nanika_protocol::ListSelection {
         index: 1,
-        item: list.sections[0].items[1].clone(),
+        item: list.sections[0].items[1].clone()
     });
     navigation.finish(Ok(()));
 
@@ -294,8 +294,8 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
         ViewEvent::ActionInvoked {
             invocation: nanika_protocol::ActionInvocation::Default,
             item_id: Some("two".to_owned()),
-            action_id: "copy".to_owned(),
-        },
+            action_id: "copy".to_owned()
+        }
     );
     assert_eq!(
         navigation.authorize_input(&action, None).unwrap().revision,
@@ -332,8 +332,8 @@ fn queued_actions_revalidate_removed_disabled_and_unknown_targets_after_invalida
             ViewEvent::ActionInvoked {
                 invocation: nanika_protocol::ActionInvocation::Default,
                 item_id: Some(item_id.to_owned()),
-                action_id: action_id.to_owned(),
-            },
+                action_id: action_id.to_owned()
+            }
         );
         assert!(navigation.authorize_input(&request, None).is_err());
     }
@@ -355,7 +355,7 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
             "test.extension",
             1,
             1,
-            nanika_protocol::NavigationEffect::Pop,
+            nanika_protocol::NavigationEffect::Pop
         )
         .unwrap();
     navigation
@@ -366,8 +366,8 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
             nanika_protocol::NavigationEffect::Push {
                 view_id: "replacement".to_owned(),
                 revision: 1,
-                view: Box::new(text_view("new")),
-            },
+                view: Box::new(text_view("new"))
+            }
         )
         .unwrap();
     assert!(navigation.authorize_input(&request, None).is_err());
@@ -403,17 +403,17 @@ fn _input_navigation() -> crate::NavigationState {
                                     title: id.to_owned(),
                                     subtitle: None,
                                     icon: None,
-                                    actions: vec![nanika_protocol::Action::primary("copy", "Copy")],
+                                    actions: vec![nanika_protocol::Action::primary("copy", "Copy")]
                                 })
-                                .collect(),
+                                .collect()
                         }],
                         collection_id: "test.collection".into(),
                         selection: None,
                         detail: None,
-                        filter: None,
-                    }),
-                }),
-            },
+                        filter: None
+                    })
+                })
+            }
         )
         .unwrap();
     navigation
@@ -424,7 +424,7 @@ fn _input_request(revision: u64, event: ViewEvent) -> crate::ViewEventRequest {
         session_id: 1,
         route_id: 1,
         revision,
-        operation: crate::ViewOperation::Event { event },
+        operation: crate::ViewOperation::Event { event }
     }
 }
 
@@ -447,7 +447,7 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
         let event = |invocation| ViewEvent::ActionInvoked {
             item_id: item_id.clone(),
             action_id: "copy".to_owned(),
-            invocation,
+            invocation
         };
         assert!(authorize_view_event(view, &event(ActionInvocation::Default)).is_err());
         assert!(authorize_view_event(view, &event(ActionInvocation::Explicit)).is_ok());
@@ -464,8 +464,8 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
             ViewEvent::ActionInvoked {
                 item_id: Some("one".to_owned()),
                 action_id: "copy".to_owned(),
-                invocation,
-            },
+                invocation
+            }
         )
     };
     assert!(
@@ -515,14 +515,14 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
             total_chunks: 3,
         },
         metadata: vec![],
-        actions: vec![],
+        actions: vec![]
     });
     for (event, valid) in [
         (
             ViewEvent::ListRangeChanged {
                 collection_id: "test.collection".into(),
                 offset: 1,
-                count: std::num::NonZeroU32::new(30).unwrap(),
+                count: std::num::NonZeroU32::new(30).unwrap()
             },
             true,
         ),
@@ -530,7 +530,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
             ViewEvent::ListRangeChanged {
                 collection_id: "obsolete".into(),
                 offset: 0,
-                count: std::num::NonZeroU32::new(30).unwrap(),
+                count: std::num::NonZeroU32::new(30).unwrap()
             },
             false,
         ),
@@ -538,7 +538,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
             ViewEvent::ListRangeChanged {
                 collection_id: "test.collection".into(),
                 offset: 2,
-                count: std::num::NonZeroU32::new(30).unwrap(),
+                count: std::num::NonZeroU32::new(30).unwrap()
             },
             false,
         ),
@@ -546,7 +546,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
             ViewEvent::ListRangeChanged {
                 collection_id: "test.collection".into(),
                 offset: 0,
-                count: std::num::NonZeroU32::new(501).unwrap(),
+                count: std::num::NonZeroU32::new(501).unwrap()
             },
             false,
         ),
@@ -555,21 +555,21 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
                 text_id: "first".into(),
                 index: 1,
             },
-            false,
+            false
         ),
         (
             ViewEvent::TextChunkRequested {
                 text_id: "second".into(),
                 index: 1,
             },
-            true,
+            true
         ),
         (
             ViewEvent::TextChunkRequested {
                 text_id: "second".into(),
                 index: 3,
             },
-            false,
+            false
         ),
     ] {
         assert_eq!(
@@ -586,7 +586,7 @@ fn pasted_control_characters_have_the_same_search_contract_as_view_state() {
     let navigation = _input_navigation();
     let event = ViewEvent::SearchChanged {
         minimum_items: std::num::NonZeroU32::new(30).unwrap(),
-        text: "\u{1b}[31m".into(),
+        text: "\u{1b}[31m".into()
     };
     assert!(
         navigation
@@ -602,8 +602,8 @@ fn selection_authority_outlives_delivery_windows_but_not_collection_identity() {
         1,
         ViewEvent::SelectionChanged {
             collection_id: "test.collection".into(),
-            index: 0,
-        },
+            index: 0
+        }
     );
     let route = navigation.stack.last_mut().unwrap();
     route.revision = 2;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{ContextMenuRequest, ExtensionViewSnapshot, MenuTarget, SearchSession};
 use nanika_protocol::{
     Action, ActionStyle, DetailContent, DetailView, ListItem, ListLayout, ListSection, ListView,
-    View,
+    View
 };
 use nanika_search::{Candidate, CandidateKind, RankedCandidate, SearchSnapshot};
 
@@ -14,7 +14,7 @@ fn root_menus_exclude_direct_activation_by_identity_and_keep_single_extras() {
     for actions in [
         vec![direct.clone()],
         vec![direct.clone(), extra.clone()],
-        vec![extra.clone(), direct.clone()],
+        vec![extra.clone(), direct.clone()]
     ] {
         let (session, request) = _root(actions.clone());
         let menu = session.menu_actions(&request).unwrap();
@@ -49,7 +49,7 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
     for actions in [
         vec![direct.clone()],
         vec![direct, extra.clone()],
-        vec![extra.clone()],
+        vec![extra.clone()]
     ] {
         let expected = actions
             .iter()
@@ -68,10 +68,10 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                             value: "test".into(),
                         },
                         metadata: vec![],
-                        actions: actions.clone(),
-                    },
+                        actions: actions.clone()
+                    }
                 },
-                None,
+                None
             ),
             (
                 View::List {
@@ -92,17 +92,17 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                                 title: "Test".into(),
                                 subtitle: None,
                                 icon: None,
-                                actions,
-                            }],
+                                actions
+                            }]
                         }],
                         collection_id: "test.collection".into(),
                         selection: None,
                         detail: None,
-                        filter: None,
-                    }),
+                        filter: None
+                    })
                 },
-                Some("item".into()),
-            ),
+                Some("item".into())
+            )
         ];
         for (view, item_id) in views {
             let mut session = _session();
@@ -113,21 +113,21 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                 generation: 1,
                 view_id: "view".into(),
                 revision: 2,
-                view: Arc::new(view),
+                view: Arc::new(view)
             });
             let mut request = ContextMenuRequest {
                 session_id: 1,
                 target: MenuTarget::View {
                     route_id: 1,
                     revision: 2,
-                    item_id: item_id.clone(),
-                },
+                    item_id: item_id.clone()
+                }
             };
             assert_eq!(session.menu_actions(&request).unwrap(), expected);
             request.target = MenuTarget::View {
                 route_id: 1,
                 revision: 1,
-                item_id,
+                item_id
             };
             assert!(
                 session.menu_actions(&request).is_err(),
@@ -180,13 +180,13 @@ fn _root(actions: Vec<Action>) -> (SearchSession, ContextMenuRequest) {
                 "Test",
                 "execute",
                 actions,
-                vec![],
+                vec![]
             ),
             lexical_tier: 0,
             fuzzy_score: 0,
-            contextual_boost: 0,
+            contextual_boost: 0
         }]
-        .into(),
+        .into()
     }));
     (
         session,
@@ -196,9 +196,9 @@ fn _root(actions: Vec<Action>) -> (SearchSession, ContextMenuRequest) {
                 request_id: 0,
                 result_revision: 0,
                 extension_id: "test.extension".into(),
-                entry_id: "entry".into(),
-            },
-        },
+                entry_id: "entry".into()
+            }
+        }
     )
 }
 

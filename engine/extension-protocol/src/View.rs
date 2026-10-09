@@ -9,14 +9,14 @@ use crate::{Action, ActionStyle, DetailContent, DetailView, ListView};
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum View {
     List { list: Box<ListView> },
-    Detail { detail: DetailView },
+    Detail { detail: DetailView }
 }
 
 impl View {
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::List { list } => validate_list(list),
-            Self::Detail { detail } => validate_detail(detail),
+            Self::Detail { detail } => validate_detail(detail)
         }
     }
 }
@@ -27,7 +27,7 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         "view search placeholder",
         &list.search_placeholder,
         256,
-        true,
+        true
     )?;
     validate_view_search_text(&list.search_text)?;
     validate_text("view empty title", &list.empty_title, 256, false)?;
@@ -88,7 +88,7 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         validate_detail(detail)?;
         if !detail.actions.is_empty() {
             return Err(
-                "list detail actions must be declared on the selected list item".to_owned(),
+                "list detail actions must be declared on the selected list item".to_owned()
             );
         }
     }
@@ -157,13 +157,13 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
         }
         DetailContent::Image {
             source,
-            alternative_text,
+            alternative_text
         } => {
             validate_text(
                 "detail image alternative text",
                 alternative_text,
                 512,
-                false,
+                false
             )?;
             if !crate::is_valid_resource_path(&source.path) {
                 return Err("detail image resource path is invalid".to_owned());
@@ -194,7 +194,7 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
         if let Some(title) = &action.confirmation_title {
             if action.allow_default_execution {
                 return Err(
-                    "action requiring confirmation cannot allow default execution".to_owned(),
+                    "action requiring confirmation cannot allow default execution".to_owned()
                 );
             }
             validate_text("view action confirmation title", title, 128, false)?;
@@ -225,7 +225,7 @@ fn validate_text(
     field: &str,
     value: &str,
     maximum_chars: usize,
-    allow_empty: bool,
+    allow_empty: bool
 ) -> Result<(), String> {
     if (!allow_empty && value.trim().is_empty())
         || value.chars().count() > maximum_chars

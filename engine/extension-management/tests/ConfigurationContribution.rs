@@ -29,7 +29,7 @@ fn rejects_duplicate_and_excessive_platforms() {
     for platforms in [
         json!(["windows", "windows"]),
         json!(["macos", "macos"]),
-        json!(["windows", "macos", "windows"]),
+        json!(["windows", "macos", "windows"])
     ] {
         let contribution: ConfigurationContribution = serde_json::from_value(json!({
             "title": "Platform settings",

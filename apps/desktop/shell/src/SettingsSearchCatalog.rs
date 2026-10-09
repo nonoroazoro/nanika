@@ -2,7 +2,7 @@ use crate::{ExtensionLifecycle, SettingsSearchEntry, SettingsSearchTarget};
 use nanika_text_search::{TextMatcher, TextQuery, normalize_query};
 
 pub(crate) struct SettingsSearchCatalog {
-    entries: Vec<SettingsSearchEntry>,
+    entries: Vec<SettingsSearchEntry>
 }
 
 impl SettingsSearchCatalog {
@@ -11,34 +11,34 @@ impl SettingsSearchCatalog {
     /// Index labels and explicit keywords, not explanatory prose that admits unrelated fuzzy matches.
     pub(crate) fn new(extensions: &[ExtensionLifecycle]) -> Self {
         let mut catalog = Self {
-            entries: Vec::new(),
+            entries: Vec::new()
         };
         catalog._add(
             "general",
             SettingsSearchTarget::Page,
             "General",
             &[],
-            "preferences settings",
+            "preferences settings"
         );
         for section in crate::general_settings::sections() {
             catalog._add(
                 "general",
                 SettingsSearchTarget::Section {
-                    key: section.key.into(),
+                    key: section.key.into()
                 },
                 section.title,
                 &["General"],
-                "",
+                ""
             );
             for field in section.fields {
                 catalog._add(
                     "general",
                     SettingsSearchTarget::Field {
-                        key: field.key.as_str().into(),
+                        key: field.key.as_str().into()
                     },
                     field.title,
                     &["General", section.title],
-                    field.keywords,
+                    field.keywords
                 );
             }
         }
@@ -50,7 +50,7 @@ impl SettingsSearchCatalog {
             SettingsSearchTarget::Page,
             "About",
             &[],
-            "Nanika version information",
+            "Nanika version information"
         );
         catalog
     }
@@ -83,7 +83,7 @@ impl SettingsSearchCatalog {
             SettingsSearchTarget::Enabled,
             "Enable extension",
             &[&info.name],
-            "enabled disabled",
+            "enabled disabled"
         );
         // An invalid configuration has no editable rows in the renderer.
         if info.configuration_error.is_some() {
@@ -104,7 +104,7 @@ impl SettingsSearchCatalog {
                 SettingsSearchTarget::Field { key: key.clone() },
                 &property.title,
                 &[&info.name],
-                "",
+                ""
             );
         }
     }
@@ -115,7 +115,7 @@ impl SettingsSearchCatalog {
         target: SettingsSearchTarget,
         title: &str,
         breadcrumb: &[&str],
-        keywords: &str,
+        keywords: &str
     ) {
         self.entries.push(SettingsSearchEntry {
             page_id: page_id.into(),
@@ -127,7 +127,7 @@ impl SettingsSearchCatalog {
                 .chain(std::iter::once(keywords))
                 .filter(|value| !value.is_empty())
                 .map(normalize_query)
-                .collect(),
+                .collect()
         });
     }
 }

@@ -5,5 +5,5 @@ use serde::{Deserialize, Serialize};
 pub enum RootSearchMode {
     Catalog,
     #[default]
-    Query,
+    Query
 }

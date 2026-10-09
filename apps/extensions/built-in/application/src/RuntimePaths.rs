@@ -5,7 +5,7 @@ use crate::{ApplicationError, EXTENSION_ID};
 /// Resolved application extension paths, overridable for supervised launches and tests.
 pub struct RuntimePaths {
     pub data_root: PathBuf,
-    pub cache_root: PathBuf,
+    pub cache_root: PathBuf
 }
 
 impl RuntimePaths {
@@ -26,14 +26,14 @@ impl RuntimePaths {
         Ok(Self {
             data_root: data_root.ok_or_else(|| {
                 ApplicationError::Configuration(
-                    "application extension data root is missing".to_owned(),
+                    "application extension data root is missing".to_owned()
                 )
             })?,
             cache_root: cache_root.ok_or_else(|| {
                 ApplicationError::Configuration(
-                    "application extension cache root is missing".to_owned(),
+                    "application extension cache root is missing".to_owned()
                 )
-            })?,
+            })?
         })
     }
 

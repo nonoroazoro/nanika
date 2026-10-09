@@ -30,7 +30,7 @@ fn registry_updates_preserve_nested_comments_and_formatting() {
     "com.example.unchanged": false,
   },
 }
-"#,
+"#
     )
     .expect("registry fixture");
     let mut registry = ExtensionRegistryTransaction::begin(&store).expect("registry transaction");

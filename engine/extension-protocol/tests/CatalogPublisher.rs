@@ -9,7 +9,7 @@ fn entry(id: usize, title: &str) -> Candidate {
         action_id: "open".into(),
         actions: vec![Action::primary("open", "Open")],
         aliases: Vec::new(),
-        icon: None,
+        icon: None
     }
 }
 

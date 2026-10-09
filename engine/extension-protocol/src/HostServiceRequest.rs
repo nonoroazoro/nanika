@@ -8,5 +8,5 @@ pub enum HostServiceRequest {
     SystemAction { action: crate::SystemAction },
     RevealPath { path: String },
     Launch { descriptor: LaunchDescriptor },
-    WriteClipboard { content: ClipboardContent },
+    WriteClipboard { content: ClipboardContent }
 }

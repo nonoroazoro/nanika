@@ -8,13 +8,13 @@ const RENDER_VERSION: &str = "system-file-icon-v1";
 
 /// Persistent metadata-keyed reuse with immutable, extension-owned PNG artifacts.
 pub struct FileIconCache {
-    root: PathBuf,
+    root: PathBuf
 }
 
 impl FileIconCache {
     pub fn new(extension_icon_root: PathBuf) -> Self {
         Self {
-            root: extension_icon_root,
+            root: extension_icon_root
         }
     }
 

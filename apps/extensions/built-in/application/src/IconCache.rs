@@ -12,7 +12,7 @@ const ICON_RENDER_VERSION: &str = "alpha-cropped-v1";
 
 /// Machine-local icon cache with deterministic content keys.
 pub struct IconCache {
-    root: PathBuf,
+    root: PathBuf
 }
 
 impl IconCache {
@@ -26,7 +26,7 @@ impl IconCache {
 
     pub(crate) fn key(
         entry: &ApplicationEntry,
-        state: &mut DiscoveryState,
+        state: &mut DiscoveryState
     ) -> Result<String, ApplicationError> {
         let Some(source) = entry.icon_source.as_ref() else {
             return Ok(FALLBACK_KEY.to_owned());
@@ -37,13 +37,13 @@ impl IconCache {
             }
             crate::ApplicationIconSource::WindowsApplication {
                 app_user_model_id,
-                package_full_name,
+                package_full_name
             } => Ok(stable_hash(&[
                 ICON_RENDER_VERSION,
                 "windows-app",
                 app_user_model_id,
-                package_full_name,
-            ])),
+                package_full_name
+            ]))
         }
     }
 
@@ -59,7 +59,7 @@ impl IconCache {
         let source = entry.icon_source.as_ref().ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "application icon source is missing",
+                "application icon source is missing"
             )
         })?;
         let directory = self.root.join(icon.key());
@@ -150,14 +150,14 @@ pub(crate) fn key_from_stamp(
     source: &Path,
     icon_index: i32,
     length: u64,
-    modified: i128,
+    modified: i128
 ) -> String {
     stable_hash(&[
         ICON_RENDER_VERSION,
         &path_key(source),
         &icon_index.to_string(),
         &length.to_string(),
-        &modified.to_string(),
+        &modified.to_string()
     ])
 }
 
@@ -190,7 +190,7 @@ pub(crate) fn write_png(
     path: &Path,
     width: u32,
     height: u32,
-    pixels: &[u8],
+    pixels: &[u8]
 ) -> Result<(), ApplicationError> {
     let temporary = path.with_extension("png.tmp");
     let file = fs::File::create(&temporary)?;

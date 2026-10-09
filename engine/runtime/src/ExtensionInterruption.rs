@@ -2,5 +2,5 @@
 pub enum ExtensionInterruption {
     None,
     Cancel,
-    Terminate,
+    Terminate
 }

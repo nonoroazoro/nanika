@@ -8,5 +8,5 @@ pub enum ViewItemIcon {
     Text,
     Files,
     Image,
-    Native(crate::IconReference),
+    Native(crate::IconReference)
 }

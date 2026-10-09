@@ -110,7 +110,7 @@ fn romanized_aliases_work_with_the_existing_host_ranker() {
         ("同bu", "同步"),
         ("tong步", "同步"),
         ("t步", "同步"),
-        ("音yue", "音乐"),
+        ("音yue", "音乐")
     ] {
         let candidates = entries
             .iter()
@@ -125,7 +125,7 @@ fn romanized_aliases_work_with_the_existing_host_ranker() {
                     candidate.title,
                     candidate.action_id,
                     candidate.actions,
-                    candidate.aliases,
+                    candidate.aliases
                 )
             })
             .collect::<Vec<_>>();
@@ -153,7 +153,7 @@ fn alternate_chinese_names_gain_their_own_romanization() {
         candidate.title,
         candidate.action_id,
         candidate.actions,
-        candidate.aliases,
+        candidate.aliases
     )];
     for query in ["音乐", "yinyue", "yy"] {
         assert_eq!(
@@ -183,7 +183,7 @@ fn localized_and_romanized_names_can_be_combined_in_one_query() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases,
+                candidate.aliases
             )
         })
         .collect::<Vec<_>>();
@@ -214,7 +214,7 @@ fn mixed_chinese_and_latin_names_match_without_storing_combinations() {
             candidate.title,
             candidate.action_id,
             candidate.actions,
-            candidate.aliases,
+            candidate.aliases
         )];
         assert_eq!(
             SearchEngine::new()
@@ -242,7 +242,7 @@ fn literal_mixed_name_keeps_its_exact_match() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases,
+                candidate.aliases
             )
         })
         .collect::<Vec<_>>();
@@ -267,7 +267,7 @@ fn literal_mixed_name_ranks_above_cross_name_matches() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases,
+                candidate.aliases
             )
         })
         .collect::<Vec<_>>();
@@ -298,7 +298,7 @@ fn mixed_query_preserves_exact_prefix_and_infix_order() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases,
+                candidate.aliases
             )
         })
         .collect::<Vec<_>>();
@@ -326,7 +326,7 @@ fn entry(index: usize, name: &str) -> ApplicationEntry {
         arguments_json: r#"{"kind":"structured","values":[]}"#.to_owned(),
         icon_key: "fallback".to_owned(),
         icon_source: None,
-        priority: 0,
+        priority: 0
     })
 }
 

@@ -4,7 +4,7 @@ use nanika_protocol::NavigationEffect;
 pub enum ExtensionInvocationOutcome {
     Completed {
         effect: NavigationEffect,
-        has_output: bool,
+        has_output: bool
     },
-    Cancelled,
+    Cancelled
 }

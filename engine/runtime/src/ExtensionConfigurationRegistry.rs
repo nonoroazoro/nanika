@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering}
 };
 
 use nanika_config::{ConfigStore, ExtensionConfigurationFile};
@@ -16,14 +16,14 @@ struct RegisteredConfiguration {
     revision: u64,
     contribution: ConfigurationContribution,
     values: BTreeMap<String, Value>,
-    effective: Option<BTreeMap<String, Value>>,
+    effective: Option<BTreeMap<String, Value>>
 }
 
 pub(crate) struct ExtensionConfigurationRegistry {
     _revision: AtomicU64,
     store: ConfigStore,
     registered: Mutex<HashMap<String, RegisteredConfiguration>>,
-    pub(crate) operations: Arc<crate::ExtensionOperationGate>,
+    pub(crate) operations: Arc<crate::ExtensionOperationGate>
 }
 
 impl ExtensionConfigurationRegistry {
@@ -32,14 +32,14 @@ impl ExtensionConfigurationRegistry {
             _revision: AtomicU64::new(0),
             store,
             registered: Mutex::new(HashMap::new()),
-            operations: Arc::new(crate::ExtensionOperationGate::default()),
+            operations: Arc::new(crate::ExtensionOperationGate::default())
         }
     }
 
     pub(crate) fn register(
         &self,
         extension_id: &str,
-        contribution: Option<&ConfigurationContribution>,
+        contribution: Option<&ConfigurationContribution>
     ) -> Result<ExtensionConfiguration, String> {
         let Some(contribution) = contribution else {
             return Ok(ExtensionConfiguration::default());
@@ -67,7 +67,7 @@ impl ExtensionConfigurationRegistry {
                 ));
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => contribution.defaults(),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.to_string())
         };
         let mut registered = self
             .registered
@@ -79,7 +79,7 @@ impl ExtensionConfigurationRegistry {
                     revision: self._revision.fetch_add(1, Ordering::Release) + 1,
                     contribution: contribution.clone(),
                     values: values.clone(),
-                    effective: None,
+                    effective: None
                 });
             }
             std::collections::hash_map::Entry::Occupied(_) => {
@@ -95,7 +95,7 @@ impl ExtensionConfigurationRegistry {
         self: &Arc<Self>,
         extension_id: &str,
         key: String,
-        value: Value,
+        value: Value
     ) -> Result<ConfigurationOperation, String> {
         let mut registered = self
             .registered
@@ -123,7 +123,7 @@ impl ExtensionConfigurationRegistry {
             key,
             value,
             persistence,
-            configuration: ExtensionConfiguration::new(values),
+            configuration: ExtensionConfiguration::new(values)
         })
     }
 
@@ -131,7 +131,7 @@ impl ExtensionConfigurationRegistry {
         &self,
         extension_id: &str,
         key: &str,
-        value: Value,
+        value: Value
     ) -> Result<(), String> {
         let (contribution, mut effective) = {
             let registered = self
@@ -179,7 +179,7 @@ impl ExtensionConfigurationRegistry {
     pub(crate) fn set_effective(
         &self,
         extension_id: &str,
-        configuration: Option<ExtensionConfiguration>,
+        configuration: Option<ExtensionConfiguration>
     ) {
         let mut registered = self
             .registered
@@ -195,7 +195,7 @@ impl ExtensionConfigurationRegistry {
     pub(crate) fn outcome(
         &self,
         extension_id: &str,
-        error: Option<String>,
+        error: Option<String>
     ) -> ConfigurationSaveOutcome {
         let registered = self
             .registered
@@ -219,7 +219,7 @@ impl ExtensionConfigurationRegistry {
             values: filter(&Self::_values(current)),
             saved: filter(&current.values),
             effective: current.effective.as_ref().map(filter),
-            error,
+            error
         }
     }
 
@@ -234,7 +234,7 @@ impl ExtensionConfigurationRegistry {
     /// Fresh processes receive durable intent, never a previous process's effective state.
     pub(crate) fn activation_configuration(
         &self,
-        extension_id: &str,
+        extension_id: &str
     ) -> nanika_protocol::ExtensionConfiguration {
         let registered = self
             .registered
@@ -288,7 +288,7 @@ impl ExtensionConfigurationRegistry {
                     contribution,
                     values,
                     saved,
-                    effective,
+                    effective
                 }
             })
             .collect::<Vec<_>>();

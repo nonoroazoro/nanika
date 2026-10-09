@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct OperationProgress {
     pub label: String,
     pub completed: u32,
-    pub total: Option<u32>,
+    pub total: Option<u32>
 }
 
 impl OperationProgress {
@@ -22,7 +22,7 @@ impl OperationProgress {
             None if self.completed != 0 => {
                 Err("indeterminate progress must not report completed units".to_owned())
             }
-            _ => Ok(()),
+            _ => Ok(())
         }
     }
 }

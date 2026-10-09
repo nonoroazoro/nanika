@@ -11,5 +11,5 @@ pub struct ListSection {
     pub offset: usize,
     /// Exact number of matches in the full section, including undelivered rows.
     pub total: usize,
-    pub items: Vec<ListItem>,
+    pub items: Vec<ListItem>
 }

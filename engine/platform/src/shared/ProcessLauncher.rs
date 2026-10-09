@@ -10,7 +10,7 @@ pub struct ProcessLauncher {
     commands: Option<SyncSender<LauncherCommand>>,
     thread: Option<JoinHandle<()>>,
     #[cfg(target_os = "macos")]
-    notifier: i32,
+    notifier: i32
 }
 
 impl ProcessLauncher {
@@ -34,13 +34,13 @@ impl ProcessLauncher {
             commands: Some(commands),
             thread: Some(thread),
             #[cfg(target_os = "macos")]
-            notifier,
+            notifier
         })
     }
 
     pub fn submit(
         &self,
-        descriptor: LaunchDescriptor,
+        descriptor: LaunchDescriptor
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
@@ -48,7 +48,7 @@ impl ProcessLauncher {
             .ok_or("process launcher is closed")?
             .send(LauncherCommand::Launch {
                 descriptor,
-                response,
+                response
             })
             .map_err(|_| "process launcher is closed".to_owned())?;
         if let Err(error) = self.wake() {
@@ -66,7 +66,7 @@ impl ProcessLauncher {
 
     pub fn reveal(
         &self,
-        path: String,
+        path: String
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let target = std::path::Path::new(&path);
         if !target.is_absolute() || path.len() > 32768 || path.contains('\0') {

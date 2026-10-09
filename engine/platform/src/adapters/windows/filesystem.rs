@@ -8,7 +8,7 @@ pub fn atomic_replace(temporary: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::GetLastError;
     use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW
     };
 
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(once(0)).collect();
@@ -17,7 +17,7 @@ pub fn atomic_replace(temporary: &Path, target: &Path) -> io::Result<()> {
         MoveFileExW(
             temporary.as_ptr(),
             target.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
         )
     } == 0
     {
@@ -42,7 +42,7 @@ pub fn companion_executable(current_executable: &Path, binary_name: &str) -> Pat
 pub fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
     use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT
     };
 
     let file = fs::OpenOptions::new()
@@ -53,7 +53,7 @@ pub fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "diagnostic log is not a regular file",
+            "diagnostic log is not a regular file"
         ));
     }
     Ok(file)

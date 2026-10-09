@@ -4,19 +4,19 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 
 use windows_sys::Win32::Foundation::{ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next
 };
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
-    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject
 };
 use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
 /// Owns the Job Object containing one extension child and its descendants.
 pub struct ExtensionProcessTree {
-    job: OwnedHandle,
+    job: OwnedHandle
 }
 
 impl ExtensionProcessTree {
@@ -48,7 +48,7 @@ impl ExtensionProcessTree {
                 (&raw mut accounting).cast(),
                 u32::try_from(std::mem::size_of_val(&accounting))
                     .expect("accounting size fits u32"),
-                std::ptr::null_mut(),
+                std::ptr::null_mut()
             )
         } == 0
         {
@@ -71,7 +71,7 @@ impl ExtensionProcessTree {
                 JobObjectExtendedLimitInformation,
                 (&raw const limits).cast(),
                 u32::try_from(std::mem::size_of_val(&limits))
-                    .expect("job limits size must fit in u32"),
+                    .expect("job limits size must fit in u32")
             )
         } == 0
         {
@@ -121,7 +121,7 @@ fn resume_initial_thread(process_id: u32) -> io::Result<()> {
             return if error.raw_os_error() == Some(ERROR_NO_MORE_FILES.cast_signed()) {
                 Err(io::Error::new(
                     io::ErrorKind::NotFound,
-                    "extension initial thread was not found",
+                    "extension initial thread was not found"
                 ))
             } else {
                 Err(error)

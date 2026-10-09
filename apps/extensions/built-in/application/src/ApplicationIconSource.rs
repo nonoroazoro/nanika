@@ -7,10 +7,10 @@ use std::path::PathBuf;
 pub(crate) enum ApplicationIconSource {
     File {
         path: PathBuf,
-        index: i32,
+        index: i32
     },
     WindowsApplication {
         app_user_model_id: String,
-        package_full_name: String,
-    },
+        package_full_name: String
+    }
 }

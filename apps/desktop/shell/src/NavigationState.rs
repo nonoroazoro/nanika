@@ -11,7 +11,7 @@ pub(crate) struct NavigationState {
     pub(crate) busy: bool,
     error: Option<String>,
     dismiss_count: u64,
-    next_route_id: u64,
+    next_route_id: u64
 }
 
 impl NavigationState {
@@ -21,7 +21,7 @@ impl NavigationState {
             current: Some(self.stack.last().cloned()),
             busy: self.busy,
             error: self.error.clone(),
-            dismiss_count: self.dismiss_count,
+            dismiss_count: self.dismiss_count
         }
     }
 
@@ -44,7 +44,7 @@ impl NavigationState {
     pub(crate) fn authorize_view(
         &self,
         route_id: u64,
-        revision: u64,
+        revision: u64
     ) -> Result<&ExtensionViewSnapshot, String> {
         let current = self.stack.last().ok_or("No extension view is open.")?;
         if current.route_id != route_id || current.revision != revision {
@@ -66,7 +66,7 @@ impl NavigationState {
     pub(crate) fn authorize_input(
         &self,
         request: &crate::ViewEventRequest,
-        menu_revision: Option<u64>,
+        menu_revision: Option<u64>
     ) -> Result<&ExtensionViewSnapshot, String> {
         let route = self.authorize_route(request.route_id)?;
         if menu_revision.is_some_and(|revision| revision != route.revision) {
@@ -103,7 +103,7 @@ impl NavigationState {
         extension_id: &str,
         instance_id: u64,
         generation: u64,
-        effect: NavigationEffect,
+        effect: NavigationEffect
     ) -> Result<(), String> {
         effect.validate()?;
         match effect {
@@ -117,7 +117,7 @@ impl NavigationState {
             NavigationEffect::Push {
                 view_id,
                 revision,
-                view,
+                view
             } => {
                 if self.stack.len() >= MAX_NAVIGATION_DEPTH {
                     return Err(format!(
@@ -139,7 +139,7 @@ impl NavigationState {
                     generation,
                     view_id,
                     revision,
-                    view: std::sync::Arc::from(view),
+                    view: std::sync::Arc::from(view)
                 });
             }
         }
@@ -154,8 +154,8 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             View::List { .. },
             ViewEvent::SearchChanged {
                 text,
-                minimum_items,
-            },
+                minimum_items
+            }
         ) => {
             nanika_protocol::validate_view_search_text(text).is_ok()
                 && minimum_items.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
@@ -164,16 +164,16 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             View::List { list },
             ViewEvent::SelectionChanged {
                 collection_id,
-                index,
-            },
+                index
+            }
         ) => collection_id == &list.collection_id && *index < list.total(),
         (
             View::List { list },
             ViewEvent::FilterChanged {
                 filter_id,
                 value,
-                minimum_items,
-            },
+                minimum_items
+            }
         ) => {
             minimum_items.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
                 && list.filter.as_ref().is_some_and(|filter| {
@@ -186,8 +186,8 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             ViewEvent::ListRangeChanged {
                 collection_id,
                 offset,
-                count,
-            },
+                count
+            }
         ) => {
             collection_id == &list.collection_id
                 && count.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
@@ -209,8 +209,8 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             ViewEvent::ActionInvoked {
                 item_id: Some(item_id),
                 action_id,
-                invocation,
-            },
+                invocation
+            }
         ) => list.item(item_id).is_some_and(|item| {
             item.actions
                 .iter()
@@ -221,13 +221,13 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
             ViewEvent::ActionInvoked {
                 item_id: None,
                 action_id,
-                invocation,
-            },
+                invocation
+            }
         ) => detail
             .actions
             .iter()
             .any(|action| &action.id == action_id && action.allows_invocation(*invocation)),
-        _ => false,
+        _ => false
     };
     if valid {
         Ok(())

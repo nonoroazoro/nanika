@@ -15,10 +15,10 @@ pub enum DetailContent {
         total_chunks: usize,
     },
     Files {
-        files: Vec<crate::ViewFile>,
+        files: Vec<crate::ViewFile>
     },
     Image {
         source: ImageSource,
-        alternative_text: String,
-    },
+        alternative_text: String
+    }
 }

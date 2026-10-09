@@ -11,7 +11,7 @@ const REQUEST_CAPACITY: usize = 400;
 pub(crate) struct IconProtocol {
     requests: async_channel::Sender<IconRequest>,
     packages: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, PathBuf>>>,
-    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>
 }
 
 impl IconProtocol {
@@ -31,7 +31,7 @@ impl IconProtocol {
                             .read()
                             .unwrap_or_else(|error| error.into_inner()),
                         &request.webview_label,
-                        &request.request,
+                        &request.request
                     ));
                 }
             })
@@ -39,7 +39,7 @@ impl IconProtocol {
         Ok(Self {
             requests,
             packages,
-            thread: std::sync::Mutex::new(Some(thread)),
+            thread: std::sync::Mutex::new(Some(thread))
         })
     }
 
@@ -67,12 +67,12 @@ impl IconProtocol {
         &self,
         webview_label: &str,
         request: Request<Vec<u8>>,
-        responder: tauri::UriSchemeResponder,
+        responder: tauri::UriSchemeResponder
     ) {
         let request = IconRequest {
             webview_label: webview_label.to_owned(),
             request,
-            responder,
+            responder
         };
         // Reject overload here; per-request async tasks would bypass the queue bound.
         match self.requests.try_send(request) {
@@ -80,11 +80,11 @@ impl IconProtocol {
             Err(async_channel::TrySendError::Full(request)) => request.responder.respond(response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "text/plain",
-                Vec::new(),
+                Vec::new()
             )),
             Err(async_channel::TrySendError::Closed(request)) => request.responder.respond(
-                response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", Vec::new()),
-            ),
+                response(StatusCode::INTERNAL_SERVER_ERROR, "text/plain", Vec::new())
+            )
         }
     }
 }
@@ -100,7 +100,7 @@ pub(crate) fn resolve_request(
     payload_root: &std::path::Path,
     packages: &std::collections::HashMap<String, PathBuf>,
     webview_label: &str,
-    request: &Request<Vec<u8>>,
+    request: &Request<Vec<u8>>
 ) -> Response<Vec<u8>> {
     if !matches!(webview_label, "launcher" | "settings") || request.method() != Method::GET {
         return response(StatusCode::FORBIDDEN, "text/plain", Vec::new());
@@ -125,8 +125,8 @@ pub(crate) fn resolve_request(
             None => None,
             Some(query) => match query.strip_prefix("sha256=") {
                 Some(hash) if nanika_protocol::is_valid_content_hash(hash) => Some(hash),
-                _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new()),
-            },
+                _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new())
+            }
         }
     } else {
         None
@@ -151,10 +151,10 @@ pub(crate) fn resolve_request(
         {
             (
                 cache_root.join("icons").join(extension_id),
-                format!("{key}/{file}"),
+                format!("{key}/{file}")
             )
         }
-        _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new()),
+        _ => return response(StatusCode::BAD_REQUEST, "text/plain", Vec::new())
     };
     let mut result = match nanika_platform::read_png_resource(&root.join(relative), &root) {
         Ok(bytes) => {
@@ -174,7 +174,7 @@ pub(crate) fn resolve_request(
                 Error::Dimensions { .. } | Error::Animation | Error::Decode(_) => {
                     StatusCode::UNPROCESSABLE_ENTITY
                 }
-                Error::Io(_) | Error::Cancelled => StatusCode::INTERNAL_SERVER_ERROR,
+                Error::Io(_) | Error::Cancelled => StatusCode::INTERNAL_SERVER_ERROR
             };
             response(status, "text/plain", Vec::new())
         }
@@ -183,7 +183,7 @@ pub(crate) fn resolve_request(
     if *source == "package" && fingerprint.is_none() {
         result.headers_mut().insert(
             "Cache-Control",
-            tauri::http::HeaderValue::from_static("no-store"),
+            tauri::http::HeaderValue::from_static("no-store")
         );
     }
     result

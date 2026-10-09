@@ -40,7 +40,7 @@ fn rejects_every_schema_object_change_without_rewriting_data() {
         "DROP INDEX entries_value",
         "CREATE INDEX obsolete ON entries(id)",
         "CREATE TRIGGER obsolete AFTER INSERT ON entries BEGIN SELECT 1; END",
-        "PRAGMA user_version=2",
+        "PRAGMA user_version=2"
     ] {
         let path = _path();
         let database = open(&path, SCHEMA).unwrap();
@@ -102,7 +102,7 @@ fn _cleanup(path: PathBuf) {
     for file in [
         path.clone(),
         path.with_extension("db-wal"),
-        path.with_extension("db-shm"),
+        path.with_extension("db-shm")
     ] {
         if file.exists() {
             std::fs::remove_file(file).unwrap();

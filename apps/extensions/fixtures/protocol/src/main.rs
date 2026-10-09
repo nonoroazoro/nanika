@@ -4,7 +4,7 @@ use std::io::{self, stdin, stdout};
 
 use nanika_protocol::{
     HostServiceRequest, HostServiceResponse, LaunchArguments, LaunchDescriptor, Message,
-    PROTOCOL_NAME, read_frame, write_frame,
+    PROTOCOL_NAME, read_frame, write_frame
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,8 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     &Message::Initialized {
                         request_id,
-                        protocol: PROTOCOL_NAME.to_owned(),
-                    },
+                        protocol: PROTOCOL_NAME.to_owned()
+                    }
                 )?;
                 if error_after_initialize {
                     write_frame(
@@ -107,8 +107,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &Message::Error {
                             request_id: None,
                             code: "background_failure".to_owned(),
-                            message: "fixture background operation failed".to_owned(),
-                        },
+                            message: "fixture background operation failed".to_owned()
+                        }
                     )?;
                 }
             }
@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 query,
-                incremental,
+                incremental
             } => {
                 wait_for_release(&arguments, &request_id)?;
                 if arguments.iter().any(|value| value == "--catalog-only") {
@@ -156,8 +156,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             replace: true,
                             complete: !incremental,
                             removed: Vec::new(),
-                            entries,
-                        },
+                            entries
+                        }
                     )?;
                     if incremental {
                         write_frame(
@@ -176,8 +176,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     vec![candidate("fixture.command", "Spoofed delta")]
                                 } else {
                                     Vec::new()
-                                },
-                            },
+                                }
+                            }
                         )?;
                     }
                     continue;
@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|index| {
                             candidate(
                                 &format!("entry-{index}"),
-                                &format!("{index:04} {}", "x".repeat(1500)),
+                                &format!("{index:04} {}", "x".repeat(1500))
                             )
                         })
                         .collect();
@@ -200,8 +200,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             complete: true,
                             replace: !incremental,
                             removed: Vec::new(),
-                            entries,
-                        },
+                            entries
+                        }
                     )?;
                     continue;
                 }
@@ -227,8 +227,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 complete: true,
                                 replace: !incremental,
                                 removed: Vec::new(),
-                                entries,
-                            },
+                                entries
+                            }
                         )?;
                     }
                     continue;
@@ -251,8 +251,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &Message::Error {
                             request_id: Some(request_id),
                             code: "fixture_query_failure".to_owned(),
-                            message: "fixture query failed with an internal cause".to_owned(),
-                        },
+                            message: "fixture query failed with an internal cause".to_owned()
+                        }
                     )?;
                     continue;
                 }
@@ -271,8 +271,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             complete: true,
                             replace: true,
                             removed: Vec::new(),
-                            entries: Vec::new(),
-                        },
+                            entries: Vec::new()
+                        }
                     )?;
                     continue;
                 }
@@ -285,8 +285,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             request_id: request_id.clone(),
                             generation,
                             complete: false,
-                            entries: vec![candidate("fixture.partial", "Partial")],
-                        },
+                            entries: vec![candidate("fixture.partial", "Partial")]
+                        }
                     )?;
                 }
                 write_frame(
@@ -317,18 +317,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             vec![candidate(
                                 "fixture.entry",
-                                if query.is_empty() { "Fixture" } else { &query },
+                                if query.is_empty() { "Fixture" } else { &query }
                             )]
-                        },
-                    },
+                        }
+                    }
                 )?;
                 if let Some((request_id, generation)) = deferred_refresh.take() {
                     write_frame(
                         &mut output,
                         &Message::Refreshed {
                             request_id,
-                            generation,
-                        },
+                            generation
+                        }
                     )?;
                 }
                 let exit_once = query == "fixture.exit-once"
@@ -350,7 +350,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 entry_id,
-                action_id,
+                action_id
             } => {
                 wait_for_release(&arguments, &request_id)?;
                 if let Some(marker) = &cancellation_invoke {
@@ -381,10 +381,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 descriptor: LaunchDescriptor::Program {
                                     program: "fixture-program".to_owned(),
                                     arguments: LaunchArguments::default(),
-                                    working_directory: None,
-                                },
-                            },
-                        },
+                                    working_directory: None
+                                }
+                            }
+                        }
                     )?;
                     match read_frame(&mut input)? {
                         Some(Message::HostResponse {
@@ -398,12 +398,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &Message::Error {
                                     request_id: Some(request_id),
                                     code,
-                                    message,
-                                },
+                                    message
+                                }
                             )?;
                             continue;
                         }
-                        _ => continue,
+                        _ => continue
                     }
                 }
                 let response = if entry_id == "fixture.view"
@@ -427,10 +427,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         value: "Fixture view".to_owned(),
                                     },
                                     metadata: Vec::new(),
-                                    actions: Vec::new(),
-                                },
-                            }),
-                        },
+                                    actions: Vec::new()
+                                }
+                            })
+                        }
                     }
                 } else if entry_id == "fixture.entry"
                     && (action_id == "fixture.run"
@@ -439,13 +439,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Message::Result {
                         request_id,
                         generation,
-                        effect: nanika_protocol::NavigationEffect::Dismiss,
+                        effect: nanika_protocol::NavigationEffect::Dismiss
                     }
                 } else {
                     Message::Error {
                         request_id: Some(request_id),
                         code: "unknown_action".to_owned(),
-                        message: "fixture entry or action does not exist".to_owned(),
+                        message: "fixture entry or action does not exist".to_owned()
                     }
                 };
                 write_frame(&mut output, &response)?;
@@ -471,10 +471,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 descriptor: LaunchDescriptor::Program {
                                     program: "fixture-program".into(),
                                     arguments: LaunchArguments::default(),
-                                    working_directory: None,
-                                },
-                            },
-                        },
+                                    working_directory: None
+                                }
+                            }
+                        }
                     )?;
                     match read_frame(&mut input)? {
                         Some(Message::HostResponse { .. }) => {}
@@ -484,12 +484,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &Message::Error {
                                     request_id: Some(request_id),
                                     code,
-                                    message,
-                                },
+                                    message
+                                }
                             )?;
                             continue;
                         }
-                        _ => continue,
+                        _ => continue
                     }
                 }
                 write_frame(
@@ -500,31 +500,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         view_id,
                         revision,
                         effect: nanika_protocol::NavigationEffect::None,
-                        view: None,
-                    },
+                        view: None
+                    }
                 )?;
             }
             Message::ViewClose {
                 request_id,
-                view_id,
+                view_id
             } => {
                 let response = if open_views.remove(&view_id) {
                     Message::ViewClosed {
                         request_id,
-                        view_id,
+                        view_id
                     }
                 } else {
                     Message::Error {
                         request_id: Some(request_id),
                         code: "unknown_view".to_owned(),
-                        message: "fixture view is not open".to_owned(),
+                        message: "fixture view is not open".to_owned()
                     }
                 };
                 write_frame(&mut output, &response)?;
             }
             Message::Cancel {
                 request_id,
-                generation,
+                generation
             } => {
                 if pending_patch.as_ref() == Some(&(request_id.clone(), generation)) {
                     pending_patch = None;
@@ -537,8 +537,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             complete: true,
                             replace: false,
                             removed: Vec::new(),
-                            entries: vec![candidate("fixture.entry", "Updated")],
-                        },
+                            entries: vec![candidate("fixture.entry", "Updated")]
+                        }
                     )?;
                 } else if pending_query.as_ref() == Some(&request_id) {
                     pending_query = None;
@@ -547,8 +547,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &Message::Error {
                             request_id: Some(request_id),
                             code: "cancelled".to_owned(),
-                            message: "superseded query cancelled".to_owned(),
-                        },
+                            message: "superseded query cancelled".to_owned()
+                        }
                     )?;
                 } else if pending_invoke.as_ref() == Some(&(request_id.clone(), generation)) {
                     pending_invoke = None;
@@ -556,13 +556,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Message::Result {
                             request_id,
                             generation,
-                            effect: nanika_protocol::NavigationEffect::Dismiss,
+                            effect: nanika_protocol::NavigationEffect::Dismiss
                         }
                     } else {
                         Message::Error {
                             request_id: Some(request_id),
                             code: "cancelled".to_owned(),
-                            message: "action cancelled".to_owned(),
+                            message: "action cancelled".to_owned()
                         }
                     };
                     if matches!(terminal, Message::Result { .. }) {
@@ -573,7 +573,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Message::Refresh {
                 request_id,
-                generation,
+                generation
             } => {
                 if arguments
                     .iter()
@@ -595,8 +595,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &Message::Error {
                             request_id: Some(request_id),
                             code: "refresh_failed".to_owned(),
-                            message: "fixture refresh failed".to_owned(),
-                        },
+                            message: "fixture refresh failed".to_owned()
+                        }
                     )?;
                     continue;
                 }
@@ -607,8 +607,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut output,
                     &Message::Refreshed {
                         request_id,
-                        generation,
-                    },
+                        generation
+                    }
                 )?;
                 if arguments.iter().any(|value| value == "--patch-query") {
                     write_frame(&mut output, &Message::CandidatesChanged)?;
@@ -624,9 +624,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 progress: nanika_protocol::OperationProgress {
                                     label: "Applying fixture settings".to_owned(),
                                     completed,
-                                    total: Some(2),
-                                },
-                            },
+                                    total: Some(2)
+                                }
+                            }
                         )?;
                     }
                 }
@@ -646,8 +646,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &Message::Error {
                             request_id: Some(request_id),
                             code: "configuration_failed".to_owned(),
-                            message: "fixture could not apply configuration".to_owned(),
-                        },
+                            message: "fixture could not apply configuration".to_owned()
+                        }
                     )?;
                     continue;
                 }
@@ -671,9 +671,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &Message::Error {
                     request_id: None,
                     code: "unsupported_message".to_owned(),
-                    message: "fixture received an unsupported message type".to_owned(),
-                },
-            )?,
+                    message: "fixture received an unsupported message type".to_owned()
+                }
+            )?
         }
         if let Some(request_id) = deferred_configuration.take() {
             write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
@@ -707,12 +707,12 @@ fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
         entry_id: entry_id.to_owned(),
         title: title.to_owned(),
         subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-            "Fixture".to_owned(),
+            "Fixture".to_owned()
         )),
         action_id: "fixture.run".to_owned(),
         actions: vec![action],
         aliases: vec!["fixture alias".to_owned()],
-        icon: None,
+        icon: None
     }
 }
 

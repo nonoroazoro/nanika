@@ -11,5 +11,5 @@ pub struct ConfigurationSaveOutcome {
     pub values: BTreeMap<String, Value>,
     pub saved: BTreeMap<String, Value>,
     pub effective: Option<BTreeMap<String, Value>>,
-    pub error: Option<String>,
+    pub error: Option<String>
 }

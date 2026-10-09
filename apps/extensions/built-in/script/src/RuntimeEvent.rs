@@ -5,10 +5,10 @@ pub(crate) enum RuntimeEvent {
     ProtocolClosed,
     ProtocolError(String),
     CatalogUpdated {
-        entry_ids: Vec<String>,
+        entry_ids: Vec<String>
     },
     ScanFinished {
         request_id: Option<String>,
-        result: Result<(), String>,
-    },
+        result: Result<(), String>
+    }
 }

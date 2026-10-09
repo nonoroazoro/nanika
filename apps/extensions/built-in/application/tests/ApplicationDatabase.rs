@@ -114,7 +114,7 @@ fn corrupt_application_table_fails_explicitly() {
         .query_row(
             "SELECT rootpage FROM sqlite_schema WHERE name = 'app_sources'",
             [],
-            |row| row.get::<_, i64>(0),
+            |row| row.get::<_, i64>(0)
         )
         .expect("application table root should load") as u64;
     drop(connection);
@@ -123,7 +123,7 @@ fn corrupt_application_table_fails_explicitly() {
         .open(&path)
         .expect("database should be writable");
     file.seek(std::io::SeekFrom::Start(
-        root_page.saturating_sub(1).saturating_mul(page_size),
+        root_page.saturating_sub(1).saturating_mul(page_size)
     ))
     .expect("table page should be seekable");
     file.write_all(&[0xff])
@@ -150,7 +150,7 @@ fn entry(entry_id: &str) -> ApplicationEntry {
             .expect("arguments should encode"),
         icon_key: "fallback".to_owned(),
         icon_source: None,
-        priority: 0,
+        priority: 0
     })
 }
 
@@ -180,7 +180,7 @@ fn table_is_strict(connection: &rusqlite::Connection, table: &str) -> bool {
         .query_row(
             "SELECT strict FROM pragma_table_list WHERE name = ?1",
             [table],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .expect("table strictness should load")
 }
@@ -195,7 +195,7 @@ fn native_icon_identity_round_trips_and_rejects_unknown_variants() {
     app.target_path = "Example.App_123456789abcd!Main".into();
     app.icon_source = Some(crate::ApplicationIconSource::WindowsApplication {
         app_user_model_id: app.target_path.clone(),
-        package_full_name: "Example.App_1.0.0.0_x64__123456789abcd".into(),
+        package_full_name: "Example.App_1.0.0.0_x64__123456789abcd".into()
     });
     database
         .commit_source("native:windows.packaged", &[app.clone()], &[])
@@ -205,7 +205,7 @@ fn native_icon_identity_round_trips_and_rejects_unknown_variants() {
     connection
         .execute(
             "UPDATE app_sources SET icon_source = ?1",
-            [r#"{"kind":"unknown"}"#],
+            [r#"{"kind":"unknown"}"#]
         )
         .unwrap();
     assert!(database.load_entries().is_err());

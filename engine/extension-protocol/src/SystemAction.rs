@@ -11,7 +11,7 @@ pub enum SystemAction {
     Restart,
     ShutDown,
     OpenTrash,
-    EmptyTrash,
+    EmptyTrash
 }
 
 impl SystemAction {
@@ -24,7 +24,7 @@ impl SystemAction {
             Self::Restart => "system.restart",
             Self::ShutDown => "system.shutdown",
             Self::OpenTrash => "system.trash.open",
-            Self::EmptyTrash => "system.trash.empty",
+            Self::EmptyTrash => "system.trash.empty"
         }
     }
 }

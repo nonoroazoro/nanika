@@ -6,7 +6,7 @@ use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 /// Keeps the diagnostic writer alive and flushes it during shutdown.
 pub struct Diagnostics {
-    _worker: WorkerGuard,
+    _worker: WorkerGuard
 }
 
 impl Diagnostics {
@@ -26,7 +26,7 @@ impl Diagnostics {
         tracing_subscriber::fmt()
             .with_ansi(false)
             .with_max_level(maximum_level(
-                std::env::var_os("NANIKA_DIAGNOSTICS").as_deref(),
+                std::env::var_os("NANIKA_DIAGNOSTICS").as_deref()
             ))
             .with_target(true)
             .with_writer(writer)

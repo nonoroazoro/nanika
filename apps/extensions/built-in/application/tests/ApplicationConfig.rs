@@ -9,7 +9,7 @@ fn parses_host_configuration() {
     let root = std::env::temp_dir().join("nanika-applications");
     let configuration = ExtensionConfiguration::new(BTreeMap::from([(
         "application.roots".to_owned(),
-        serde_json::json!([root.clone()]),
+        serde_json::json!([root.clone()])
     )]));
 
     let config = ApplicationConfig::from_configuration(&configuration)
@@ -23,7 +23,7 @@ fn parses_host_configuration() {
 fn rejects_relative_paths() {
     let configuration = ExtensionConfiguration::new(BTreeMap::from([(
         "application.roots".to_owned(),
-        serde_json::json!(["relative"]),
+        serde_json::json!(["relative"])
     )]));
 
     assert!(ApplicationConfig::from_configuration(&configuration).is_err());

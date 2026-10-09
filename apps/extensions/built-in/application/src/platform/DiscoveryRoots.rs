@@ -7,7 +7,7 @@ use crate::ApplicationError;
 #[derive(Default)]
 pub(crate) struct DiscoveryRoots {
     pub paths: Vec<PathBuf>,
-    pub failures: Vec<DiscoveryFailure>,
+    pub failures: Vec<DiscoveryFailure>
 }
 
 impl DiscoveryRoots {
@@ -17,8 +17,8 @@ impl DiscoveryRoots {
             Ok(None) => {}
             Err(error) => self.failures.push(DiscoveryFailure {
                 path: None,
-                message: format!("{source}: {error}"),
-            }),
+                message: format!("{source}: {error}")
+            })
         }
     }
 }

@@ -12,7 +12,7 @@ const SOURCE: &str = "native:windows.packaged";
 
 pub(in crate::platform) fn inventories(
     enabled: &std::collections::BTreeSet<String>,
-    cancelled: &mut dyn FnMut() -> bool,
+    cancelled: &mut dyn FnMut() -> bool
 ) -> Vec<DiscoveryInventory> {
     vec![DiscoveryInventory {
         key: SOURCE,
@@ -22,7 +22,7 @@ pub(in crate::platform) fn inventories(
             _read(cancelled)
         } else {
             Ok(Vec::new())
-        },
+        }
     }]
 }
 
@@ -60,9 +60,9 @@ fn _read(cancelled: &mut dyn FnMut() -> bool) -> Result<Vec<ApplicationEntry>, A
                     icon_key: String::new(),
                     icon_source: Some(ApplicationIconSource::WindowsApplication {
                         app_user_model_id: id,
-                        package_full_name: package_full_name.clone(),
+                        package_full_name: package_full_name.clone()
                     }),
-                    priority: 0,
+                    priority: 0
                 }));
             }
         }

@@ -5,5 +5,5 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListSelection {
     pub index: usize,
-    pub item: crate::ListItem,
+    pub item: crate::ListItem
 }

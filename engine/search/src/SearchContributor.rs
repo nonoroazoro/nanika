@@ -6,19 +6,19 @@ use std::sync::mpsc::SyncSender;
 pub struct SearchContributor {
     _extension_id: String,
     _instance_id: u64,
-    _commands: SyncSender<SearchCommand>,
+    _commands: SyncSender<SearchCommand>
 }
 
 impl SearchContributor {
     pub(crate) fn new(
         extension_id: String,
         instance_id: u64,
-        commands: SyncSender<SearchCommand>,
+        commands: SyncSender<SearchCommand>
     ) -> Self {
         Self {
             _extension_id: extension_id,
             _instance_id: instance_id,
-            _commands: commands,
+            _commands: commands
         }
     }
 
@@ -33,13 +33,13 @@ impl SearchContributor {
     pub fn set_extension_query_pending(
         &self,
         generation: u64,
-        pending: bool,
+        pending: bool
     ) -> Result<(), SearchQueueError> {
         self._send(SearchCommand::ExtensionQueryPending {
             generation,
             extension_id: self._extension_id.clone(),
             instance_id: self._instance_id,
-            pending,
+            pending
         })
     }
 
@@ -47,14 +47,14 @@ impl SearchContributor {
         &self,
         generation: u64,
         candidates: Vec<Candidate>,
-        complete: bool,
+        complete: bool
     ) -> Result<(), SearchQueueError> {
         self._send(SearchCommand::ExtensionSnapshot {
             complete,
             generation,
             extension_id: self._extension_id.clone(),
             instance_id: self._instance_id,
-            candidates,
+            candidates
         })
     }
 
@@ -63,7 +63,7 @@ impl SearchContributor {
         generation: u64,
         candidates: Vec<Candidate>,
         removed: Vec<String>,
-        complete: bool,
+        complete: bool
     ) -> Result<(), SearchQueueError> {
         self._send(SearchCommand::ExtensionDelta {
             complete,
@@ -71,19 +71,19 @@ impl SearchContributor {
             extension_id: self._extension_id.clone(),
             instance_id: self._instance_id,
             candidates,
-            removed,
+            removed
         })
     }
 
     /// Register immutable contributions once, outside the interactive query path.
     pub fn register_static_catalog(
         &self,
-        candidates: Vec<Candidate>,
+        candidates: Vec<Candidate>
     ) -> Result<(), SearchQueueError> {
         self._send(SearchCommand::RegisterStaticCatalog {
             extension_id: self._extension_id.clone(),
             instance_id: self._instance_id,
-            candidates,
+            candidates
         })
     }
 
@@ -92,7 +92,7 @@ impl SearchContributor {
         &self,
         replace: bool,
         candidates: Vec<Candidate>,
-        removed: Vec<String>,
+        removed: Vec<String>
     ) -> Result<(), SearchQueueError> {
         let (completion, receipt) = std::sync::mpsc::sync_channel(1);
         self._send(SearchCommand::CatalogCommit {
@@ -101,7 +101,7 @@ impl SearchContributor {
             replace,
             candidates,
             removed,
-            completion,
+            completion
         })?;
         receipt.recv().map_err(|_| SearchQueueError::Closed)?
     }
@@ -111,7 +111,7 @@ impl SearchContributor {
         self._send(SearchCommand::RemoveExtension {
             extension_id: self._extension_id.clone(),
             instance_id: self._instance_id,
-            completion,
+            completion
         })?;
         receipt.recv().map_err(|_| SearchQueueError::Closed)
     }

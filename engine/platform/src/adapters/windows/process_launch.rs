@@ -5,11 +5,11 @@ pub(crate) fn windows_application(value: &str) -> std::io::Result<()> {
     use std::path::Path;
 
     use windows_sys::Win32::System::Com::{
-        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize
     };
     use windows_sys::Win32::UI::Shell::{
         SEE_MASK_FLAG_NO_UI, SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
-        ShellExecuteExW,
+        ShellExecuteExW
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -24,13 +24,13 @@ pub(crate) fn windows_application(value: &str) -> std::io::Result<()> {
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Windows application must be an absolute .lnk, .exe, or .com path without NUL characters",
+            "Windows application must be an absolute .lnk, .exe, or .com path without NUL characters"
         ));
     }
     if !path.metadata()?.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Windows application is not a file",
+            "Windows application is not a file"
         ));
     }
     let path = std::path::absolute(path)?;
@@ -57,7 +57,7 @@ pub(crate) fn windows_application(value: &str) -> std::io::Result<()> {
     let initialized = unsafe {
         CoInitializeEx(
             std::ptr::null(),
-            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32
         )
     };
     if initialized < 0 {
@@ -105,7 +105,7 @@ pub(crate) fn shell_command(value: &str) -> Command {
 pub(crate) fn mac_application(_bundle_path: &str) -> std::io::Result<Command> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "macOS application launch is unsupported on this platform",
+        "macOS application launch is unsupported on this platform"
     ))
 }
 
@@ -114,13 +114,13 @@ pub(crate) fn windows_packaged_application(id: &str) -> std::io::Result<()> {
         Win32::{
             System::Com::{
                 CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-                CoUninitialize,
+                CoUninitialize
             },
             UI::Shell::{
-                AO_NOERRORUI, ApplicationActivationManager, IApplicationActivationManager,
-            },
+                AO_NOERRORUI, ApplicationActivationManager, IApplicationActivationManager
+            }
         },
-        core::PCWSTR,
+        core::PCWSTR
     };
     let id = super::application_identity::validate(id)?;
     unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }

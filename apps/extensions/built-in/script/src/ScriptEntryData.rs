@@ -4,5 +4,5 @@ use std::path::PathBuf;
 pub struct ScriptEntryData {
     pub id: String,
     pub title: String,
-    pub path: PathBuf,
+    pub path: PathBuf
 }

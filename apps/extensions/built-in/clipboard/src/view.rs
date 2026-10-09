@@ -3,7 +3,7 @@ use std::path::Path;
 use nanika_protocol::{
     Action, ActionStyle, ClipboardContent, DetailContent, DetailView, ImageSource, ListItem,
     ListLayout, ListSection, ListView, View, ViewFile, ViewFilter, ViewFilterOption, ViewItemIcon,
-    ViewMetadata,
+    ViewMetadata
 };
 
 use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
@@ -16,7 +16,7 @@ pub(crate) fn clipboard_view(
     selected: Option<&crate::ClipboardPreview>,
     selected_index: Option<usize>,
     total: usize,
-    collection_id: String,
+    collection_id: String
 ) -> Result<View, String> {
     let filtered = !state.query.trim().is_empty() || state.content_type != "all";
     let items = visible.iter().map(list_item).collect::<Result<_, _>>()?;
@@ -25,7 +25,7 @@ pub(crate) fn clipboard_view(
         title: None,
         offset: state.offset,
         total,
-        items,
+        items
     }];
     Ok(View::List {
         list: Box::new(ListView {
@@ -65,9 +65,9 @@ pub(crate) fn clipboard_view(
                     filter_option("text", "Text"),
                     filter_option("files", "Files"),
                     filter_option("images", "Images"),
-                ],
-            }),
-        }),
+                ]
+            })
+        })
     })
 }
 fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
@@ -79,9 +79,9 @@ fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
             "text" => ViewItemIcon::Text,
             "files" => ViewItemIcon::Files,
             "image" => ViewItemIcon::Image,
-            _ => return Err("invalid clipboard content kind".into()),
+            _ => return Err("invalid clipboard content kind".into())
         }),
-        actions: vec![clear_action(), copy_action()],
+        actions: vec![clear_action(), copy_action()]
     })
 }
 
@@ -113,10 +113,10 @@ fn detail_view(preview: &crate::ClipboardPreview, chunk: usize) -> Result<Detail
                                 .file_name()
                                 .and_then(|name| name.to_str())
                                 .unwrap_or(path),
-                            128,
-                        ),
+                            128
+                        )
                     })
-                    .collect(),
+                    .collect()
             },
             ClipboardContent::PngFile { .. } => {
                 if !nanika_protocol::is_valid_content_hash(&entry.entry_id) {
@@ -124,23 +124,23 @@ fn detail_view(preview: &crate::ClipboardPreview, chunk: usize) -> Result<Detail
                 }
                 DetailContent::Image {
                     source: ImageSource {
-                        path: format!("{}.png", entry.entry_id),
+                        path: format!("{}.png", entry.entry_id)
                     },
-                    alternative_text: crate::labels::display_label(&entry.title, 128),
+                    alternative_text: crate::labels::display_label(&entry.title, 128)
                 }
             }
         },
         metadata: vec![
             ViewMetadata {
                 title: "Content type".to_owned(),
-                value: content_type(entry).to_owned(),
+                value: content_type(entry).to_owned()
             },
             ViewMetadata {
                 title: "Size".to_owned(),
-                value: format_bytes(entry.byte_size),
+                value: format_bytes(entry.byte_size)
             },
         ],
-        actions: Vec::new(),
+        actions: Vec::new()
     })
 }
 
@@ -153,7 +153,7 @@ fn copy_action() -> Action {
         allow_default_execution: true,
         style: ActionStyle::Primary,
         enabled: true,
-        group: None,
+        group: None
     }
 }
 
@@ -166,14 +166,14 @@ fn clear_action() -> Action {
         allow_default_execution: false,
         style: ActionStyle::Destructive,
         enabled: true,
-        group: None,
+        group: None
     }
 }
 
 fn filter_option(value: &str, title: &str) -> ViewFilterOption {
     ViewFilterOption {
         value: value.to_owned(),
-        title: title.to_owned(),
+        title: title.to_owned()
     }
 }
 
@@ -181,7 +181,7 @@ fn content_type(entry: &ClipboardEntry) -> &'static str {
     match entry.content {
         ClipboardContent::Text { .. } => "Text",
         ClipboardContent::Files { .. } => "Files",
-        ClipboardContent::PngFile { .. } => "Image",
+        ClipboardContent::PngFile { .. } => "Image"
     }
 }
 
@@ -201,7 +201,7 @@ pub fn read_range(
     current: &View,
     collection_id: &str,
     offset: usize,
-    count: std::num::NonZeroU32,
+    count: std::num::NonZeroU32
 ) -> Result<(), String> {
     let View::List { list } = current else {
         return Err("Clipboard view is not a list.".into());

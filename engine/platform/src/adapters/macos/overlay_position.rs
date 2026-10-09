@@ -6,7 +6,7 @@ use crate::{OverlayPosition, PlatformError, centered_position};
 pub fn active_overlay_position(
     width_points: f32,
     height_points: f32,
-    current_scale_factor: f32,
+    current_scale_factor: f32
 ) -> Result<OverlayPosition, PlatformError> {
     let marker = MainThreadMarker::new().ok_or_else(|| {
         PlatformError::Message("active monitor placement requires the main thread".to_owned())
@@ -34,7 +34,7 @@ pub fn active_overlay_position(
         visible.origin.x + visible.size.width,
         primary_height - visible.origin.y,
         f64::from(width_points),
-        f64::from(height_points),
+        f64::from(height_points)
     );
     Ok(position.scaled(current_scale_factor))
 }

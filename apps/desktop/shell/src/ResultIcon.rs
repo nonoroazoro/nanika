@@ -5,5 +5,5 @@ use serde::Serialize;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum ResultIcon {
     Image { url: String },
-    Symbol { name: nanika_protocol::ActionIcon },
+    Symbol { name: nanika_protocol::ActionIcon }
 }

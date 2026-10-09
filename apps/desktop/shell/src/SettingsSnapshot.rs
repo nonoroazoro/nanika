@@ -9,7 +9,7 @@ pub(crate) struct SettingsSnapshot {
     pub(crate) version: &'static str,
     pub(crate) general: nanika_config::LauncherPreferences,
     pub(crate) general_sections: Vec<crate::GeneralSettingsSection>,
-    pub(crate) extensions: Vec<ExtensionSettings>,
+    pub(crate) extensions: Vec<ExtensionSettings>
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -20,7 +20,7 @@ pub(crate) struct ExtensionSettings {
     pub(crate) info: nanika_host::RuntimeExtensionInfo,
     pub(crate) icon_url: String,
     pub(crate) configuration: Option<nanika_host::RuntimeExtensionConfiguration>,
-    pub(crate) application: Option<SettingsApplicationUpdate>,
+    pub(crate) application: Option<SettingsApplicationUpdate>
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -29,7 +29,7 @@ pub(crate) struct ExtensionSettings {
 pub(crate) struct SaveSettingsRequest {
     pub(crate) extension_id: String,
     pub(crate) key: String,
-    pub(crate) value: serde_json::Value,
+    pub(crate) value: serde_json::Value
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -37,15 +37,15 @@ pub(crate) struct SaveSettingsRequest {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub(crate) enum SettingsSaveResult {
     Running {
-        progress: Option<nanika_protocol::OperationProgress>,
+        progress: Option<nanika_protocol::OperationProgress>
     },
     Completed {
         #[serde(flatten)]
-        outcome: nanika_host::ConfigurationSaveOutcome,
+        outcome: nanika_host::ConfigurationSaveOutcome
     },
     Failed {
-        error: String,
-    },
+        error: String
+    }
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -55,7 +55,7 @@ pub(crate) struct SettingsApplicationUpdate {
     pub(crate) request_id: u64,
     pub(crate) extension_id: String,
     pub(crate) key: String,
-    pub(crate) result: SettingsSaveResult,
+    pub(crate) result: SettingsSaveResult
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -66,26 +66,26 @@ pub(crate) enum SettingsEvent {
         #[serde(rename = "deliveryId")]
         delivery_id: u64,
         revision: u64,
-        extensions: Vec<crate::ExtensionLifecycle>,
+        extensions: Vec<crate::ExtensionLifecycle>
     },
     Application {
         update: SettingsApplicationUpdate,
         #[cfg_attr(feature = "typescript", ts(optional))]
         #[serde(rename = "deliveryId", skip_serializing_if = "Option::is_none")]
-        delivery_id: Option<u64>,
+        delivery_id: Option<u64>
     },
     Closed,
     WindowState {
-        maximized: bool,
+        maximized: bool
     },
-    ShortcutPressed,
+    ShortcutPressed
 }
 
 impl From<Result<nanika_host::ConfigurationSaveOutcome, String>> for SettingsSaveResult {
     fn from(result: Result<nanika_host::ConfigurationSaveOutcome, String>) -> Self {
         match result {
             Ok(outcome) => Self::Completed { outcome },
-            Err(error) => Self::Failed { error },
+            Err(error) => Self::Failed { error }
         }
     }
 }

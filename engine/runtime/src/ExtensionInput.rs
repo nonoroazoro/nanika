@@ -9,7 +9,7 @@ use nanika_protocol::{FrameError, Message, write_frame};
 pub(crate) struct ExtensionInput {
     pub(crate) requests: SyncSender<Message>,
     pub(crate) completions: Receiver<Result<(), FrameError>>,
-    _thread: JoinHandle<()>,
+    _thread: JoinHandle<()>
 }
 
 impl ExtensionInput {
@@ -33,7 +33,7 @@ impl ExtensionInput {
         Ok(Self {
             requests,
             completions,
-            _thread: thread,
+            _thread: thread
         })
     }
 

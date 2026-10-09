@@ -78,10 +78,10 @@ fn prepared_clipboard_input_survives_producer_removal_and_releases_its_budget() 
     let prepared = service
         .prepare(
             nanika_protocol::ClipboardContent::PngFile {
-                path: path.to_string_lossy().into(),
+                path: path.to_string_lossy().into()
             },
             Some(&root),
-            &mut || false,
+            &mut || false
         )
         .unwrap();
     std::fs::remove_file(&path).unwrap();
@@ -108,12 +108,12 @@ fn prepared_clipboard_input_survives_producer_removal_and_releases_its_budget() 
         service
             .prepare(
                 nanika_protocol::ClipboardContent::PngFile {
-                    path: path.to_string_lossy().into(),
+                    path: path.to_string_lossy().into()
                 },
                 Some(&root),
-                &mut || false,
+                &mut || false
             )
-            .unwrap(),
+            .unwrap()
     );
     drop(service);
     std::fs::remove_file(path).unwrap();
@@ -149,10 +149,10 @@ fn clipboard_rejects_truncated_pixels_and_terminal_chunks_before_native_admissio
     let prepared = service
         .prepare(
             nanika_protocol::ClipboardContent::PngFile {
-                path: path.to_string_lossy().into(),
+                path: path.to_string_lossy().into()
             },
             Some(&root),
-            &mut || false,
+            &mut || false
         )
         .unwrap();
     assert!(
@@ -213,7 +213,7 @@ fn cancellation_interrupts_png_decoding_and_releases_image_admission() {
     assert_eq!(checks, 4);
     let service = crate::ClipboardService::spawn().unwrap();
     let content = nanika_protocol::ClipboardContent::PngFile {
-        path: path.to_string_lossy().into(),
+        path: path.to_string_lossy().into()
     };
     let mut checks = 0;
     let error = service
@@ -227,7 +227,7 @@ fn cancellation_interrupts_png_decoding_and_releases_image_admission() {
     drop(
         service
             .prepare(content, Some(&root), &mut || false)
-            .unwrap(),
+            .unwrap()
     );
     drop(service);
     std::fs::remove_dir_all(root).unwrap();

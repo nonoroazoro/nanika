@@ -6,5 +6,5 @@ use serde::{Deserialize, Serialize};
 pub enum ActionStyle {
     Primary,
     Secondary,
-    Destructive,
+    Destructive
 }

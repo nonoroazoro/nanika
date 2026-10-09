@@ -15,7 +15,7 @@ pub(crate) struct SettingsApplications {
     next_delivery_id: u64,
     _configuration_revision: u64,
     _lifecycle_in_flight: Option<u64>,
-    _lifecycle_sent: u64,
+    _lifecycle_sent: u64
 }
 
 impl SettingsApplications {
@@ -52,7 +52,7 @@ impl SettingsApplications {
                         .unwrap_or_default()
                 )),
                 configuration: configurations.remove(&info.id),
-                info,
+                info
             })
             .collect::<Vec<_>>();
         if self.lifecycle == current {
@@ -75,7 +75,7 @@ impl SettingsApplications {
 
     pub(crate) fn record(
         &mut self,
-        update: SettingsApplicationUpdate,
+        update: SettingsApplicationUpdate
     ) -> Option<(Channel<SettingsEvent>, SettingsEvent)> {
         if self
             .latest
@@ -121,15 +121,15 @@ impl SettingsApplications {
                 channel,
                 SettingsEvent::Application {
                     update,
-                    delivery_id: None,
-                },
+                    delivery_id: None
+                }
             ))
         }
     }
 
     pub(crate) fn acknowledge(
         &mut self,
-        delivery_id: u64,
+        delivery_id: u64
     ) -> Option<(Channel<SettingsEvent>, SettingsEvent)> {
         if self._lifecycle_in_flight == Some(delivery_id) {
             self._lifecycle_in_flight = None;
@@ -156,8 +156,8 @@ impl SettingsApplications {
             SettingsEvent::Lifecycle {
                 delivery_id: self.next_delivery_id,
                 revision: self.lifecycle_revision,
-                extensions: self.lifecycle.clone(),
-            },
+                extensions: self.lifecycle.clone()
+            }
         ))
     }
 
@@ -186,8 +186,8 @@ impl SettingsApplications {
             channel,
             SettingsEvent::Application {
                 update,
-                delivery_id: self.in_flight,
-            },
+                delivery_id: self.in_flight
+            }
         ))
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore, ClipboardViewState,
+    ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore, ClipboardViewState
 };
 use nanika_protocol::ClipboardContent;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
     let path = root.join("clipboard.db");
     let config = ClipboardConfig {
         max_entries: None,
-        max_age_days: None,
+        max_age_days: None
     };
     let mut store = ClipboardStore::open(&path).unwrap();
     let database = ClipboardDatabase::open(&path).unwrap();
@@ -26,51 +26,51 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                     "a",
                     10,
                     ClipboardContent::Text {
-                        value: "needle Ä".into(),
-                    },
+                        value: "needle Ä".into()
+                    }
                 ),
                 (
                     "b",
                     10,
                     ClipboardContent::Files {
-                        paths: vec!["C:/needle.txt".into()],
-                    },
+                        paths: vec!["C:/needle.txt".into()]
+                    }
                 ),
                 (
                     "c",
                     8,
                     ClipboardContent::Text {
-                        value: "other".into(),
-                    },
+                        value: "other".into()
+                    }
                 ),
                 (
                     "a",
                     5,
                     ClipboardContent::Text {
-                        value: "other".into(),
-                    },
+                        value: "other".into()
+                    }
                 ),
                 (
                     "a",
                     20,
                     ClipboardContent::Text {
-                        value: "NEEDLE".into(),
-                    },
+                        value: "NEEDLE".into()
+                    }
                 ),
                 (
                     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     u64::MAX,
                     ClipboardContent::PngFile {
-                        path: format!("{}.png", "a".repeat(64)),
-                    },
+                        path: format!("{}.png", "a".repeat(64))
+                    }
                 ),
                 (
                     "b",
                     20,
                     ClipboardContent::Text {
-                        value: "needle ä".into(),
-                    },
-                ),
+                        value: "needle ä".into()
+                    }
+                )
             ] {
                 let reviewed = Arc::clone(&current.matching_ids);
                 let reviewed_values = (*reviewed).clone();
@@ -81,10 +81,10 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                             title: "Saved".into(),
                             content,
                             byte_size: 1,
-                            captured_at,
+                            captured_at
                         },
                         captured_at,
-                        &config,
+                        &config
                     )
                     .unwrap();
                 let next = store.present(current.state.clone(), None).unwrap();
@@ -115,8 +115,8 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                     100,
                     &ClipboardConfig {
                         max_entries: Some(1),
-                        max_age_days: None,
-                    },
+                        max_age_days: None
+                    }
                 )
                 .unwrap();
             current = store.present(current.state, None).unwrap();
@@ -131,16 +131,16 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                         entry_id: "expired".into(),
                         title: "needle".into(),
                         content: ClipboardContent::Text {
-                            value: "needle".into(),
+                            value: "needle".into()
                         },
                         byte_size: 6,
-                        captured_at: 0,
+                        captured_at: 0
                     },
                     100,
                     &ClipboardConfig {
                         max_entries: Some(1),
-                        max_age_days: None,
-                    },
+                        max_age_days: None
+                    }
                 )
                 .unwrap();
             current = store.present(current.state, None).unwrap();
@@ -167,16 +167,16 @@ fn unmatched_capture_and_removal_preserve_query_identity() {
                 entry_id: "unmatched".into(),
                 title: "other".into(),
                 content: ClipboardContent::Text {
-                    value: "other".into(),
+                    value: "other".into()
                 },
                 byte_size: 5,
-                captured_at: 1,
+                captured_at: 1
             },
             1,
             &ClipboardConfig {
                 max_entries: None,
-                max_age_days: None,
-            },
+                max_age_days: None
+            }
         )
         .unwrap();
     let after_capture = store
@@ -210,16 +210,16 @@ fn closing_a_view_releases_all_transient_query_and_preview_caches() {
                 entry_id: "entry".into(),
                 title: "Entry".into(),
                 content: ClipboardContent::Text {
-                    value: "Document".into(),
+                    value: "Document".into()
                 },
                 byte_size: 8,
-                captured_at: 1,
+                captured_at: 1
             },
             1,
             &ClipboardConfig {
                 max_entries: None,
-                max_age_days: None,
-            },
+                max_age_days: None
+            }
         )
         .unwrap();
     store

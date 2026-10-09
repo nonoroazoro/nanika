@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use nanika_extension_package::{
-    ConfigurationSchema, ConfigurationValueType, parse_extension_manifest,
+    ConfigurationSchema, ConfigurationValueType, parse_extension_manifest
 };
 
 #[test]
@@ -17,7 +17,7 @@ fn integer_multiple_of_is_anchored_at_zero() {
         max_items: None,
         items: None,
         properties: BTreeMap::new(),
-        required: Vec::new(),
+        required: Vec::new()
     };
 
     assert!(schema.validate_value(&serde_json::json!(2)).is_ok());
@@ -53,7 +53,7 @@ fn integer_values_must_fit_the_frontend_safe_integer_range() {
         max_items: None,
         items: None,
         properties: BTreeMap::new(),
-        required: Vec::new(),
+        required: Vec::new()
     };
 
     assert!(
@@ -110,14 +110,14 @@ fn manifest_rejects_integer_constraints_outside_the_frontend_safe_range() {
     for (field, value) in [
         ("minimum", serde_json::json!(-9_007_199_254_740_992_i64)),
         ("maximum", serde_json::json!(9_007_199_254_740_992_i64)),
-        ("multipleOf", serde_json::json!(9_007_199_254_740_992_u64)),
+        ("multipleOf", serde_json::json!(9_007_199_254_740_992_u64))
     ] {
         manifest["contributes"]["configuration"]["properties"]["test.limit"][field] = value;
         assert!(parse_extension_manifest(&manifest.to_string()).is_err());
         manifest["contributes"]["configuration"]["properties"]["test.limit"][field] = match field {
             "minimum" | "multipleOf" => serde_json::json!(1),
             "maximum" => serde_json::json!(9_007_199_254_740_991_i64),
-            _ => unreachable!(),
+            _ => unreachable!()
         };
     }
 }

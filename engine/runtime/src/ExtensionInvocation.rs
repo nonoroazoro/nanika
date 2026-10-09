@@ -9,5 +9,5 @@ pub(crate) struct ExtensionInvocation {
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
     pub(crate) query_context: String,
-    pub(crate) response: SyncSender<Result<ExtensionInvocationOutcome, String>>,
+    pub(crate) response: SyncSender<Result<ExtensionInvocationOutcome, String>>
 }

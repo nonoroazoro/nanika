@@ -5,7 +5,7 @@ pub(crate) struct EntryPriority {
     _entry_ids: Vec<String>,
     _pending: bool,
     _stopped: bool,
-    _retry_failed: bool,
+    _retry_failed: bool
 }
 
 impl EntryPriority {

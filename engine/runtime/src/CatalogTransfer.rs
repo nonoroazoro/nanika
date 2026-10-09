@@ -10,14 +10,14 @@ pub(crate) struct CatalogTransfer {
     _established: bool,
     _complete: bool,
     _entries: Vec<nanika_search::Candidate>,
-    _removed: Vec<String>,
+    _removed: Vec<String>
 }
 
 impl CatalogTransfer {
     pub(crate) fn accept(
         &mut self,
         extension_id: &str,
-        batch: CatalogBatch,
+        batch: CatalogBatch
     ) -> Result<bool, SupervisorError> {
         let invalid =
             || SupervisorError::UnexpectedMessage("catalog batches are out of sequence".into());
@@ -48,7 +48,7 @@ impl CatalogTransfer {
                 .any(|action| action.id == entry.action_id)
             {
                 return Err(SupervisorError::UnexpectedMessage(
-                    "candidate default action is not declared".into(),
+                    "candidate default action is not declared".into()
                 ));
             }
         }
@@ -63,11 +63,11 @@ impl CatalogTransfer {
     pub(crate) fn commit(
         &mut self,
         search: &nanika_search::SearchContributor,
-        contributions: Vec<nanika_protocol::Candidate>,
+        contributions: Vec<nanika_protocol::Candidate>
     ) -> Result<Option<u64>, SupervisorError> {
         if !self._complete {
             return Err(SupervisorError::UnexpectedMessage(
-                "incomplete catalog transaction".into(),
+                "incomplete catalog transaction".into()
             ));
         }
         let extension_id = search.extension_id();
@@ -85,7 +85,7 @@ impl CatalogTransfer {
         let committed = search.commit_catalog(
             self._replace,
             std::mem::take(&mut self._entries),
-            std::mem::take(&mut self._removed),
+            std::mem::take(&mut self._removed)
         );
         match committed {
             Err(nanika_search::SearchQueueError::Retired) => return Ok(None),

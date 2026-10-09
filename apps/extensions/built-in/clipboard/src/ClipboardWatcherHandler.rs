@@ -8,7 +8,7 @@ use crate::{ClipboardCaptureGate, ClipboardCommand};
 /// Minimal native watcher callback that never performs clipboard I/O.
 pub(crate) struct ClipboardWatcherHandler {
     pub(crate) commands: SyncSender<ClipboardCommand>,
-    pub(crate) capture_gate: Arc<Mutex<ClipboardCaptureGate>>,
+    pub(crate) capture_gate: Arc<Mutex<ClipboardCaptureGate>>
 }
 
 impl ClipboardHandler for ClipboardWatcherHandler {

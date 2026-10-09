@@ -146,7 +146,7 @@ pub fn publish_extension_snapshot(
     search: &nanika_search::SearchContributor,
     generation: u64,
     entries: Vec<nanika_protocol::Candidate>,
-    complete: bool,
+    complete: bool
 ) -> Result<(), nanika_search::SearchQueueError> {
     let extension_id = search.extension_id();
     tracing::debug!(
@@ -158,13 +158,13 @@ pub fn publish_extension_snapshot(
     search.publish_extension_snapshot(
         generation,
         search_candidates(extension_id, entries),
-        complete,
+        complete
     )
 }
 
 pub(crate) fn search_candidates(
     extension_id: &str,
-    entries: Vec<nanika_protocol::Candidate>,
+    entries: Vec<nanika_protocol::Candidate>
 ) -> Vec<nanika_search::Candidate> {
     entries
         .into_iter()
@@ -172,14 +172,14 @@ pub(crate) fn search_candidates(
             nanika_search::Candidate::new(
                 match entry.kind {
                     nanika_protocol::CandidateKind::Action => nanika_search::CandidateKind::Action,
-                    nanika_protocol::CandidateKind::View => nanika_search::CandidateKind::View,
+                    nanika_protocol::CandidateKind::View => nanika_search::CandidateKind::View
                 },
                 extension_id,
                 entry.entry_id,
                 entry.title,
                 entry.action_id,
                 entry.actions,
-                entry.aliases,
+                entry.aliases
             )
             .with_subtitle(entry.subtitle)
             .with_icon(entry.icon.filter(nanika_protocol::IconSource::is_valid))

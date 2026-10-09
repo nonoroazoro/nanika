@@ -4,5 +4,5 @@ pub struct ScanReport {
     pub discovered: usize,
     pub warnings: usize,
     pub complete: bool,
-    pub cancelled: bool,
+    pub cancelled: bool
 }

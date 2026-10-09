@@ -6,5 +6,5 @@ use std::path::PathBuf;
 pub struct ClipboardChange {
     pub removed: HashSet<String>,
     /// True means at least one committed row still references this path.
-    pub image_ownership: HashMap<PathBuf, bool>,
+    pub image_ownership: HashMap<PathBuf, bool>
 }

@@ -32,6 +32,6 @@ fn export() {
         .expect("export SettingsWriteResult");
     contracts::write(
         &config.out_dir().parent().unwrap().join("contracts.ts"),
-        &config,
+        &config
     );
 }

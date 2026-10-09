@@ -3,5 +3,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TextMatch {
     pub tier: u8,
-    pub score: u32,
+    pub score: u32
 }

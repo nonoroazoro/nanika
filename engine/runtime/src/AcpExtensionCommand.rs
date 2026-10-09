@@ -7,9 +7,9 @@ pub(crate) enum AcpExtensionCommand {
         prompt: String,
         cancelled: Arc<AtomicBool>,
         publish: Arc<dyn Fn(String) + Send + Sync>,
-        response: SyncSender<Result<agent_client_protocol::schema::v1::StopReason, String>>,
+        response: SyncSender<Result<agent_client_protocol::schema::v1::StopReason, String>>
     },
     Shutdown {
-        response: SyncSender<()>,
-    },
+        response: SyncSender<()>
+    }
 }

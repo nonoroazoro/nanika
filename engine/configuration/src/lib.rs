@@ -39,7 +39,7 @@ pub(crate) fn load_jsonc<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<
 pub(crate) fn save_jsonc<T: Serialize>(
     path: impl AsRef<Path>,
     value: &T,
-    backup: Option<&Path>,
+    backup: Option<&Path>
 ) -> Result<(), ConfigError> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
@@ -53,7 +53,7 @@ pub(crate) fn save_jsonc<T: Serialize>(
 pub(crate) fn save_text_atomic(
     path: impl AsRef<Path>,
     text: &str,
-    backup: Option<&Path>,
+    backup: Option<&Path>
 ) -> Result<(), ConfigError> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
@@ -95,7 +95,7 @@ pub(crate) fn save_text_atomic(
 fn backup_path(
     machine_root: &Path,
     config_root: Option<&Path>,
-    path: &Path,
+    path: &Path
 ) -> Result<PathBuf, ConfigError> {
     let relative = config_root
         .and_then(|root| relative_config_path(root, path).ok())
@@ -115,7 +115,7 @@ fn relative_config_path<'a>(root: &Path, path: &'a Path) -> Result<&'a Path, Con
             .any(|component| !matches!(component, std::path::Component::Normal(_)))
     {
         return Err(ConfigError::Invalid(
-            "configuration path is not a normalized file path".to_owned(),
+            "configuration path is not a normalized file path".to_owned()
         ));
     }
     Ok(relative)
@@ -174,7 +174,7 @@ fn validate_bootstrap(config: &BootstrapConfig) -> Result<(), ConfigError> {
         })
     {
         return Err(ConfigError::Invalid(
-            "config root must be a normalized absolute path".to_owned(),
+            "config root must be a normalized absolute path".to_owned()
         ));
     }
     Ok(())

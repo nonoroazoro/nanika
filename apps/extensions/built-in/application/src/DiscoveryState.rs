@@ -14,7 +14,7 @@ pub(crate) struct DiscoveryState {
     #[cfg(target_os = "macos")]
     preferred_languages: Option<Vec<String>>,
     #[cfg(windows)]
-    executables: HashMap<PathBuf, (u64, i128, bool)>,
+    executables: HashMap<PathBuf, (u64, i128, bool)>
 }
 
 impl DiscoveryState {
@@ -24,7 +24,7 @@ impl DiscoveryState {
             #[cfg(target_os = "macos")]
             preferred_languages: None,
             #[cfg(windows)]
-            executables: HashMap::new(),
+            executables: HashMap::new()
         }
     }
 
@@ -51,7 +51,7 @@ impl DiscoveryState {
     #[cfg(windows)]
     pub(crate) fn windows_executable_stamp(
         &mut self,
-        path: &Path,
+        path: &Path
     ) -> Result<Option<(u64, i128)>, ApplicationError> {
         let valid_extension = path
             .extension()
@@ -72,7 +72,7 @@ impl DiscoveryState {
                 metadata
                     .modified()
                     .ok()
-                    .map_or(0, crate::normalization::timestamp_nanos),
+                    .map_or(0, crate::normalization::timestamp_nanos)
             )
         };
         if let Some((_, _, valid)) =
@@ -103,7 +103,7 @@ fn validate_pe(path: &Path, length: u64) -> Result<bool, ApplicationError> {
         return Ok(false);
     }
     let pe_offset = u64::from(u32::from_le_bytes(
-        dos_header[60..64].try_into().unwrap_or_default(),
+        dos_header[60..64].try_into().unwrap_or_default()
     ));
     if pe_offset > length.saturating_sub(4) {
         return Ok(false);

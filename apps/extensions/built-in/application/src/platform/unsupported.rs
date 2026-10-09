@@ -5,10 +5,10 @@ use super::DiscoveryRoots;
 use crate::{ApplicationEntry, ApplicationError, DiscoveryState};
 
 pub(super) fn standard_roots(
-    _enabled: impl Fn(&str) -> bool,
+    _enabled: impl Fn(&str) -> bool
 ) -> Result<DiscoveryRoots, ApplicationError> {
     Err(ApplicationError::Configuration(
-        "application discovery is unsupported on this platform".to_owned(),
+        "application discovery is unsupported on this platform".to_owned()
     ))
 }
 
@@ -23,7 +23,7 @@ pub(super) fn is_application_bundle(_path: &Path) -> bool {
 pub(super) fn read_entry(
     _state: &mut DiscoveryState,
     _path: &Path,
-    _priority: usize,
+    _priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     Ok(None)
 }
@@ -31,10 +31,10 @@ pub(super) fn read_entry(
 pub(super) fn icon_cache_key(
     _source: &Path,
     _icon_index: i32,
-    _state: &mut DiscoveryState,
+    _state: &mut DiscoveryState
 ) -> Result<String, ApplicationError> {
     Err(ApplicationError::Configuration(
-        "application discovery is unsupported on this platform".to_owned(),
+        "application discovery is unsupported on this platform".to_owned()
     ))
 }
 
@@ -42,22 +42,22 @@ pub(super) fn extract_icons(
     _source: &Path,
     _icon_index: i32,
     _sizes: &[u32],
-    _target: &Path,
+    _target: &Path
 ) -> Result<(), ApplicationError> {
     Err(ApplicationError::Configuration(
-        "application discovery is unsupported on this platform".to_owned(),
+        "application discovery is unsupported on this platform".to_owned()
     ))
 }
 
 pub(super) fn shortcut_target(_path: &Path) -> Result<String, ApplicationError> {
     Err(ApplicationError::Configuration(
-        "Windows shortcut targets are unavailable on this platform".to_owned(),
+        "Windows shortcut targets are unavailable on this platform".to_owned()
     ))
 }
 
 pub(super) fn inventories(
     _enabled: &std::collections::BTreeSet<String>,
-    _cancelled: &mut dyn FnMut() -> bool,
+    _cancelled: &mut dyn FnMut() -> bool
 ) -> Vec<super::DiscoveryInventory> {
     Vec::new()
 }

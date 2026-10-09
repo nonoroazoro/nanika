@@ -17,7 +17,7 @@ pub fn report(message: &str) {
             std::ptr::null_mut(),
             message.as_ptr(),
             title.as_ptr(),
-            MB_OK | MB_ICONERROR,
+            MB_OK | MB_ICONERROR
         );
     }
 }

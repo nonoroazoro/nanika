@@ -2,7 +2,7 @@
 pub(crate) enum DiscoveryCommand {
     Refresh {
         request_id: Option<String>,
-        generation: u64,
+        generation: u64
     },
-    Shutdown,
+    Shutdown
 }

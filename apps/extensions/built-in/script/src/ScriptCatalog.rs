@@ -12,7 +12,7 @@ use crate::{ScriptConfig, ScriptEntry};
 #[derive(Clone, Default)]
 pub struct ScriptCatalog {
     _roots: BTreeMap<PathBuf, BTreeMap<String, ScriptEntry>>,
-    _entries: BTreeMap<String, ScriptEntry>,
+    _entries: BTreeMap<String, ScriptEntry>
 }
 
 impl ScriptCatalog {
@@ -28,7 +28,7 @@ impl ScriptCatalog {
         &mut self,
         config: &ScriptConfig,
         cancelled: impl Fn() -> bool,
-        mut publish: impl FnMut(Vec<ScriptEntry>, Vec<String>),
+        mut publish: impl FnMut(Vec<ScriptEntry>, Vec<String>)
     ) -> Result<(), String> {
         let roots = config
             .roots
@@ -79,7 +79,7 @@ impl ScriptCatalog {
     fn _replace_root(
         &mut self,
         root: &Path,
-        mut replacement: BTreeMap<String, ScriptEntry>,
+        mut replacement: BTreeMap<String, ScriptEntry>
     ) -> (Vec<ScriptEntry>, Vec<String>) {
         for (id, entry) in &mut replacement {
             if let Some(previous) = self._entries.get(id).filter(|previous| *previous == entry) {
@@ -118,7 +118,7 @@ impl ScriptCatalog {
 
 fn _scan_root(
     root: &Path,
-    cancelled: &impl Fn() -> bool,
+    cancelled: &impl Fn() -> bool
 ) -> Result<BTreeMap<String, ScriptEntry>, String> {
     let mut entries = BTreeMap::new();
     let metadata = root
@@ -175,7 +175,7 @@ fn _scan_root(
             .to_owned();
         entries.insert(
             id.clone(),
-            ScriptEntry::new(ScriptEntryData { id, title, path }),
+            ScriptEntry::new(ScriptEntryData { id, title, path })
         );
     }
     Ok(entries)

@@ -9,7 +9,7 @@ use crate::{ClipboardCommand, ClipboardWatcherHandler, ClipboardWorker};
 
 #[derive(Default)]
 pub(crate) struct ClipboardCaptureGate {
-    state: ClipboardCaptureGateState,
+    state: ClipboardCaptureGateState
 }
 
 // Native events can precede the response or expose intermediate revisions.
@@ -19,17 +19,17 @@ enum ClipboardCaptureGateState {
     #[default]
     Watching,
     Writing {
-        latest_observed_revision: Option<u64>,
+        latest_observed_revision: Option<u64>
     },
     AwaitingWriteRevision {
-        revision: u64,
-    },
+        revision: u64
+    }
 }
 
 impl ClipboardCaptureGate {
     fn begin_write(&mut self) {
         self.state = ClipboardCaptureGateState::Writing {
-            latest_observed_revision: None,
+            latest_observed_revision: None
         };
     }
 
@@ -37,13 +37,13 @@ impl ClipboardCaptureGate {
         match &mut self.state {
             ClipboardCaptureGateState::Watching => true,
             ClipboardCaptureGateState::Writing {
-                latest_observed_revision,
+                latest_observed_revision
             } => {
                 *latest_observed_revision = Some(revision);
                 false
             }
             ClipboardCaptureGateState::AwaitingWriteRevision {
-                revision: write_revision,
+                revision: write_revision
             } => {
                 if revision == *write_revision {
                     self.state = ClipboardCaptureGateState::Watching;
@@ -60,7 +60,7 @@ impl ClipboardCaptureGate {
 
     fn complete_write(&mut self, revision: u64) -> bool {
         let ClipboardCaptureGateState::Writing {
-            latest_observed_revision,
+            latest_observed_revision
         } = self.state
         else {
             self.state = ClipboardCaptureGateState::AwaitingWriteRevision { revision };
@@ -99,7 +99,7 @@ pub struct ClipboardMonitor {
     commands: SyncSender<ClipboardCommand>,
     capture_gate: Arc<Mutex<ClipboardCaptureGate>>,
     shutdown: Option<WatcherShutdown>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 impl ClipboardMonitor {
@@ -117,7 +117,7 @@ impl ClipboardMonitor {
                         let shutdown = watcher
                             .add_handler(ClipboardWatcherHandler {
                                 commands: handler_commands,
-                                capture_gate: handler_gate,
+                                capture_gate: handler_gate
                             })
                             .get_shutdown_channel();
                         let _ = ready.send(Ok(shutdown));
@@ -136,7 +136,7 @@ impl ClipboardMonitor {
             commands,
             capture_gate,
             shutdown: Some(shutdown),
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 

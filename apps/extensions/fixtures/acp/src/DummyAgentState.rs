@@ -7,7 +7,7 @@ use agent_client_protocol::schema::v1::SessionId;
 #[derive(Default)]
 pub(crate) struct DummyAgentState {
     next_session_id: AtomicU64,
-    sessions: Mutex<HashSet<SessionId>>,
+    sessions: Mutex<HashSet<SessionId>>
 }
 
 impl DummyAgentState {

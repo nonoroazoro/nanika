@@ -6,5 +6,5 @@ pub(crate) struct GeneralSettingsField {
     pub(crate) title: &'static str,
     pub(crate) description: Option<&'static str>,
     #[serde(skip)]
-    pub(crate) keywords: &'static str,
+    pub(crate) keywords: &'static str
 }

@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Result as SqlResult, params};
 
 use crate::{
     ExtensionKind, StoredExtension, StoredExtensionLoad, StoredUsage,
-    extension_id::is_valid_extension_id,
+    extension_id::is_valid_extension_id
 };
 
 const SCHEMA: &str = "
@@ -42,7 +42,7 @@ PRAGMA user_version=1;
 ";
 
 pub struct HostDatabase {
-    connection: Connection,
+    connection: Connection
 }
 
 impl HostDatabase {
@@ -53,7 +53,7 @@ impl HostDatabase {
 
     pub fn load_input_history(&self) -> SqlResult<Vec<String>> {
         let mut statement = self.connection.prepare(
-            "SELECT display_query FROM input_history ORDER BY last_used_at DESC, id DESC",
+            "SELECT display_query FROM input_history ORDER BY last_used_at DESC, id DESC"
         )?;
         let mut entries = statement
             .query_map([], |row| row.get(0))?
@@ -75,7 +75,7 @@ impl HostDatabase {
                     action_id: row.get(2)?,
                     query_context: row.get(3)?,
                     execution_count: row_u32(row, 4)?,
-                    last_executed_at: row_u64(row, 5)?,
+                    last_executed_at: row_u64(row, 5)?
                 })
             })?
             .collect()
@@ -89,7 +89,7 @@ impl HostDatabase {
         let mut statement = self.connection.prepare(
             "SELECT extension_id, kind, version, install_path, package_digest
              FROM extensions
-             ORDER BY extension_id",
+             ORDER BY extension_id"
         )?;
         let mut rows = statement.query([])?;
         let mut extensions = Vec::new();
@@ -108,11 +108,11 @@ impl HostDatabase {
                     Ok(()) => extensions.push(extension),
                     Err(error) => errors.push(format!(
                         "extension {identity} has invalid metadata ({error}) and was skipped"
-                    )),
+                    ))
                 },
                 Err(error) => errors.push(format!(
                     "extension {identity} has invalid metadata ({error}) and was skipped"
-                )),
+                ))
             }
         }
         Ok(StoredExtensionLoad { extensions, errors })
@@ -121,7 +121,7 @@ impl HostDatabase {
     pub fn extension(&self, extension_id: &str) -> SqlResult<Option<StoredExtension>> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
-                "invalid extension id".to_owned(),
+                "invalid extension id".to_owned()
             ));
         }
         self.connection
@@ -129,7 +129,7 @@ impl HostDatabase {
                 "SELECT extension_id, kind, version, install_path, package_digest
                  FROM extensions WHERE extension_id = ?1",
                 params![extension_id],
-                stored_extension_from_row,
+                stored_extension_from_row
             )
             .optional()
     }
@@ -139,11 +139,11 @@ impl HostDatabase {
         extension_id: &str,
         version: &str,
         install_path: &Path,
-        package_digest: &str,
+        package_digest: &str
     ) -> SqlResult<()> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
-                "invalid extension id".to_owned(),
+                "invalid extension id".to_owned()
             ));
         }
         self.connection.execute(
@@ -160,7 +160,7 @@ impl HostDatabase {
                 version,
                 install_path.to_string_lossy(),
                 package_digest,
-            ],
+            ]
         )?;
         Ok(())
     }
@@ -168,12 +168,12 @@ impl HostDatabase {
     pub fn remove_external_extension(&self, extension_id: &str) -> SqlResult<bool> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
-                "invalid extension id".to_owned(),
+                "invalid extension id".to_owned()
             ));
         }
         Ok(self.connection.execute(
             "DELETE FROM extensions WHERE extension_id = ?1 AND kind = 'external'",
-            params![extension_id],
+            params![extension_id]
         )? == 1)
     }
 
@@ -181,7 +181,7 @@ impl HostDatabase {
         &self,
         history_key: &str,
         display_query: &str,
-        used_at: u64,
+        used_at: u64
     ) -> SqlResult<()> {
         self.connection.execute(
             "INSERT INTO input_history (
@@ -194,7 +194,7 @@ impl HostDatabase {
                 history_key,
                 display_query,
                 i64::try_from(used_at).unwrap_or(i64::MAX),
-            ],
+            ]
         )?;
         Ok(())
     }
@@ -205,7 +205,7 @@ impl HostDatabase {
         entry_id: &str,
         action_id: &str,
         query_context: &str,
-        executed_at: u64,
+        executed_at: u64
     ) -> SqlResult<()> {
         self.connection.execute(
             "INSERT INTO usage_stats (
@@ -220,7 +220,7 @@ impl HostDatabase {
                 action_id,
                 query_context,
                 i64::try_from(executed_at).unwrap_or(i64::MAX),
-            ],
+            ]
         )?;
         Ok(())
     }
@@ -231,7 +231,7 @@ impl HostDatabase {
         display_query: &str,
         usage: &UsageKey,
         history_used_at: u64,
-        executed_at: u64,
+        executed_at: u64
     ) -> SqlResult<()> {
         let transaction = self.connection.unchecked_transaction()?;
         transaction.execute(
@@ -245,7 +245,7 @@ impl HostDatabase {
                 history_key,
                 display_query,
                 i64::try_from(history_used_at).unwrap_or(i64::MAX),
-            ],
+            ]
         )?;
         transaction.execute(
             "INSERT INTO usage_stats (
@@ -260,7 +260,7 @@ impl HostDatabase {
                 usage.action_id,
                 usage.query_context,
                 i64::try_from(executed_at).unwrap_or(i64::MAX),
-            ],
+            ]
         )?;
         transaction.commit()
     }
@@ -268,7 +268,7 @@ impl HostDatabase {
     pub(crate) fn register_builtin_extension(&self, extension_id: &str) -> SqlResult<()> {
         if !is_valid_extension_id(extension_id) {
             return Err(rusqlite::Error::InvalidParameterName(
-                "invalid extension id".to_owned(),
+                "invalid extension id".to_owned()
             ));
         }
         self.connection.execute(
@@ -281,7 +281,7 @@ impl HostDatabase {
                 install_path = NULL,
                 package_digest = NULL
              WHERE extensions.kind <> 'built-in'",
-            params![extension_id],
+            params![extension_id]
         )?;
         Ok(())
     }
@@ -302,7 +302,7 @@ fn stored_extension_from_row(row: &rusqlite::Row<'_>) -> SqlResult<StoredExtensi
         kind,
         version: row.get(2)?,
         install_path: row.get::<_, Option<String>>(3)?.map(Into::into),
-        package_digest: row.get(4)?,
+        package_digest: row.get(4)?
     })
 }
 
@@ -312,7 +312,7 @@ fn row_u32(row: &rusqlite::Row<'_>, index: usize) -> SqlResult<u32> {
         rusqlite::Error::FromSqlConversionFailure(
             index,
             rusqlite::types::Type::Integer,
-            Box::new(error),
+            Box::new(error)
         )
     })
 }
@@ -323,7 +323,7 @@ fn row_u64(row: &rusqlite::Row<'_>, index: usize) -> SqlResult<u64> {
         rusqlite::Error::FromSqlConversionFailure(
             index,
             rusqlite::types::Type::Integer,
-            Box::new(error),
+            Box::new(error)
         )
     })
 }
@@ -335,7 +335,7 @@ fn validate_stored_extension_metadata(extension: &StoredExtension) -> Result<(),
     let package_fields = [
         extension.version.is_some(),
         extension.install_path.is_some(),
-        extension.package_digest.is_some(),
+        extension.package_digest.is_some()
     ];
     if extension.kind == ExtensionKind::External && package_fields.contains(&false) {
         return Err("external extension package metadata is incomplete");

@@ -6,13 +6,13 @@ use std::thread::JoinHandle;
 
 use crate::constants::SEARCH_QUEUE_CAPACITY;
 use crate::{
-    CandidateCatalog, PendingSearchQuery, SearchCommand, SearchEngine, SearchHandle, UsageMap,
+    CandidateCatalog, PendingSearchQuery, SearchCommand, SearchEngine, SearchHandle, UsageMap
 };
 
 /// Named owner thread for aggregation, stale-generation rejection, and ranking.
 pub struct SearchOwner {
     handle: SearchHandle,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 impl SearchOwner {
@@ -55,8 +55,8 @@ impl SearchOwner {
                                 pending: &expected_extensions,
                                 latest: &owner_latest,
                                 notifier: &owner_notifier,
-                                next_generation: &owner_generation,
-                            },
+                                next_generation: &owner_generation
+                            }
                         );
                     }
                     match command {
@@ -64,7 +64,7 @@ impl SearchOwner {
                         SearchCommand::RegisterExtension {
                             extension_id,
                             instance_id,
-                            completion,
+                            completion
                         } => {
                             let result = match Arc::make_mut(&mut instances).entry(extension_id) {
                                 std::collections::hash_map::Entry::Vacant(entry) => {
@@ -81,7 +81,7 @@ impl SearchOwner {
                             generation: started,
                             extension_id,
                             instance_id,
-                            pending,
+                            pending
                         } if started == generation
                             && instances.get(&extension_id) == Some(&instance_id) =>
                         {
@@ -98,15 +98,15 @@ impl SearchOwner {
                                         pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
-                                        next_generation: &owner_generation,
-                                    },
+                                        next_generation: &owner_generation
+                                    }
                                 );
                             }
                         }
                         SearchCommand::RemoveExtension {
                             extension_id,
                             instance_id,
-                            completion,
+                            completion
                         } => {
                             if instances.get(&extension_id) != Some(&instance_id) {
                                 let _ = completion.send(());
@@ -128,8 +128,8 @@ impl SearchOwner {
                                         pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
-                                        next_generation: &owner_generation,
-                                    },
+                                        next_generation: &owner_generation
+                                    }
                                 );
                             }
                             let _ = completion.send(());
@@ -137,7 +137,7 @@ impl SearchOwner {
                         SearchCommand::RegisterStaticCatalog {
                             extension_id,
                             instance_id,
-                            candidates,
+                            candidates
                         } => {
                             if instances.get(&extension_id) != Some(&instance_id) {
                                 continue;
@@ -157,8 +157,8 @@ impl SearchOwner {
                                         pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
-                                        next_generation: &owner_generation,
-                                    },
+                                        next_generation: &owner_generation
+                                    }
                                 );
                             }
                         }
@@ -168,7 +168,7 @@ impl SearchOwner {
                             replace,
                             candidates,
                             removed,
-                            completion,
+                            completion
                         } => {
                             if instances.get(&extension_id) != Some(&instance_id) {
                                 let _ = completion.send(Err(crate::SearchQueueError::Retired));
@@ -199,8 +199,8 @@ impl SearchOwner {
                                         pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
-                                        next_generation: &owner_generation,
-                                    },
+                                        next_generation: &owner_generation
+                                    }
                                 );
                             }
                         }
@@ -209,7 +209,7 @@ impl SearchOwner {
                             generation: snapshot_generation,
                             extension_id,
                             instance_id,
-                            candidates,
+                            candidates
                         } if snapshot_generation == generation
                             && instances.get(&extension_id) == Some(&instance_id) =>
                         {
@@ -221,7 +221,7 @@ impl SearchOwner {
                             let catalog = CandidateCatalog::new(&extension_id, candidates);
                             let results_changed = extension_results.get(&extension_id).map_or_else(
                                 || catalog.iter().next().is_some(),
-                                |previous| previous != &catalog,
+                                |previous| previous != &catalog
                             );
                             extension_results.insert(extension_id, catalog);
                             if !results_changed {
@@ -232,8 +232,8 @@ impl SearchOwner {
                                         pending: &expected_extensions,
                                         latest: &owner_latest,
                                         notifier: &owner_notifier,
-                                        next_generation: &owner_generation,
-                                    },
+                                        next_generation: &owner_generation
+                                    }
                                 );
                                 continue;
                             }
@@ -248,8 +248,8 @@ impl SearchOwner {
                                     pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
-                                    next_generation: &owner_generation,
-                                },
+                                    next_generation: &owner_generation
+                                }
                             );
                         }
                         SearchCommand::ExtensionDelta {
@@ -258,7 +258,7 @@ impl SearchOwner {
                             extension_id,
                             instance_id,
                             candidates,
-                            removed,
+                            removed
                         } if update_generation == generation
                             && instances.get(&extension_id) == Some(&instance_id) =>
                         {
@@ -280,8 +280,8 @@ impl SearchOwner {
                                             pending: &expected_extensions,
                                             latest: &owner_latest,
                                             notifier: &owner_notifier,
-                                            next_generation: &owner_generation,
-                                        },
+                                            next_generation: &owner_generation
+                                        }
                                     );
                                 }
                                 continue;
@@ -298,8 +298,8 @@ impl SearchOwner {
                                     pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
-                                    next_generation: &owner_generation,
-                                },
+                                    next_generation: &owner_generation
+                                }
                             );
                         }
                         SearchCommand::ExtensionQueryPending { .. }
@@ -320,8 +320,8 @@ impl SearchOwner {
                                     pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
-                                    next_generation: &owner_generation,
-                                },
+                                    next_generation: &owner_generation
+                                }
                             );
                         }
                         SearchCommand::ResetPersistedUsage => {
@@ -337,11 +337,11 @@ impl SearchOwner {
                                     pending: &expected_extensions,
                                     latest: &owner_latest,
                                     notifier: &owner_notifier,
-                                    next_generation: &owner_generation,
-                                },
+                                    next_generation: &owner_generation
+                                }
                             );
                         }
-                        SearchCommand::Shutdown => break,
+                        SearchCommand::Shutdown => break
                     }
                 }
             })?;
@@ -351,9 +351,9 @@ impl SearchOwner {
                 pending_query,
                 latest,
                 next_generation,
-                notifier,
+                notifier
             },
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 
@@ -381,7 +381,7 @@ impl SearchOwner {
 }
 
 fn take_pending_query(
-    pending_query: &Mutex<Option<PendingSearchQuery>>,
+    pending_query: &Mutex<Option<PendingSearchQuery>>
 ) -> Option<PendingSearchQuery> {
     pending_query
         .lock()
@@ -401,10 +401,10 @@ fn publish_current(
     query: &str,
     catalogs: (
         &HashMap<String, CandidateCatalog>,
-        &HashMap<String, CandidateCatalog>,
+        &HashMap<String, CandidateCatalog>
     ),
     usage: &UsageMap,
-    publication: crate::SearchPublication<'_>,
+    publication: crate::SearchPublication<'_>
 ) {
     let candidates = catalogs
         .0
@@ -422,7 +422,7 @@ fn publish_current(
                 .next_generation
                 .load(std::sync::atomic::Ordering::Relaxed)
                 > generation
-        },
+        }
     ) else {
         return;
     };
@@ -449,7 +449,7 @@ fn _publish_progress(generation: u64, publication: crate::SearchPublication<'_>)
 
 fn _publish_snapshot(
     mut snapshot: crate::SearchSnapshot,
-    publication: crate::SearchPublication<'_>,
+    publication: crate::SearchPublication<'_>
 ) {
     snapshot.instances = Arc::clone(publication.instances);
     snapshot.pending_extensions = publication.pending.iter().cloned().collect();
@@ -487,7 +487,7 @@ fn _publish_snapshot(
                 previous.result_revision + 1
             }
         }
-        None => 1,
+        None => 1
     };
     *publication
         .latest

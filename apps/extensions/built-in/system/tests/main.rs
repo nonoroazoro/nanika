@@ -1,6 +1,6 @@
 use nanika_protocol::{
     COMMAND_EXECUTE_ACTION_ID, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
-    PROTOCOL_NAME, SystemAction, read_frame, write_frame,
+    PROTOCOL_NAME, SystemAction, read_frame, write_frame
 };
 use std::io::{BufReader, BufWriter};
 use std::process::{Command, Stdio};
@@ -19,8 +19,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
         &Message::Initialize {
             request_id: "init".into(),
             protocol: PROTOCOL_NAME.into(),
-            configuration: Default::default(),
-        },
+            configuration: Default::default()
+        }
     )
     .unwrap();
     assert!(matches!(
@@ -35,7 +35,7 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
         ("restart", SystemAction::Restart),
         ("shutdown", SystemAction::ShutDown),
         ("trash.open", SystemAction::OpenTrash),
-        ("trash.empty", SystemAction::EmptyTrash),
+        ("trash.empty", SystemAction::EmptyTrash)
     ] {
         write_frame(
             &mut input,
@@ -43,15 +43,15 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
                 request_id: "invoke".into(),
                 generation: 7,
                 entry_id: entry_id.into(),
-                action_id: COMMAND_EXECUTE_ACTION_ID.into(),
-            },
+                action_id: COMMAND_EXECUTE_ACTION_ID.into()
+            }
         )
         .unwrap();
         let Some(Message::HostRequest {
             request_id,
             parent_request_id,
             generation,
-            request,
+            request
         }) = read_frame(&mut output).unwrap()
         else {
             panic!("host request");
@@ -63,8 +63,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
             &mut input,
             &Message::Cancel {
                 request_id: "invoke".into(),
-                generation,
-            },
+                generation
+            }
         )
         .unwrap();
         write_frame(
@@ -73,8 +73,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
                 request_id: "second".into(),
                 generation,
                 entry_id: "lock".into(),
-                action_id: COMMAND_EXECUTE_ACTION_ID.into(),
-            },
+                action_id: COMMAND_EXECUTE_ACTION_ID.into()
+            }
         )
         .unwrap();
         assert!(
@@ -86,14 +86,14 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
                 request_id,
                 parent_request_id,
                 generation,
-                response: HostServiceResponse::SystemActionSubmitted,
-            },
+                response: HostServiceResponse::SystemActionSubmitted
+            }
         )
         .unwrap();
         let Some(Message::Result {
             request_id,
             generation,
-            effect,
+            effect
         }) = read_frame(&mut output).unwrap()
         else {
             panic!("result");
@@ -108,8 +108,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
             request_id: "failure".into(),
             generation: 8,
             entry_id: "sleep".into(),
-            action_id: COMMAND_EXECUTE_ACTION_ID.into(),
-        },
+            action_id: COMMAND_EXECUTE_ACTION_ID.into()
+        }
     )
     .unwrap();
     let Some(Message::HostRequest { request_id, .. }) = read_frame(&mut output).unwrap() else {
@@ -120,8 +120,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
         &Message::Error {
             request_id: Some(request_id),
             code: "denied".into(),
-            message: "OS permission denied".into(),
-        },
+            message: "OS permission denied".into()
+        }
     )
     .unwrap();
     assert!(
@@ -133,8 +133,8 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
             request_id: "unknown".into(),
             generation: 9,
             entry_id: "codex".into(),
-            action_id: COMMAND_EXECUTE_ACTION_ID.into(),
-        },
+            action_id: COMMAND_EXECUTE_ACTION_ID.into()
+        }
     )
     .unwrap();
     assert!(
@@ -159,8 +159,8 @@ fn mismatched_response_cannot_complete_an_action() {
         &Message::Initialize {
             request_id: "init".into(),
             protocol: PROTOCOL_NAME.into(),
-            configuration: Default::default(),
-        },
+            configuration: Default::default()
+        }
     )
     .unwrap();
     read_frame(&mut output).unwrap();
@@ -170,8 +170,8 @@ fn mismatched_response_cannot_complete_an_action() {
             request_id: "invoke".into(),
             generation: 7,
             entry_id: "lock".into(),
-            action_id: COMMAND_EXECUTE_ACTION_ID.into(),
-        },
+            action_id: COMMAND_EXECUTE_ACTION_ID.into()
+        }
     )
     .unwrap();
     let Some(Message::HostRequest {
@@ -188,8 +188,8 @@ fn mismatched_response_cannot_complete_an_action() {
             request_id,
             parent_request_id,
             generation: 8,
-            response: HostServiceResponse::SystemActionSubmitted,
-        },
+            response: HostServiceResponse::SystemActionSubmitted
+        }
     )
     .unwrap();
     assert!(read_frame(&mut output).unwrap().is_none());

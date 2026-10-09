@@ -4,7 +4,7 @@ pub fn normalize_icon_rgba(
     source: &[u8],
     source_width: u32,
     source_height: u32,
-    target_size: u32,
+    target_size: u32
 ) -> Option<Vec<u8>> {
     if source_width == 0
         || source_height == 0
@@ -27,14 +27,14 @@ pub fn normalize_icon_rgba(
         left,
         top,
         content_width,
-        content_height,
+        content_height
     );
     let resized = resize_rgba(
         &cropped,
         content_width,
         content_height,
         normalized_width,
-        normalized_height,
+        normalized_height
     );
     let offset_x = (target_size - normalized_width) / 2;
     let offset_y = (target_size - normalized_height) / 2;
@@ -84,7 +84,7 @@ fn crop_rgba(
     left: u32,
     top: u32,
     width: u32,
-    height: u32,
+    height: u32
 ) -> Vec<u8> {
     let mut cropped = vec![0_u8; width.saturating_mul(height).saturating_mul(4) as usize];
     for row in 0..height {

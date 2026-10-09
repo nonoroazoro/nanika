@@ -3,7 +3,7 @@ use crate::ProjectIdentity;
 pub const PRODUCT_NAME: &str = "Nanika";
 
 pub const PROJECT_IDENTITY: ProjectIdentity = ProjectIdentity {
-    bundle_id: "app.nanika",
+    bundle_id: "app.nanika"
 };
 
 pub const APPLICATION_EXTENSION_ID: &str = "com.nanika.application";
@@ -19,5 +19,5 @@ pub const BUILTIN_EXTENSION_IDS: [&str; 5] = [
     SCRIPT_EXTENSION_ID,
     CALCULATOR_EXTENSION_ID,
     CLIPBOARD_EXTENSION_ID,
-    SYSTEM_EXTENSION_ID,
+    SYSTEM_EXTENSION_ID
 ];

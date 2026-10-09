@@ -2,5 +2,5 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeViewInvalidation {
     pub instance_id: u64,
-    pub extension_id: String,
+    pub extension_id: String
 }

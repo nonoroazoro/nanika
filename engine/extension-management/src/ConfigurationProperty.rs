@@ -18,5 +18,5 @@ pub struct ConfigurationProperty {
     #[serde(default)]
     pub order: u16,
     #[serde(flatten)]
-    pub schema: ConfigurationSchema,
+    pub schema: ConfigurationSchema
 }

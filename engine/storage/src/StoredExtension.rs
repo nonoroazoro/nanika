@@ -9,5 +9,5 @@ pub struct StoredExtension {
     pub kind: ExtensionKind,
     pub version: Option<String>,
     pub install_path: Option<PathBuf>,
-    pub package_digest: Option<String>,
+    pub package_digest: Option<String>
 }

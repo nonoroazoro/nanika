@@ -12,7 +12,7 @@ fn exact_prefix_word_prefix_and_fuzzy_share_the_app_list_tiers() {
         ("cal", "Cal", 3),
         ("cal", "Calculator", 2),
         ("cal", "Open Calculator", 1),
-        ("clc", "Calculator", 0),
+        ("clc", "Calculator", 0)
     ] {
         let matched = matcher
             .score(&TextQuery::new(query), &[normalize_query(title)])

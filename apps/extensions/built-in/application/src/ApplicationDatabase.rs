@@ -24,18 +24,18 @@ PRAGMA user_version=1;
 
 /// Durable source-owned records. Winner selection belongs to the extension.
 pub struct ApplicationDatabase {
-    connection: Connection,
+    connection: Connection
 }
 
 impl ApplicationDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ApplicationError> {
         Ok(Self {
-            connection: nanika_database::open(path, SCHEMA)?,
+            connection: nanika_database::open(path, SCHEMA)?
         })
     }
 
     pub(crate) fn load_sources(
-        &self,
+        &self
     ) -> Result<HashMap<String, HashMap<String, ApplicationEntry>>, ApplicationError> {
         let mut statement = self.connection.prepare("SELECT source_id, entry_id, source_key, display_name, normalized_tokens, launch_kind, target_path, arguments_json, icon_key, icon_source, priority FROM app_sources")?;
         let rows = statement.query_map([], |row| {
@@ -57,12 +57,12 @@ impl ApplicationDatabase {
                             rusqlite::Error::FromSqlConversionFailure(
                                 9,
                                 rusqlite::types::Type::Text,
-                                Box::new(error),
+                                Box::new(error)
                             )
                         })
                     })
                     .transpose()?,
-                priority: row.get::<_, u32>(10)? as usize,
+                priority: row.get::<_, u32>(10)? as usize
             });
             Ok((row.get::<_, String>(0)?, entry))
         })?;
@@ -90,7 +90,7 @@ impl ApplicationDatabase {
         &mut self,
         root: &str,
         entries: &[ApplicationEntry],
-        removed: &[String],
+        removed: &[String]
     ) -> Result<(), ApplicationError> {
         if entries.is_empty() && removed.is_empty() {
             return Ok(());

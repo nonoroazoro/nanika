@@ -53,7 +53,7 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
     let modified = image.metadata().unwrap().modified().unwrap();
     entry.icon_source = Some(crate::ApplicationIconSource::File {
         path: root.join("Missing.app"),
-        index: 0,
+        index: 0
     });
     cache
         .prepare(&entry)
@@ -70,7 +70,7 @@ fn system_bundle_icons_generate_all_sizes_and_reuse_complete_caches() {
 
     entry.icon_source = Some(crate::ApplicationIconSource::File {
         path: source,
-        index: 0,
+        index: 0
     });
     cache
         .prepare(&entry)
@@ -132,7 +132,7 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
         <key>CFBundleExecutable</key><string>Sample</string>
         <key>CFBundleName</key><string>Sample</string>
         <key>CFBundleIconFile</key><string>Artwork</string>
-        </dict></plist>"#,
+        </dict></plist>"#
     )
     .unwrap();
     let entry = platform::read_entry(&mut DiscoveryState::new(), &bundle, 0)
@@ -156,14 +156,14 @@ fn bundle_icon_keys_follow_resources_and_custom_icons_without_requiring_an_icon_
         (resources.join("Artwork.icns"), b"original".as_slice()),
         (
             resources.join("Artwork.icns"),
-            b"replacement artwork".as_slice(),
+            b"replacement artwork".as_slice()
         ),
         (
             resources.join("Assets.car"),
-            b"compiled asset catalog".as_slice(),
+            b"compiled asset catalog".as_slice()
         ),
         (bundle.join("Icon\r"), b"custom icon".as_slice()),
-        (executable, b"replacement executable".as_slice()),
+        (executable, b"replacement executable".as_slice())
     ] {
         std::fs::write(path, content).unwrap();
         let next = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
@@ -188,7 +188,7 @@ fn fallback_icons_are_valid_png_files() {
     let mut entry = platform::read_entry(
         &mut DiscoveryState::new(),
         PathBuf::from("missing").as_path(),
-        0,
+        0
     )
     .unwrap_or(None)
     .unwrap_or_else(|| {
@@ -205,7 +205,7 @@ fn fallback_icons_are_valid_png_files() {
                 .expect("arguments should encode"),
             icon_key: String::new(),
             icon_source: None,
-            priority: 0,
+            priority: 0
         })
     });
     entry.icon_key = IconCache::key(&entry, &mut DiscoveryState::new()).unwrap();
@@ -307,9 +307,9 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
         icon_key: String::new(),
         icon_source: Some(crate::ApplicationIconSource::File {
             path: executable,
-            index: 0,
+            index: 0
         }),
-        priority: 0,
+        priority: 0
     });
     let cache = IconCache::new(root.join("icons"));
 
@@ -356,7 +356,7 @@ fn invalid_persisted_keys_cannot_write_outside_the_icon_cache() {
     let cache = IconCache::new(&cache_root);
     for key in [
         "../outside".to_owned(),
-        outside.to_string_lossy().into_owned(),
+        outside.to_string_lossy().into_owned()
     ] {
         for size in [32, 64, 128] {
             std::fs::write(outside.join(format!("{size}.png")), b"unrelated data").unwrap();
@@ -365,7 +365,7 @@ fn invalid_persisted_keys_cannot_write_outside_the_icon_cache() {
         let mut entry = test_entry(&key);
         entry.icon_source = Some(crate::ApplicationIconSource::File {
             path: root.join("Missing.exe"),
-            index: 0,
+            index: 0
         });
         let result = cache.prepare(&entry);
         let preserved = [32, 64, 128].into_iter().all(|size| {
@@ -404,6 +404,6 @@ fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
             .expect("arguments should encode"),
         icon_key: icon_key.to_owned(),
         icon_source: None,
-        priority: 0,
+        priority: 0
     })
 }

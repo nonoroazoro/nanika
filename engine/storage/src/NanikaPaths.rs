@@ -6,7 +6,7 @@ use nanika_foundation::PRODUCT_NAME;
 pub struct NanikaPaths {
     app_data_root: PathBuf,
     cache_root: PathBuf,
-    config_root: PathBuf,
+    config_root: PathBuf
 }
 
 impl NanikaPaths {
@@ -16,7 +16,7 @@ impl NanikaPaths {
             Self {
                 cache_root: paths.cache_root().to_path_buf(),
                 config_root: app_data_root.join("config"),
-                app_data_root,
+                app_data_root
             }
         })
     }
@@ -24,12 +24,12 @@ impl NanikaPaths {
     pub fn from_roots(
         app_data_root: impl Into<PathBuf>,
         cache_root: impl Into<PathBuf>,
-        config_root: impl Into<PathBuf>,
+        config_root: impl Into<PathBuf>
     ) -> Self {
         Self {
             app_data_root: app_data_root.into(),
             cache_root: cache_root.into(),
-            config_root: config_root.into(),
+            config_root: config_root.into()
         }
     }
 

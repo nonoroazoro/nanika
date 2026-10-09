@@ -13,7 +13,7 @@ fn search(criterion: &mut Criterion) {
         "中国银行",
         "网易云音乐",
         "长安",
-        "同步 Sync",
+        "同步 Sync"
     ];
     let entries = (0..2_000)
         .map(|index| {
@@ -24,7 +24,7 @@ fn search(criterion: &mut Criterion) {
                 format!("{} {index:04}", names[index % names.len()]),
                 "open",
                 vec![nanika_protocol::Action::primary("open", "Open")],
-                vec!["music".into()],
+                vec!["music".into()]
             )
         })
         .collect::<Vec<_>>();
@@ -34,7 +34,7 @@ fn search(criterion: &mut Criterion) {
         ("original", "音乐"),
         ("romanized", "yinyue"),
         ("mixed", "音yue"),
-        ("cross_alias", "音乐 music"),
+        ("cross_alias", "音乐 music")
     ] {
         assert!(!engine.query(query, &entries, &usage, 0).results.is_empty());
         criterion.bench_function(&format!("application_query_2000_{name}"), |bencher| {

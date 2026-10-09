@@ -13,7 +13,7 @@ fn metadata_preserves_launch_variants_and_rejects_ambiguous_or_oversized_input()
         format!(
             "\u{feff}# metadata\npath = \"{}\"\nargs = --profile \"Work Space\"\n",
             target.display()
-        ),
+        )
     )
     .unwrap();
     let (resolved, arguments) = identity(&executable, Some("--new-window".into()))
@@ -31,11 +31,11 @@ fn metadata_preserves_launch_variants_and_rejects_ambiguous_or_oversized_input()
         "cwd = C:\\",
         "ENV = value",
         "elevate = true",
-        "args = %OPTIONS%",
+        "args = %OPTIONS%"
     ] {
         std::fs::write(
             &metadata,
-            format!("path = \"{}\"\n{field}\n", target.display()),
+            format!("path = \"{}\"\n{field}\n", target.display())
         )
         .unwrap();
         assert_eq!(identity(&executable, None).unwrap().unwrap().0, executable);
@@ -43,14 +43,14 @@ fn metadata_preserves_launch_variants_and_rejects_ambiguous_or_oversized_input()
     for text in [
         "args = x".to_owned(),
         "path = a\npath = b".to_owned(),
-        "x".repeat(MAX_SHIM_BYTES as usize + 1),
+        "x".repeat(MAX_SHIM_BYTES as usize + 1)
     ] {
         std::fs::write(&metadata, text).unwrap();
         assert!(identity(&executable, None).is_err());
     }
     std::fs::write(
         &metadata,
-        format!("path = \"{}\"", root.join("missing.exe").display()),
+        format!("path = \"{}\"", root.join("missing.exe").display())
     )
     .unwrap();
     assert!(identity(&executable, None).unwrap().is_none());

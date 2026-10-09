@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{
     Arc, RwLock,
     atomic::{AtomicU64, Ordering},
-    mpsc::{self, Receiver, Sender, SyncSender},
+    mpsc::{self, Receiver, Sender, SyncSender}
 };
 use std::thread::JoinHandle;
 
@@ -13,14 +13,14 @@ pub(crate) struct ScriptDiscovery {
     _events: Option<Receiver<RuntimeEvent>>,
     _commands: Option<Sender<ScriptScan>>,
     _cancelled: Arc<AtomicU64>,
-    _thread: Option<JoinHandle<()>>,
+    _thread: Option<JoinHandle<()>>
 }
 
 impl ScriptDiscovery {
     pub(crate) fn spawn(
         events: Receiver<RuntimeEvent>,
         sender: SyncSender<RuntimeEvent>,
-        entries: Arc<RwLock<BTreeMap<String, ScriptEntry>>>,
+        entries: Arc<RwLock<BTreeMap<String, ScriptEntry>>>
     ) -> std::io::Result<Self> {
         let (commands, requests) = mpsc::channel::<ScriptScan>();
         let cancelled = Arc::new(AtomicU64::new(0));
@@ -79,7 +79,7 @@ impl ScriptDiscovery {
                     if sender
                         .send(RuntimeEvent::ScanFinished {
                             request_id: scan.request_id,
-                            result,
+                            result
                         })
                         .is_err()
                     {
@@ -91,7 +91,7 @@ impl ScriptDiscovery {
             _events: Some(events),
             _commands: Some(commands),
             _cancelled: cancelled,
-            _thread: Some(thread),
+            _thread: Some(thread)
         })
     }
 

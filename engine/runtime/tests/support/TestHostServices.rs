@@ -5,13 +5,13 @@ use nanika_host::HostServiceHandler;
 use nanika_protocol::{HostServiceRequest, HostServiceResponse};
 
 pub struct TestHostServices {
-    requests: Mutex<Vec<(String, HostServiceRequest)>>,
+    requests: Mutex<Vec<(String, HostServiceRequest)>>
 }
 
 impl TestHostServices {
     pub fn new() -> Self {
         Self {
-            requests: Mutex::new(Vec::new()),
+            requests: Mutex::new(Vec::new())
         }
     }
 
@@ -28,7 +28,7 @@ impl HostServiceHandler for TestHostServices {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        _: &mut dyn FnMut() -> nanika_host::ExtensionInterruption,
+        _: &mut dyn FnMut() -> nanika_host::ExtensionInterruption
     ) -> Result<nanika_host::PreparedHostService<'_>, String> {
         let extension_id = extension_id.to_owned();
         Ok(nanika_host::PreparedHostService::new(move || {

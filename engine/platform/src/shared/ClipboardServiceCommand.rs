@@ -5,7 +5,7 @@ use nanika_protocol::HostServiceResponse;
 pub(crate) enum ClipboardServiceCommand {
     Write {
         prepared: crate::PreparedClipboardWrite,
-        response: SyncSender<Result<HostServiceResponse, String>>,
+        response: SyncSender<Result<HostServiceResponse, String>>
     },
-    Shutdown,
+    Shutdown
 }

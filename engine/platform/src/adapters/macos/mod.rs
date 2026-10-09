@@ -29,7 +29,7 @@ pub fn product_paths(product_name: &str) -> Option<crate::ProductPaths> {
     let base = directories::BaseDirs::new()?;
     Some(crate::ProductPaths::new(
         base.data_local_dir().join(product_name),
-        base.cache_dir().join(product_name),
+        base.cache_dir().join(product_name)
     ))
 }
 
@@ -55,7 +55,7 @@ pub fn target_triple() -> &'static str {
     match std::env::consts::ARCH {
         "aarch64" => "aarch64-apple-darwin",
         "x86_64" => "x86_64-apple-darwin",
-        _ => "unsupported",
+        _ => "unsupported"
     }
 }
 

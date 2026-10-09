@@ -7,5 +7,5 @@ use crate::ViewFilterOption;
 pub struct ViewFilter {
     pub id: String,
     pub selected_value: String,
-    pub options: Vec<ViewFilterOption>,
+    pub options: Vec<ViewFilterOption>
 }

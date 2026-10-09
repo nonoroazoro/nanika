@@ -10,7 +10,7 @@ use crate::{
     ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
     ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionViewRequest,
     ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation,
-    SupervisorError,
+    SupervisorError
 };
 
 /// Dynamic collection of instance-bound workers queried by one host generation.
@@ -24,7 +24,7 @@ pub struct ExtensionSearchCoordinator {
     next_refresh_id: AtomicU64,
     notifier: ExtensionNotifier,
     host_services: Mutex<Option<Arc<dyn HostServiceHandler>>>,
-    view_invalidations: Arc<Mutex<HashMap<String, RuntimeViewInvalidation>>>,
+    view_invalidations: Arc<Mutex<HashMap<String, RuntimeViewInvalidation>>>
 }
 
 impl ExtensionSearchCoordinator {
@@ -34,14 +34,14 @@ impl ExtensionSearchCoordinator {
             _registration: Arc::new(crate::ExtensionOperationGate::default()),
             workers: RwLock::new(Vec::new()),
             _invocation_output: Arc::new(Mutex::new(
-                crate::ExtensionInvocationOutputState::default(),
+                crate::ExtensionInvocationOutputState::default()
             )),
             next_invocation_id: AtomicU64::new(1),
             next_view_request_id: AtomicU64::new(1),
             next_refresh_id: AtomicU64::new(1),
             notifier: Arc::new(Mutex::new(None)),
             host_services: Mutex::new(None),
-            view_invalidations: Arc::new(Mutex::new(HashMap::new())),
+            view_invalidations: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 
@@ -57,14 +57,14 @@ impl ExtensionSearchCoordinator {
         extension_id: impl Into<String>,
         runtime: impl Into<ExtensionRuntime>,
         search: SearchHandle,
-        contributions: ExtensionContributions,
+        contributions: ExtensionContributions
     ) -> std::io::Result<()> {
         self.register_with_configuration(
             extension_id,
             runtime,
             search,
             contributions,
-            nanika_protocol::ExtensionConfiguration::default(),
+            nanika_protocol::ExtensionConfiguration::default()
         )
     }
 
@@ -74,14 +74,14 @@ impl ExtensionSearchCoordinator {
         runtime: impl Into<ExtensionRuntime>,
         search: SearchHandle,
         contributions: ExtensionContributions,
-        configuration: nanika_protocol::ExtensionConfiguration,
+        configuration: nanika_protocol::ExtensionConfiguration
     ) -> std::io::Result<()> {
         self.register_source(
             extension_id,
             crate::ExtensionRuntimeSource::Started(Box::new(runtime.into())),
             search,
             contributions,
-            configuration,
+            configuration
         )
     }
 
@@ -91,7 +91,7 @@ impl ExtensionSearchCoordinator {
         source: crate::ExtensionRuntimeSource,
         search: SearchHandle,
         contributions: ExtensionContributions,
-        configuration: nanika_protocol::ExtensionConfiguration,
+        configuration: nanika_protocol::ExtensionConfiguration
     ) -> std::io::Result<()> {
         if self.closing.load(Ordering::Acquire) {
             return Err(std::io::Error::other("Extension admission is closed."));
@@ -104,7 +104,7 @@ impl ExtensionSearchCoordinator {
         if source.is_deferred() && contributions.root_search.is_some() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "dynamic Root Search requires startup activation",
+                "dynamic Root Search requires startup activation"
             ));
         }
         if self
@@ -114,7 +114,7 @@ impl ExtensionSearchCoordinator {
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
-                format!("extension search worker already exists: {extension_id}"),
+                format!("extension search worker already exists: {extension_id}")
             ));
         }
         let worker = Arc::new(ExtensionSearchWorker::spawn(
@@ -131,8 +131,8 @@ impl ExtensionSearchCoordinator {
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
                     .clone(),
-                view_invalidations: Arc::clone(&self.view_invalidations),
-            },
+                view_invalidations: Arc::clone(&self.view_invalidations)
+            }
         )?);
         let mut workers = self
             .workers
@@ -154,7 +154,7 @@ impl ExtensionSearchCoordinator {
             &mut *self
                 .view_invalidations
                 .lock()
-                .unwrap_or_else(|error| error.into_inner()),
+                .unwrap_or_else(|error| error.into_inner())
         )
         .into_values()
         .collect()
@@ -169,7 +169,7 @@ impl ExtensionSearchCoordinator {
     pub(crate) fn prepare_entries(
         &self,
         generation: u64,
-        visible: &[nanika_search::RankedCandidate],
+        visible: &[nanika_search::RankedCandidate]
     ) {
         for worker in &self._workers() {
             let entry_ids = visible
@@ -192,7 +192,7 @@ impl ExtensionSearchCoordinator {
     pub fn refresh(
         &self,
         extension_id: &str,
-        generation: u64,
+        generation: u64
     ) -> Result<Receiver<Result<(), String>>, SupervisorError> {
         let worker = self
             ._workers()
@@ -210,13 +210,13 @@ impl ExtensionSearchCoordinator {
     fn _refresh_worker(
         &self,
         worker: &ExtensionSearchWorker,
-        generation: u64,
+        generation: u64
     ) -> Result<Receiver<Result<(), String>>, SupervisorError> {
         let (completion, receiver) = mpsc::sync_channel(1);
         worker.refresh(crate::ExtensionRefresh {
             request_id: self.next_refresh_id.fetch_add(1, Ordering::Relaxed),
             generation,
-            completion,
+            completion
         })?;
         Ok(receiver)
     }
@@ -234,7 +234,7 @@ impl ExtensionSearchCoordinator {
             let id = worker.extension_id().to_owned();
             match self._refresh_worker(worker, generation) {
                 Ok(completion) => pending.push((id, completion)),
-                Err(error) => errors.push(format!("{id}: {error}")),
+                Err(error) => errors.push(format!("{id}: {error}"))
             }
         }
         for (id, completion) in pending {
@@ -276,7 +276,7 @@ impl ExtensionSearchCoordinator {
         generation: u64,
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
-        query_context: impl Into<String>,
+        query_context: impl Into<String>
     ) -> Result<Receiver<Result<ExtensionInvocationOutcome, String>>, SupervisorError> {
         let worker = self
             ._workers()
@@ -298,7 +298,7 @@ impl ExtensionSearchCoordinator {
             entry_id: entry_id.into(),
             action_id: action_id.into(),
             query_context: query_context.into(),
-            response,
+            response
         };
         worker.invoke(invocation)?;
         Ok(completion)
@@ -307,7 +307,7 @@ impl ExtensionSearchCoordinator {
     pub fn cancel_invocation(
         &self,
         extension_id: &str,
-        invocation_id: u64,
+        invocation_id: u64
     ) -> Result<(), SupervisorError> {
         let worker = self
             ._workers()
@@ -330,7 +330,7 @@ impl ExtensionSearchCoordinator {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64,
-        event: nanika_protocol::ViewEvent,
+        event: nanika_protocol::ViewEvent
     ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
         let worker = self
             ._workers()
@@ -352,7 +352,7 @@ impl ExtensionSearchCoordinator {
             generation,
             view_id: view_id.into(),
             revision,
-            kind: ExtensionViewRequestKind::Event(event),
+            kind: ExtensionViewRequestKind::Event(event)
         })?;
         Ok(receiver)
     }
@@ -363,7 +363,7 @@ impl ExtensionSearchCoordinator {
         instance_id: u64,
         generation: u64,
         view_id: impl Into<String>,
-        revision: u64,
+        revision: u64
     ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
         let worker = self
             ._workers()
@@ -385,7 +385,7 @@ impl ExtensionSearchCoordinator {
             generation,
             view_id: view_id.into(),
             revision,
-            kind: ExtensionViewRequestKind::Close,
+            kind: ExtensionViewRequestKind::Close
         })?;
         Ok(receiver)
     }
@@ -405,7 +405,7 @@ impl ExtensionSearchCoordinator {
         configuration: nanika_protocol::ExtensionConfiguration,
         require_live: bool,
         progress: crate::ConfigurationProgressHandler,
-        completion: mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>,
+        completion: mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>
     ) -> Result<bool, SupervisorError> {
         let Some(worker) = self
             ._workers()
@@ -423,10 +423,10 @@ impl ExtensionSearchCoordinator {
             configuration,
             require_live,
             progress,
-            completion,
+            completion
         ) {
             Ok(()) => Ok(true),
-            Err(error) => Err(error),
+            Err(error) => Err(error)
         }
     }
 

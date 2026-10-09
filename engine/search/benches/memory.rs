@@ -22,7 +22,7 @@ fn main() {
                     format!("Application {index}"),
                     "open",
                     vec![nanika_protocol::Action::primary("open", "Open")],
-                    Vec::new(),
+                    Vec::new()
                 )
             })
             .collect::<Vec<_>>();

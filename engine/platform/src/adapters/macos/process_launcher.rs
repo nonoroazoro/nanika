@@ -18,7 +18,7 @@ pub(crate) fn create_queue() -> io::Result<i32> {
         COMMAND_EVENT,
         libc::EVFILT_USER,
         libc::EV_ADD | libc::EV_CLEAR,
-        0,
+        0
     );
     if unsafe { libc::kevent(queue, &event, 1, ptr::null_mut(), 0, ptr::null()) } < 0 {
         let error = io::Error::last_os_error();
@@ -59,12 +59,12 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32) {
                 match receiver.try_recv() {
                     Ok(LauncherCommand::Launch {
                         descriptor,
-                        response,
+                        response
                     }) => {
                         let result = process_launch(&descriptor)
                             .and_then(|child| match child {
                                 Some(child) => register_child(queue, child, &mut children),
-                                None => Ok(()),
+                                None => Ok(())
                             })
                             .map(|()| HostServiceResponse::Launched)
                             .map_err(|error| error.to_string());
@@ -85,7 +85,7 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32) {
                     Err(TryRecvError::Disconnected) => {
                         break 'owner;
                     }
-                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Empty) => break
                 }
             }
         } else if filter == libc::EVFILT_PROC
@@ -103,14 +103,14 @@ pub(crate) fn run(receiver: Receiver<LauncherCommand>, queue: i32) {
 fn register_child(
     queue: i32,
     mut child: std::process::Child,
-    children: &mut HashMap<usize, std::process::Child>,
+    children: &mut HashMap<usize, std::process::Child>
 ) -> io::Result<()> {
     let identifier = child.id() as usize;
     let event = event(
         identifier,
         libc::EVFILT_PROC,
         libc::EV_ADD | libc::EV_ONESHOT,
-        libc::NOTE_EXIT,
+        libc::NOTE_EXIT
     );
     if unsafe { libc::kevent(queue, &event, 1, ptr::null_mut(), 0, ptr::null()) } < 0 {
         if child.try_wait()?.is_none() {
@@ -138,6 +138,6 @@ const fn event(ident: usize, filter: i16, flags: u16, fflags: u32) -> libc::keve
         flags,
         fflags,
         data: 0,
-        udata: ptr::null_mut(),
+        udata: ptr::null_mut()
     }
 }

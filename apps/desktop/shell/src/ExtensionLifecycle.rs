@@ -6,5 +6,5 @@ pub(crate) struct ExtensionLifecycle {
     #[serde(flatten)]
     pub(crate) info: nanika_host::RuntimeExtensionInfo,
     pub(crate) icon_url: String,
-    pub(crate) configuration: Option<nanika_host::RuntimeExtensionConfiguration>,
+    pub(crate) configuration: Option<nanika_host::RuntimeExtensionConfiguration>
 }

@@ -26,7 +26,7 @@ pub fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
     if !before.file_type().is_file() || before.file_type().is_symlink() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "diagnostic log is not a regular file",
+            "diagnostic log is not a regular file"
         ));
     }
     let file = fs::File::open(path)?;
@@ -34,7 +34,7 @@ pub fn open_regular_file(path: &Path) -> std::io::Result<fs::File> {
     if !same_file_identity(&before, &after) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "diagnostic log changed while it was opened",
+            "diagnostic log changed while it was opened"
         ));
     }
     Ok(file)

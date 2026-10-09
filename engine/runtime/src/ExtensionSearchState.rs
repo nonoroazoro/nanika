@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::{
     ExtensionConfigurationUpdate, ExtensionInvocation, ExtensionRefresh, ExtensionSearchQuery,
-    ExtensionViewRequest,
+    ExtensionViewRequest
 };
 
 #[derive(Debug, Default)]
@@ -26,5 +26,5 @@ pub(crate) struct ExtensionSearchState {
     pub(crate) configurations: VecDeque<ExtensionConfigurationUpdate>,
     pub(crate) configuration_pending: bool,
     pub(crate) refresh_pending: bool,
-    pub(crate) shutdown: Arc<AtomicBool>,
+    pub(crate) shutdown: Arc<AtomicBool>
 }

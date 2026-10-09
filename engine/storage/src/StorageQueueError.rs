@@ -2,7 +2,7 @@
 pub enum StorageQueueError {
     Closed,
     InvalidExtensionId,
-    Operation(String),
+    Operation(String)
 }
 
 impl std::fmt::Display for StorageQueueError {
@@ -10,7 +10,7 @@ impl std::fmt::Display for StorageQueueError {
         match self {
             Self::Closed => formatter.write_str("storage owner is closed"),
             Self::InvalidExtensionId => formatter.write_str("extension id is invalid"),
-            Self::Operation(message) => formatter.write_str(message),
+            Self::Operation(message) => formatter.write_str(message)
         }
     }
 }

@@ -8,7 +8,7 @@ const MIN_FUZZY_SCORE_PER_CHARACTER: u32 = 12;
 pub struct TextMatcher {
     _matcher: Matcher,
     _haystack_buffer: Vec<char>,
-    _query_buffer: Vec<char>,
+    _query_buffer: Vec<char>
 }
 
 impl TextMatcher {
@@ -16,7 +16,7 @@ impl TextMatcher {
         Self {
             _matcher: Matcher::new(Config::DEFAULT),
             _haystack_buffer: Vec::new(),
-            _query_buffer: Vec::new(),
+            _query_buffer: Vec::new()
         }
     }
 
@@ -32,7 +32,7 @@ impl TextMatcher {
                     value,
                     &mut self._matcher,
                     &mut self._haystack_buffer,
-                    &mut self._query_buffer,
+                    &mut self._query_buffer
                 )
             })
             .max();
@@ -64,7 +64,7 @@ fn _lexical_match_value(
     value: &str,
     matcher: &mut Matcher,
     haystack_buffer: &mut Vec<char>,
-    query_buffer: &mut Vec<char>,
+    query_buffer: &mut Vec<char>
 ) -> Option<(u8, u32)> {
     if value == query {
         return Some((3, u32::MAX));
@@ -81,7 +81,7 @@ fn _lexical_match_value(
     let score = matcher
         .fuzzy_match(
             Utf32Str::new(value, haystack_buffer),
-            Utf32Str::new(query, query_buffer),
+            Utf32Str::new(query, query_buffer)
         )
         .map(u32::from)?;
     (score >= _fuzzy_cutoff(query)).then_some((0, score))

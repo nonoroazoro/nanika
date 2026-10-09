@@ -8,5 +8,5 @@ pub struct DetailView {
     pub title: Option<String>,
     pub content: DetailContent,
     pub metadata: Vec<ViewMetadata>,
-    pub actions: Vec<Action>,
+    pub actions: Vec<Action>
 }

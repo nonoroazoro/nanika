@@ -7,7 +7,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct ExtensionConfiguration {
-    values: BTreeMap<String, Value>,
+    values: BTreeMap<String, Value>
 }
 
 impl ExtensionConfiguration {

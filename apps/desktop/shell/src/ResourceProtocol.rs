@@ -20,6 +20,6 @@ pub(crate) fn icon_url(extension_id: &str, icon: &nanika_protocol::IconSource) -
         nanika_protocol::IconSource::Cache(reference) => Some(url(&format!(
             "{extension_id}/cache/{}/128.png",
             reference.key()
-        ))),
+        )))
     }
 }

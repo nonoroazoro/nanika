@@ -1,6 +1,6 @@
 use std::sync::{
     Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, Ordering}
 };
 
 use nanika_protocol::{FrameError, Message};
@@ -16,10 +16,10 @@ pub(crate) struct ConfigurationReply {
         Option<(
             String,
             crate::ConfigurationProgressHandler,
-            ConfigurationCompletion,
-        )>,
+            ConfigurationCompletion
+        )>
     >,
-    closed: AtomicBool,
+    closed: AtomicBool
 }
 
 impl ConfigurationReply {
@@ -27,7 +27,7 @@ impl ConfigurationReply {
         &self,
         id: String,
         progress: crate::ConfigurationProgressHandler,
-        completion: ConfigurationCompletion,
+        completion: ConfigurationCompletion
     ) -> bool {
         let mut pending = self
             .pending
@@ -41,7 +41,7 @@ impl ConfigurationReply {
         if pending.is_some() {
             drop(pending);
             completion(Err(SupervisorError::UnexpectedMessage(
-                "configuration application is already pending".to_owned(),
+                "configuration application is already pending".to_owned()
             )));
             return false;
         }
@@ -74,7 +74,7 @@ impl ConfigurationReply {
         };
         if let Ok(Some(Message::ConfigurationProgress {
             request_id,
-            progress,
+            progress
         })) = frame
         {
             if request_id != id {
@@ -97,21 +97,21 @@ impl ConfigurationReply {
             Ok(Some(Message::Error {
                 request_id: Some(request_id),
                 code,
-                message,
+                message
             })) if request_id == id => (
                 Err(SupervisorError::UnexpectedMessage(format!(
                     "configuration failed: {code}: {message}"
                 ))),
-                true,
+                true
             ),
             Ok(None) => (Err(SupervisorError::ChannelClosed), false),
             Err(error) => (
                 Err(SupervisorError::UnexpectedMessage(format!(
                     "configuration transport failed: {error}"
                 ))),
-                false,
+                false
             ),
-            _ => return false,
+            _ => return false
         };
         let (_, _, completion) = pending.take().expect("pending configuration reply");
         drop(pending);

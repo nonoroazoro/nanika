@@ -13,7 +13,7 @@ const FORMAT_VERSION: u32 = 1;
 pub struct ExtensionRegistryConfig {
     pub format_version: u32,
     #[serde(default)]
-    pub extensions: BTreeMap<String, bool>,
+    pub extensions: BTreeMap<String, bool>
 }
 
 impl ExtensionRegistryConfig {
@@ -28,7 +28,7 @@ impl ExtensionRegistryConfig {
                 ));
             }
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Self::default()),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.to_string())
         }
         let config = store
             .load::<Self>(&path)
@@ -49,7 +49,7 @@ impl ExtensionRegistryConfig {
                 ));
             }
             Err(error) if error.kind() == ErrorKind::NotFound => None,
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.to_string())
         };
         if let Some(current) = current {
             let mut updates = self
@@ -61,7 +61,7 @@ impl ExtensionRegistryConfig {
                 .map(|(extension_id, enabled)| {
                     (
                         extension_id.clone(),
-                        Some(serde_json::Value::Bool(*enabled)),
+                        Some(serde_json::Value::Bool(*enabled))
                     )
                 })
                 .collect::<Vec<_>>();
@@ -70,7 +70,7 @@ impl ExtensionRegistryConfig {
                     .extensions
                     .keys()
                     .filter(|extension_id| !self.extensions.contains_key(*extension_id))
-                    .map(|extension_id| (extension_id.clone(), None)),
+                    .map(|extension_id| (extension_id.clone(), None))
             );
             store
                 .update_object::<Self>(&path, "extensions", updates, Self::validate)
@@ -83,15 +83,15 @@ impl ExtensionRegistryConfig {
                     [
                         (
                             "formatVersion".to_owned(),
-                            serde_json::Value::from(self.format_version),
+                            serde_json::Value::from(self.format_version)
                         ),
                         (
                             "extensions".to_owned(),
                             serde_json::to_value(&self.extensions)
-                                .map_err(|error| error.to_string())?,
-                        ),
+                                .map_err(|error| error.to_string())?
+                        )
                     ],
-                    Self::validate,
+                    Self::validate
                 )
                 .map(|_| ())
                 .map_err(|error| error.to_string())
@@ -132,7 +132,7 @@ impl Default for ExtensionRegistryConfig {
     fn default() -> Self {
         Self {
             format_version: FORMAT_VERSION,
-            extensions: BTreeMap::new(),
+            extensions: BTreeMap::new()
         }
     }
 }

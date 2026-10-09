@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, PROTOCOL_NAME, read_frame,
-    write_frame,
+    write_frame
 };
 
 #[test]
@@ -23,8 +23,8 @@ fn calculator_process_contributes_and_copies_through_the_host() {
         &Message::Initialize {
             request_id: "initialize".to_owned(),
             protocol: PROTOCOL_NAME.to_owned(),
-            configuration: Default::default(),
-        },
+            configuration: Default::default()
+        }
     )
     .expect("initialize should write");
     assert!(matches!(
@@ -37,8 +37,8 @@ fn calculator_process_contributes_and_copies_through_the_host() {
             incremental: false,
             request_id: "query".to_owned(),
             generation: 1,
-            query: "6 * 7".to_owned(),
-        },
+            query: "6 * 7".to_owned()
+        }
     )
     .expect("query should write");
     let Some(Message::Snapshot { entries, .. }) = read_frame(&mut output).expect("query response")
@@ -52,8 +52,8 @@ fn calculator_process_contributes_and_copies_through_the_host() {
             request_id: "invoke".to_owned(),
             generation: 1,
             entry_id: entry.entry_id,
-            action_id: entry.action_id,
-        },
+            action_id: entry.action_id
+        }
     )
     .expect("invoke should write");
     let Some(Message::HostRequest {
@@ -62,8 +62,8 @@ fn calculator_process_contributes_and_copies_through_the_host() {
         generation,
         request:
             HostServiceRequest::WriteClipboard {
-                content: ClipboardContent::Text { value },
-            },
+                content: ClipboardContent::Text { value }
+            }
     }) = read_frame(&mut output).expect("host request")
     else {
         panic!("calculator should request a clipboard write");
@@ -75,8 +75,8 @@ fn calculator_process_contributes_and_copies_through_the_host() {
             request_id,
             parent_request_id,
             generation,
-            response: HostServiceResponse::ClipboardWritten { revision: 1 },
-        },
+            response: HostServiceResponse::ClipboardWritten { revision: 1 }
+        }
     )
     .expect("host response should write");
     assert!(matches!(
@@ -112,8 +112,8 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
             &Message::Initialize {
                 request_id: "init".to_owned(),
                 protocol: PROTOCOL_NAME.to_owned(),
-                configuration: Default::default(),
-            },
+                configuration: Default::default()
+            }
         )
         .unwrap();
         receiver
@@ -125,8 +125,8 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
                 incremental: false,
                 request_id: "slow".to_owned(),
                 generation: 1,
-                query: "100000!".to_owned(),
-            },
+                query: "100000!".to_owned()
+            }
         )
         .unwrap();
         // Test-only observation interval verifies cancellation interrupts active work.
@@ -137,8 +137,8 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
             &mut input,
             &Message::Cancel {
                 request_id: "slow".to_owned(),
-                generation: 1,
-            },
+                generation: 1
+            }
         )
         .unwrap();
         write_frame(
@@ -147,8 +147,8 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
                 incremental: false,
                 request_id: "latest".to_owned(),
                 generation: 2,
-                query: "1+1".to_owned(),
-            },
+                query: "1+1".to_owned()
+            }
         )
         .unwrap();
         let cancelled = receiver

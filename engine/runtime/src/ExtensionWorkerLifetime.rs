@@ -5,7 +5,7 @@ use crate::{ExtensionNotifier, ExtensionSearchState};
 /// Wake admission waiters even when initialization fails or the worker panics.
 pub(crate) struct ExtensionWorkerLifetime {
     pub(crate) state: Arc<(Mutex<ExtensionSearchState>, Condvar)>,
-    pub(crate) notifier: ExtensionNotifier,
+    pub(crate) notifier: ExtensionNotifier
 }
 
 impl Drop for ExtensionWorkerLifetime {
@@ -25,7 +25,7 @@ impl Drop for ExtensionWorkerLifetime {
                 state.invocations.drain(..).collect::<Vec<_>>(),
                 state.view_events.drain(..).collect::<Vec<_>>(),
                 state.configurations.drain(..).collect::<Vec<_>>(),
-                state.refreshes.drain(..).collect::<Vec<_>>(),
+                state.refreshes.drain(..).collect::<Vec<_>>()
             );
             changed.notify_all();
             pending
@@ -37,17 +37,17 @@ impl Drop for ExtensionWorkerLifetime {
         }
         for invocation in invocations {
             let _ = invocation.response.send(Err(
-                "extension worker closed before executing the action".to_owned(),
+                "extension worker closed before executing the action".to_owned()
             ));
         }
         for request in view_events {
             let _ = request.completion.send(Err(
-                "extension worker closed before handling the view request".to_owned(),
+                "extension worker closed before handling the view request".to_owned()
             ));
         }
         for update in configurations {
             update.complete(Err(
-                "extension worker closed before applying the configuration".to_owned(),
+                "extension worker closed before applying the configuration".to_owned()
             ));
         }
         let notify = self

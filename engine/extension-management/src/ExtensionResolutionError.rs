@@ -2,14 +2,14 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionResolutionError {
     pub diagnostic_context: String,
-    pub message: String,
+    pub message: String
 }
 
 impl ExtensionResolutionError {
     pub(crate) fn new(diagnostic_context: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             diagnostic_context: diagnostic_context.into(),
-            message: message.into(),
+            message: message.into()
         }
     }
 }

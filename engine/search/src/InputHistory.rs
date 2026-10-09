@@ -6,7 +6,7 @@ pub struct InputHistory {
     entries: Vec<String>,
     cursor: Option<usize>,
     draft: Option<String>,
-    limit: usize,
+    limit: usize
 }
 
 impl InputHistory {
@@ -15,7 +15,7 @@ impl InputHistory {
             entries: Vec::new(),
             cursor: None,
             draft: None,
-            limit,
+            limit
         }
     }
 
@@ -52,7 +52,7 @@ impl InputHistory {
         }
         let next = match self.cursor {
             Some(index) => index.checked_sub(1),
-            None => self.entries.len().checked_sub(1),
+            None => self.entries.len().checked_sub(1)
         }?;
         self.cursor = Some(next);
         self.entries.get(next).cloned()

@@ -6,5 +6,5 @@ pub(crate) struct SettingsWindow {
     pub(crate) directory_picker: Mutex<()>,
     pub(crate) ready: AtomicBool,
     pub(crate) requested: AtomicBool,
-    pub(crate) maximized: AtomicBool,
+    pub(crate) maximized: AtomicBool
 }

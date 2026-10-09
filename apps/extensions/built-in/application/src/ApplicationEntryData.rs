@@ -13,5 +13,5 @@ pub struct ApplicationEntryData {
     pub arguments_json: String,
     pub icon_key: String,
     pub(crate) icon_source: Option<ApplicationIconSource>,
-    pub(crate) priority: usize,
+    pub(crate) priority: usize
 }

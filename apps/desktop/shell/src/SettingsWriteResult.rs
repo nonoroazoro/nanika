@@ -8,5 +8,5 @@ pub(crate) struct SettingsWriteResult<T> {
     pub(crate) values: T,
     pub(crate) saved: T,
     pub(crate) effective: Option<T>,
-    pub(crate) error: Option<String>,
+    pub(crate) error: Option<String>
 }

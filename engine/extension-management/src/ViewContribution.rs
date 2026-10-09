@@ -11,5 +11,5 @@ pub struct ViewContribution {
     #[serde(default)]
     pub keywords: Vec<String>,
     #[serde(default)]
-    pub icon: Option<String>,
+    pub icon: Option<String>
 }

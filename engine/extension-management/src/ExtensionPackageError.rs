@@ -10,5 +10,5 @@ pub enum ExtensionPackageError {
     #[error("extension storage failed: {0}")]
     Storage(#[from] rusqlite::Error),
     #[error("extension configuration failed: {0}")]
-    Config(String),
+    Config(String)
 }

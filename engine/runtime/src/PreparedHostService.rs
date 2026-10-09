@@ -2,13 +2,13 @@ use crate::HostServiceReceipt;
 
 /// Validated, owned input with no admitted native effect yet.
 pub struct PreparedHostService<'a> {
-    _submit: Box<dyn FnOnce() -> Result<HostServiceReceipt, String> + 'a>,
+    _submit: Box<dyn FnOnce() -> Result<HostServiceReceipt, String> + 'a>
 }
 
 impl<'a> PreparedHostService<'a> {
     pub fn new(submit: impl FnOnce() -> Result<HostServiceReceipt, String> + 'a) -> Self {
         Self {
-            _submit: Box::new(submit),
+            _submit: Box::new(submit)
         }
     }
     pub fn admit(self) -> Result<HostServiceReceipt, String> {

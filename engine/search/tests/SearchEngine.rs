@@ -8,7 +8,7 @@ fn candidate(entry_id: &str, title: &str, action_id: &str) -> Candidate {
         title,
         action_id,
         vec![nanika_protocol::Action::primary(action_id, "Open")],
-        Vec::new(),
+        Vec::new()
     )
 }
 
@@ -21,7 +21,7 @@ fn aliases_receive_the_same_lexical_tiers_as_titles() {
         "Calculator",
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        vec!["计算器".to_owned()],
+        vec!["计算器".to_owned()]
     );
     let snapshot = SearchEngine::new().query("计算器", &[entry], &UsageMap::new(), 0);
     assert_eq!(snapshot.results[0].lexical_tier, 3);
@@ -37,7 +37,7 @@ fn different_names_of_one_candidate_satisfy_all_query_terms() {
             "音乐",
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            vec!["music".to_owned(), "yinyue".to_owned()],
+            vec!["music".to_owned(), "yinyue".to_owned()]
         ),
         Candidate::new(
             CandidateKind::Action,
@@ -46,8 +46,8 @@ fn different_names_of_one_candidate_satisfy_all_query_terms() {
             "音乐盒",
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            vec!["podcast".to_owned()],
-        ),
+            vec!["podcast".to_owned()]
+        )
     ];
     let mut engine = SearchEngine::new();
     for query in ["音乐 music", "音乐music", "yin music", "music 音乐"] {
@@ -72,7 +72,7 @@ fn short_terms_follow_the_same_cross_name_rule() {
         "A",
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        vec!["Music".to_owned()],
+        vec!["Music".to_owned()]
     )];
     for query in ["a music", "music a"] {
         let snapshot = SearchEngine::new().query(query, &candidates, &UsageMap::new(), 0);
@@ -89,7 +89,7 @@ fn accented_latin_word_is_not_split_across_unrelated_names() {
         "R",
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        vec!["ésumé".to_owned()],
+        vec!["ésumé".to_owned()]
     )];
     let snapshot = SearchEngine::new().query("résumé", &candidates, &UsageMap::new(), 0);
     assert!(snapshot.results.is_empty());
@@ -106,8 +106,8 @@ fn a_contiguous_name_still_ranks_above_cross_name_terms() {
             "音乐",
             "open",
             vec![nanika_protocol::Action::primary("open", "Open")],
-            vec!["music".to_owned()],
-        ),
+            vec!["music".to_owned()]
+        )
     ];
     let snapshot = SearchEngine::new().query("音乐 music", &candidates, &UsageMap::new(), 0);
     assert_eq!(snapshot.results[0].candidate.entry_id(), "contiguous");
@@ -123,7 +123,7 @@ fn cross_name_terms_beat_a_weak_single_name_fuzzy_match() {
         "音乐",
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        vec!["music".to_owned(), "音乐 other music".to_owned()],
+        vec!["music".to_owned(), "音乐 other music".to_owned()]
     )];
     let snapshot = SearchEngine::new().query("音乐 music", &candidates, &UsageMap::new(), 0);
     assert_eq!(snapshot.results[0].lexical_tier, 1);
@@ -138,7 +138,7 @@ fn repeated_query_terms_do_not_create_cross_name_matches() {
         "Alpha",
         "open",
         vec![nanika_protocol::Action::primary("open", "Open")],
-        vec!["Beta".to_owned()],
+        vec!["Beta".to_owned()]
     )];
     let query = "a ".repeat(2_048);
     let snapshot = SearchEngine::new().query(&query, &candidates, &UsageMap::new(), 0);
@@ -152,7 +152,7 @@ fn weak_fuzzy_matches_are_rejected() {
         "abc",
         &[candidate("weak", &title, "open")],
         &UsageMap::new(),
-        0,
+        0
     );
     assert!(snapshot.results.is_empty());
 }
@@ -168,8 +168,8 @@ fn lexical_tier_beats_contextual_frequency() {
         UsageKey::new("test.extension", "prefix", "open", "cal"),
         UsageStat {
             execution_count: 100,
-            last_executed_at: 1_000,
-        },
+            last_executed_at: 1_000
+        }
     );
     let snapshot = SearchEngine::new().query("cal", &candidates, &usage, 1_000);
     assert_eq!(snapshot.results[0].candidate.entry_id(), "exact");
@@ -186,8 +186,8 @@ fn contextual_usage_reorders_candidates_inside_a_tier() {
         UsageKey::new("test.extension", "used", "used", "tool"),
         UsageStat {
             execution_count: 5,
-            last_executed_at: 1_000,
-        },
+            last_executed_at: 1_000
+        }
     );
     let snapshot = SearchEngine::new().query("tool", &candidates, &usage, 1_000);
     assert_eq!(snapshot.results[0].candidate.entry_id(), "used");
@@ -222,7 +222,7 @@ fn complete_catalog_remains_browsable_and_searchable() {
             candidate(
                 &format!("entry-{index}"),
                 &format!("Application {index:04}"),
-                "open",
+                "open"
             )
         })
         .collect::<Vec<_>>();

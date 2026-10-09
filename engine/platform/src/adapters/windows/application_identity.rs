@@ -2,17 +2,17 @@ use windows::{
     Win32::{
         Foundation::ERROR_INSUFFICIENT_BUFFER,
         Storage::Packaging::Appx::{
-            APPLICATION_USER_MODEL_ID_MAX_LENGTH, ParseApplicationUserModelId,
-        },
+            APPLICATION_USER_MODEL_ID_MAX_LENGTH, ParseApplicationUserModelId
+        }
     },
-    core::PCWSTR,
+    core::PCWSTR
 };
 
 pub(super) fn validate(id: &str) -> std::io::Result<Vec<u16>> {
     let invalid = || {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "invalid packaged application user model ID",
+            "invalid packaged application user model ID"
         )
     };
     if id.is_empty()
@@ -30,7 +30,7 @@ pub(super) fn validate(id: &str) -> std::io::Result<Vec<u16>> {
             &mut family_length,
             None,
             &mut application_length,
-            None,
+            None
         )
     };
     if result != ERROR_INSUFFICIENT_BUFFER {

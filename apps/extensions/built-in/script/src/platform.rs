@@ -36,6 +36,6 @@ pub(crate) fn launch_descriptor(path: &Path) -> Result<LaunchDescriptor, String>
         working_directory: path
             .parent()
             .and_then(|parent| parent.to_str())
-            .map(str::to_owned),
+            .map(str::to_owned)
     })
 }

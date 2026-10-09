@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub struct ClipboardService {
     commands: SyncSender<ClipboardServiceCommand>,
     budget: Arc<crate::ClipboardWriteBudget>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 impl ClipboardService {
@@ -27,7 +27,7 @@ impl ClipboardService {
                                 );
                             }
                         }
-                        ClipboardServiceCommand::Shutdown => break,
+                        ClipboardServiceCommand::Shutdown => break
                     }
                 }
             })
@@ -35,7 +35,7 @@ impl ClipboardService {
         Ok(Self {
             commands,
             budget: Arc::default(),
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 
@@ -43,11 +43,11 @@ impl ClipboardService {
         &self,
         content: ClipboardContent,
         payload_root: Option<&std::path::Path>,
-        cancelled: &mut dyn FnMut() -> bool,
+        cancelled: &mut dyn FnMut() -> bool
     ) -> Result<crate::PreparedClipboardWrite, String> {
         let permit = self.budget.acquire(
             matches!(&content, ClipboardContent::PngFile { .. }),
-            cancelled,
+            cancelled
         )?;
         let content = match content {
             ClipboardContent::Text { value } => crate::PreparedClipboardContent::Text(value),
@@ -65,7 +65,7 @@ impl ClipboardService {
 
     pub fn submit(
         &self,
-        prepared: crate::PreparedClipboardWrite,
+        prepared: crate::PreparedClipboardWrite
     ) -> Result<Receiver<Result<HostServiceResponse, String>>, String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands

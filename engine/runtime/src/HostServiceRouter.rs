@@ -13,7 +13,7 @@ pub struct HostServiceRouter {
     launcher: Result<ProcessLauncher, String>,
     clipboard: Result<ClipboardService, String>,
     payload_root: Result<PathBuf, String>,
-    permissions: RwLock<HashMap<String, HashSet<String>>>,
+    permissions: RwLock<HashMap<String, HashSet<String>>>
 }
 
 impl HostServiceRouter {
@@ -42,9 +42,9 @@ impl HostServiceRouter {
                 launcher,
                 clipboard,
                 payload_root,
-                permissions: RwLock::new(HashMap::new()),
+                permissions: RwLock::new(HashMap::new())
             },
-            errors,
+            errors
         )
     }
 
@@ -67,7 +67,7 @@ impl HostServiceRouter {
     pub(crate) fn register_permissions(
         &self,
         extension_id: impl Into<String>,
-        permissions: impl IntoIterator<Item = String>,
+        permissions: impl IntoIterator<Item = String>
     ) {
         self.permissions
             .write()
@@ -88,7 +88,7 @@ impl HostServiceRouter {
         HostDiagnostic::new(
             DiagnosticCode::PermissionDenied,
             "authorize extension host service",
-            "An extension requested a host service without permission.",
+            "An extension requested a host service without permission."
         )
         .with_safe_context(extension_id)
         .record_warning();
@@ -103,13 +103,13 @@ impl HostServiceHandler for HostServiceRouter {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption,
+        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption
     ) -> Result<crate::PreparedHostService<'_>, String> {
         if !is_valid_extension_id(extension_id) {
             HostDiagnostic::new(
                 DiagnosticCode::PermissionDenied,
                 "validate host service caller",
-                "An invalid extension identity requested a host service.",
+                "An invalid extension identity requested a host service."
             )
             .with_safe_context("invalid-extension-id")
             .record_warning();
@@ -150,7 +150,7 @@ impl HostServiceHandler for HostServiceRouter {
                     ClipboardContent::PngFile { .. } => {
                         Some(self.extension_payload_root(extension_id)?)
                     }
-                    ClipboardContent::Text { .. } | ClipboardContent::Files { .. } => None,
+                    ClipboardContent::Text { .. } | ClipboardContent::Files { .. } => None
                 };
                 let service = self.clipboard()?;
                 let prepared = service.prepare(content, payload_root.as_deref(), &mut || {

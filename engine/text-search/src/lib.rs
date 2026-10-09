@@ -7,7 +7,7 @@ mod han_readings;
 mod romanization;
 
 pub use romanization::{
-    RomanizedMatch, RomanizedReading, find_romanized_match, romanized_query, romanized_readings,
+    RomanizedMatch, RomanizedReading, find_romanized_match, romanized_query, romanized_readings
 };
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ fn execution_policy_is_independent_of_visual_style() {
     for style in [
         ActionStyle::Primary,
         ActionStyle::Secondary,
-        ActionStyle::Destructive,
+        ActionStyle::Destructive
     ] {
         let mut action = Action::primary("run", "Run");
         action.style = style;
@@ -19,7 +19,7 @@ fn execution_policy_is_independent_of_visual_style() {
         for invocation in [
             ActionInvocation::Default,
             ActionInvocation::Explicit,
-            ActionInvocation::Confirmed,
+            ActionInvocation::Confirmed
         ] {
             assert!(!action.allows_invocation(invocation));
         }
@@ -75,7 +75,7 @@ fn semantic_icons_are_closed_data_not_paths_or_markup() {
         "https://example.com/icon.svg",
         "../icon.svg",
         "<svg/>",
-        "unknown",
+        "unknown"
     ] {
         value["icon"] = serde_json::json!(invalid);
         assert!(serde_json::from_value::<Action>(value.clone()).is_err());

@@ -16,8 +16,8 @@ use agent_client_protocol::schema::{
     ProtocolVersion,
     v1::{
         CancelNotification, ContentBlock, ContentChunk, InitializeRequest, SessionNotification,
-        SessionUpdate, StopReason,
-    },
+        SessionUpdate, StopReason
+    }
 };
 use agent_client_protocol::util::MatchDispatch;
 use agent_client_protocol::{ActiveSession, Agent, Client, ConnectionTo, Lines, SessionMessage};
@@ -26,7 +26,7 @@ use futures_lite::future;
 use crate::{
     AcpConnectionContext, AcpExtensionCommand, ExtensionCommand, ExtensionInterruption,
     ExtensionLimits, SupervisorError, drain_stderr, incoming_lines, outgoing_lines,
-    terminate_child,
+    terminate_child
 };
 
 const ACP_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -40,7 +40,7 @@ pub struct AcpExtensionProcess {
     shutdown: Option<async_channel::Sender<()>>,
     ready: Receiver<Result<(), String>>,
     thread: Option<JoinHandle<()>>,
-    last_error: Arc<Mutex<Option<String>>>,
+    last_error: Arc<Mutex<Option<String>>>
 }
 
 impl AcpExtensionProcess {
@@ -48,7 +48,7 @@ impl AcpExtensionProcess {
         extension_id: impl Into<String>,
         program: impl AsRef<Path>,
         arguments: impl IntoIterator<Item = OsString>,
-        limits: ExtensionLimits,
+        limits: ExtensionLimits
     ) -> io::Result<Self> {
         Self::spawn_with_configuration(extension_id, program, arguments, limits, Default::default())
     }
@@ -58,11 +58,11 @@ impl AcpExtensionProcess {
         program: impl AsRef<Path>,
         arguments: impl IntoIterator<Item = OsString>,
         limits: ExtensionLimits,
-        configuration: nanika_protocol::ExtensionConfiguration,
+        configuration: nanika_protocol::ExtensionConfiguration
     ) -> io::Result<Self> {
         let command = ExtensionCommand {
             program: program.as_ref().to_path_buf(),
-            arguments: arguments.into_iter().collect(),
+            arguments: arguments.into_iter().collect()
         };
         let working_directory = command
             .program
@@ -74,7 +74,7 @@ impl AcpExtensionProcess {
             command,
             working_directory,
             limits,
-            configuration,
+            configuration
         )
     }
 
@@ -83,7 +83,7 @@ impl AcpExtensionProcess {
         command: ExtensionCommand,
         working_directory: PathBuf,
         _limits: ExtensionLimits,
-        configuration: nanika_protocol::ExtensionConfiguration,
+        configuration: nanika_protocol::ExtensionConfiguration
     ) -> io::Result<Self> {
         let arguments = command
             .arguments
@@ -92,7 +92,7 @@ impl AcpExtensionProcess {
                 argument.clone().into_string().map_err(|_| {
                     io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        "ACP extension arguments must be valid UTF-8",
+                        "ACP extension arguments must be valid UTF-8"
                     )
                 })
             })
@@ -123,9 +123,9 @@ impl AcpExtensionProcess {
                         commands: command_receiver,
                         shutdown: shutdown_receiver,
                         ready: ready_sender,
-                        ready_reported,
+                        ready_reported
                     },
-                    Arc::clone(&thread_error),
+                    Arc::clone(&thread_error)
                 ));
                 let exit_error = result
                     .as_ref()
@@ -151,7 +151,7 @@ impl AcpExtensionProcess {
             shutdown: Some(shutdown),
             ready,
             thread: Some(thread),
-            last_error,
+            last_error
         })
     }
 
@@ -176,7 +176,7 @@ impl AcpExtensionProcess {
                 Ok(Ok(())) => break Ok(()),
                 Ok(Err(error)) => break Err(SupervisorError::UnexpectedMessage(error)),
                 Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break Err(SupervisorError::ChannelClosed),
+                Err(RecvTimeoutError::Disconnected) => break Err(SupervisorError::ChannelClosed)
             }
         };
         if result.is_ok() {
@@ -195,7 +195,7 @@ impl AcpExtensionProcess {
         &mut self,
         prompt: impl Into<String>,
         publish: Arc<dyn Fn(String) + Send + Sync>,
-        mut interruption: impl FnMut() -> ExtensionInterruption,
+        mut interruption: impl FnMut() -> ExtensionInterruption
     ) -> Result<(), SupervisorError> {
         match interruption() {
             ExtensionInterruption::None => {}
@@ -207,7 +207,7 @@ impl AcpExtensionProcess {
         }
         if !self.initialized {
             return Err(SupervisorError::UnexpectedMessage(
-                "ACP extension is not initialized".to_owned(),
+                "ACP extension is not initialized".to_owned()
             ));
         }
         let (response_sender, response) = mpsc::sync_channel(1);
@@ -219,7 +219,7 @@ impl AcpExtensionProcess {
                 prompt: prompt.into(),
                 cancelled: Arc::clone(&cancelled),
                 publish,
-                response: response_sender,
+                response: response_sender
             })
             .map_err(|_| SupervisorError::ChannelClosed)?;
         let mut cancellation_requested = false;
@@ -289,7 +289,7 @@ impl AcpExtensionProcess {
         if let Some(commands) = &self.commands {
             commands
                 .send_blocking(AcpExtensionCommand::Shutdown {
-                    response: response_sender,
+                    response: response_sender
                 })
                 .map_err(|_| SupervisorError::ChannelClosed)?;
             response
@@ -326,7 +326,7 @@ impl AcpExtensionProcess {
             .clone()
         {
             Some(error) => Err(SupervisorError::UnexpectedMessage(error)),
-            None => Ok(()),
+            None => Ok(())
         }
     }
 }
@@ -339,7 +339,7 @@ impl Drop for AcpExtensionProcess {
 
 async fn run_connection(
     context: AcpConnectionContext,
-    failures: Arc<Mutex<Option<String>>>,
+    failures: Arc<Mutex<Option<String>>>
 ) -> agent_client_protocol::Result<()> {
     let mut command = std::process::Command::new(context.command.program);
     command.args(context.arguments);
@@ -367,7 +367,7 @@ async fn run_connection(
     else {
         let _ = terminate_child(&mut child, &process_tree).await;
         return Err(agent_client_protocol::util::internal_error(
-            "ACP extension stdio was not piped",
+            "ACP extension stdio was not piped"
         ));
     };
     let shutdown = context.shutdown.clone();
@@ -384,7 +384,7 @@ async fn run_connection(
                 connection
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task(),
-                context.shutdown.clone(),
+                context.shutdown.clone()
             )
             .await?;
             if initialized.protocol_version != ProtocolVersion::V1 {
@@ -401,10 +401,10 @@ async fn run_connection(
                 "nanika.configuration".to_owned(),
                 serde_json::to_value(&context.configuration).map_err(|error| {
                     agent_client_protocol::util::internal_error(error.to_string())
-                })?,
+                })?
             );
             let session_request = agent_client_protocol::schema::v1::NewSessionRequest::new(
-                context.working_directory,
+                context.working_directory
             )
             .meta(meta);
             let mut session = cancel_on_shutdown(
@@ -412,7 +412,7 @@ async fn run_connection(
                     .build_session_from(session_request)
                     .block_task()
                     .start_session(),
-                context.shutdown.clone(),
+                context.shutdown.clone()
             )
             .await?;
             context.ready_reported.store(true, Ordering::Release);
@@ -422,20 +422,20 @@ async fn run_connection(
                     async {
                         context.commands.recv().await.map_err(|_| {
                             agent_client_protocol::util::internal_error(
-                                "ACP command channel closed",
+                                "ACP command channel closed"
                             )
                         })
                     },
                     async {
                         context.shutdown.recv().await.map_err(|_| {
                             agent_client_protocol::util::internal_error(
-                                "ACP shutdown channel closed",
+                                "ACP shutdown channel closed"
                             )
                         })?;
                         Err(agent_client_protocol::util::internal_error(
-                            "ACP extension shutting down",
+                            "ACP extension shutting down"
                         ))
-                    },
+                    }
                 )
                 .await;
                 match command {
@@ -443,7 +443,7 @@ async fn run_connection(
                         prompt,
                         cancelled,
                         publish,
-                        response,
+                        response
                     }) => {
                         let result = run_prompt(&mut session, prompt, cancelled, publish).await;
                         let _ = response.send(result.map_err(|error| error.to_string()));
@@ -453,15 +453,15 @@ async fn run_connection(
                         let _ = response.send(());
                         return Ok(());
                     }
-                    Err(error) => return Err(error),
+                    Err(error) => return Err(error)
                 }
             }
-        },
+        }
     );
     let result = future::race(connection, async move {
         let _ = shutdown.recv().await;
         Err(agent_client_protocol::util::internal_error(
-            "ACP extension shutting down",
+            "ACP extension shutting down"
         ))
     });
     let lifecycle = async {
@@ -489,9 +489,9 @@ async fn run_connection(
                     let _ = force_exit.recv().await;
                     Err(io::Error::new(
                         io::ErrorKind::Interrupted,
-                        "ACP graceful stop interrupted by application shutdown",
+                        "ACP graceful stop interrupted by application shutdown"
                     ))
-                },
+                }
             )
             .await;
             if waiting
@@ -521,26 +521,26 @@ async fn run_connection(
             (Ok(()), Ok(())) => Ok(()),
             (Err(error), Ok(())) => Err(error),
             (_, Err(error)) => Err(agent_client_protocol::util::internal_error(
-                error.to_string(),
-            )),
+                error.to_string()
+            ))
         }
     };
     // Drain through EOF even after the process reports its exit status, so cleanup
     // diagnostics cannot be lost to scheduling between the two pipes.
     let (result, stderr_result) = future::zip(
         lifecycle,
-        drain_stderr(stderr, drain_tail, stderr_extension_id),
+        drain_stderr(stderr, drain_tail, stderr_extension_id)
     )
     .await;
     let result = match (result, stderr_result) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) => Err(error),
         (Ok(()), Err(error)) => Err(agent_client_protocol::util::internal_error(
-            error.to_string(),
+            error.to_string()
         )),
         (Err(error), Err(stderr_error)) => Err(agent_client_protocol::util::internal_error(
-            format!("{error}; {stderr_error}"),
-        )),
+            format!("{error}; {stderr_error}")
+        ))
     };
     result.map_err(|error| {
         agent_client_protocol::util::internal_error(format!(
@@ -557,12 +557,12 @@ fn bounded_tail_string(tail: &Mutex<VecDeque<u8>>) -> String {
 
 async fn cancel_on_shutdown<T>(
     operation: impl Future<Output = agent_client_protocol::Result<T>>,
-    shutdown: async_channel::Receiver<()>,
+    shutdown: async_channel::Receiver<()>
 ) -> agent_client_protocol::Result<T> {
     future::race(operation, async move {
         let _ = shutdown.recv().await;
         Err(agent_client_protocol::util::internal_error(
-            "ACP extension shutting down",
+            "ACP extension shutting down"
         ))
     })
     .await
@@ -572,10 +572,10 @@ async fn run_prompt<Link>(
     session: &mut ActiveSession<'_, Link>,
     prompt: String,
     cancelled: Arc<AtomicBool>,
-    publish: Arc<dyn Fn(String) + Send + Sync>,
+    publish: Arc<dyn Fn(String) + Send + Sync>
 ) -> agent_client_protocol::Result<StopReason>
 where
-    Link: HasPeer<Agent>,
+    Link: HasPeer<Agent>
 {
     session.send_prompt(prompt)?;
     let mut cancellation_sent = false;
@@ -583,7 +583,7 @@ where
         if cancelled.load(Ordering::Acquire) && !cancellation_sent {
             session.connection().send_notification_to(
                 Agent,
-                CancelNotification::new(session.session_id().clone()),
+                CancelNotification::new(session.session_id().clone())
             )?;
             cancellation_sent = true;
         }

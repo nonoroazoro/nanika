@@ -36,7 +36,7 @@ pub struct ConfigurationSchema {
     #[serde(default)]
     pub properties: BTreeMap<String, ConfigurationSchema>,
     #[serde(default)]
-    pub required: Vec<String>,
+    pub required: Vec<String>
 }
 
 impl ConfigurationSchema {
@@ -242,7 +242,7 @@ impl ConfigurationSchema {
                 }
                 Ok(())
             }
-            ConfigurationValueType::Boolean => Err(format!("{path} must be a boolean")),
+            ConfigurationValueType::Boolean => Err(format!("{path} must be a boolean"))
         }
     }
 
@@ -285,7 +285,7 @@ pub enum ConfigurationValueType {
     Integer,
     String,
     Array,
-    Object,
+    Object
 }
 
 /// Presentation hint for string values. It does not change JSON validation.
@@ -294,7 +294,7 @@ pub enum ConfigurationValueType {
 #[serde(rename_all = "camelCase")]
 pub enum ConfigurationStringFormat {
     Path,
-    Directory,
+    Directory
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), String> {

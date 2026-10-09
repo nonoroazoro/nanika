@@ -8,13 +8,13 @@ use crate::ExtensionOperationReservation;
 pub(crate) struct ExtensionOperationGate {
     _state: Mutex<(bool, HashSet<String>)>,
     _idle: Condvar,
-    _released: crate::ExtensionNotifier,
+    _released: crate::ExtensionNotifier
 }
 
 impl ExtensionOperationGate {
     pub(crate) fn reserve(
         self: &Arc<Self>,
-        extension_id: &str,
+        extension_id: &str
     ) -> Result<ExtensionOperationReservation, String> {
         let mut state = self
             ._state
@@ -26,12 +26,12 @@ impl ExtensionOperationGate {
         if !state.1.insert(extension_id.to_owned()) {
             return Err(
                 "A configuration or lifecycle operation is already pending for this extension."
-                    .into(),
+                    .into()
             );
         }
         Ok(ExtensionOperationReservation::new(
             Arc::clone(self),
-            extension_id.to_owned(),
+            extension_id.to_owned()
         ))
     }
 

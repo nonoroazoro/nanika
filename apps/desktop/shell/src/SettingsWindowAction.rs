@@ -7,5 +7,5 @@ pub(crate) enum SettingsWindowAction {
     Drag,
     Minimize,
     ToggleMaximize,
-    Close,
+    Close
 }

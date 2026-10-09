@@ -6,7 +6,7 @@ const MAX_ICON_KEY_BYTES: usize = 128;
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IconReference {
-    key: String,
+    key: String
 }
 
 impl IconReference {

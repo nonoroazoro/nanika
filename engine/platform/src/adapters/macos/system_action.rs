@@ -3,7 +3,7 @@ use nanika_protocol::{LaunchArguments, LaunchDescriptor, SystemAction};
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::NSWorkspace;
 use objc2_core_graphics::{
-    CGEvent, CGEventFlags, CGEventTapLocation, CGPreflightPostEventAccess, CGRequestPostEventAccess,
+    CGEvent, CGEventFlags, CGEventTapLocation, CGPreflightPostEventAccess, CGRequestPostEventAccess
 };
 use objc2_foundation::{NSString, NSURL};
 
@@ -64,7 +64,7 @@ fn _script(launcher: &ProcessLauncher, source: &str) -> Result<(), String> {
     _launch(
         launcher,
         "/usr/bin/osascript",
-        &["-l", "AppleScript", "-e", source],
+        &["-l", "AppleScript", "-e", source]
     )
 }
 
@@ -72,8 +72,8 @@ fn _launch(launcher: &ProcessLauncher, program: &str, arguments: &[&str]) -> Res
     launcher.launch(LaunchDescriptor::Program {
         program: program.to_owned(),
         arguments: LaunchArguments::Structured {
-            values: arguments.iter().map(|value| (*value).to_owned()).collect(),
+            values: arguments.iter().map(|value| (*value).to_owned()).collect()
         },
-        working_directory: None,
+        working_directory: None
     })
 }

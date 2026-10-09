@@ -11,5 +11,5 @@ pub enum ActionInvocation {
     /// Choose a specific action in a menu or status bar.
     Explicit,
     /// Choose an action and accept its confirmation in the host UI.
-    Confirmed,
+    Confirmed
 }

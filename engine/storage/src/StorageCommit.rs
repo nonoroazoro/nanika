@@ -6,13 +6,13 @@ use crate::StorageQueueError;
 /// cancels the write nor suppresses owner diagnostics. It does not await search.
 #[derive(Debug)]
 pub struct StorageCommit {
-    _response: Receiver<Result<(), String>>,
+    _response: Receiver<Result<(), String>>
 }
 
 impl StorageCommit {
     pub(crate) fn new(response: Receiver<Result<(), String>>) -> Self {
         Self {
-            _response: response,
+            _response: response
         }
     }
 

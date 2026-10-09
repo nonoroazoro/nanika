@@ -8,7 +8,7 @@ mod instance {
         let primary = acquire_instance(&identity, &root).expect("primary should acquire");
         let mut instance = match primary {
             InstanceRole::Primary(instance) => instance,
-            InstanceRole::Secondary => panic!("first launch became secondary"),
+            InstanceRole::Secondary => panic!("first launch became secondary")
         };
         let events = instance.take_events().expect("event receiver should exist");
 
@@ -46,7 +46,7 @@ mod filesystem {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use nanika_platform::{
-        atomic_replace, companion_executable, make_executable, open_regular_file, target_triple,
+        atomic_replace, companion_executable, make_executable, open_regular_file, target_triple
     };
 
     #[test]

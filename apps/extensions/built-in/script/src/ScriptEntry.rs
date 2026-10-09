@@ -5,7 +5,7 @@ use crate::RUN_ACTION_ID;
 /// A discovered script. Identity follows its canonical path, not its display name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptEntry {
-    _data: std::sync::Arc<crate::ScriptEntryData>,
+    _data: std::sync::Arc<crate::ScriptEntryData>
 }
 
 impl std::ops::Deref for ScriptEntry {
@@ -24,7 +24,7 @@ impl std::ops::DerefMut for ScriptEntry {
 impl ScriptEntry {
     pub fn new(data: crate::ScriptEntryData) -> Self {
         Self {
-            _data: std::sync::Arc::new(data),
+            _data: std::sync::Arc::new(data)
         }
     }
 
@@ -34,15 +34,15 @@ impl ScriptEntry {
             entry_id: self.id.clone(),
             title: self.title.clone(),
             subtitle: Some(nanika_protocol::CandidateSubtitle::Description(
-                self.path.to_string_lossy().into_owned(),
+                self.path.to_string_lossy().into_owned()
             )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: vec![nanika_protocol::Action::primary(
                 RUN_ACTION_ID.to_owned(),
-                "Run",
+                "Run"
             )],
             aliases: Vec::new(),
-            icon: None,
+            icon: None
         }
     }
 

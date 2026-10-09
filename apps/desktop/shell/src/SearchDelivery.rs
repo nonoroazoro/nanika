@@ -6,7 +6,7 @@ use crate::{DesktopRuntime, RootSearchSnapshot, SearchPhase};
 
 pub(crate) enum SearchDelivery {
     Wake,
-    Shutdown,
+    Shutdown
 }
 
 /// The sole Channel writer. Core callbacks only wake it, so transport never blocks
@@ -14,7 +14,7 @@ pub(crate) enum SearchDelivery {
 pub(crate) fn run_delivery(
     shared: &Mutex<DesktopRuntime>,
     wakes: Receiver<SearchDelivery>,
-    settings: &Mutex<crate::SettingsApplications>,
+    settings: &Mutex<crate::SettingsApplications>
 ) {
     run_delivery_with_preparation(shared, wakes, settings, |runtime, snapshot| {
         runtime.prepare_visible_entries(snapshot, snapshot.results.len());
@@ -25,7 +25,7 @@ pub(crate) fn run_delivery_with_preparation(
     shared: &Mutex<DesktopRuntime>,
     wakes: Receiver<SearchDelivery>,
     settings: &Mutex<crate::SettingsApplications>,
-    prepare: impl Fn(&nanika_host::RuntimeService, &nanika_search::SearchSnapshot),
+    prepare: impl Fn(&nanika_host::RuntimeService, &nanika_search::SearchSnapshot)
 ) {
     while let Ok(event) = wakes.recv() {
         if matches!(event, SearchDelivery::Shutdown) {
@@ -73,7 +73,7 @@ pub(crate) fn run_delivery_with_preparation(
         let DesktopRuntime {
             runtime,
             session,
-            startup_error,
+            startup_error
         } = &mut *state;
         let Some(session) = session else {
             continue;
@@ -107,7 +107,7 @@ pub(crate) fn run_delivery_with_preparation(
             && match (&latest, &session.delivered) {
                 (Some(next), Some(previous)) => Arc::ptr_eq(next, previous),
                 (None, None) => true,
-                _ => false,
+                _ => false
             };
         if unchanged
             && session.delivered_range == Some(session.result_range)
@@ -122,7 +122,7 @@ pub(crate) fn run_delivery_with_preparation(
                         || !Arc::ptr_eq(&next.results, &previous.results)
                 }
                 (None, None) => false,
-                _ => true,
+                _ => true
             };
         if results_changed {
             session.result_revision = latest
@@ -161,7 +161,7 @@ pub(crate) fn run_delivery_with_preparation(
             warnings: warnings.clone(),
             pending_extensions: latest
                 .as_ref()
-                .map_or_else(Vec::new, |snapshot| snapshot.pending_extensions.clone()),
+                .map_or_else(Vec::new, |snapshot| snapshot.pending_extensions.clone())
         };
         let updates = session.updates.clone();
         let runtime = runtime.clone();
@@ -189,8 +189,8 @@ pub(crate) fn run_delivery_with_preparation(
                     instances: Arc::clone(&snapshot.instances),
                     normalized_query: snapshot.normalized_query.clone(),
                     pending_extensions: snapshot.pending_extensions.clone(),
-                    results: snapshot.results[offset..end].into(),
-                },
+                    results: snapshot.results[offset..end].into()
+                }
             );
         }
         if range_changed {
@@ -202,7 +202,7 @@ pub(crate) fn run_delivery_with_preparation(
                             &ranked.candidate,
                             runtime.as_ref().and_then(|runtime| {
                                 runtime.extension_icon(ranked.candidate.extension_id())
-                            }),
+                            })
                         )
                     })
                     .collect()

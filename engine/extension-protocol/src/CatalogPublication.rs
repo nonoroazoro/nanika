@@ -8,5 +8,5 @@ pub(crate) struct CatalogPublication {
     pub(crate) _replace: bool,
     pub(crate) _complete: bool,
     pub(crate) _entries: VecDeque<Arc<Candidate>>,
-    pub(crate) _removed: VecDeque<String>,
+    pub(crate) _removed: VecDeque<String>
 }

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     MAX_QUERY_CHARS, PendingSearchQuery, SearchCommand, SearchNotifier, SearchQueueError,
-    SearchSnapshot, UsageKey,
+    SearchSnapshot, UsageKey
 };
 
 /// Cloneable boundary used by UI, extension workers, and the storage owner.
@@ -14,7 +14,7 @@ pub struct SearchHandle {
     pub(crate) pending_query: Arc<Mutex<Option<PendingSearchQuery>>>,
     pub(crate) latest: Arc<Mutex<Option<Arc<SearchSnapshot>>>>,
     pub(crate) next_generation: Arc<AtomicU64>,
-    pub(crate) notifier: SearchNotifier,
+    pub(crate) notifier: SearchNotifier
 }
 
 impl SearchHandle {
@@ -25,7 +25,7 @@ impl SearchHandle {
     pub fn begin_query_with_expected_extensions(
         &self,
         query: impl Into<String>,
-        expected_extensions: impl IntoIterator<Item = String>,
+        expected_extensions: impl IntoIterator<Item = String>
     ) -> Result<u64, SearchQueueError> {
         let query = query.into();
         if query.chars().count() > MAX_QUERY_CHARS {
@@ -45,12 +45,12 @@ impl SearchHandle {
         *pending = Some(PendingSearchQuery {
             generation,
             query,
-            expected_extensions,
+            expected_extensions
         });
         drop(pending);
         match self.commands.try_send(SearchCommand::WakeQuery) {
             Ok(()) | Err(TrySendError::Full(_)) => Ok(generation),
-            Err(TrySendError::Disconnected(_)) => Err(SearchQueueError::Closed),
+            Err(TrySendError::Disconnected(_)) => Err(SearchQueueError::Closed)
         }
     }
 
@@ -58,27 +58,27 @@ impl SearchHandle {
     pub fn register_extension(
         &self,
         extension_id: impl Into<String>,
-        instance_id: u64,
+        instance_id: u64
     ) -> Result<crate::SearchContributor, SearchQueueError> {
         let extension_id = extension_id.into();
         let (completion, receipt) = std::sync::mpsc::sync_channel(1);
         self.send(SearchCommand::RegisterExtension {
             extension_id: extension_id.clone(),
             instance_id,
-            completion,
+            completion
         })?;
         receipt.recv().map_err(|_| SearchQueueError::Closed)??;
         Ok(crate::SearchContributor::new(
             extension_id,
             instance_id,
-            self.commands.clone(),
+            self.commands.clone()
         ))
     }
 
     pub fn apply_persisted_execution(
         &self,
         key: UsageKey,
-        executed_at: u64,
+        executed_at: u64
     ) -> Result<(), SearchQueueError> {
         self.send(SearchCommand::ApplyPersistedExecution { key, executed_at })
     }

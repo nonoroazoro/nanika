@@ -54,7 +54,7 @@ fn a_failed_source_does_not_block_other_builtin_sources() {
         .args([
             "--exact",
             "platform::windows::tests::a_failed_source_does_not_block_other_builtin_sources",
-            "--nocapture",
+            "--nocapture"
         ])
         .env(PROBE, "1")
         .env(SCOOP_ENVIRONMENT, "relative/scoop")

@@ -5,5 +5,5 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum ListLayout {
     Plain,
-    Split,
+    Split
 }

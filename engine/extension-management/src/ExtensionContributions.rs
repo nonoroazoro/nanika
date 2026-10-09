@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommandContribution, ConfigurationContribution, RootSearchContribution, ViewContribution,
+    CommandContribution, ConfigurationContribution, RootSearchContribution, ViewContribution
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -14,5 +14,5 @@ pub struct ExtensionContributions {
     #[serde(default)]
     pub configuration: Option<ConfigurationContribution>,
     #[serde(default)]
-    pub root_search: Option<RootSearchContribution>,
+    pub root_search: Option<RootSearchContribution>
 }

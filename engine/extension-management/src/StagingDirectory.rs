@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 /// Removes an incomplete package stage unless ownership is committed.
 pub(crate) struct StagingDirectory {
     path: PathBuf,
-    committed: bool,
+    committed: bool
 }
 
 impl StagingDirectory {
@@ -11,7 +11,7 @@ impl StagingDirectory {
         std::fs::create_dir_all(&path)?;
         Ok(Self {
             path,
-            committed: false,
+            committed: false
         })
     }
 

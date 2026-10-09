@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex};
 
 use nanika_extension_clipboard::{
     CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardConfig, ClipboardMonitor, ClipboardPresentation,
-    ClipboardViewState, ClipboardWorker, FileIconWorker, RuntimePaths, VIEW_ID,
+    ClipboardViewState, ClipboardWorker, FileIconWorker, RuntimePaths, VIEW_ID
 };
 use nanika_protocol::{
     ClipboardContent, HostServiceRequest, HostServiceResponse, Message, NavigationEffect,
-    PROTOCOL_NAME, ViewEvent, read_frame, write_frame,
+    PROTOCOL_NAME, ViewEvent, read_frame, write_frame
 };
 
 type SharedOutput = Arc<Mutex<BufWriter<std::io::Stdout>>>;
@@ -21,14 +21,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Message::Initialize {
             request_id,
             protocol,
-            configuration,
+            configuration
         }) if protocol == PROTOCOL_NAME => (request_id, configuration),
         Some(Message::Initialize { request_id, .. }) => {
             send_error(
                 &output,
                 Some(request_id),
                 "unsupported_protocol",
-                "the requested extension protocol is unsupported",
+                "the requested extension protocol is unsupported"
             )?;
             return Ok(());
         }
@@ -37,11 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must be the first request",
+                "initialize must be the first request"
             )?;
             return Ok(());
         }
-        None => return Ok(()),
+        None => return Ok(())
     };
     let config = match ClipboardConfig::from_configuration(&configuration) {
         Ok(config) => config,
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &output,
                 Some(initialize_request_id),
                 "invalid_configuration",
-                &message,
+                &message
             )?;
             return Ok(());
         }
@@ -70,14 +70,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         paths.database_path(),
         paths.payload_root(),
         config,
-        Arc::clone(&view_invalidated),
+        Arc::clone(&view_invalidated)
     )?;
     send_frame(
         &output,
         &Message::Initialized {
             request_id: initialize_request_id,
-            protocol: PROTOCOL_NAME.to_owned(),
-        },
+            protocol: PROTOCOL_NAME.to_owned()
+        }
     )?;
     let monitor = ClipboardMonitor::spawn(&worker)?;
     let icon_root = paths
@@ -100,21 +100,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     generation,
                     complete: true,
-                    entries: Vec::new(),
-                },
+                    entries: Vec::new()
+                }
             )?,
             Message::Invoke {
                 request_id,
                 generation,
                 entry_id,
-                action_id,
+                action_id
             } => {
                 if entry_id != VIEW_ID || action_id != nanika_protocol::VIEW_OPEN_ACTION_ID {
                     send_error(
                         &output,
                         Some(request_id),
                         "unknown_action",
-                        "clipboard view or action does not exist",
+                        "clipboard view or action does not exist"
                     )?;
                     continue;
                 }
@@ -138,9 +138,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         effect: NavigationEffect::Push {
                             view_id: VIEW_ID.to_owned(),
                             revision: 1,
-                            view: Box::new(presentation.view.clone()),
-                        },
-                    },
+                            view: Box::new(presentation.view.clone())
+                        }
+                    }
                 )?;
                 icon_worker.schedule(presentation.icon_paths());
                 view_state = Some(presentation);
@@ -150,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 generation,
                 view_id,
                 revision,
-                event,
+                event
             } if view_id == VIEW_ID => handle_view_event(
                 &mut input,
                 &output,
@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 generation,
                 revision,
-                event,
+                event
             )?,
             Message::ViewClose {
                 request_id,
@@ -176,25 +176,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &output,
                     &Message::ViewClosed {
                         request_id,
-                        view_id,
-                    },
+                        view_id
+                    }
                 )?;
             }
             Message::Refresh {
                 request_id,
-                generation,
+                generation
             } => send_frame(
                 &output,
                 &Message::Refreshed {
                     request_id,
-                    generation,
-                },
+                    generation
+                }
             )?,
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
             Message::ConfigurationChanged {
                 request_id,
-                configuration,
+                configuration
             } => match ClipboardConfig::from_configuration(&configuration)
                 .and_then(|config| worker.apply_retention(config))
             {
@@ -203,22 +203,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &output,
                     Some(request_id),
                     "configuration_apply_failed",
-                    &message,
-                )?,
+                    &message
+                )?
             },
             message => send_error(
                 &output,
                 request_id(&message),
                 "unsupported_message",
-                "the clipboard extension received an unsupported message",
-            )?,
+                "the clipboard extension received an unsupported message"
+            )?
         }
     }
     notifications_enabled.store(false, Ordering::Release);
     let errors = [
         monitor.shutdown(),
         icon_worker.shutdown(),
-        worker.shutdown(),
+        worker.shutdown()
     ]
     .into_iter()
     .filter_map(Result::err)
@@ -240,14 +240,14 @@ fn handle_view_event(
     request_id: String,
     generation: u64,
     revision: u64,
-    event: ViewEvent,
+    event: ViewEvent
 ) -> Result<(), nanika_protocol::FrameError> {
     let Some(current) = view_state.as_ref() else {
         return send_error(
             output,
             Some(request_id),
             "unknown_view",
-            "clipboard view is not open",
+            "clipboard view is not open"
         );
     };
     if current.state.revision != revision {
@@ -255,7 +255,7 @@ fn handle_view_event(
             output,
             Some(request_id),
             "stale_view",
-            "clipboard view revision is stale",
+            "clipboard view revision is stale"
         );
     }
     let mut proposed = current.state.clone();
@@ -271,21 +271,21 @@ fn handle_view_event(
                     output,
                     Some(request_id),
                     "clipboard_history_clear_failed",
-                    &message,
+                    &message
                 );
             }
             state.selected_item_id = None;
         }
         ViewEvent::SearchChanged {
             text,
-            minimum_items,
+            minimum_items
         } => {
             state.query = text;
             state.reset_results(minimum_items);
         }
         ViewEvent::SelectionChanged {
             collection_id,
-            index,
+            index
         } => {
             match current.select_index(&collection_id, index) {
                 Ok(selected) => *state = selected,
@@ -298,7 +298,7 @@ fn handle_view_event(
         ViewEvent::FilterChanged {
             filter_id,
             value,
-            minimum_items,
+            minimum_items
         } if filter_id == "contentType"
             && matches!(value.as_str(), "all" | "text" | "files" | "images") =>
         {
@@ -308,14 +308,14 @@ fn handle_view_event(
         ViewEvent::ListRangeChanged {
             collection_id,
             offset,
-            count,
+            count
         } => {
             if let Err(message) = nanika_extension_clipboard::read_range(
                 state,
                 &current.view,
                 &collection_id,
                 offset,
-                count,
+                count
             ) {
                 return send_error(output, Some(request_id), "invalid_view_range", &message);
             }
@@ -347,7 +347,7 @@ fn handle_view_event(
                 output,
                 &request_id,
                 generation,
-                content.content().clone(),
+                content.content().clone()
             ) {
                 Ok(copied) => copied,
                 Err(error) => {
@@ -363,7 +363,7 @@ fn handle_view_event(
                         output,
                         Some(request_id),
                         "clipboard_monitor_failed",
-                        &message,
+                        &message
                     );
                 }
                 send_frame(
@@ -374,8 +374,8 @@ fn handle_view_event(
                         view_id: VIEW_ID.to_owned(),
                         revision: state.revision,
                         effect: NavigationEffect::Dismiss,
-                        view: None,
-                    },
+                        view: None
+                    }
                 )?;
             } else {
                 if let Err(message) = monitor.cancel_internal_write() {
@@ -389,7 +389,7 @@ fn handle_view_event(
                 output,
                 Some(request_id),
                 "invalid_view_event",
-                "clipboard view event is invalid",
+                "clipboard view event is invalid"
             );
         }
     }
@@ -398,13 +398,13 @@ fn handle_view_event(
             output,
             Some(request_id),
             "view_revision_exhausted",
-            "Reopen the view before continuing.",
+            "Reopen the view before continuing."
         );
     };
     state.revision = next_revision;
     let mut presentation = match worker.present(proposed, expected_collection_revision) {
         Ok(presentation) => presentation,
-        Err(message) => return send_error(output, Some(request_id), "view_failed", &message),
+        Err(message) => return send_error(output, Some(request_id), "view_failed", &message)
     };
     presentation.decorate_icons(&|path| icon_worker.resolution(path));
     // Only a fully validated proposal that was sent becomes the protocol's current revision.
@@ -419,8 +419,8 @@ fn handle_view_event(
             view_id: VIEW_ID.to_owned(),
             revision: next_revision,
             effect: NavigationEffect::None,
-            view: Some(presentation.view.clone()),
-        },
+            view: Some(presentation.view.clone())
+        }
     )?;
     icon_worker.schedule(presentation.icon_paths());
     *view_state = Some(presentation);
@@ -432,7 +432,7 @@ fn write_clipboard(
     output: &SharedOutput,
     request_id: &str,
     generation: u64,
-    content: ClipboardContent,
+    content: ClipboardContent
 ) -> Result<Option<u64>, nanika_protocol::FrameError> {
     let service_request_id = format!("host-{request_id}");
     send_frame(
@@ -441,8 +441,8 @@ fn write_clipboard(
             request_id: service_request_id.clone(),
             parent_request_id: request_id.to_owned(),
             generation,
-            request: HostServiceRequest::WriteClipboard { content },
-        },
+            request: HostServiceRequest::WriteClipboard { content }
+        }
     )?;
     loop {
         match read_frame(input)? {
@@ -450,7 +450,7 @@ fn write_clipboard(
                 request_id: response_id,
                 parent_request_id,
                 generation: response_generation,
-                response: HostServiceResponse::ClipboardWritten { revision },
+                response: HostServiceResponse::ClipboardWritten { revision }
             }) if response_id == service_request_id
                 && parent_request_id == request_id
                 && response_generation == generation =>
@@ -460,13 +460,13 @@ fn write_clipboard(
             Some(Message::Error {
                 request_id: Some(response_id),
                 code,
-                message,
+                message
             }) if response_id == service_request_id => {
                 send_error(output, Some(request_id.to_owned()), &code, &message)?;
                 return Ok(None);
             }
             Some(_) => {}
-            None => return Ok(None),
+            None => return Ok(None)
         }
     }
 }
@@ -475,22 +475,22 @@ fn send_error(
     output: &SharedOutput,
     request_id: Option<String>,
     code: &str,
-    message: &str,
+    message: &str
 ) -> Result<(), nanika_protocol::FrameError> {
     send_frame(
         output,
         &Message::Error {
             request_id,
             code: code.to_owned(),
-            message: message.to_owned(),
-        },
+            message: message.to_owned()
+        }
     )
 }
 
 fn send_frame(output: &SharedOutput, message: &Message) -> Result<(), nanika_protocol::FrameError> {
     write_frame(
         &mut *output.lock().unwrap_or_else(|error| error.into_inner()),
-        message,
+        message
     )
 }
 

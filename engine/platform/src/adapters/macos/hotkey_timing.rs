@@ -17,13 +17,13 @@ const NO_ERROR: OSStatus = 0;
 #[repr(C, packed(2))]
 struct EventHotkeyId {
     signature: u32,
-    id: u32,
+    id: u32
 }
 
 #[repr(C, packed(2))]
 struct EventTypeSpec {
     event_class: u32,
-    event_kind: u32,
+    event_kind: u32
 }
 
 type EventHandler =
@@ -43,7 +43,7 @@ unsafe extern "C" {
         actual_type: *mut u32,
         buffer_size: usize,
         actual_size: *mut usize,
-        data: *mut c_void,
+        data: *mut c_void
     ) -> OSStatus;
     fn GetEventTime(event: EventRef) -> f64;
     fn InstallEventHandler(
@@ -52,7 +52,7 @@ unsafe extern "C" {
         event_type_count: usize,
         event_types: *const EventTypeSpec,
         user_data: *mut c_void,
-        handler_ref: *mut EventHandlerRef,
+        handler_ref: *mut EventHandlerRef
     ) -> OSStatus;
     fn RemoveEventHandler(handler: EventHandlerRef) -> OSStatus;
 }
@@ -71,12 +71,12 @@ pub(crate) fn install() -> Option<*mut c_void> {
     let event_types = [
         EventTypeSpec {
             event_class: EVENT_CLASS_KEYBOARD,
-            event_kind: EVENT_HOTKEY_PRESSED,
+            event_kind: EVENT_HOTKEY_PRESSED
         },
         EventTypeSpec {
             event_class: EVENT_CLASS_KEYBOARD,
-            event_kind: EVENT_HOTKEY_RELEASED,
-        },
+            event_kind: EVENT_HOTKEY_RELEASED
+        }
     ];
     let mut handler = std::ptr::null_mut();
     let status = unsafe {
@@ -86,7 +86,7 @@ pub(crate) fn install() -> Option<*mut c_void> {
             event_types.len(),
             event_types.as_ptr(),
             std::ptr::null_mut(),
-            &mut handler,
+            &mut handler
         )
     };
     (status == NO_ERROR && !handler.is_null()).then_some(handler)
@@ -103,13 +103,13 @@ pub(crate) fn uninstall(handle: *mut c_void) {
 unsafe extern "C" fn observe_hotkey(
     next_handler: EventHandlerCallRef,
     event: EventRef,
-    _user_data: *mut c_void,
+    _user_data: *mut c_void
 ) -> OSStatus {
     let event_kind = unsafe { GetEventKind(event) };
     if matches!(event_kind, EVENT_HOTKEY_PRESSED | EVENT_HOTKEY_RELEASED) {
         let mut hotkey = EventHotkeyId {
             signature: 0,
-            id: 0,
+            id: 0
         };
         let status = unsafe {
             GetEventParameter(
@@ -119,7 +119,7 @@ unsafe extern "C" fn observe_hotkey(
                 std::ptr::null_mut(),
                 size_of::<EventHotkeyId>(),
                 std::ptr::null_mut(),
-                (&mut hotkey as *mut EventHotkeyId).cast(),
+                (&mut hotkey as *mut EventHotkeyId).cast()
             )
         };
         if status == NO_ERROR {

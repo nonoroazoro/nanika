@@ -1,4 +1,4 @@
 pub struct PendingInvocation {
     pub request_id: String,
-    pub generation: u64,
+    pub generation: u64
 }

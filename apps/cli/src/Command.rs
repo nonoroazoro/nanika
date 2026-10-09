@@ -8,7 +8,7 @@ pub enum Command {
     Enable(String),
     Disable(String),
     Remove(String),
-    Diagnostics(PathBuf),
+    Diagnostics(PathBuf)
 }
 
 impl Command {
@@ -26,7 +26,7 @@ impl Command {
             "disable" => Ok(Self::Disable(value)),
             "remove" => Ok(Self::Remove(value)),
             "diagnostics" => Ok(Self::Diagnostics(PathBuf::from(value))),
-            _ => Err(usage()),
+            _ => Err(usage())
         }
     }
 }

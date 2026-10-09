@@ -3,12 +3,12 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use nanika_extension_package::{
-    CommandContribution, ExtensionContributions, RootSearchContribution, ViewContribution,
+    CommandContribution, ExtensionContributions, RootSearchContribution, ViewContribution
 };
 
 use crate::{
     ExtensionSearchState, ExtensionViewRequest, ExtensionViewRequestKind, ExtensionWork,
-    contribution_candidates, next_work, queue_view_invalidation,
+    contribution_candidates, next_work, queue_view_invalidation
 };
 
 #[test]
@@ -39,25 +39,25 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
                 start: Box::new(move |_| {
                     starts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     Err(std::io::Error::other("fixture activation failure"))
-                }),
+                })
             },
             search.clone(),
             ExtensionContributions {
                 commands: vec![CommandContribution {
                     action: nanika_protocol::Action::primary(
                         nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
-                        "Run",
+                        "Run"
                     ),
                     command: "test.command".to_owned(),
                     title: "Test".to_owned(),
                     description: "Test command".to_owned(),
                     category: None,
                     keywords: Vec::new(),
-                    icon: None,
+                    icon: None
                 }],
                 ..Default::default()
             },
-            Default::default(),
+            Default::default()
         )
         .unwrap();
     assert_eq!(coordinator.ready_extension_ids(), ["test.extension"]);
@@ -68,13 +68,13 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
             1,
             "test.command",
             "command.execute",
-            "",
+            ""
         ) {
             Ok(receipt) => receipt
                 .recv_timeout(Duration::from_secs(2))
                 .unwrap()
                 .unwrap_err(),
-            Err(error) => error.to_string(),
+            Err(error) => error.to_string()
         };
         assert!(error.contains("fixture activation failure"));
     }
@@ -104,7 +104,7 @@ fn view_event_wakes_an_idle_worker() {
             generation: 2,
             view_id: "test.view".to_owned(),
             revision: 3,
-            kind: ExtensionViewRequestKind::Close,
+            kind: ExtensionViewRequestKind::Close
         });
     ready.notify_one();
 
@@ -122,7 +122,7 @@ fn latest_visible_entry_hint_is_coalesced_behind_a_query() {
         let mut pending = state.0.lock().unwrap();
         pending.query = Some(crate::ExtensionSearchQuery {
             generation: 4,
-            query: "mail".to_owned(),
+            query: "mail".to_owned()
         });
         pending.entry_preparation = Some((3, vec!["old".to_owned()]));
         pending.entry_preparation = Some((4, vec!["visible".to_owned()]));
@@ -143,14 +143,14 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
         commands: vec![CommandContribution {
             action: nanika_protocol::Action::primary(
                 nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
-                "Run",
+                "Run"
             ),
             command: "example.open".to_owned(),
             title: "Open Example".to_owned(),
             description: "Open the example view.".to_owned(),
             category: Some("Example".to_owned()),
             keywords: vec!["sample".to_owned()],
-            icon: Some("assets/command.png".to_owned()),
+            icon: Some("assets/command.png".to_owned())
         }],
         views: vec![ViewContribution {
             id: "example.view".to_owned(),
@@ -158,10 +158,10 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
             description: "Browse examples.".to_owned(),
             category: None,
             keywords: Vec::new(),
-            icon: None,
+            icon: None
         }],
         configuration: None,
-        root_search: Some(RootSearchContribution::default()),
+        root_search: Some(RootSearchContribution::default())
     });
 
     assert_eq!(candidates.len(), 2);
@@ -198,13 +198,13 @@ fn worker_exit_completes_every_queued_refresh_with_an_error() {
             .push_back(crate::ExtensionRefresh {
                 request_id,
                 generation: 1,
-                completion,
+                completion
             });
         completions.push(receiver);
     }
     drop(crate::ExtensionWorkerLifetime {
         state,
-        notifier: Arc::new(Mutex::new(None)),
+        notifier: Arc::new(Mutex::new(None))
     });
     for completion in completions {
         let error = completion
@@ -225,11 +225,11 @@ fn worker_panic_is_a_failed_stop() {
             crate::ExtensionRuntimeSource::Factory {
                 activation: nanika_extension_package::ExtensionActivation::Startup,
                 live_configuration: true,
-                start: Box::new(|_| panic!("fixture factory panic")),
+                start: Box::new(|_| panic!("fixture factory panic"))
             },
             owner.handle(),
             Default::default(),
-            Default::default(),
+            Default::default()
         )
         .unwrap();
     let worker = coordinator.worker("test.panic").unwrap();
@@ -258,17 +258,17 @@ fn dormant_factory_receives_the_last_accepted_configuration() {
                 start: Box::new(move |configuration| {
                     observed.send(configuration).unwrap();
                     Err(std::io::Error::other("fixture activation failure"))
-                }),
+                })
             },
             owner.handle(),
             Default::default(),
-            Default::default(),
+            Default::default()
         )
         .unwrap();
     let configuration = nanika_protocol::ExtensionConfiguration::new(
         [("value".into(), serde_json::json!(42))]
             .into_iter()
-            .collect(),
+            .collect()
     );
     let (completion, applied) = mpsc::sync_channel(1);
     assert!(
@@ -318,11 +318,11 @@ fn active_refresh_allows_queries_but_serializes_catalog_mutations() {
         inner.refreshes.push_back(crate::ExtensionRefresh {
             request_id: 1,
             generation: 1,
-            completion: mpsc::sync_channel(1).0,
+            completion: mpsc::sync_channel(1).0
         });
         inner.query = Some(crate::ExtensionSearchQuery {
             generation: 2,
-            query: "new input".to_owned(),
+            query: "new input".to_owned()
         });
     }
     assert!(

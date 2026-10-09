@@ -7,7 +7,7 @@ const MAX_PENDING_PATHS: usize = 512;
 
 pub struct FileIconWorker {
     state: Arc<(Mutex<State>, Condvar)>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<()>>
 }
 
 #[derive(Default)]
@@ -16,13 +16,13 @@ struct State {
     known: HashSet<PathBuf>,
     resolved: HashMap<PathBuf, crate::FileIconResolution>,
     ready_order: VecDeque<PathBuf>,
-    shutdown: bool,
+    shutdown: bool
 }
 
 impl FileIconWorker {
     pub fn spawn(
         icon_root: PathBuf,
-        invalidated: Arc<dyn Fn() + Send + Sync>,
+        invalidated: Arc<dyn Fn() + Send + Sync>
     ) -> Result<Self, String> {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let worker_state = Arc::clone(&state);
@@ -89,8 +89,8 @@ impl FileIconWorker {
                         path,
                         crate::FileIconResolution {
                             source,
-                            icon: reference,
-                        },
+                            icon: reference
+                        }
                     );
                     drop(state);
                     // Only a new source outcome invalidates the view. Its refresh can revalidate
@@ -101,7 +101,7 @@ impl FileIconWorker {
             .map_err(|error| error.to_string())?;
         Ok(Self {
             state,
-            thread: Some(thread),
+            thread: Some(thread)
         })
     }
 
@@ -128,7 +128,7 @@ impl FileIconWorker {
     /// `None` is pending; `Some(None)` is a settled failure that must not block previews.
     pub fn resolution(
         &self,
-        path: &std::path::Path,
+        path: &std::path::Path
     ) -> Option<Option<nanika_protocol::IconReference>> {
         self.state
             .0

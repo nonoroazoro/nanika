@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 pub(crate) struct ClipboardWritePermit {
     pub(crate) budget: Arc<ClipboardWriteBudget>,
-    pub(crate) image: bool,
+    pub(crate) image: bool
 }
 
 impl Drop for ClipboardWritePermit {

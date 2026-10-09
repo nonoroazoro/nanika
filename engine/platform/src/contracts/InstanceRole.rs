@@ -4,5 +4,5 @@ use crate::SingleInstance;
 #[derive(Debug)]
 pub enum InstanceRole {
     Primary(SingleInstance),
-    Secondary,
+    Secondary
 }

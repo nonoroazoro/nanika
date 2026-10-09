@@ -7,7 +7,7 @@ use crate::ApplicationError;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ApplicationArguments {
     Structured { values: Vec<String> },
-    WindowsRaw { value: String },
+    WindowsRaw { value: String }
 }
 
 impl ApplicationArguments {
@@ -18,7 +18,7 @@ impl ApplicationArguments {
     pub fn from_windows_raw(value: Option<String>) -> Self {
         match value.filter(|value| !value.trim().is_empty()) {
             Some(value) => Self::WindowsRaw { value },
-            None => Self::empty(),
+            None => Self::empty()
         }
     }
 

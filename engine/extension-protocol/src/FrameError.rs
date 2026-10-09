@@ -4,7 +4,7 @@ use std::io;
 pub enum FrameError {
     Io(io::Error),
     InvalidLength(usize),
-    Json(String),
+    Json(String)
 }
 
 impl std::fmt::Display for FrameError {
@@ -12,7 +12,7 @@ impl std::fmt::Display for FrameError {
         match self {
             Self::Io(error) => write!(formatter, "I/O error: {error}"),
             Self::InvalidLength(length) => write!(formatter, "invalid frame length: {length}"),
-            Self::Json(error) => write!(formatter, "JSON error: {error}"),
+            Self::Json(error) => write!(formatter, "JSON error: {error}")
         }
     }
 }

@@ -5,15 +5,15 @@ use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUn
 use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SHGetImageList, SHIL_JUMBO, SIIGBF,
-    SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
+    SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT
 };
 use windows::core::PCWSTR;
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection,
-    DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, SelectObject,
+    DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, SelectObject
 };
 use windows_sys::Win32::UI::Shell::{
-    ExtractIconExW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHGetFileInfoW,
+    ExtractIconExW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX, SHGetFileInfoW
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{DI_NORMAL, DestroyIcon, DrawIconEx};
 
@@ -37,7 +37,7 @@ pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
     let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
         return Err(std::io::Error::other(
-            windows::core::Error::from(initialized).to_string(),
+            windows::core::Error::from(initialized).to_string()
         ));
     }
     let _apartment = Apartment(initialized.is_ok());
@@ -55,7 +55,7 @@ pub(crate) fn shell_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
             0,
             &mut info,
             std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_SYSICONINDEX,
+            SHGFI_SYSICONINDEX
         )
     };
     if resolved != 0
@@ -79,7 +79,7 @@ pub(crate) fn list_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
     let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
         return Err(std::io::Error::other(
-            windows::core::Error::from(initialized).to_string(),
+            windows::core::Error::from(initialized).to_string()
         ));
     }
     let _apartment = Apartment(initialized.is_ok());
@@ -96,7 +96,7 @@ pub(crate) fn list_pixels(path: &Path, size: u32) -> std::io::Result<Vec<u8>> {
             0,
             &mut info,
             std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_SYSICONINDEX,
+            SHGFI_SYSICONINDEX
         )
     };
     if resolved != 0
@@ -135,7 +135,7 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
     let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
         return Err(std::io::Error::other(
-            windows::core::Error::from(initialized).to_string(),
+            windows::core::Error::from(initialized).to_string()
         ));
     }
     // Drop all COM interfaces before balancing this thread's initialization.
@@ -150,7 +150,7 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
             0,
             &mut info,
             std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_ICON | SHGFI_LARGEICON,
+            SHGFI_ICON | SHGFI_LARGEICON
         )
     };
     let mut icon = info.hIcon;
@@ -167,12 +167,12 @@ pub(crate) fn pixels(path: &Path, icon_index: i32, size: u32) -> std::io::Result
                 icon_index,
                 &mut icon,
                 std::ptr::null_mut(),
-                1,
+                1
             )
         };
         if count == 0 || icon.is_null() {
             return Err(std::io::Error::other(
-                "Windows Shell did not provide a file icon",
+                "Windows Shell did not provide a file icon"
             ));
         }
     }
@@ -194,7 +194,7 @@ pub(crate) fn application_pixels(id: &str, size: u32) -> std::io::Result<Vec<u8>
         windows::Win32::UI::Shell::SHCreateItemInKnownFolder(
             &windows::Win32::UI::Shell::FOLDERID_AppsFolder,
             windows::Win32::UI::Shell::KF_FLAG_DEFAULT,
-            PCWSTR(id.as_ptr()),
+            PCWSTR(id.as_ptr())
         )
     }
     .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -214,15 +214,15 @@ fn image_factory_pixels(source: &[u16], size: u32, flags: SIIGBF) -> std::io::Re
 fn _factory_pixels(
     factory: &IShellItemImageFactory,
     size: u32,
-    flags: SIIGBF,
+    flags: SIIGBF
 ) -> std::io::Result<Vec<u8>> {
     let bitmap = unsafe {
         factory.GetImage(
             SIZE {
                 cx: size as i32,
-                cy: size as i32,
+                cy: size as i32
             },
-            flags,
+            flags
         )
     }
     .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -241,7 +241,7 @@ fn shell_file_info_pixels(source: &[u16], size: u32) -> std::io::Result<Vec<u8>>
             0,
             &mut info,
             std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_ICON | SHGFI_LARGEICON,
+            SHGFI_ICON | SHGFI_LARGEICON
         )
     };
     if extracted == 0 || info.hIcon.is_null() {
@@ -251,7 +251,7 @@ fn shell_file_info_pixels(source: &[u16], size: u32) -> std::io::Result<Vec<u8>>
             }
         }
         return Err(std::io::Error::other(
-            "Windows Shell did not provide a file icon",
+            "Windows Shell did not provide a file icon"
         ));
     }
     let result = icon_pixels(info.hIcon, size).and_then(visible_pixels);
@@ -282,7 +282,7 @@ impl Drop for Apartment {
 
 fn icon_pixels(
     icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON,
-    size: u32,
+    size: u32
 ) -> std::io::Result<Vec<u8>> {
     let mut pixels = draw_icon_bgra(icon, size, 0)?;
     let has_alpha = pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0);
@@ -296,7 +296,7 @@ fn icon_pixels(
 
 fn hbitmap_pixels(
     bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
-    size: u32,
+    size: u32
 ) -> std::io::Result<Vec<u8>> {
     // Shell artwork may be smaller or non-square despite the requested dimensions.
     let mut dimensions = unsafe { std::mem::zeroed::<BITMAP>() };
@@ -304,7 +304,7 @@ fn hbitmap_pixels(
         GetObjectW(
             bitmap,
             std::mem::size_of::<BITMAP>() as i32,
-            (&mut dimensions as *mut BITMAP).cast(),
+            (&mut dimensions as *mut BITMAP).cast()
         )
     };
     if read == 0 {
@@ -314,7 +314,7 @@ fn hbitmap_pixels(
     let height = dimensions.bmHeight;
     if !(1..=512).contains(&width) || !(1..=512).contains(&height) {
         return Err(std::io::Error::other(
-            "Windows returned invalid icon bitmap dimensions",
+            "Windows returned invalid icon bitmap dimensions"
         ));
     }
     let mut info = unsafe { std::mem::zeroed::<BITMAPINFO>() };
@@ -340,7 +340,7 @@ fn hbitmap_pixels(
             height as u32,
             pixels.as_mut_ptr().cast(),
             &mut info,
-            DIB_RGB_COLORS,
+            DIB_RGB_COLORS
         )
     };
     let error = std::io::Error::last_os_error();
@@ -359,7 +359,7 @@ fn hbitmap_pixels(
 fn draw_icon_bgra(
     icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON,
     size: u32,
-    background: u8,
+    background: u8
 ) -> std::io::Result<Vec<u8>> {
     let mut bitmap = unsafe { std::mem::zeroed::<BITMAPINFO>() };
     bitmap.bmiHeader = BITMAPINFOHEADER {
@@ -390,7 +390,7 @@ fn draw_icon_bgra(
             DIB_RGB_COLORS,
             &mut bits,
             std::ptr::null_mut(),
-            0,
+            0
         )
     };
     if dib.is_null() || bits.is_null() {
@@ -416,7 +416,7 @@ fn draw_icon_bgra(
             size as i32,
             0,
             std::ptr::null_mut(),
-            DI_NORMAL,
+            DI_NORMAL
         )
     };
     let pixels = if drawn == 0 {

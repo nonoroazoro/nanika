@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub(crate) struct InstanceHostServices {
     pub(crate) instance: Arc<ExtensionInstance>,
-    pub(crate) services: Arc<dyn HostServiceHandler>,
+    pub(crate) services: Arc<dyn HostServiceHandler>
 }
 
 impl HostServiceHandler for InstanceHostServices {
@@ -12,7 +12,7 @@ impl HostServiceHandler for InstanceHostServices {
         &self,
         extension_id: &str,
         request: HostServiceRequest,
-        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption,
+        interruption: &mut dyn FnMut() -> crate::ExtensionInterruption
     ) -> Result<crate::PreparedHostService<'_>, String> {
         if !self.instance.is_active() {
             return Err("The extension instance has been retired.".into());

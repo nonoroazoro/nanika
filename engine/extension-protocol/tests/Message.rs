@@ -1,13 +1,13 @@
 use nanika_protocol::{
     Action, ActionStyle, DetailContent, DetailView, ExtensionConfiguration, HostServiceRequest,
     HostServiceResponse, ImageSource, LaunchArguments, LaunchDescriptor, ListItem, ListLayout,
-    ListSection, ListView, Message, NavigationEffect, View, ViewItemIcon,
+    ListSection, ListView, Message, NavigationEffect, View, ViewItemIcon
 };
 
 #[test]
 fn snapshot_completion_is_required_by_protocol_v1() {
     let message = serde_json::from_str::<Message>(
-        r#"{"type":"snapshot","request_id":"query","generation":1,"entries":[]}"#,
+        r#"{"type":"snapshot","request_id":"query","generation":1,"entries":[]}"#
     );
     assert!(message.is_err());
 }
@@ -18,7 +18,7 @@ fn invocation_identifies_the_selected_entry_and_action() {
         request_id: "invoke".to_owned(),
         generation: 7,
         entry_id: "application.example".to_owned(),
-        action_id: "application.open".to_owned(),
+        action_id: "application.open".to_owned()
     };
     let encoded = serde_json::to_value(message).expect("invoke should encode");
     assert_eq!(encoded["entry_id"], "application.example");
@@ -40,7 +40,7 @@ fn resumed_view_events_have_a_platform_neutral_wire_shape() {
         generation: 7,
         view_id: "clipboard.history".to_owned(),
         revision: 3,
-        event: nanika_protocol::ViewEvent::Resumed,
+        event: nanika_protocol::ViewEvent::Resumed
     };
     let encoded = serde_json::to_value(message).expect("view resume should encode");
     assert_eq!(encoded["event"]["kind"], "resumed");
@@ -53,7 +53,7 @@ fn visible_entry_preparation_is_a_requestless_bounded_hint() {
         entry_ids: vec![
             "application.first".to_owned(),
             "application.second".to_owned(),
-        ],
+        ]
     };
     let encoded = serde_json::to_value(message).expect("entry hint should encode");
     assert_eq!(encoded["type"], "prepareEntries");
@@ -90,9 +90,9 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                         allow_default_execution: true,
                         style: ActionStyle::Primary,
                         enabled: true,
-                        group: None,
-                    }],
-                }],
+                        group: None
+                    }]
+                }]
             }],
             collection_id: "test.collection".into(),
             selection: None,
@@ -105,21 +105,21 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     value: "Content".to_owned(),
                 },
                 metadata: Vec::new(),
-                actions: Vec::new(),
+                actions: Vec::new()
             }),
-            filter: None,
-        }),
+            filter: None
+        })
     };
     let effect = NavigationEffect::Push {
         view_id: "clipboard.history".to_owned(),
         revision: 1,
-        view: Box::new(view),
+        view: Box::new(view)
     };
     effect.validate().expect("view should validate");
     let encoded = serde_json::to_value(Message::Result {
         request_id: "invoke".to_owned(),
         generation: 7,
-        effect,
+        effect
     })
     .expect("view result should encode");
     assert_eq!(encoded["effect"]["kind"], "push");
@@ -137,8 +137,8 @@ fn detail_files_must_not_be_empty() {
             title: None,
             content: DetailContent::Files { files: Vec::new() },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
 
     assert_eq!(
@@ -167,9 +167,9 @@ fn view_action_confirmation_titles_are_validated() {
                 allow_default_execution: false,
                 style: ActionStyle::Destructive,
                 enabled: true,
-                group: None,
-            }],
-        },
+                group: None
+            }]
+        }
     };
 
     assert_eq!(
@@ -199,9 +199,9 @@ fn view_action_confirmation_is_limited_to_destructive_actions() {
                 allow_default_execution: false,
                 style: ActionStyle::Primary,
                 enabled: true,
-                group: None,
-            }],
-        },
+                group: None
+            }]
+        }
     };
 
     assert_eq!(
@@ -219,13 +219,13 @@ fn detail_resource_images_use_relative_png_paths() {
             title: None,
             content: DetailContent::Image {
                 source: ImageSource {
-                    path: resource_path,
+                    path: resource_path
                 },
-                alternative_text: "Image".to_owned(),
+                alternative_text: "Image".to_owned()
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
     view.validate()
         .expect("relative resource image should validate");
@@ -235,13 +235,13 @@ fn detail_resource_images_use_relative_png_paths() {
             title: None,
             content: DetailContent::Image {
                 source: ImageSource {
-                    path: "../outside.png".to_owned(),
+                    path: "../outside.png".to_owned()
                 },
-                alternative_text: "Image".to_owned(),
+                alternative_text: "Image".to_owned()
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
     assert!(invalid.validate().is_err());
 
@@ -250,13 +250,13 @@ fn detail_resource_images_use_relative_png_paths() {
             title: None,
             content: DetailContent::Image {
                 source: ImageSource {
-                    path: "preview.png".to_owned(),
+                    path: "preview.png".to_owned()
                 },
-                alternative_text: "Image".to_owned(),
+                alternative_text: "Image".to_owned()
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
     assert!(mutable_name.validate().is_err());
 }
@@ -269,7 +269,7 @@ fn delivered_windows_are_bounded_independently_of_collection_size() {
             title: "Entry".to_owned(),
             subtitle: None,
             icon: None,
-            actions: Vec::new(),
+            actions: Vec::new()
         })
         .collect();
     let mut view = View::List {
@@ -285,13 +285,13 @@ fn delivered_windows_are_bounded_independently_of_collection_size() {
                 title: None,
                 offset: 0,
                 total: 100_000,
-                items,
+                items
             }],
             collection_id: "test.collection".into(),
             selection: None,
             detail: None,
-            filter: None,
-        }),
+            filter: None
+        })
     };
     assert!(view.validate().is_err());
     let View::List { list } = &mut view else {
@@ -326,8 +326,8 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                     title: "Example".to_owned(),
                     subtitle: None,
                     icon: None,
-                    actions: Vec::new(),
-                }],
+                    actions: Vec::new()
+                }]
             }],
             collection_id: "test.collection".into(),
             selection: None,
@@ -348,11 +348,11 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                     allow_default_execution: true,
                     style: ActionStyle::Primary,
                     enabled: true,
-                    group: None,
-                }],
+                    group: None
+                }]
             }),
-            filter: None,
-        }),
+            filter: None
+        })
     };
 
     assert_eq!(
@@ -366,7 +366,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
 fn refresh_completion_preserves_request_identity_and_generation() {
     let message = Message::Refreshed {
         request_id: "refresh".to_owned(),
-        generation: 11,
+        generation: 11
     };
     let encoded = serde_json::to_value(message).expect("refresh should encode");
     assert_eq!(encoded["type"], "refreshed");
@@ -384,11 +384,11 @@ fn host_requests_are_bound_to_the_parent_invocation() {
             descriptor: LaunchDescriptor::Program {
                 program: "tool".to_owned(),
                 arguments: LaunchArguments::Structured {
-                    values: vec!["--help".to_owned()],
+                    values: vec!["--help".to_owned()]
                 },
-                working_directory: None,
-            },
-        },
+                working_directory: None
+            }
+        }
     };
     let encoded = serde_json::to_value(message).expect("host request should encode");
     assert_eq!(encoded["type"], "hostRequest");
@@ -402,8 +402,8 @@ fn configuration_updates_carry_a_complete_snapshot() {
         request_id: "configuration".to_owned(),
         configuration: ExtensionConfiguration::new(std::collections::BTreeMap::from([(
             "example.enabled".to_owned(),
-            serde_json::json!(true),
-        )])),
+            serde_json::json!(true)
+        )]))
     };
     let encoded = serde_json::to_value(message).expect("configuration should encode");
     assert_eq!(encoded["type"], "configurationChanged");
@@ -424,12 +424,12 @@ fn native_view_icons_are_opaque_and_validated() {
                 files: vec![nanika_protocol::ViewFile {
                     name: "example.pkg".to_owned(),
                     path: "/example/example.pkg".to_owned(),
-                    icon: Some(reference),
-                }],
+                    icon: Some(reference)
+                }]
             },
             metadata: Vec::new(),
-            actions: Vec::new(),
-        },
+            actions: Vec::new()
+        }
     };
     view.validate().expect("valid icon reference");
     let mut oversized = view.clone();
@@ -470,14 +470,14 @@ fn native_view_icons_are_opaque_and_validated() {
                     title: "example.pkg".to_owned(),
                     subtitle: None,
                     icon: Some(ViewItemIcon::Native(invalid)),
-                    actions: Vec::new(),
-                }],
+                    actions: Vec::new()
+                }]
             }],
             collection_id: "test.collection".into(),
             selection: None,
             detail: None,
-            filter: None,
-        }),
+            filter: None
+        })
     };
     assert!(view.validate().is_err());
 }
@@ -489,13 +489,13 @@ fn configuration_progress_requires_real_bounded_work_units() {
         OperationProgress {
             label: "Scanning".into(),
             completed: 1,
-            total: Some(2),
+            total: Some(2)
         },
         OperationProgress {
             label: "Connecting".into(),
             completed: 0,
-            total: None,
-        },
+            total: None
+        }
     ] {
         assert!(progress.validate().is_ok());
     }
@@ -503,27 +503,27 @@ fn configuration_progress_requires_real_bounded_work_units() {
         OperationProgress {
             label: "".into(),
             completed: 0,
-            total: None,
+            total: None
         },
         OperationProgress {
             label: "x".repeat(129),
             completed: 0,
-            total: None,
-        },
+            total: None
+        }
         OperationProgress {
             label: "Scanning".into(),
             completed: 3,
-            total: Some(2),
+            total: Some(2)
         },
         OperationProgress {
             label: "Scanning".into(),
             completed: 0,
-            total: Some(0),
+            total: Some(0)
         },
         OperationProgress {
             label: "Connecting".into(),
             completed: 1,
-            total: None,
+            total: None
         },
     ] {
         assert!(progress.validate().is_err());
@@ -541,7 +541,7 @@ fn system_service_rejects_unknown_operations_and_round_trips_submission_receipt(
         SystemAction::Restart,
         SystemAction::ShutDown,
         SystemAction::OpenTrash,
-        SystemAction::EmptyTrash,
+        SystemAction::EmptyTrash
     ] {
         let request = HostServiceRequest::SystemAction { action };
         assert_eq!(
@@ -580,21 +580,21 @@ fn repeated_section_identities_are_rejected_before_rendering() {
                     title: None,
                     offset: 0,
                     total: 0,
-                    items: Vec::new(),
+                    items: Vec::new()
                 },
                 ListSection {
                     id: "same".into(),
                     title: None,
                     offset: 0,
                     total: 0,
-                    items: Vec::new(),
+                    items: Vec::new()
                 },
             ],
             collection_id: "test.collection".into(),
             selection: None,
             detail: None,
-            filter: None,
-        }),
+            filter: None
+        })
     };
     assert_eq!(
         view.validate().unwrap_err(),
@@ -632,8 +632,8 @@ fn view_changes_are_instance_scoped_and_bounded_text_chunks_preserve_controls() 
                 total_chunks: 1,
             },
             metadata: vec![],
-            actions: vec![],
-        },
+            actions: vec![]
+        }
     };
     view.validate().unwrap();
     let View::Detail { detail } = &mut view else {
@@ -671,8 +671,8 @@ fn text_preview_resident_budget_bounds_invisible_and_maximum_size_chunks() {
                     total_chunks: chunks,
                 },
                 metadata: vec![],
-                actions: vec![],
-            },
+                actions: vec![]
+            }
         };
         assert_eq!(view.validate().is_ok(), valid);
     }
@@ -689,7 +689,7 @@ fn search_and_filter_require_a_positive_integer_viewport_demand() {
             serde_json::json!(0),
             serde_json::json!(-1),
             serde_json::json!(1.5),
-            serde_json::json!(4294967296_u64),
+            serde_json::json!(4294967296_u64)
         ] {
             value["minimum_items"] = demand;
             assert!(serde_json::from_value::<nanika_protocol::ViewEvent>(value.clone()).is_err());
@@ -714,8 +714,8 @@ fn list_empty_copy_is_bounded_before_rendering() {
             collection_id: "test.collection".into(),
             selection: None,
             detail: None,
-            filter: None,
-        }),
+            filter: None
+        })
     };
     view.validate().unwrap();
     let encoded = serde_json::to_string(&view).unwrap();
@@ -726,7 +726,7 @@ fn list_empty_copy_is_bounded_before_rendering() {
         ("No entries".into(), "x".repeat(513), false),
         (" ".into(), String::new(), false),
         ("Invalid\0".into(), String::new(), false),
-        ("No entries".into(), "Invalid\0".into(), false),
+        ("No entries".into(), "Invalid\0".into(), false)
     ] {
         let View::List { list } = &mut view else {
             unreachable!()
@@ -762,16 +762,16 @@ fn content_reads_require_matching_identity_and_complete_requested_window() {
                         title: i.to_string(),
                         subtitle: None,
                         icon: None,
-                        actions: vec![],
+                        actions: vec![]
                     })
-                    .collect(),
-            }],
-        }),
+                    .collect()
+            }]
+        })
     };
     let event = nanika_protocol::ViewEvent::ListRangeChanged {
         collection_id: "collection".into(),
         offset: 10,
-        count: std::num::NonZeroU32::new(10).unwrap(),
+        count: std::num::NonZeroU32::new(10).unwrap()
     };
     view.validate().unwrap();
     event.validate_response(Some(&view)).unwrap();

@@ -7,7 +7,7 @@ pub struct SingleInstance {
     pub(super) events: Option<Receiver<crate::PlatformEvent>>,
     pub(super) event_thread: Option<JoinHandle<()>>,
     pub(super) mutex: isize,
-    pub(super) activation_window: isize,
+    pub(super) activation_window: isize
 }
 
 impl SingleInstance {
@@ -26,7 +26,7 @@ impl Drop for SingleInstance {
         }
         unsafe {
             let _ = windows_sys::Win32::Foundation::CloseHandle(
-                self.mutex as windows_sys::Win32::Foundation::HANDLE,
+                self.mutex as windows_sys::Win32::Foundation::HANDLE
             );
         }
     }

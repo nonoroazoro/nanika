@@ -15,13 +15,13 @@ pub(crate) struct SearchResult {
     pub(crate) subtitle: Option<nanika_protocol::CandidateSubtitle>,
     pub(crate) icon: Option<crate::result_icon::ResultIcon>,
     pub(crate) kind: String,
-    pub(crate) entry_type: nanika_search::CandidateKind,
+    pub(crate) entry_type: nanika_search::CandidateKind
 }
 
 impl SearchResult {
     pub(crate) fn from_candidate(
         candidate: &nanika_search::Candidate,
-        extension_icon: Option<nanika_protocol::IconSource>,
+        extension_icon: Option<nanika_protocol::IconSource>
     ) -> Self {
         let primary = candidate
             .actions()
@@ -36,7 +36,7 @@ impl SearchResult {
             None => primary
                 .and_then(|action| action.icon)
                 .map(|name| crate::result_icon::ResultIcon::Symbol { name })
-                .or_else(|| extension_icon.as_ref().and_then(image)),
+                .or_else(|| extension_icon.as_ref().and_then(image))
         };
         Self {
             extension_id: candidate.extension_id().to_owned(),
@@ -55,7 +55,7 @@ impl SearchResult {
             subtitle: candidate.subtitle().cloned(),
             icon,
             kind: "Extension".to_owned(),
-            entry_type: candidate.kind(),
+            entry_type: candidate.kind()
         }
     }
 }

@@ -5,5 +5,5 @@ pub struct StoredUsage {
     pub action_id: String,
     pub query_context: String,
     pub execution_count: u32,
-    pub last_executed_at: u64,
+    pub last_executed_at: u64
 }

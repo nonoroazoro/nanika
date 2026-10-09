@@ -28,7 +28,7 @@ pub(crate) fn spawn() -> std::io::Result<mpsc::Receiver<Result<ProtocolInput, Fr
                 };
                 if let Message::Cancel {
                     request_id,
-                    generation,
+                    generation
                 } = &message
                 {
                     if let Some((id, current_generation, cancelled)) = &active

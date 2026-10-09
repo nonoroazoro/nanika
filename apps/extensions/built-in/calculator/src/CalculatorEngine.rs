@@ -9,13 +9,13 @@ use crate::COPY_ACTION_ID;
 
 /// Deterministic calculator preview context reused by the extension process.
 pub struct CalculatorEngine {
-    context: fend_core::Context,
+    context: fend_core::Context
 }
 
 impl CalculatorEngine {
     pub fn new() -> Self {
         Self {
-            context: fend_core::Context::new(),
+            context: fend_core::Context::new()
         }
     }
 
@@ -26,7 +26,7 @@ impl CalculatorEngine {
     pub fn evaluate_cancellable(
         &self,
         query: &str,
-        cancelled: &AtomicBool,
+        cancelled: &AtomicBool
     ) -> Option<(Candidate, String)> {
         let query = query.trim();
         if query.is_empty() || !has_explicit_operator(query) {
@@ -45,17 +45,17 @@ impl CalculatorEngine {
                 entry_id: format!("calculator.{}", stable_hash(&[query, result])),
                 title: format!("= {result}"),
                 subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                    "Calculator".to_owned(),
+                    "Calculator".to_owned()
                 )),
                 action_id: COPY_ACTION_ID.to_owned(),
                 actions: vec![nanika_protocol::Action::primary(
                     COPY_ACTION_ID,
-                    "Copy result",
+                    "Copy result"
                 )],
                 aliases: vec![query.to_owned()],
-                icon: None,
+                icon: None
             },
-            result.to_owned(),
+            result.to_owned()
         ))
     }
 }

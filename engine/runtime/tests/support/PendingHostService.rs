@@ -7,7 +7,7 @@ pub struct PendingHostService {
     _on_prepare: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     _preparations: std::sync::atomic::AtomicUsize,
     _admissions: std::sync::atomic::AtomicUsize,
-    response: Mutex<Option<mpsc::SyncSender<Result<HostServiceResponse, String>>>>,
+    response: Mutex<Option<mpsc::SyncSender<Result<HostServiceResponse, String>>>>
 }
 impl PendingHostService {
     pub fn stop_during_prepare(stop: impl Fn() + Send + Sync + 'static) -> Self {
@@ -41,7 +41,7 @@ impl HostServiceHandler for PendingHostService {
         &self,
         _: &str,
         _: HostServiceRequest,
-        _: &mut dyn FnMut() -> nanika_host::ExtensionInterruption,
+        _: &mut dyn FnMut() -> nanika_host::ExtensionInterruption
     ) -> Result<nanika_host::PreparedHostService<'_>, String> {
         self._preparations
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);

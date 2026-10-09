@@ -2,7 +2,7 @@ use crate::{ClipboardEntry, ClipboardQueryEntry};
 use nanika_protocol::ClipboardContent;
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::Arc
 };
 
 /// Only the active query's ordering metadata and immutable reviewed IDs are retained.
@@ -11,7 +11,7 @@ pub(crate) struct ClipboardQuery {
     pub content_type: String,
     pub entries: Vec<ClipboardQueryEntry>,
     pub entry_ids: Arc<Vec<String>>,
-    pub positions: HashMap<String, usize>,
+    pub positions: HashMap<String, usize>
 }
 
 impl ClipboardQuery {
@@ -35,8 +35,8 @@ impl ClipboardQuery {
                 index,
                 ClipboardQueryEntry {
                     entry_id: entry.entry_id.clone(),
-                    captured_at,
-                },
+                    captured_at
+                }
             );
             changed = true;
         }
@@ -52,7 +52,7 @@ impl ClipboardQuery {
                 self.entries
                     .iter()
                     .map(|entry| entry.entry_id.clone())
-                    .collect(),
+                    .collect()
             );
         }
         changed
@@ -62,7 +62,7 @@ impl ClipboardQuery {
         let content_type = match entry.content {
             ClipboardContent::Text { .. } => "text",
             ClipboardContent::Files { .. } => "files",
-            ClipboardContent::PngFile { .. } => "images",
+            ClipboardContent::PngFile { .. } => "images"
         };
         (self.content_type == "all" || self.content_type == content_type)
             && crate::query::matches(&self.text, &entry.title, &entry.content)

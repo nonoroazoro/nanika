@@ -1,11 +1,11 @@
 use crate::{
     CLIPBOARD_BATCH_SIZE, ClipboardConfig, ClipboardDatabase, ClipboardEntry, ClipboardStore,
-    ClipboardViewState,
+    ClipboardViewState
 };
 use nanika_protocol::{ClipboardContent, DetailContent, View};
 use std::sync::{
     Arc,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicUsize, Ordering}
 };
 
 #[test]
@@ -18,7 +18,7 @@ fn empty_history_and_unmatched_scopes_publish_distinct_copy() {
             ("", "text", true),
             ("", "files", true),
             ("", "images", true),
-            ("missing", "images", true),
+            ("missing", "images", true)
         ] {
             let mut state = ClipboardViewState::new();
             state.query = query.into();
@@ -58,13 +58,13 @@ fn clear_scope_matches_full_type_and_query() {
         .collect::<Vec<_>>();
     let mut files = _entry(106, "File");
     files.content = ClipboardContent::Files {
-        paths: vec!["/example/needle.txt".into()],
+        paths: vec!["/example/needle.txt".into()]
     };
     entries.push(files);
     let mut image = _entry(107, "Image needle");
     image.entry_id = "a".repeat(64);
     image.content = ClipboardContent::PngFile {
-        path: "image.png".into(),
+        path: "image.png".into()
     };
     entries.push(image);
     _with_store(&entries, |store, _| {
@@ -117,7 +117,7 @@ fn bounded_windows_reach_all_records_and_keep_offscreen_selection() {
                 &current.view,
                 &list.collection_id,
                 offset,
-                std::num::NonZeroU32::new(10).unwrap(),
+                std::num::NonZeroU32::new(10).unwrap()
             )
             .unwrap();
             current = store
@@ -141,7 +141,7 @@ fn bounded_windows_reach_all_records_and_keep_offscreen_selection() {
             &current.view,
             &list.collection_id,
             0,
-            std::num::NonZeroU32::new(10).unwrap(),
+            std::num::NonZeroU32::new(10).unwrap()
         )
         .unwrap();
         let first = store
@@ -236,7 +236,7 @@ fn range_reads_reject_foreign_collections_and_invalid_ranges_without_mutating_st
         for (id, offset, count) in [
             ("other", 0, 10),
             (list.collection_id.as_str(), 35, 10),
-            (list.collection_id.as_str(), 0, 501),
+            (list.collection_id.as_str(), 0, 501)
         ] {
             let mut proposed = current.state.clone();
             assert!(
@@ -283,8 +283,8 @@ fn selection_reuses_query_ids_and_capture_invalidates_continuations_without_losi
                 100,
                 &ClipboardConfig {
                     max_entries: Some(3),
-                    max_age_days: None,
-                },
+                    max_age_days: None
+                }
             )
             .unwrap();
         let retained = store.present(updated.state, None).unwrap();
@@ -320,7 +320,7 @@ fn file_labels_escape_controls_while_original_paths_and_copy_payload_remain_inta
     let mut entry = _entry(1, "name\nwith\ttabs.txt");
     entry.title = "name\nwith\ttabs.txt".into();
     entry.content = ClipboardContent::Files {
-        paths: paths.clone(),
+        paths: paths.clone()
     };
     _with_store(&[entry], |store, _| {
         let current = store.present(ClipboardViewState::new(), None).unwrap();
@@ -360,7 +360,7 @@ fn collection_preview_bounds_icon_work_and_waits_for_the_group_including_failure
     let paths = (0..5).map(|i| format!("/file-{i}.png")).collect::<Vec<_>>();
     let mut entry = _entry(1, "Group");
     entry.content = ClipboardContent::Files {
-        paths: paths.clone(),
+        paths: paths.clone()
     };
     _with_store(&[entry], |store, _| {
         let reference = IconReference::new("a".repeat(64)).unwrap();
@@ -416,7 +416,7 @@ fn native_file_icons_preserve_missing_files() {
             paths: vec![
                 path.to_string_lossy().into_owned(),
                 root.join("missing.txt").to_string_lossy().into_owned(),
-            ],
+            ]
         };
         store.capture(&entry, 1, &_config()).unwrap();
         let mut icons = nanika_platform::FileIconCache::new(root.join("icons"));
@@ -464,7 +464,7 @@ fn clear_uses_reviewed_ids_and_failed_transactions_preserve_query_authority() {
                     value: "needle".into()
                 }
             );
-        },
+        }
     );
 }
 
@@ -472,7 +472,7 @@ fn clear_uses_reviewed_ids_and_failed_transactions_preserve_query_authority() {
 fn query_cache_preserves_unicode_matching_and_never_matches_across_file_boundaries() {
     let mut files = _entry(2, "Files");
     files.content = ClipboardContent::Files {
-        paths: vec!["/one/end".into(), "/two/start".into()],
+        paths: vec!["/one/end".into(), "/two/start".into()]
     };
     _with_store(&[_entry(1, "ÄBC"), files], |store, _| {
         let mut state = ClipboardViewState::new();
@@ -491,21 +491,21 @@ fn _entry(id: u64, value: &str) -> ClipboardEntry {
         entry_id: id.to_string(),
         title: crate::text_title(value),
         content: ClipboardContent::Text {
-            value: value.into(),
+            value: value.into()
         },
         byte_size: value.len() as u64,
-        captured_at: id,
+        captured_at: id
     }
 }
 fn _config() -> ClipboardConfig {
     ClipboardConfig {
         max_entries: None,
-        max_age_days: None,
+        max_age_days: None
     }
 }
 fn _with_store(
     entries: &[ClipboardEntry],
-    test: impl FnOnce(&mut ClipboardStore, &std::path::Path),
+    test: impl FnOnce(&mut ClipboardStore, &std::path::Path)
 ) {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let root = std::env::temp_dir().join(format!(
@@ -540,7 +540,7 @@ fn searches_publish_the_requested_window_without_intermediate_small_batches() {
             ("image", 43, 43),
             ("missing", 43, 0),
             ("unique needle", 43, 1),
-            ("", 27, 27),
+            ("", 27, 27)
         ] {
             state.query = query.into();
             state.reset_results(std::num::NonZeroU32::new(demand).unwrap());
@@ -587,7 +587,7 @@ fn searches_publish_the_requested_window_without_intermediate_small_batches() {
             &current.view,
             &list.collection_id,
             27,
-            std::num::NonZeroU32::new(27).unwrap(),
+            std::num::NonZeroU32::new(27).unwrap()
         )
         .unwrap();
         let grown = store
@@ -616,7 +616,7 @@ fn selection_resolves_against_full_reviewed_order_after_a_window_replacement() {
             &current.view,
             &collection_id,
             50,
-            std::num::NonZeroU32::new(10).unwrap(),
+            std::num::NonZeroU32::new(10).unwrap()
         )
         .unwrap();
         let shifted = store

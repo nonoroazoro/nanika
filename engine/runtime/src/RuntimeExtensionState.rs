@@ -8,5 +8,5 @@ pub enum RuntimeExtensionState {
     Starting,
     Ready,
     Stopping,
-    Failed,
+    Failed
 }

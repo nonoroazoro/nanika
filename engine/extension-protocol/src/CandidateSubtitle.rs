@@ -6,5 +6,5 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "kind", content = "text", rename_all = "camelCase")]
 pub enum CandidateSubtitle {
     Label(String),
-    Description(String),
+    Description(String)
 }

@@ -12,8 +12,8 @@ pub enum NavigationEffect {
     Push {
         view_id: String,
         revision: u64,
-        view: Box<View>,
-    },
+        view: Box<View>
+    }
 }
 
 impl NavigationEffect {
@@ -21,7 +21,7 @@ impl NavigationEffect {
         let Self::Push {
             view_id,
             revision,
-            view,
+            view
         } = self
         else {
             return Ok(());

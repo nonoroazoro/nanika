@@ -6,14 +6,14 @@ use nanika_protocol::ClipboardContent;
 /// Storage-owner state for committed retention and active copy readers.
 pub(crate) struct ClipboardPayloads {
     root: PathBuf,
-    readers: HashMap<PathBuf, (usize, bool)>,
+    readers: HashMap<PathBuf, (usize, bool)>
 }
 
 impl ClipboardPayloads {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self {
             root,
-            readers: HashMap::new(),
+            readers: HashMap::new()
         }
     }
 
@@ -76,7 +76,7 @@ impl ClipboardPayloads {
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.to_string()),
+            Err(error) => Err(error.to_string())
         }
     }
 }
@@ -84,12 +84,12 @@ impl ClipboardPayloads {
 fn reconcile_payloads(
     payload_root: &std::path::Path,
     retained: &HashSet<PathBuf>,
-    readers: &HashMap<PathBuf, (usize, bool)>,
+    readers: &HashMap<PathBuf, (usize, bool)>
 ) -> Result<(), String> {
     let entries = match std::fs::read_dir(payload_root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.to_string()),
+        Err(error) => return Err(error.to_string())
     };
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;

@@ -2,5 +2,5 @@
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UsageStat {
     pub execution_count: u32,
-    pub last_executed_at: u64,
+    pub last_executed_at: u64
 }

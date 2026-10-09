@@ -5,7 +5,7 @@ use crate::{DesktopRuntime, SearchDelivery};
 
 pub(crate) enum ViewInvalidationDelivery {
     Wake,
-    Shutdown,
+    Shutdown
 }
 
 /// Refreshes extension-owned views independently from Root Search delivery.
@@ -13,7 +13,7 @@ pub(crate) enum ViewInvalidationDelivery {
 pub(crate) fn run_delivery(
     shared: &Mutex<DesktopRuntime>,
     wakes: Receiver<ViewInvalidationDelivery>,
-    search_wakes: &SyncSender<SearchDelivery>,
+    search_wakes: &SyncSender<SearchDelivery>
 ) {
     while let Ok(event) = wakes.recv() {
         if matches!(event, ViewInvalidationDelivery::Shutdown) {
@@ -75,7 +75,7 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
                 route.generation,
                 &route.view_id,
                 route.revision,
-                nanika_protocol::ViewEvent::Invalidated,
+                nanika_protocol::ViewEvent::Invalidated
             )
             .and_then(|completion| {
                 completion.recv().map_err(|_| {
@@ -114,7 +114,7 @@ pub(crate) fn apply_completion(
     session_id: u64,
     route: &crate::ExtensionViewSnapshot,
     revision: u64,
-    view: nanika_protocol::View,
+    view: nanika_protocol::View
 ) {
     let Some(current) = state
         .session

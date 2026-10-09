@@ -9,7 +9,7 @@ pub const MAX_PNG_PIXELS: u64 = 16_777_216;
 #[serde(deny_unknown_fields)]
 pub struct ImageSource {
     /// An immutable, content-addressed static PNG in the owning extension's payload directory.
-    pub path: String,
+    pub path: String
 }
 
 pub fn is_valid_resource_path(path: &str) -> bool {

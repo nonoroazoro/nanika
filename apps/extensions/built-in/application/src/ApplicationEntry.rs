@@ -8,7 +8,7 @@ pub struct ApplicationEntry {
     _data: std::sync::Arc<crate::ApplicationEntryData>,
     // None is unprepared; an explicit Empty records a completed cache failure.
     // Share presentation across catalog clones without changing persisted extraction inputs.
-    pub(crate) _icon: Option<std::sync::Arc<nanika_protocol::IconSource>>,
+    pub(crate) _icon: Option<std::sync::Arc<nanika_protocol::IconSource>>
 }
 
 impl std::ops::Deref for ApplicationEntry {
@@ -28,7 +28,7 @@ impl ApplicationEntry {
     pub fn new(data: crate::ApplicationEntryData) -> Self {
         Self {
             _data: std::sync::Arc::new(data),
-            _icon: None,
+            _icon: None
         }
     }
 
@@ -44,7 +44,7 @@ impl ApplicationEntry {
             entry_id: self.entry_id.clone(),
             title: self.display_name.clone(),
             subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                "Application".to_owned(),
+                "Application".to_owned()
             )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: self.actions(),
@@ -53,8 +53,8 @@ impl ApplicationEntry {
                 self._icon
                     .as_deref()
                     .cloned()
-                    .unwrap_or(nanika_protocol::IconSource::Empty),
-            ),
+                    .unwrap_or(nanika_protocol::IconSource::Empty)
+            )
         }
     }
 
@@ -68,17 +68,17 @@ impl ApplicationEntry {
             "windows-shell-link" | "executable"
         ) {
             return Ok(LaunchDescriptor::WindowsApplication {
-                path: self.target_path.clone(),
+                path: self.target_path.clone()
             });
         }
         if self.launch_kind == "macos-bundle" {
             return Ok(LaunchDescriptor::MacApplication {
-                bundle_path: self.target_path.clone(),
+                bundle_path: self.target_path.clone()
             });
         }
         if self.launch_kind == "windows-packaged" {
             return Ok(LaunchDescriptor::WindowsPackagedApplication {
-                app_user_model_id: self.target_path.clone(),
+                app_user_model_id: self.target_path.clone()
             });
         }
         Err(ApplicationError::Configuration(format!(
@@ -93,7 +93,7 @@ impl ApplicationEntry {
             let title = match self.launch_kind.as_str() {
                 "windows-shell-link" => "Open shortcut location",
                 "macos-bundle" => "Show in Finder",
-                _ => "Open file location",
+                _ => "Open file location"
             };
             actions.push(nanika_protocol::Action {
                 icon: None,
@@ -103,7 +103,7 @@ impl ApplicationEntry {
                 style: nanika_protocol::ActionStyle::Secondary,
                 enabled: true,
                 group: Some("location".to_owned()),
-                confirmation_title: None,
+                confirmation_title: None
             });
             if self.launch_kind == "windows-shell-link" {
                 actions.push(nanika_protocol::Action {
@@ -114,7 +114,7 @@ impl ApplicationEntry {
                     style: nanika_protocol::ActionStyle::Secondary,
                     enabled: true,
                     group: Some("location".to_owned()),
-                    confirmation_title: None,
+                    confirmation_title: None
                 });
             }
         }
@@ -123,27 +123,27 @@ impl ApplicationEntry {
 
     pub fn host_request(
         &self,
-        action: &str,
+        action: &str
     ) -> Result<nanika_protocol::HostServiceRequest, ApplicationError> {
         match action {
             RUN_ACTION_ID => Ok(nanika_protocol::HostServiceRequest::Launch {
-                descriptor: self.launch_descriptor()?,
+                descriptor: self.launch_descriptor()?
             }),
             "application.reveal" if self.launch_kind != "windows-packaged" => {
                 Ok(nanika_protocol::HostServiceRequest::RevealPath {
-                    path: self.target_path.clone(),
+                    path: self.target_path.clone()
                 })
             }
             "application.revealTarget" if self.launch_kind == "windows-shell-link" => {
                 Ok(nanika_protocol::HostServiceRequest::RevealPath {
                     path: crate::platform::shortcut_target(std::path::Path::new(
-                        &self.target_path,
-                    ))?,
+                        &self.target_path
+                    ))?
                 })
             }
             _ => Err(ApplicationError::Configuration(
-                "application action is unavailable".to_owned(),
-            )),
+                "application action is unavailable".to_owned()
+            ))
         }
     }
 }

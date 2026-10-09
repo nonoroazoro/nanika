@@ -38,7 +38,7 @@ fn baseline_schema_is_the_only_initial_version() {
         .query_row(
             "SELECT strict FROM pragma_table_list WHERE name = 'clipboard_entries'",
             [],
-            |row| row.get(0),
+            |row| row.get(0)
         )
         .expect("table strictness should load");
     assert!(is_strict);
@@ -48,7 +48,7 @@ fn baseline_schema_is_the_only_initial_version() {
                 entry_id, content_kind, title, text_payload, files_json,
                 image_path, byte_size, captured_at
              ) VALUES ('invalid', 'text', 'invalid', 'text', '[]', NULL, 1, 1)",
-            [],
+            []
         )
         .expect_err("mixed payload columns must be rejected");
     assert!(error.to_string().contains("CHECK constraint failed"));
@@ -66,10 +66,10 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
         entry_id: "clipboard.hash".to_owned(),
         title: "first".to_owned(),
         content: ClipboardContent::Text {
-            value: "payload".to_owned(),
+            value: "payload".to_owned()
         },
         byte_size: 7,
-        captured_at: 10,
+        captured_at: 10
     };
     database.upsert(&entry).expect("first capture");
     entry.title = "second".to_owned();
@@ -99,8 +99,8 @@ fn retention_removes_entries_outside_the_count_limit() {
             20_000,
             &ClipboardConfig {
                 max_entries: Some(2),
-                max_age_days: Some(7),
-            },
+                max_age_days: Some(7)
+            }
         )
         .expect("retention");
     let loaded = database.load().expect("history");
@@ -130,8 +130,8 @@ fn retention_removes_entries_older_than_the_age_limit() {
             8 * DAY,
             &ClipboardConfig {
                 max_entries: Some(50),
-                max_age_days: Some(7),
-            },
+                max_age_days: Some(7)
+            }
         )
         .expect("retention");
 
@@ -142,8 +142,8 @@ fn retention_removes_entries_older_than_the_age_limit() {
             8 * DAY + 1,
             &ClipboardConfig {
                 max_entries: Some(50),
-                max_age_days: Some(7),
-            },
+                max_age_days: Some(7)
+            }
         )
         .expect("retention after cutoff");
     assert_eq!(database.load().expect("history").len(), 1);
@@ -161,10 +161,10 @@ fn clear_removes_requested_clipboard_history() {
             entry_id: "clipboard.one".to_owned(),
             title: "one".to_owned(),
             content: ClipboardContent::Text {
-                value: "one".to_owned(),
+                value: "one".to_owned()
             },
             byte_size: 3,
-            captured_at: 1,
+            captured_at: 1
         })
         .expect("capture");
     database
@@ -180,10 +180,10 @@ fn text_entry(index: u64, captured_at: u64) -> ClipboardEntry {
         entry_id: format!("clipboard.{index}"),
         title: format!("entry {index}"),
         content: ClipboardContent::Text {
-            value: format!("entry {index}"),
+            value: format!("entry {index}")
         },
         byte_size: 7,
-        captured_at,
+        captured_at
     }
 }
 
@@ -195,26 +195,26 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
             "unlimited",
             ClipboardConfig {
                 max_entries: None,
-                max_age_days: None,
+                max_age_days: None
             },
-            vec![3, 2, 1],
+            vec![3, 2, 1]
         ),
         (
             "count",
             ClipboardConfig {
                 max_entries: Some(2),
-                max_age_days: None,
+                max_age_days: None
             },
-            vec![3, 2],
+            vec![3, 2]
         ),
         (
             "age",
             ClipboardConfig {
                 max_entries: None,
-                max_age_days: Some(1),
+                max_age_days: Some(1)
             },
-            vec![3],
-        ),
+            vec![3]
+        )
     ] {
         let root =
             std::env::temp_dir().join(format!("nanika-clipboard-{name}-{}", std::process::id()));
@@ -245,8 +245,8 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
                 10 * DAY,
                 &ClipboardConfig {
                     max_entries: Some(1),
-                    max_age_days: Some(1),
-                },
+                    max_age_days: Some(1)
+                }
             )
             .expect("reenabled limits");
         assert_eq!(database.load().expect("history").len(), 1);
@@ -267,7 +267,7 @@ fn clear_preserves_unmatched_entries_and_retained_image_paths() {
     let mut image = text_entry(3, 3);
     let image_path = root.join("retained.png");
     image.content = ClipboardContent::PngFile {
-        path: image_path.to_string_lossy().into_owned(),
+        path: image_path.to_string_lossy().into_owned()
     };
     for entry in [&first, &second, &image] {
         database.upsert(entry).expect("capture");
@@ -328,12 +328,12 @@ fn image_ownership_delta_tracks_replacement_and_shared_paths() {
     let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
     let config = ClipboardConfig {
         max_entries: None,
-        max_age_days: None,
+        max_age_days: None
     };
     let image = root.join("image.png");
     let mut first = text_entry(1, 1);
     first.content = ClipboardContent::PngFile {
-        path: image.to_string_lossy().into(),
+        path: image.to_string_lossy().into()
     };
     let inserted = database.upsert_with_retention(&first, 1, &config).unwrap();
     assert_eq!(inserted.image_ownership.get(&image), Some(&true));

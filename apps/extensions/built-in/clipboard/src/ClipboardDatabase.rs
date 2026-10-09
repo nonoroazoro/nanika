@@ -30,7 +30,7 @@ PRAGMA user_version=1;
 ";
 
 pub struct ClipboardDatabase {
-    connection: Connection,
+    connection: Connection
 }
 
 impl ClipboardDatabase {
@@ -51,7 +51,7 @@ impl ClipboardDatabase {
         &self,
         entry: &ClipboardEntry,
         now: u64,
-        config: &ClipboardConfig,
+        config: &ClipboardConfig
     ) -> Result<ClipboardChange, String> {
         let transaction = self
             .connection
@@ -62,7 +62,7 @@ impl ClipboardDatabase {
             .query_row(
                 "SELECT image_path FROM clipboard_entries WHERE entry_id = ?1",
                 [&entry.entry_id],
-                |row| row.get(0),
+                |row| row.get(0)
             )
             .optional()
             .map_err(|e| e.to_string())?
@@ -79,14 +79,14 @@ impl ClipboardDatabase {
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(ClipboardChange {
             removed,
-            image_ownership,
+            image_ownership
         })
     }
 
     pub fn apply_retention(
         &self,
         now: u64,
-        config: &ClipboardConfig,
+        config: &ClipboardConfig
     ) -> Result<ClipboardChange, String> {
         let transaction = self
             .connection
@@ -98,7 +98,7 @@ impl ClipboardDatabase {
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(ClipboardChange {
             removed,
-            image_ownership,
+            image_ownership
         })
     }
 
@@ -114,7 +114,7 @@ impl ClipboardDatabase {
     pub(crate) fn matching_entries(
         &self,
         query: &str,
-        content_type: &str,
+        content_type: &str
     ) -> Result<Vec<crate::ClipboardQueryEntry>, String> {
         let kind = crate::query::content_kind(content_type)?;
         if query.is_empty() {
@@ -123,7 +123,7 @@ impl ClipboardDatabase {
                 .query_map([kind], |row| {
                     Ok(crate::ClipboardQueryEntry {
                         entry_id: row.get(0)?,
-                        captured_at: row.get(1)?,
+                        captured_at: row.get(1)?
                     })
                 })
                 .map_err(|e| e.to_string())?
@@ -141,12 +141,12 @@ impl ClipboardDatabase {
                     .map_err(|e| e.to_string())?,
                 row.get(2).map_err(|e| e.to_string())?,
                 row.get(3).map_err(|e| e.to_string())?,
-                row.get(5).map_err(|e| e.to_string())?,
+                row.get(5).map_err(|e| e.to_string())?
             )?;
             if crate::query::matches(query, &title, &content) {
                 ids.push(crate::ClipboardQueryEntry {
                     entry_id: row.get(0).map_err(|e| e.to_string())?,
-                    captured_at: row.get(6).map_err(|e| e.to_string())?,
+                    captured_at: row.get(6).map_err(|e| e.to_string())?
                 });
             }
         }
@@ -163,7 +163,7 @@ impl ClipboardDatabase {
                             entry_id: row.get(0)?,
                             title: row.get(1)?,
                             kind: row.get(2)?,
-                            first_path: row.get(3)?,
+                            first_path: row.get(3)?
                         })
                     })
                     .map_err(|e| e.to_string())
@@ -180,7 +180,7 @@ impl ClipboardDatabase {
             title,
             content: decode_content(&kind, text, files, image)?,
             byte_size: u64::try_from(size).map_err(|e| e.to_string())?,
-            captured_at: u64::try_from(captured).map_err(|e| e.to_string())?,
+            captured_at: u64::try_from(captured).map_err(|e| e.to_string())?
         })
     }
 
@@ -222,7 +222,7 @@ impl ClipboardDatabase {
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(ClipboardChange {
             removed,
-            image_ownership,
+            image_ownership
         })
     }
 }
@@ -252,7 +252,7 @@ fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), St
                 encoded.image,
                 integer(entry.byte_size),
                 integer(entry.captured_at),
-            ],
+            ]
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -262,7 +262,7 @@ fn prune(
     connection: &Connection,
     now: u64,
     config: &ClipboardConfig,
-    affected: &mut HashSet<PathBuf>,
+    affected: &mut HashSet<PathBuf>
 ) -> Result<HashSet<String>, String> {
     let mut removed = HashSet::new();
     if let Some(cutoff) = config.cutoff_millis(now) {
@@ -308,7 +308,7 @@ fn image_paths(connection: &Connection) -> Result<HashSet<PathBuf>, String> {
     let mut statement = connection
         .prepare(
             "SELECT image_path FROM clipboard_entries
-             WHERE content_kind = 'image' AND image_path IS NOT NULL",
+             WHERE content_kind = 'image' AND image_path IS NOT NULL"
         )
         .map_err(|error| error.to_string())?;
     statement
@@ -324,20 +324,20 @@ fn encode_content(content: &ClipboardContent) -> Result<EncodedClipboardContent,
             kind: "text",
             text: Some(value.clone()),
             files: None,
-            image: None,
+            image: None
         }),
         ClipboardContent::Files { paths } => Ok(EncodedClipboardContent {
             kind: "files",
             text: None,
             files: Some(serde_json::to_string(paths).map_err(|error| error.to_string())?),
-            image: None,
+            image: None
         }),
         ClipboardContent::PngFile { path } => Ok(EncodedClipboardContent {
             kind: "image",
             text: None,
             files: None,
-            image: Some(path.clone()),
-        }),
+            image: Some(path.clone())
+        })
     }
 }
 
@@ -345,24 +345,24 @@ fn decode_content(
     kind: &str,
     text: Option<String>,
     files: Option<String>,
-    image: Option<String>,
+    image: Option<String>
 ) -> Result<ClipboardContent, String> {
     match kind {
         "text" => Ok(ClipboardContent::Text {
-            value: text.ok_or_else(|| "clipboard text payload is missing".to_owned())?,
+            value: text.ok_or_else(|| "clipboard text payload is missing".to_owned())?
         }),
         "files" => Ok(ClipboardContent::Files {
             paths: serde_json::from_str(
                 files
                     .as_deref()
-                    .ok_or_else(|| "clipboard file payload is missing".to_owned())?,
+                    .ok_or_else(|| "clipboard file payload is missing".to_owned())?
             )
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| error.to_string())?
         }),
         "image" => Ok(ClipboardContent::PngFile {
-            path: image.ok_or_else(|| "clipboard image payload is missing".to_owned())?,
+            path: image.ok_or_else(|| "clipboard image payload is missing".to_owned())?
         }),
-        _ => Err(format!("unknown clipboard content kind: {kind}")),
+        _ => Err(format!("unknown clipboard content kind: {kind}"))
     }
 }
 
@@ -372,7 +372,7 @@ fn integer(value: u64) -> i64 {
 
 fn _image_ownership(
     connection: &Connection,
-    affected: HashSet<PathBuf>,
+    affected: HashSet<PathBuf>
 ) -> Result<std::collections::HashMap<PathBuf, bool>, String> {
     let mut ownership = std::collections::HashMap::with_capacity(affected.len());
     if affected.is_empty() {

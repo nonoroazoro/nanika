@@ -14,18 +14,18 @@ const MAX_PATH_BYTES: usize = 4_096;
 pub struct ApplicationConfig {
     pub roots: Vec<PathBuf>,
     pub exclusions: Vec<PathBuf>,
-    pub enabled_builtin_sources: BTreeSet<String>,
+    pub enabled_builtin_sources: BTreeSet<String>
 }
 
 impl ApplicationConfig {
     pub fn from_configuration(
-        configuration: &ExtensionConfiguration,
+        configuration: &ExtensionConfiguration
     ) -> Result<Self, ApplicationError> {
         let values = configuration.values();
         let config = Self {
             roots: path_list(values, ROOTS_KEY)?,
             exclusions: Vec::new(),
-            enabled_builtin_sources: enabled_builtin_sources(values)?,
+            enabled_builtin_sources: enabled_builtin_sources(values)?
         };
         config.validate()?;
         Ok(config)
@@ -54,7 +54,7 @@ impl ApplicationConfig {
 }
 
 fn enabled_builtin_sources(
-    values: &std::collections::BTreeMap<String, serde_json::Value>,
+    values: &std::collections::BTreeMap<String, serde_json::Value>
 ) -> Result<BTreeSet<String>, ApplicationError> {
     let mut enabled = BTreeSet::new();
     for (key, value) in values
@@ -75,7 +75,7 @@ fn enabled_builtin_sources(
 
 fn path_list(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
-    key: &str,
+    key: &str
 ) -> Result<Vec<PathBuf>, ApplicationError> {
     values
         .get(key)

@@ -6,17 +6,17 @@ use crate::ScanReport;
 pub enum RuntimeEvent {
     Protocol(Message),
     CatalogUpdated {
-        entry_ids: Vec<String>,
+        entry_ids: Vec<String>
     },
     ProtocolClosed,
     ProtocolError(String),
     ScanProgress {
         request_id: String,
-        progress: nanika_protocol::OperationProgress,
+        progress: nanika_protocol::OperationProgress
     },
     ScanFinished {
         request_id: Option<String>,
         response_generation: u64,
-        result: Result<ScanReport, String>,
-    },
+        result: Result<ScanReport, String>
+    }
 }

@@ -37,7 +37,7 @@ pub(crate) fn shortcut_target(path: &Path) -> Result<String, ApplicationError> {
 }
 
 pub(crate) fn configured_roots(
-    enabled: &std::collections::BTreeSet<String>,
+    enabled: &std::collections::BTreeSet<String>
 ) -> Result<DiscoveryRoots, ApplicationError> {
     implementation::standard_roots(|key| enabled.contains(key))
 }
@@ -53,7 +53,7 @@ pub(crate) fn is_application_bundle(path: &Path) -> bool {
 pub(crate) fn read_entry(
     state: &mut DiscoveryState,
     path: &Path,
-    priority: usize,
+    priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
     implementation::read_entry(state, path, priority)
 }
@@ -61,7 +61,7 @@ pub(crate) fn read_entry(
 pub(crate) fn icon_cache_key(
     source: &Path,
     icon_index: i32,
-    state: &mut DiscoveryState,
+    state: &mut DiscoveryState
 ) -> Result<String, ApplicationError> {
     implementation::icon_cache_key(source, icon_index, state)
 }
@@ -70,7 +70,7 @@ pub(crate) fn extract_icons(
     source: &Path,
     icon_index: i32,
     sizes: &[u32],
-    directory: &Path,
+    directory: &Path
 ) -> Result<(), ApplicationError> {
     implementation::extract_icons(source, icon_index, sizes, directory)
 }
@@ -81,7 +81,7 @@ pub(crate) use discovery_inventory::DiscoveryInventory;
 
 pub(crate) fn configured_inventories(
     enabled: &std::collections::BTreeSet<String>,
-    cancelled: &mut dyn FnMut() -> bool,
+    cancelled: &mut dyn FnMut() -> bool
 ) -> Vec<DiscoveryInventory> {
     implementation::inventories(enabled, cancelled)
 }

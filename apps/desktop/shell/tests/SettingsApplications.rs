@@ -10,9 +10,9 @@ fn _update(extension: &str, request_id: u64, completed: u32) -> SettingsApplicat
             progress: Some(nanika_protocol::OperationProgress {
                 label: "Applying".to_owned(),
                 completed,
-                total: Some(100_000),
-            }),
-        },
+                total: Some(100_000)
+            })
+        }
     }
 }
 
@@ -22,7 +22,7 @@ fn _receipt(event: &SettingsEvent) -> u64 {
             delivery_id: Some(id),
             ..
         } => *id,
-        _ => panic!("expected a progress receipt"),
+        _ => panic!("expected a progress receipt")
     }
 }
 
@@ -43,7 +43,7 @@ fn slow_consumer_has_one_in_flight_message_and_receives_only_latest_progress() {
         panic!("application")
     };
     let SettingsSaveResult::Running {
-        progress: Some(progress),
+        progress: Some(progress)
     } = &update.result
     else {
         panic!("progress")
@@ -62,7 +62,7 @@ fn terminal_bypasses_progress_receipt_and_removes_obsolete_pending_progress() {
     assert!(state.record(_update("test.extension", 1, 1)).is_none());
     let mut terminal = _update("test.extension", 1, 2);
     terminal.result = SettingsSaveResult::Failed {
-        error: "Rejected".to_owned(),
+        error: "Rejected".to_owned()
     };
     let (_, event) = state.record(terminal).unwrap();
     assert!(matches!(
@@ -166,7 +166,7 @@ fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
         _,
         SettingsEvent::Lifecycle {
             delivery_id: first, ..
-        },
+        }
     ) = state.next_lifecycle().unwrap()
     else {
         panic!("lifecycle");
@@ -181,7 +181,7 @@ fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
             delivery_id: second,
             revision,
             ..
-        },
+        }
     ) = state.acknowledge(first).unwrap()
     else {
         panic!("lifecycle");
@@ -194,7 +194,7 @@ fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
         SettingsEvent::Lifecycle {
             delivery_id: current,
             ..
-        },
+        }
     ) = state.next_lifecycle().unwrap()
     else {
         panic!("lifecycle");

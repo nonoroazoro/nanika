@@ -6,14 +6,14 @@ fn sources_have_one_unambiguous_wire_identity() {
         (IconSource::Empty, serde_json::json!({"kind":"empty"})),
         (
             IconSource::Package {
-                path: "assets/icon.png".into(),
+                path: "assets/icon.png".into()
             },
-            serde_json::json!({"kind":"package", "path":"assets/icon.png"}),
+            serde_json::json!({"kind":"package", "path":"assets/icon.png"})
         ),
         (
             IconSource::Cache(IconReference::new("file-icon").unwrap()),
-            serde_json::json!({"kind":"cache", "key":"file-icon"}),
-        ),
+            serde_json::json!({"kind":"cache", "key":"file-icon"})
+        )
     ] {
         assert_eq!(serde_json::to_value(&source).unwrap(), json);
         assert_eq!(serde_json::from_value::<IconSource>(json).unwrap(), source);
@@ -22,7 +22,7 @@ fn sources_have_one_unambiguous_wire_identity() {
     for value in [
         serde_json::json!("calculator"),
         serde_json::json!({"key":"file-icon"}),
-        serde_json::json!({"kind":"package","path":"icon.png","key":"file-icon"}),
+        serde_json::json!({"kind":"package","path":"icon.png","key":"file-icon"})
     ] {
         assert!(serde_json::from_value::<IconSource>(value).is_err());
     }
@@ -47,7 +47,7 @@ fn package_paths_cannot_address_host_files_or_urls() {
         "https://example.com/icon.png",
         "icon.svg",
         "icon.png?x",
-        "icon.png#x",
+        "icon.png#x"
     ] {
         assert!(!is_valid_package_icon_path(invalid), "{invalid}");
     }

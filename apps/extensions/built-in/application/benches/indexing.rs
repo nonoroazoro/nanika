@@ -18,7 +18,7 @@ fn indexing(criterion: &mut Criterion) {
     let config = ApplicationConfig {
         roots: vec![applications],
         exclusions: ApplicationConfig::standard_roots().expect("standard roots"),
-        enabled_builtin_sources: Default::default(),
+        enabled_builtin_sources: Default::default()
     };
     let cancellation = AtomicU64::new(0);
     index
@@ -38,7 +38,7 @@ fn indexing(criterion: &mut Criterion) {
                     .scan(&config, 2, &cancellation, |_| {}, |_, _| {})
                     .expect("cold validation scan should complete")
             },
-            BatchSize::SmallInput,
+            BatchSize::SmallInput
         );
     });
 
@@ -63,7 +63,7 @@ fn indexing(criterion: &mut Criterion) {
         request_id: "benchmark".to_owned(),
         generation: 1,
         complete: true,
-        entries: candidates,
+        entries: candidates
     };
     criterion.bench_function("application_snapshot_json_500", |bencher| {
         bencher.iter(|| serde_json::to_vec(&snapshot).expect("snapshot should serialize"));
@@ -113,7 +113,7 @@ fn create_applications(root: &Path) {
         std::fs::create_dir_all(
             executable
                 .parent()
-                .expect("benchmark executable should have a parent"),
+                .expect("benchmark executable should have a parent")
         )
         .expect("application bundle should exist");
         std::fs::write(&executable, b"#!/bin/sh\nexit 0\n")

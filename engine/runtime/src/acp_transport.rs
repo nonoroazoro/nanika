@@ -11,7 +11,7 @@ use nanika_platform::ExtensionProcessTree;
 pub(crate) const ACP_STDERR_LIMIT: usize = 64 * 1024;
 
 pub(crate) fn incoming_lines(
-    stdout: ChildStdout,
+    stdout: ChildStdout
 ) -> impl Stream<Item = io::Result<String>> + Send + 'static {
     futures::stream::try_unfold(BufReader::new(stdout), |mut reader| async move {
         read_acp_line(&mut reader)
@@ -21,7 +21,7 @@ pub(crate) fn incoming_lines(
 }
 
 pub(crate) fn outgoing_lines(
-    stdin: ChildStdin,
+    stdin: ChildStdin
 ) -> impl Sink<String, Error = io::Error> + Send + 'static {
     futures::sink::unfold(stdin, |mut writer, line: String| async move {
         writer.write_all(line.as_bytes()).await?;
@@ -34,7 +34,7 @@ pub(crate) fn outgoing_lines(
 pub(crate) async fn drain_stderr(
     mut stderr: ChildStderr,
     tail: Arc<Mutex<VecDeque<u8>>>,
-    extension_id: String,
+    extension_id: String
 ) -> io::Result<()> {
     let mut chunk = [0_u8; 4_096];
     loop {
@@ -45,7 +45,7 @@ pub(crate) async fn drain_stderr(
                     "could not read ACP extension stderr: {error}"
                 )));
             }
-            Ok(read) => read,
+            Ok(read) => read
         };
         tracing::info!(
             %extension_id,
@@ -62,7 +62,7 @@ pub(crate) async fn drain_stderr(
 
 pub(crate) async fn terminate_child(
     child: &mut Child,
-    process_tree: &ExtensionProcessTree,
+    process_tree: &ExtensionProcessTree
 ) -> io::Result<()> {
     let mut first_error = process_tree.terminate(child.id()).err();
     match child.kill() {
@@ -76,7 +76,7 @@ pub(crate) async fn terminate_child(
 }
 
 pub(crate) async fn read_acp_line<R: AsyncRead + Unpin>(
-    reader: &mut BufReader<R>,
+    reader: &mut BufReader<R>
 ) -> io::Result<Option<String>> {
     let mut line = String::new();
     if reader.read_line(&mut line).await? == 0 {

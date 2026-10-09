@@ -6,7 +6,7 @@ pub enum DiagnosticCategory {
     Launch,
     Permission,
     Platform,
-    Storage,
+    Storage
 }
 
 impl DiagnosticCategory {
@@ -18,7 +18,7 @@ impl DiagnosticCategory {
             Self::Launch => "launch",
             Self::Permission => "permission",
             Self::Platform => "platform",
-            Self::Storage => "storage",
+            Self::Storage => "storage"
         }
     }
 }

@@ -8,13 +8,13 @@ use crate::ClipboardCommand;
 /// Borrowing the owner prevents shutdown while a copy still holds its payload.
 pub struct ClipboardContentLease<'a> {
     content: ClipboardContent,
-    commands: &'a SyncSender<ClipboardCommand>,
+    commands: &'a SyncSender<ClipboardCommand>
 }
 
 impl<'a> ClipboardContentLease<'a> {
     pub(crate) fn new(
         content: ClipboardContent,
-        commands: &'a SyncSender<ClipboardCommand>,
+        commands: &'a SyncSender<ClipboardCommand>
     ) -> Self {
         Self { content, commands }
     }

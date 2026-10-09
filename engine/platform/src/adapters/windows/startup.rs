@@ -15,7 +15,7 @@ pub(crate) fn status(executable: &Path) -> Result<StartupStatus, PlatformError> 
 fn status_for(
     executable: &Path,
     key_path: &str,
-    value_name: &str,
+    value_name: &str
 ) -> Result<StartupStatus, PlatformError> {
     let expected = startup_command(executable)?;
     let key = match CURRENT_USER.options().read().open(key_path) {
@@ -23,7 +23,7 @@ fn status_for(
         Err(error) if error.code().0 == FILE_NOT_FOUND_HRESULT => {
             return Ok(StartupStatus::Disabled);
         }
-        Err(error) => return Err(registry_error(error)),
+        Err(error) => return Err(registry_error(error))
     };
     let value = key
         .values()
@@ -40,7 +40,7 @@ fn status_for(
 
 pub(crate) fn set_enabled(
     executable: &Path,
-    enabled: bool,
+    enabled: bool
 ) -> Result<StartupStatus, PlatformError> {
     set_enabled_for(executable, enabled, RUN_KEY, VALUE_NAME)
 }
@@ -49,7 +49,7 @@ fn set_enabled_for(
     executable: &Path,
     enabled: bool,
     key_path: &str,
-    value_name: &str,
+    value_name: &str
 ) -> Result<StartupStatus, PlatformError> {
     if !enabled && status_for(executable, key_path, value_name)? == StartupStatus::Disabled {
         return Ok(StartupStatus::Disabled);
@@ -107,20 +107,20 @@ fn classify_registration(value: Option<&str>, expected: &str) -> StartupStatus {
     match value {
         None => StartupStatus::Disabled,
         Some(value) if value == expected => StartupStatus::Enabled,
-        Some(_) => StartupStatus::NeedsRepair,
+        Some(_) => StartupStatus::NeedsRepair
     }
 }
 
 fn startup_command(executable: &Path) -> Result<String, PlatformError> {
     if !executable.is_absolute() {
         return Err(PlatformError::Message(
-            "startup executable must be absolute".to_owned(),
+            "startup executable must be absolute".to_owned()
         ));
     }
     let executable = executable.to_string_lossy();
     if executable.contains('"') {
         return Err(PlatformError::Message(
-            "startup executable contains an invalid quote".to_owned(),
+            "startup executable contains an invalid quote".to_owned()
         ));
     }
     Ok(format!("\"{executable}\" --background"))

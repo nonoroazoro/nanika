@@ -5,7 +5,7 @@ type ExitObserver = Arc<dyn Fn(String) + Send + Sync>;
 /// One terminal transport event, retained if it precedes worker subscription.
 #[derive(Default)]
 pub(crate) struct ExtensionConnectionExit {
-    _state: Mutex<(Option<String>, Option<ExitObserver>)>,
+    _state: Mutex<(Option<String>, Option<ExitObserver>)>
 }
 
 impl ExtensionConnectionExit {

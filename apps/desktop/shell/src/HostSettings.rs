@@ -1,6 +1,6 @@
 use std::sync::{
     Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, Ordering}
 };
 
 use nanika_config::{ConfigStore, LauncherPreferences};
@@ -12,7 +12,7 @@ pub(crate) struct HostSettings {
     preferences: Mutex<LauncherPreferences>,
     pub(crate) recording: AtomicBool,
     pub(crate) hide_on_blur: AtomicBool,
-    startup: Mutex<Option<nanika_platform::StartupService>>,
+    startup: Mutex<Option<nanika_platform::StartupService>>
 }
 
 impl HostSettings {
@@ -30,7 +30,7 @@ impl HostSettings {
             preferences: Mutex::new(preferences),
             recording: AtomicBool::new(false),
             hide_on_blur,
-            startup: Mutex::new(Some(startup)),
+            startup: Mutex::new(Some(startup))
         })
     }
 
@@ -44,7 +44,7 @@ impl HostSettings {
     pub(crate) fn save(
         &self,
         app: &tauri::AppHandle,
-        request: crate::HostSettingsChange,
+        request: crate::HostSettingsChange
     ) -> Result<crate::SettingsWriteResult<LauncherPreferences>, String> {
         let mut current = self
             .preferences
@@ -54,7 +54,7 @@ impl HostSettings {
         match request {
             crate::HostSettingsChange::LauncherShortcut(value) => updated.launcher_shortcut = value,
             crate::HostSettingsChange::Theme(value) => updated.theme = value,
-            crate::HostSettingsChange::HideOnBlur(value) => updated.hide_on_blur = value,
+            crate::HostSettingsChange::HideOnBlur(value) => updated.hide_on_blur = value
         }
         let result = self._save(app, updated, &mut current);
         let saved =
@@ -65,13 +65,13 @@ impl HostSettings {
             values: current.clone(),
             saved,
             effective: result.as_ref().ok().cloned(),
-            error: result.err(),
+            error: result.err()
         })
     }
 
     pub(crate) fn startup(
         &self,
-        enabled: Option<bool>,
+        enabled: Option<bool>
     ) -> Result<nanika_platform::StartupStatus, String> {
         let startup = self
             .startup
@@ -82,7 +82,7 @@ impl HostSettings {
             .ok_or_else(|| "Startup service is shutting down.".to_owned())?;
         let reply = match enabled {
             Some(enabled) => startup.set_enabled(enabled),
-            None => startup.query(),
+            None => startup.query()
         }
         .map_err(|error| error.to_string())?;
         let status = reply
@@ -106,7 +106,7 @@ impl HostSettings {
         &self,
         app: &tauri::AppHandle,
         updated: LauncherPreferences,
-        current: &mut LauncherPreferences,
+        current: &mut LauncherPreferences
     ) -> Result<LauncherPreferences, String> {
         updated.validate()?;
         let next = parse(&updated.launcher_shortcut)?;
@@ -124,7 +124,7 @@ impl HostSettings {
                 Ok(()) => Err(error),
                 Err(cleanup) => Err(format!(
                     "{error}; releasing the new shortcut also failed: {cleanup}"
-                )),
+                ))
             };
         }
         if shortcut_changed && let Err(error) = app.global_shortcut().unregister(previous) {
@@ -197,6 +197,6 @@ pub(crate) fn native_theme(theme: nanika_config::ThemePreference) -> Option<taur
     match theme {
         nanika_config::ThemePreference::System => None,
         nanika_config::ThemePreference::Light => Some(tauri::Theme::Light),
-        nanika_config::ThemePreference::Dark => Some(tauri::Theme::Dark),
+        nanika_config::ThemePreference::Dark => Some(tauri::Theme::Dark)
     }
 }

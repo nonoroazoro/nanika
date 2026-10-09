@@ -1,6 +1,6 @@
 use std::sync::{
     Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, Ordering}
 };
 
 use crate::SupervisorError;
@@ -12,7 +12,7 @@ pub(crate) type RefreshCompletion = Box<dyn FnOnce(Result<(), SupervisorError>) 
 #[derive(Default)]
 pub(crate) struct RefreshReply {
     _pending: Mutex<Option<(String, u64, RefreshCompletion)>>,
-    _closed: AtomicBool,
+    _closed: AtomicBool
 }
 
 impl RefreshReply {
@@ -20,7 +20,7 @@ impl RefreshReply {
         &self,
         id: String,
         generation: u64,
-        completion: RefreshCompletion,
+        completion: RefreshCompletion
     ) -> bool {
         let mut pending = self
             ._pending
@@ -34,7 +34,7 @@ impl RefreshReply {
         if pending.is_some() {
             drop(pending);
             completion(Err(SupervisorError::UnexpectedMessage(
-                "refresh is already pending".to_owned(),
+                "refresh is already pending".to_owned()
             )));
             return false;
         }
@@ -68,36 +68,36 @@ impl RefreshReply {
         let (result, consumed) = match frame {
             Ok(Some(Message::Refreshed {
                 request_id,
-                generation,
+                generation
             })) if request_id == id && generation == expected_generation => (Ok(()), true),
             Ok(Some(Message::Error {
                 request_id: Some(request_id),
                 code,
-                message,
+                message
             })) if request_id == id => (
                 Err(SupervisorError::UnexpectedMessage(format!(
                     "refresh failed: {code}: {message}"
                 ))),
-                true,
+                true
             ),
             Ok(Some(Message::Error {
                 request_id: None,
                 code,
-                message,
+                message
             })) => (
                 Err(SupervisorError::UnexpectedMessage(format!(
                     "refresh failed: {code}: {message}"
                 ))),
-                false,
+                false
             ),
             Ok(None) => (Err(SupervisorError::ChannelClosed), false),
             Err(error) => (
                 Err(SupervisorError::UnexpectedMessage(format!(
                     "refresh transport failed: {error}"
                 ))),
-                false,
+                false
             ),
-            _ => return false,
+            _ => return false
         };
         let (_, _, completion) = pending.take().expect("pending refresh reply");
         drop(pending);

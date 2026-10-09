@@ -12,7 +12,7 @@ const MILLIS_PER_DAY: u64 = 24 * 60 * 60 * 1_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardConfig {
     pub max_entries: Option<u32>,
-    pub max_age_days: Option<u32>,
+    pub max_age_days: Option<u32>
 }
 
 impl ClipboardConfig {
@@ -20,7 +20,7 @@ impl ClipboardConfig {
         let values = configuration.values();
         let config = Self {
             max_entries: unsigned_integer(values, MAX_ENTRIES_KEY)?,
-            max_age_days: unsigned_integer(values, MAX_AGE_DAYS_KEY)?,
+            max_age_days: unsigned_integer(values, MAX_AGE_DAYS_KEY)?
         };
         config.validate()?;
         Ok(config)
@@ -54,7 +54,7 @@ impl ClipboardConfig {
 
 fn unsigned_integer(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
-    key: &str,
+    key: &str
 ) -> Result<Option<u32>, String> {
     if values.get(key).is_some_and(serde_json::Value::is_null) {
         return Ok(None);

@@ -3,7 +3,7 @@
 pub struct SearchStorageFailure {
     sequence: u64,
     operation: &'static str,
-    source: String,
+    source: String
 }
 
 impl SearchStorageFailure {
@@ -11,7 +11,7 @@ impl SearchStorageFailure {
         Self {
             sequence,
             operation,
-            source,
+            source
         }
     }
 

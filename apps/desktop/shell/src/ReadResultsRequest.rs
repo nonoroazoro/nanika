@@ -10,5 +10,5 @@ pub(crate) struct ReadResultsRequest {
     pub(crate) result_revision: u64,
     pub(crate) range_id: u64,
     pub(crate) offset: usize,
-    pub(crate) count: usize,
+    pub(crate) count: usize
 }

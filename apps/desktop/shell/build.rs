@@ -24,12 +24,12 @@ fn main() {
         "save_host_settings",
         "set_shortcut_recording",
         "read_startup",
-        "set_startup",
+        "set_startup"
     ];
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .codegen(tauri_build::CodegenContext::new())
-            .app_manifest(tauri_build::AppManifest::new().commands(commands)),
+            .app_manifest(tauri_build::AppManifest::new().commands(commands))
     )
     .expect("failed to build the Nanika desktop shell");
 }

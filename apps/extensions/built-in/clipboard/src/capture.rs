@@ -13,7 +13,7 @@ const MAX_FILES: usize = 256;
 pub(crate) fn capture(
     context: &ClipboardContext,
     payload_root: &Path,
-    captured_at: u64,
+    captured_at: u64
 ) -> Result<Option<ClipboardEntry>, String> {
     if context.has(ContentFormat::Files) {
         let paths = context.get_files().map_err(|error| error.to_string())?;
@@ -32,7 +32,7 @@ pub(crate) fn capture(
                 title: file_title(&paths),
                 content: ClipboardContent::Files { paths },
                 byte_size: encoded.len() as u64,
-                captured_at,
+                captured_at
             }));
         }
     }
@@ -51,7 +51,7 @@ pub(crate) fn capture(
                 title: text_title(&value),
                 byte_size: value.len() as u64,
                 content: ClipboardContent::Text { value },
-                captured_at,
+                captured_at
             }));
         }
     }
@@ -81,10 +81,10 @@ pub(crate) fn capture(
             entry_id: hash,
             title: format!("Image {width} x {height}"),
             content: ClipboardContent::PngFile {
-                path: path.to_string_lossy().into_owned(),
+                path: path.to_string_lossy().into_owned()
             },
             byte_size: bytes.len() as u64,
-            captured_at,
+            captured_at
         }));
     }
     Ok(None)

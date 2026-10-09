@@ -9,9 +9,9 @@ pub enum IconSource {
     /// Reserve the icon slot without inheriting the extension image.
     Empty,
     Package {
-        path: String,
+        path: String
     },
-    Cache(IconReference),
+    Cache(IconReference)
 }
 
 impl IconSource {
@@ -19,7 +19,7 @@ impl IconSource {
         match self {
             Self::Empty => true,
             Self::Package { path } => is_valid_package_icon_path(path),
-            Self::Cache(reference) => reference.is_valid(),
+            Self::Cache(reference) => reference.is_valid()
         }
     }
 }

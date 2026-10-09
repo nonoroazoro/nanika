@@ -8,7 +8,7 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, CancelNotification, ContentBlock, ContentChunk, InitializeRequest,
     InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse,
-    SessionNotification, SessionUpdate, StopReason,
+    SessionNotification, SessionUpdate, StopReason
 };
 use agent_client_protocol::{Agent, Result, Stdio};
 
@@ -102,10 +102,10 @@ async fn run() -> Result<()> {
                 }
                 responder.respond(
                     InitializeResponse::new(ProtocolVersion::V1)
-                        .agent_capabilities(AgentCapabilities::new()),
+                        .agent_capabilities(AgentCapabilities::new())
                 )
             },
-            agent_client_protocol::on_receive_request!(),
+            agent_client_protocol::on_receive_request!()
         )
         .on_receive_request(
             async move |request: NewSessionRequest, responder, _connection| {
@@ -120,8 +120,8 @@ async fn run() -> Result<()> {
                     if !configured {
                         return responder.respond_with_error(
                             agent_client_protocol::util::internal_error(
-                                "Nanika configuration metadata is missing",
-                            ),
+                                "Nanika configuration metadata is missing"
+                            )
                         );
                     }
                     std::fs::write(marker, b"configured").map_err(|error| {
@@ -130,18 +130,18 @@ async fn run() -> Result<()> {
                 }
                 responder.respond(NewSessionResponse::new(new_session_state.create_session()))
             },
-            agent_client_protocol::on_receive_request!(),
+            agent_client_protocol::on_receive_request!()
         )
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
                 if !prompt_state.contains(&request.session_id) {
                     return responder.respond_with_error(
-                        agent_client_protocol::util::internal_error("unknown ACP session"),
+                        agent_client_protocol::util::internal_error("unknown ACP session")
                     );
                 }
                 let prompt = request.prompt.iter().find_map(|content| match content {
                     ContentBlock::Text(content) => Some(content.text.as_str()),
-                    _ => None,
+                    _ => None
                 });
                 if prompt == Some("hang") {
                     return future::pending().await;
@@ -168,11 +168,11 @@ async fn run() -> Result<()> {
                 }
                 connection.send_notification(SessionNotification::new(
                     request.session_id,
-                    SessionUpdate::AgentMessageChunk(ContentChunk::new("Hello World".into())),
+                    SessionUpdate::AgentMessageChunk(ContentChunk::new("Hello World".into()))
                 ))?;
                 responder.respond(PromptResponse::new(StopReason::EndTurn))
             },
-            agent_client_protocol::on_receive_request!(),
+            agent_client_protocol::on_receive_request!()
         )
         .on_receive_notification(
             async move |notification: CancelNotification, _connection| {
@@ -180,11 +180,11 @@ async fn run() -> Result<()> {
                     Ok(())
                 } else {
                     Err(agent_client_protocol::util::internal_error(
-                        "unknown ACP session",
+                        "unknown ACP session"
                     ))
                 }
             },
-            agent_client_protocol::on_receive_notification!(),
+            agent_client_protocol::on_receive_notification!()
         )
         .connect_to(Stdio::new())
         .await

@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 
 use crate::{
     ApplicationSnapshot, DesktopRuntime, InvokeCandidateRequest, PublishQueryRequest,
-    RootSearchSnapshot, SearchDelivery, SearchSession, ViewInvalidationDelivery,
+    RootSearchSnapshot, SearchDelivery, SearchSession, ViewInvalidationDelivery
 };
 
 pub(crate) struct DesktopState {
@@ -25,13 +25,13 @@ pub(crate) struct DesktopState {
     view_invalidation_dispatcher: Mutex<Option<JoinHandle<()>>>,
     instance: Mutex<Option<nanika_platform::SingleInstance>>,
     diagnostics: Mutex<Option<nanika_host::Diagnostics>>,
-    hotkey_timing: Mutex<Option<nanika_platform::HotkeyTimingObserver>>,
+    hotkey_timing: Mutex<Option<nanika_platform::HotkeyTimingObserver>>
 }
 
 impl DesktopState {
     pub(crate) fn menu_actions(
         &self,
-        request: &crate::ContextMenuRequest,
+        request: &crate::ContextMenuRequest
     ) -> Result<Vec<nanika_protocol::Action>, String> {
         let state = self
             .shared
@@ -48,7 +48,7 @@ impl DesktopState {
         &self,
         request: &crate::ContextMenuRequest,
         action_id: String,
-        confirmed: bool,
+        confirmed: bool
     ) -> Result<Option<crate::ViewEventReceipt>, String> {
         let invocation = if confirmed {
             nanika_protocol::ActionInvocation::Confirmed
@@ -67,7 +67,7 @@ impl DesktopState {
                 request_id,
                 extension_id,
                 entry_id,
-                result_revision,
+                result_revision
             } => self
                 .run_invocation(
                     &InvokeCandidateRequest {
@@ -77,15 +77,15 @@ impl DesktopState {
                         extension_id: extension_id.clone(),
                         entry_id: entry_id.clone(),
                         action_id,
-                        confirmed,
+                        confirmed
                     },
-                    invocation,
+                    invocation
                 )
                 .map(|()| None),
             crate::MenuTarget::View {
                 route_id,
                 revision,
-                item_id,
+                item_id
             } => self
                 .run_view_event(
                     crate::ViewEventRequest {
@@ -96,19 +96,19 @@ impl DesktopState {
                             event: nanika_protocol::ViewEvent::ActionInvoked {
                                 invocation,
                                 item_id: item_id.clone(),
-                                action_id,
-                            },
-                        },
+                                action_id
+                            }
+                        }
                     },
-                    Some(*revision),
+                    Some(*revision)
                 )
-                .map(Some),
+                .map(Some)
         }
     }
 
     pub(crate) fn new(
         instance: nanika_platform::SingleInstance,
-        diagnostics: nanika_host::Diagnostics,
+        diagnostics: nanika_host::Diagnostics
     ) -> Result<Self, String> {
         let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
         let refresh_state = Arc::clone(&shared);
@@ -126,7 +126,7 @@ impl DesktopState {
                     state
                         .session
                         .as_ref()
-                        .map_or(1, |session| session.generation.max(1)),
+                        .map_or(1, |session| session.generation.max(1))
                 )
             };
             // Neither the native event loop nor the Channel writer waits for discovery.
@@ -156,7 +156,7 @@ impl DesktopState {
                 crate::view_invalidation_delivery::run_delivery(
                     &invalidation_state,
                     view_invalidation_receiver,
-                    &invalidation_search_wakes,
+                    &invalidation_search_wakes
                 )
             })
             .map_err(|error| error.to_string())?;
@@ -177,7 +177,7 @@ impl DesktopState {
             view_invalidation_dispatcher: Mutex::new(Some(view_invalidation_dispatcher)),
             instance: Mutex::new(Some(instance)),
             diagnostics: Mutex::new(Some(diagnostics)),
-            hotkey_timing: Mutex::new(nanika_platform::HotkeyTimingObserver::install()),
+            hotkey_timing: Mutex::new(nanika_platform::HotkeyTimingObserver::install())
         })
     }
 
@@ -197,7 +197,7 @@ impl DesktopState {
 
     pub(crate) fn open_session(
         &self,
-        updates: tauri::ipc::Channel<RootSearchSnapshot>,
+        updates: tauri::ipc::Channel<RootSearchSnapshot>
     ) -> Result<ApplicationSnapshot, String> {
         let _operation = self.begin_operation()?;
         let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
@@ -223,7 +223,7 @@ impl DesktopState {
             locale: nanika_platform::system_locale(),
             platform: nanika_platform::target_platform(),
             max_query_chars: nanika_search::MAX_QUERY_CHARS,
-            resource_origin: crate::resource_protocol::origin().to_owned(),
+            resource_origin: crate::resource_protocol::origin().to_owned()
         })
     }
 
@@ -327,7 +327,7 @@ impl DesktopState {
     pub(crate) fn run_invocation(
         &self,
         request: &InvokeCandidateRequest,
-        invocation: nanika_protocol::ActionInvocation,
+        invocation: nanika_protocol::ActionInvocation
     ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
         let (runtime, query, snapshot) = {
@@ -362,7 +362,7 @@ impl DesktopState {
                 &request.entry_id,
                 &request.action_id,
                 &query,
-                invocation,
+                invocation
             )?;
             let instance_id = completion.instance_id;
             apply_invocation_completion(completion, |effect| {
@@ -372,7 +372,7 @@ impl DesktopState {
                     (&request.extension_id, instance_id),
                     generation,
                     effect,
-                    false,
+                    false
                 )
             })
         })();
@@ -383,7 +383,7 @@ impl DesktopState {
     pub(crate) fn run_view_event(
         &self,
         request: crate::ViewEventRequest,
-        menu_revision: Option<u64>,
+        menu_revision: Option<u64>
     ) -> Result<crate::ViewEventReceipt, String> {
         let _operation = self.begin_operation()?;
         // A retired WebView must not hold up an unrelated session's operations.
@@ -431,7 +431,7 @@ impl DesktopState {
                     route.generation,
                     &route.view_id,
                     route.revision,
-                    event,
+                    event
                 )?
             } else {
                 runtime.close_view(
@@ -439,7 +439,7 @@ impl DesktopState {
                     route.instance_id,
                     route.generation,
                     &route.view_id,
-                    route.revision,
+                    route.revision
                 )?
             };
             let completion = completion
@@ -474,19 +474,19 @@ impl DesktopState {
                 (&route.extension_id, route.instance_id),
                 route.generation,
                 completion.effect,
-                closing,
+                closing
             )?;
             Ok(completion.revision)
         })();
         let navigation_revision = self.finish_navigation(
             request.session_id,
-            result.as_ref().map(|_| ()).map_err(Clone::clone),
+            result.as_ref().map(|_| ()).map_err(Clone::clone)
         );
         result.and_then(|view_revision| {
             Ok(crate::ViewEventReceipt {
                 view_revision,
                 navigation_revision: navigation_revision
-                    .ok_or("The originating window session has closed.")?,
+                    .ok_or("The originating window session has closed.")?
             })
         })
     }
@@ -498,7 +498,7 @@ impl DesktopState {
         origin: (&str, u64),
         generation: u64,
         effect: nanika_protocol::NavigationEffect,
-        already_closed: bool,
+        already_closed: bool
     ) -> Result<(), String> {
         let (extension_id, instance_id) = origin;
         if runtime.instance_id(extension_id) != Some(instance_id) {
@@ -522,7 +522,7 @@ impl DesktopState {
                         .cloned()
                         .into_iter()
                         .collect(),
-                    _ => Vec::new(),
+                    _ => Vec::new()
                 }
             } else {
                 drop(state);
@@ -537,7 +537,7 @@ impl DesktopState {
                         instance_id,
                         generation,
                         &view_id,
-                        revision,
+                        revision
                     )?;
                 }
                 return Ok(());
@@ -550,7 +550,7 @@ impl DesktopState {
                 route.instance_id,
                 route.generation,
                 &route.view_id,
-                route.revision,
+                route.revision
             )?;
         }
         let mut state = self
@@ -570,7 +570,7 @@ impl DesktopState {
                 {
                     Some((view_id.clone(), *revision))
                 }
-                _ => None,
+                _ => None
             };
         let retired = state
             .session
@@ -601,7 +601,7 @@ impl DesktopState {
                 instance_id,
                 generation,
                 &view_id,
-                revision,
+                revision
             )
             .map_err(|error| {
                 format!(
@@ -636,7 +636,7 @@ impl DesktopState {
 
     pub(crate) fn install_runtime(
         &self,
-        runtime: Arc<nanika_host::RuntimeService>,
+        runtime: Arc<nanika_host::RuntimeService>
     ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
         let wakes = self.wakes.clone();
@@ -721,7 +721,7 @@ impl DesktopState {
 
     pub(crate) fn read_settings(
         &self,
-        general: nanika_config::LauncherPreferences,
+        general: nanika_config::LauncherPreferences
     ) -> Result<crate::SettingsSnapshot, String> {
         let _operation = self.begin_operation()?;
         // Only persistence is serialized here. Discovery never holds this lock.
@@ -748,7 +748,7 @@ impl DesktopState {
                 icon_url: entry.icon_url.clone(),
                 configuration: entry.configuration.clone(),
                 info: entry.info.clone(),
-                application: applications.latest.get(&entry.info.id).cloned(),
+                application: applications.latest.get(&entry.info.id).cloned()
             })
             .collect();
         Ok(crate::SettingsSnapshot {
@@ -757,7 +757,7 @@ impl DesktopState {
             version: env!("CARGO_PKG_VERSION"),
             general,
             general_sections: crate::general_settings::sections(),
-            extensions,
+            extensions
         })
     }
 
@@ -775,7 +775,7 @@ impl DesktopState {
     pub(crate) fn set_extension_enabled(
         &self,
         extension_id: &str,
-        enabled: bool,
+        enabled: bool
     ) -> Result<(), String> {
         let _operation = self.begin_operation()?;
         if !nanika_foundation::is_valid_extension_id(extension_id) {
@@ -797,13 +797,13 @@ impl DesktopState {
     pub(crate) fn save_settings(
         &self,
         request: crate::SaveSettingsRequest,
-        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static,
+        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static
     ) -> Result<
         (
             crate::SettingsApplicationUpdate,
-            nanika_host::ConfigurationSaveReceipt,
+            nanika_host::ConfigurationSaveReceipt
         ),
-        String,
+        String
     > {
         let _operation = self.begin_operation()?;
         let _settings = self
@@ -826,13 +826,13 @@ impl DesktopState {
             format!("settings-{id}"),
             request.key.clone(),
             request.value,
-            Arc::new(move |value| progress(id, &extension_id, &key, value)),
+            Arc::new(move |value| progress(id, &extension_id, &key, value))
         )?;
         let update = crate::SettingsApplicationUpdate {
             request_id: id,
             extension_id: request.extension_id,
             key: request.key,
-            result: crate::SettingsSaveResult::Running { progress: None },
+            result: crate::SettingsSaveResult::Running { progress: None }
         };
         self.publish_settings_application(update.clone());
         Ok((update, receipt))
@@ -975,8 +975,8 @@ impl DesktopState {
         &self,
         delivery: Option<(
             tauri::ipc::Channel<crate::SettingsEvent>,
-            crate::SettingsEvent,
-        )>,
+            crate::SettingsEvent
+        )>
     ) {
         if let Some((channel, event)) = delivery
             && let Err(error) = channel.send(event)
@@ -998,7 +998,7 @@ impl Drop for DesktopState {
 
 pub(crate) fn apply_invocation_completion(
     completion: nanika_host::RuntimeInvocationCompletion,
-    apply: impl FnOnce(nanika_protocol::NavigationEffect) -> Result<(), String>,
+    apply: impl FnOnce(nanika_protocol::NavigationEffect) -> Result<(), String>
 ) -> Result<(), String> {
     let nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } = completion.outcome
     else {
@@ -1013,7 +1013,7 @@ fn close_runtime_view(
     instance_id: u64,
     generation: u64,
     view_id: &str,
-    revision: u64,
+    revision: u64
 ) -> Result<(), String> {
     if runtime.instance_id(extension_id) != Some(instance_id) {
         return Ok(());
@@ -1040,7 +1040,7 @@ fn retire_views(runtime: Option<Arc<nanika_host::RuntimeService>>, session: Opti
                 route.instance_id,
                 route.generation,
                 &route.view_id,
-                route.revision,
+                route.revision
             ) {
                 tracing::error!(%error, view_id = route.view_id, "could not close retired extension view");
             }

@@ -10,17 +10,17 @@ pub enum ViewEvent {
     SearchChanged {
         text: String,
         /// Minimum initial rows requested by the host viewport, including its prefetch region.
-        minimum_items: std::num::NonZeroU32,
+        minimum_items: std::num::NonZeroU32
     },
     /// Selection addresses the full immutable collection, independently of delivered windows.
     SelectionChanged {
         collection_id: String,
-        index: usize,
+        index: usize
     },
     FilterChanged {
         filter_id: String,
         value: String,
-        minimum_items: std::num::NonZeroU32,
+        minimum_items: std::num::NonZeroU32
     },
     ListRangeChanged {
         collection_id: String,
@@ -34,8 +34,8 @@ pub enum ViewEvent {
     ActionInvoked {
         invocation: crate::ActionInvocation,
         item_id: Option<String>,
-        action_id: String,
-    },
+        action_id: String
+    }
 }
 
 impl ViewEvent {
@@ -45,7 +45,7 @@ impl ViewEvent {
         match self {
             Self::SelectionChanged {
                 collection_id,
-                index,
+                index
             } => {
                 let Some(crate::View::List { list }) = view else {
                     return Err("selection requires a list response".into());
@@ -57,14 +57,14 @@ impl ViewEvent {
                         .is_none_or(|selection| selection.index != *index)
                 {
                     return Err(
-                        "selection response changed the requested collection or position".into(),
+                        "selection response changed the requested collection or position".into()
                     );
                 }
             }
             Self::ListRangeChanged {
                 collection_id,
                 offset,
-                count,
+                count
             } => {
                 let Some(crate::View::List { list }) = view else {
                     return Err("list range read requires a list response".into());

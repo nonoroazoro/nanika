@@ -13,11 +13,11 @@ pub(crate) enum MenuTarget {
         request_id: u64,
         result_revision: u64,
         extension_id: String,
-        entry_id: String,
+        entry_id: String
     },
     View {
         route_id: u64,
         revision: u64,
-        item_id: Option<String>,
-    },
+        item_id: Option<String>
+    }
 }

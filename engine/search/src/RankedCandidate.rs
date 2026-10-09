@@ -5,5 +5,5 @@ pub struct RankedCandidate {
     pub candidate: Candidate,
     pub lexical_tier: u8,
     pub fuzzy_score: u32,
-    pub contextual_boost: u32,
+    pub contextual_boost: u32
 }
