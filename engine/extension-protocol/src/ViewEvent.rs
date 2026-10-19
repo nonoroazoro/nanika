@@ -25,11 +25,7 @@ pub enum ViewEvent {
     ListRangeChanged {
         collection_id: String,
         offset: usize,
-        count: std::num::NonZeroU32,
-    },
-    TextChunkRequested {
-        text_id: String,
-        index: usize,
+        count: std::num::NonZeroU32
     },
     ActionInvoked {
         invocation: crate::ActionInvocation,
@@ -88,21 +84,6 @@ impl ViewEvent {
                         return Err("list range response does not cover the requested rows".into());
                     }
                     base += section.total;
-                }
-            }
-            Self::TextChunkRequested { text_id, index } => {
-                let detail = match view {
-                    Some(crate::View::List { list }) => list.detail.as_ref(),
-                    Some(crate::View::Detail { detail }) => Some(detail),
-                    None => None,
-                };
-                if !matches!(detail.map(|detail| &detail.content),
-                    Some(crate::DetailContent::Text { text_id: actual, chunk_index, .. })
-                    if actual == text_id && chunk_index == index)
-                {
-                    return Err(
-                        "text read response does not match the requested document chunk".into(),
-                    );
                 }
             }
             _ => {}

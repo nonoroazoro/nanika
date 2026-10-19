@@ -1,7 +1,7 @@
 use nanika_protocol::Message;
 
 pub(crate) enum RuntimeEvent {
-    Protocol(Message),
+    Protocol(Box<Message>),
     ProtocolClosed,
     ProtocolError(String),
     CatalogUpdated {

@@ -1,3 +1,5 @@
+import { MAX_VIEW_SEARCH_CHARS } from "../generated/limits";
+
 import type { ViewEventReceipt } from "../generated/ViewEventReceipt.ts";
 import type { NavigationSnapshot } from "../types/NavigationSnapshot.ts";
 import type { ViewInteraction } from "../types/ViewInteraction.ts";
@@ -68,8 +70,8 @@ export function viewInputScheduler()
             query = { kind: "searchChanged", text, minimum_items: minimumItems };
             draft = text;
             // Match the Rust protocol's Unicode scalar count, not grapheme count.
-            inputError = Array.from(text).length > 4096
-                ? "View search supports up to 4096 characters. Edit the input to continue."
+            inputError = Array.from(text).length > MAX_VIEW_SEARCH_CHARS
+                ? `View search supports up to ${MAX_VIEW_SEARCH_CHARS} characters. Edit the input to continue.`
                 : null;
         },
         resume(): void
@@ -79,7 +81,7 @@ export function viewInputScheduler()
         begin(event: ViewInteraction | null): boolean
         {
             const isBlocking = event?.kind !== "selectionChanged" && event?.kind !== "resumed"
-                && event?.kind !== "listRangeChanged" && event?.kind !== "textChunkRequested";
+                && event?.kind !== "listRangeChanged";
             pending++;
             if (isBlocking)
             {

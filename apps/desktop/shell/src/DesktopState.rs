@@ -461,6 +461,72 @@ impl DesktopState {
         result
     }
 
+    /// Read-only source access does not acquire the navigation operation mutex or
+    /// create navigation revisions. Authority is checked again before delivery.
+    pub(crate) fn read_text(
+        &self,
+        request: crate::ReadTextRequest
+    ) -> Result<nanika_protocol::TextChunk, String> {
+        let _operation = self.begin_operation()?;
+        let (runtime, route) = {
+            let state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let session = state
+                .session
+                .as_ref()
+                .ok_or("The window session is not open.")?;
+            session.authorize(request.session_id)?;
+            let route = session.navigation.authorize_text_read(&request)?.clone();
+            (
+                Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?),
+                route
+            )
+        };
+        let receiver = runtime.read_text(
+            &route.extension_id,
+            route.instance_id,
+            route.generation,
+            route.view_id,
+            request.read.clone()
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let result = receiver.recv_timeout(std::time::Duration::from_millis(50));
+            {
+                let state = self
+                    .shared
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                let session = state
+                    .session
+                    .as_ref()
+                    .ok_or("The window session is not open.")?;
+                session.authorize(request.session_id)?;
+                session
+                    .navigation
+                    .authorize_text_revision(route.route_id, route.revision)?;
+                let current = session.navigation.authorize_text_read(&request)?;
+                if current.instance_id != route.instance_id
+                    || current.generation != route.generation
+                {
+                    return Err("Text source instance changed.".to_owned());
+                }
+            }
+            match result {
+                Ok(result) => return result,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("Text source closed without a result.".to_owned());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) if std::time::Instant::now() >= deadline => {
+                    return Err("Text source read timed out.".to_owned());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+
     pub(crate) fn run_view_event(
         &self,
         request: crate::ViewEventRequest,

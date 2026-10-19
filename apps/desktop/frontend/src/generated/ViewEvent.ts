@@ -15,5 +15,4 @@ export type ViewEvent =
     | { "kind": "selectionChanged"; collection_id: string; index: number; }
     | { "kind": "filterChanged"; filter_id: string; value: string; minimum_items: number; }
     | { "kind": "listRangeChanged"; collection_id: string; offset: number; count: number; }
-    | { "kind": "textChunkRequested"; text_id: string; index: number; }
     | { "kind": "actionInvoked"; invocation: ActionInvocation; item_id: string | null; action_id: string; };

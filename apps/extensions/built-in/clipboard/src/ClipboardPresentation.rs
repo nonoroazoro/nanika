@@ -31,9 +31,6 @@ impl ClipboardPresentation {
             .filter(|_| list.collection_id == collection_id)
             .ok_or("The requested collection selection is no longer available.")?;
         let mut state = self.state.clone();
-        if state.selected_item_id.as_ref() != Some(id) {
-            state.text_chunk = 0;
-        }
         state.selected_item_id = Some(id.clone());
         Ok(state)
     }

@@ -63,9 +63,14 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                         title: None,
                         content: DetailContent::Text {
                             value: "test".into(),
-                            text_id: "test.text".into(),
-                            chunk_index: 0,
-                            total_chunks: 1,
+                            document: nanika_protocol::TextDocumentIndex::new(
+                                "test.text".into(),
+                                "fixture".into(),
+                                "test"
+                            )
+                            .unwrap()
+                            .document,
+                            syntax_highlighting: false
                         },
                         metadata: vec![],
                         actions: actions.clone()

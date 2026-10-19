@@ -20,6 +20,18 @@ mod candidate_subtitle;
 #[path = "ClipboardContent.rs"]
 mod clipboard_content;
 mod constants;
+#[path = "TextChunk.rs"]
+mod text_chunk;
+#[path = "TextDocument.rs"]
+mod text_document;
+#[path = "TextDocumentIndex.rs"]
+mod text_document_index;
+#[path = "TextRead.rs"]
+mod text_read;
+pub use text_chunk::*;
+pub use text_document::*;
+pub use text_document_index::*;
+pub use text_read::*;
 #[path = "SystemAction.rs"]
 mod system_action;
 pub use system_action::*;
@@ -134,6 +146,9 @@ use catalog_publication::CatalogPublication;
 mod list_selection;
 pub use list_selection::*;
 
+#[path = "TextInvalidation.rs"]
+mod text_invalidation;
+pub use text_invalidation::TextInvalidation;
 
 /// Reserved Invoke entry for manifest-declared Settings actions.
 pub const SETTINGS_ENTRY_ID: &str = "nanika.settings";

@@ -1,0 +1,11 @@
+{
+    "repository": "https://github.com/microsoft/vscode",
+    "revision": "114d61e889475758fd1c3b3fcbdd04e9717940c4",
+    "transformation": "Base tokenColors followed by Plus tokenColors; foreground rules only; opaque alpha normalized. UI colors, font styles and semantic rules are excluded.",
+    "sources": {
+        "extensions/theme-defaults/themes/light_vs.json": "ce562a2ebec8c9a91021afb9ba7c9e8bcf4176df634fec8b77c748b42e3ce748",
+        "extensions/theme-defaults/themes/light_plus.json": "26fbb053bec8ce2b65706d5fcb993da8c19174cfdbf35a49b465236b5ed26203",
+        "extensions/theme-defaults/themes/dark_vs.json": "9fc2c16761400632eac6166ff7bb0435c5190a94bffa51ec1ef19b2ce78576b2",
+        "extensions/theme-defaults/themes/dark_plus.json": "409f33088a5cfd6589384900ef80627787c568d367c25b12f31bc7940936e573"
+    }
+}

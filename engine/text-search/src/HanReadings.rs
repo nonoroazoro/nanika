@@ -1,5 +1,5 @@
 // Phrase readings from https://github.com/mozillazg/phrase-pinyin-data at cee0ed6e6e4898580cafd2bd5e3723e20b214aa0.
-// MIT notice: ../HAN_READINGS_LICENSE. Character fallback: pinyin 0.11.0.
+// MIT notice: ../../../THIRD_PARTY_NOTICES.md (Phrase Pinyin Readings). Character fallback: pinyin 0.11.0.
 #[rustfmt::skip]
 pub(super) static READINGS: &[(&str, &str)] = &[
     ("一丘之貉", "yi qiu zhi he"),

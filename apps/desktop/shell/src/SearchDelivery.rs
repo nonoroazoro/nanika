@@ -56,6 +56,33 @@ pub(crate) fn run_delivery_with_preparation(
             .as_ref()
             .map(|runtime| runtime.extension_info());
         if let (Some(infos), Some(session)) = (active, state.session.as_mut()) {
+            session.text_instances.retain(|id, instance| {
+                let live = infos.iter().any(|info| {
+                    info.id == *id && info.enabled && info.instance_id == Some(*instance)
+                });
+                if !live {
+                    session.text_invalidations.insert(
+                        (id.clone(), *instance),
+                        crate::TextInvalidationNotice {
+                            extension_id: id.clone(),
+                            instance_id: *instance,
+                            text: nanika_protocol::TextInvalidation { documents: None }
+                        }
+                    );
+                }
+                live
+            });
+            for route in &session.navigation.stack {
+                if infos.iter().any(|info| {
+                    info.id == route.extension_id
+                        && info.enabled
+                        && info.instance_id == Some(route.instance_id)
+                }) {
+                    session
+                        .text_instances
+                        .insert(route.extension_id.clone(), route.instance_id);
+                }
+            }
             let previous = session.navigation.stack.len();
             session.navigation.stack.retain(|route| {
                 infos.iter().any(|info| {
@@ -110,6 +137,7 @@ pub(crate) fn run_delivery_with_preparation(
                 _ => false
             };
         if unchanged
+            && session.text_invalidations.is_empty()
             && session.delivered_range == Some(session.result_range)
             && session.delivered_navigation_revision == session.navigation.revision
         {
@@ -147,6 +175,11 @@ pub(crate) fn run_delivery_with_preparation(
         }
         session.revision += 1;
         let mut update = RootSearchSnapshot {
+            text_invalidations: session
+                .text_invalidations
+                .drain()
+                .map(|(_, notice)| notice)
+                .collect(),
             navigation,
             session_id: session.id,
             request_id: session.request_id,

@@ -17,6 +17,7 @@ import AppMenuBrand from "./components/launcher/AppMenuBrand.svelte";
 import type { ExtensionViewSnapshot } from "./generated/ExtensionViewSnapshot";
 import type { ContextMenuPresentation } from "./types/ContextMenuPresentation";
 import type { MenuTarget } from "./generated/MenuTarget";
+import { syntaxService } from "./syntax/service";
 import ExtensionView from "./components/extensions/ExtensionView.svelte";
 import RootSearch from "./components/launcher/RootSearch.svelte";
 import type { ApplicationSnapshot } from "./generated/ApplicationSnapshot";
@@ -65,6 +66,7 @@ const rootSearchState = new RootSearchState({
     totalResults: 0,
     phase: "searching",
     error: null,
+    textInvalidations: [],
     pendingExtensions: [],
     warnings: []
 });
@@ -118,6 +120,8 @@ onMount(() =>
         disposed = true;
         if (application)
         {
+            syntaxService.suspend();
+            syntaxService.cache.clear();
             void tauriBridge.closeSession(application.sessionId).catch(console.error);
         }
     };
@@ -482,6 +486,21 @@ function updateRootSearch(next: RootSearchSnapshot): void
     {
         return;
     }
+    for (const notice of next.textInvalidations)
+    {
+        const scope = JSON.stringify([next.sessionId, notice.extensionId, notice.instanceId]);
+        if (notice.text.documents === null)
+        {
+            syntaxService.invalidate(scope);
+        }
+        else
+        {
+            for (const id of notice.text.documents)
+            {
+                syntaxService.invalidate(scope, id);
+            }
+        }
+    }
     lastRevision = next.revision;
     updateNavigation(next.navigation);
     if (next.requestId !== latestRequestId)
@@ -681,6 +700,8 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                     error={viewInputError ?? operationFailure ?? navigationError}
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
+                    textScope={JSON.stringify([application?.sessionId ?? 0, navigation.current.extensionId, navigation.current.instanceId])}
+                    onReadText={read => tauriBridge.readText({ sessionId: application?.sessionId ?? 0, routeId: navigation.current!.routeId, read })}
                     onResume={resumeView}
                     menuOpen={menuOpen && contextMenu?.settingsExtensionId === navigation.current.extensionId}
                     onMenu={trigger => showAppMenu(trigger, navigation.current!)}

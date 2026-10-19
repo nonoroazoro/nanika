@@ -63,7 +63,19 @@ test("wire omissions retain results and navigation identity; null explicitly ret
                 title: null,
                 actions: [],
                 metadata: [],
-                content: { kind: "text", text_id: "text", chunk_index: 0, total_chunks: 1, value: "Text" }
+                content: {
+                    kind: "text",
+                    document: {
+                        id: "text",
+                        revision: "v1",
+                        utf16Length: 4,
+                        lineCount: 1,
+                        maxLineLength: 4,
+                        totalChunks: 1
+                    },
+                    syntax_highlighting: true,
+                    value: "Text"
+                }
             }
         }
     };
@@ -124,6 +136,7 @@ function _update(): SearchUpdate
         phase: "ready",
         error: null,
         warnings: [],
+        textInvalidations: [],
         pendingExtensions: []
     };
 }

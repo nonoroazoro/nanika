@@ -28,7 +28,7 @@
         "apps/desktop/frontend/**/*.{ts,js,svelte,json,html,css}",
         "tooling/**/*.ts"
     ],
-    "excludes": ["**/dist", "**/node_modules", "target/**"],
+    "excludes": ["**/dist", "**/node_modules", "target/**", "apps/desktop/frontend/src/syntax/grammars/**"],
     "plugins": [
         "npm:dprint-plugin-markup@0.27.5",
         "npm:@dprint/json@0.25.2",

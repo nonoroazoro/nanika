@@ -21,6 +21,7 @@ pub(crate) struct ExtensionSearchState {
     pub(crate) refreshes: VecDeque<ExtensionRefresh>,
     pub(crate) invocations: VecDeque<ExtensionInvocation>,
     pub(crate) view_events: VecDeque<ExtensionViewRequest>,
+    pub(crate) text_read: Option<crate::ExtensionTextRead>,
     pub(crate) active_invocation_id: Option<u64>,
     pub(crate) cancelled_invocations: HashSet<u64>,
     pub(crate) configurations: VecDeque<ExtensionConfigurationUpdate>,

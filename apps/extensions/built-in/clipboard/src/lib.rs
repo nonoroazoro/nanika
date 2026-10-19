@@ -59,6 +59,9 @@ pub use clipboard_presentation::*;
 pub(crate) use clipboard_query::*;
 pub(crate) use clipboard_query_entry::*;
 pub use clipboard_store::*;
+#[path = "ClipboardTextReader.rs"]
+mod clipboard_text_reader;
+pub use clipboard_text_reader::*;
 pub use clipboard_view_state::*;
 pub(crate) use clipboard_watcher_handler::*;
 pub use clipboard_worker::*;

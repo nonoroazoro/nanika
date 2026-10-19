@@ -6,6 +6,7 @@ use crate::{SearchPhase, SearchResult};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RootSearchSnapshot {
+    pub(crate) text_invalidations: Vec<crate::TextInvalidationNotice>,
     pub(crate) navigation: crate::NavigationSnapshot,
     pub(crate) session_id: u64,
     pub(crate) request_id: u64,

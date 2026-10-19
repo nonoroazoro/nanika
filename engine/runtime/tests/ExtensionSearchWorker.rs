@@ -14,9 +14,24 @@ use crate::{
 #[test]
 fn view_invalidations_coalesce_all_view_changes_per_instance() {
     let pending = Mutex::new(std::collections::HashMap::new());
-    queue_view_invalidation(&pending, "extension.one", 1);
-    queue_view_invalidation(&pending, "extension.one", 1);
-    queue_view_invalidation(&pending, "extension.two", 2);
+    queue_view_invalidation(
+        &pending,
+        "extension.one",
+        1,
+        nanika_protocol::TextInvalidation::default()
+    );
+    queue_view_invalidation(
+        &pending,
+        "extension.one",
+        1,
+        nanika_protocol::TextInvalidation::default()
+    );
+    queue_view_invalidation(
+        &pending,
+        "extension.two",
+        2,
+        nanika_protocol::TextInvalidation::default()
+    );
     let pending = pending.lock().unwrap();
     assert_eq!(pending.len(), 2);
     assert_eq!(pending["extension.one"].instance_id, 1);

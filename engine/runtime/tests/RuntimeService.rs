@@ -1697,6 +1697,103 @@ fn progress_only_publication_preserves_runtime_action_authority() {
 }
 
 #[test]
+fn pending_text_read_does_not_serialize_external_view_input() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["contributes"]["views"] = serde_json::json!([{
+        "id": "fixture.view", "title": "Fixture view", "description": "Text read concurrency"
+    }]);
+    fixture.manifests[0] = manifest.to_string();
+    std::fs::write(
+        fixture.paths.app_data_root().join("defer-text-read"),
+        b"defer"
+    )
+    .unwrap();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| {
+        runtime.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == generation
+                && snapshot
+                    .results
+                    .iter()
+                    .any(|result| result.candidate.entry_id() == "fixture.view")
+        })
+    });
+    let opened = runtime
+        .invoke(
+            &runtime.latest_snapshot().unwrap(),
+            HEALTHY,
+            "fixture.view",
+            nanika_protocol::VIEW_OPEN_ACTION_ID,
+            "fixture",
+            nanika_protocol::ActionInvocation::Default
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    let nanika_host::ExtensionInvocationOutcome::Completed {
+        effect:
+            nanika_protocol::NavigationEffect::Push {
+                view_id, revision, ..
+            },
+        ..
+    } = opened
+    else {
+        panic!("view opens")
+    };
+    let instance = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == HEALTHY)
+        .unwrap()
+        .instance_id
+        .unwrap();
+    let read = nanika_protocol::TextRead {
+        document_id: "test.text".into(),
+        revision: "fixture".into(),
+        index: 0
+    };
+    assert!(
+        runtime
+            .read_text(
+                HEALTHY,
+                instance + 100,
+                generation,
+                view_id.clone(),
+                read.clone()
+            )
+            .is_err()
+    );
+    let pending = runtime
+        .read_text(HEALTHY, instance, generation, view_id.clone(), read)
+        .unwrap();
+    wait_until(|| fixture.entered("text-read"));
+    assert!(pending.try_recv().is_err());
+    let input = runtime
+        .view_event(
+            HEALTHY,
+            instance,
+            generation,
+            view_id,
+            revision,
+            nanika_protocol::ViewEvent::Resumed
+        )
+        .unwrap();
+    assert!(
+        input.recv_timeout(WAIT).unwrap().is_ok(),
+        "view input completes before deferred text is released"
+    );
+    assert_eq!(
+        pending.recv_timeout(WAIT).unwrap().unwrap().value,
+        "Fixture view"
+    );
+    fixture.stop(runtime);
+}
+
+#[test]
 fn settings_actions_validate_declaration_confirmation_and_instance_and_share_admission() {
     use nanika_protocol::ActionInvocation::{Confirmed, Default as DefaultInvocation, Explicit};
     let mut fixture = Fixture::new();

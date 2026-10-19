@@ -774,6 +774,20 @@ impl RuntimeService {
             .and_then(SearchStorageWorker::last_failure)
     }
 
+    pub fn read_text(
+        &self,
+        extension_id: &str,
+        instance_id: u64,
+        generation: u64,
+        view_id: String,
+        read: nanika_protocol::TextRead
+    ) -> Result<std::sync::mpsc::Receiver<Result<nanika_protocol::TextChunk, String>>, String> {
+        read.validate()?;
+        self.extensions
+            .read_text(extension_id, instance_id, generation, view_id, read)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn view_event(
         &self,
         extension_id: &str,

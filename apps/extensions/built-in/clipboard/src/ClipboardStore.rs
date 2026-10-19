@@ -6,21 +6,29 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 /// The clipboard owner's durable data, continuation authority and incremental query cache. No shared raw history.
 pub struct ClipboardStore {
+    _syntax_highlighting: bool,
     _database: ClipboardDatabase,
     _query: Option<ClipboardQuery>,
     _query_revision: u64,
     _window: Option<crate::ClipboardWindow>,
-    _preview: Option<crate::ClipboardPreview>,
+    _preview: Option<Arc<crate::ClipboardPreview>>,
+    _text_reader: crate::ClipboardTextReader,
+    _text_revision: u64,
+    _text_revisions: HashMap<String, u64>
 }
 
 impl ClipboardStore {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
         Ok(Self {
+            _syntax_highlighting: true,
             _database: ClipboardDatabase::open(path)?,
             _query: None,
             _query_revision: 0,
             _window: None,
             _preview: None,
+            _text_reader: crate::ClipboardTextReader::default(),
+            _text_revision: 0,
+            _text_revisions: HashMap::new()
         })
     }
 
@@ -70,6 +78,15 @@ impl ClipboardStore {
         self._query = None;
         self._window = None;
         self._preview = None;
+        self._text_reader.publish(None);
+    }
+
+    pub fn set_syntax_highlighting(&mut self, enabled: bool) {
+        self._syntax_highlighting = enabled;
+    }
+
+    pub fn text_reader(&self) -> crate::ClipboardTextReader {
+        self._text_reader.clone()
     }
 
     pub fn content(&self, id: &str) -> Result<nanika_protocol::ClipboardContent, String> {
@@ -133,7 +150,6 @@ impl ClipboardStore {
             .is_none_or(|id| !query.positions.contains_key(id))
         {
             state.selected_item_id = visible_ids.first().cloned();
-            state.text_chunk = 0;
         }
         let selected_index = state
             .selected_item_id
@@ -161,11 +177,20 @@ impl ClipboardStore {
             self._preview = state
                 .selected_item_id
                 .as_deref()
-                .map(|id| self._database.entry(id).map(crate::ClipboardPreview::new))
+                .map(|id| {
+                    self._database
+                        .entry(id)
+                        .and_then(|entry| {
+                            let revision = self._text_revisions.get(id).copied().unwrap_or(0);
+                            crate::ClipboardPreview::new(entry, revision.to_string())
+                        })
+                        .map(Arc::new)
+                })
                 .transpose()?;
         }
+        self._text_reader.publish(self._preview.clone());
         let items = &self._window.as_ref().expect("current window").items;
-        let selected = self._preview.as_ref();
+        let selected = self._preview.as_deref();
         let mut paths = HashMap::new();
         for item in items {
             if let Some(path) = &item.first_path {
@@ -191,6 +216,7 @@ impl ClipboardStore {
             );
         }
         let view = crate::view::clipboard_view(
+            self._syntax_highlighting,
             &state,
             items,
             selected,
@@ -209,11 +235,24 @@ impl ClipboardStore {
     }
 
     fn _changed(&mut self, upsert: Option<&ClipboardEntry>, change: &ClipboardChange) {
+        // Revisions belong to committed mutations, not selection. The host's
+        // instance scope prevents reuse across process restarts. Retain only
+        // metadata for retained entries; deleting and reinserting an ID receives
+        // a fresh revision without hashing its payload on the navigation path.
+        if let Some(entry) = upsert {
+            self._text_revision += 1;
+            self._text_revisions
+                .insert(entry.entry_id.clone(), self._text_revision);
+        }
+        for id in &change.removed {
+            self._text_revisions.remove(id);
+        }
         if self._preview.as_ref().is_some_and(|preview| {
             change.removed.contains(&preview.entry.entry_id)
                 || upsert.is_some_and(|entry| entry.entry_id == preview.entry.entry_id)
         }) {
             self._preview = None;
+            self._text_reader.publish(None);
         }
         if let Some(query) = &mut self._query
             && query.apply(upsert, &change.removed)

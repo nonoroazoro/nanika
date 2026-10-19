@@ -16,6 +16,8 @@ fn export() {
     crate::PublishQueryRequest::export_all(&config).expect("export PublishQueryRequest");
     crate::InvokeCandidateRequest::export_all(&config).expect("export InvokeCandidateRequest");
     crate::ReadResultsRequest::export_all(&config).expect("export ReadResultsRequest");
+    crate::ReadTextRequest::export_all(&config).expect("export ReadTextRequest");
+    nanika_protocol::TextChunk::export_all(&config).expect("export TextChunk");
     crate::ConfigurationMenuRequest::export_all(&config).expect("export ConfigurationMenuRequest");
     crate::ConfigurationMenuOperation::export_all(&config)
         .expect("export ConfigurationMenuOperation");

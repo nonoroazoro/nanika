@@ -30,7 +30,9 @@ pub enum Message {
         transaction: u64
     },
     /// Extension-owned view data changed. The host refreshes the visible route of this instance.
-    ViewsChanged,
+    ViewsChanged {
+        text: crate::TextInvalidation
+    },
     /// Best-effort hint for entries that are about to be visible in the host UI.
     PrepareEntries {
         generation: u64,
@@ -79,7 +81,19 @@ pub enum Message {
     },
     ViewClose {
         request_id: String,
+        view_id: String
+    },
+    /// Read immutable source independently of view events and their revisions.
+    TextRead {
+        request_id: String,
+        generation: u64,
         view_id: String,
+        read: crate::TextRead
+    },
+    TextReadResult {
+        request_id: String,
+        generation: u64,
+        chunk: crate::TextChunk
     },
     ViewClosed {
         request_id: String,

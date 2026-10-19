@@ -33,7 +33,7 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
     drop(database);
     let mut store = ClipboardStore::open(root.join("clipboard.db")).unwrap();
     let mut payload_owner = crate::ClipboardPayloads::new(payloads.clone());
-    clear_entries(&mut store, &mut payload_owner, &["a".repeat(64)], &|| {})
+    clear_entries(&mut store, &mut payload_owner, &["a".repeat(64)], &|_| {})
         .expect("clear first image");
     assert!(!paths[0].exists());
     assert!(paths[1].exists());
@@ -50,7 +50,7 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
     let invalid_root = root.join("not-a-directory");
     std::fs::write(&invalid_root, b"not a directory").expect("failure fixture");
     let mut payload_owner = crate::ClipboardPayloads::new(invalid_root);
-    clear_entries(&mut store, &mut payload_owner, &["b".repeat(64)], &|| {})
+    clear_entries(&mut store, &mut payload_owner, &["b".repeat(64)], &|_| {})
         .expect_err("cleanup failure must be reported");
     assert!(
         store
@@ -80,10 +80,12 @@ fn failed_capture_does_not_block_later_capture_or_poison_shutdown() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(move || {
+        Arc::new(move |text| {
+            assert_eq!(text.documents, Some(vec!["next-copy".to_owned()]));
             changed.fetch_add(1, Ordering::SeqCst);
         }),
         move |_| {
@@ -129,6 +131,7 @@ fn worker_panic_is_still_a_shutdown_failure() {
     use std::sync::mpsc;
     let (commands, receiver) = mpsc::sync_channel(1);
     let worker = super::ClipboardWorker {
+        _text_reader: crate::ClipboardTextReader::default(),
         commands,
         thread: Some(std::thread::spawn(move || {
             let _ = receiver.recv();
@@ -156,10 +159,11 @@ fn capture_publishes_committed_state_when_payload_cleanup_fails() {
         root.join("clipboard.db"),
         payloads.clone(),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(move || {
+        Arc::new(move |_| {
             notify.fetch_add(1, Ordering::SeqCst);
         }),
         |_| {
@@ -233,10 +237,11 @@ fn retention_and_clear_notify_after_commit_even_when_payload_cleanup_fails() {
         path,
         payloads.clone(),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(move || {
+        Arc::new(move |_| {
             let observer = ClipboardDatabase::open(&observer_path).unwrap();
             let count = observer.matching_ids("", "all").unwrap().len();
             assert!(count <= 1, "notification follows the durable commit");
@@ -249,7 +254,8 @@ fn retention_and_clear_notify_after_commit_even_when_payload_cleanup_fails() {
         std::fs::create_dir_all(payloads.join(format!("{index:064x}.png"))).unwrap();
     }
     worker
-        .apply_retention(ClipboardConfig {
+        .apply_configuration(ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: Some(1),
             max_age_days: None
         })
@@ -287,10 +293,11 @@ fn copy_leases_survive_capture_retention_until_the_final_reader_finishes() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: Some(1),
             max_age_days: None
         },
-        Arc::new(|| {}),
+        Arc::new(|_| {}),
         |_| {
             Ok(Some(ClipboardEntry {
                 entry_id: "new-text".into(),
@@ -340,11 +347,12 @@ fn recaptured_images_remain_owned_after_old_copy_leases_release() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(|| {}),
-        move |_| Ok(Some(recaptured.clone())),
+        Arc::new(|_| {}),
+        move |_| Ok(Some(recaptured.clone()))
     )
     .unwrap();
     let lease = worker.content(entry.entry_id.clone()).unwrap();
@@ -376,11 +384,12 @@ fn abandoned_content_handoff_and_failed_consumers_release_their_payloads() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(|| {}),
-        |_| Ok(None),
+        Arc::new(|_| {}),
+        |_| Ok(None)
     )
     .unwrap();
     let (response, receiver) = mpsc::sync_channel(0);
@@ -394,7 +403,8 @@ fn abandoned_content_handoff_and_failed_consumers_release_their_payloads() {
         .unwrap();
     let failure = (|| -> Result<(), String> {
         let _lease = worker.content(entry.entry_id.clone())?;
-        worker.apply_retention(ClipboardConfig {
+        worker.apply_configuration(ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: Some(1)
         })?;
@@ -430,11 +440,12 @@ fn stored_image_paths_cannot_expand_payload_deletion_authority() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(|| {}),
-        |_| Ok(None),
+        Arc::new(|_| {}),
+        |_| Ok(None)
     )
     .unwrap();
     assert!(worker.content(entry.entry_id.clone()).is_err());
@@ -481,6 +492,74 @@ fn seed_copy_image(label: &str) -> (std::path::PathBuf, std::path::PathBuf, Clip
 }
 
 #[test]
+fn presentation_configuration_does_not_trigger_retention() {
+    use crate::{ClipboardConfig, ClipboardWorker};
+    use std::sync::Arc;
+    let root =
+        std::env::temp_dir().join(format!("nanika-presentation-config-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let config = ClipboardConfig {
+        syntax_highlighting: true,
+        max_entries: Some(50),
+        max_age_days: Some(1)
+    };
+    let (notices, received) = std::sync::mpsc::channel();
+    let worker = ClipboardWorker::_spawn(
+        root.join("clipboard.db"),
+        root.join("payloads"),
+        config.clone(),
+        Arc::new(move |notice| {
+            notices.send(notice).unwrap();
+        }),
+        |_| Ok(None)
+    )
+    .unwrap();
+    // Model a row that has aged out while the owner was idle, after startup retention ran.
+    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    database
+        .upsert(&ClipboardEntry {
+            entry_id: "text".into(),
+            title: "Text".into(),
+            content: ClipboardContent::Text {
+                value: "# Heading".into()
+            },
+            byte_size: 9,
+            captured_at: 0
+        })
+        .unwrap();
+    worker
+        .apply_configuration(ClipboardConfig {
+            syntax_highlighting: false,
+            ..config.clone()
+        })
+        .unwrap();
+    assert!(received.recv().unwrap().is_empty());
+    assert!(database.entry("text").is_ok());
+    let presentation = worker.present(ClipboardViewState::new(), None).unwrap();
+    let nanika_protocol::View::List { list } = presentation.view else {
+        panic!("list")
+    };
+    assert!(matches!(
+        list.detail.unwrap().content,
+        nanika_protocol::DetailContent::Text {
+            syntax_highlighting: false,
+            ..
+        }
+    ));
+    worker
+        .apply_configuration(ClipboardConfig {
+            max_age_days: Some(2),
+            ..config
+        })
+        .unwrap();
+    assert_eq!(received.recv().unwrap().documents.unwrap(), ["text"]);
+    assert!(database.entry("text").is_err());
+    worker.shutdown().unwrap();
+    drop(database);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn settings_clear_removes_all_history_even_while_the_view_is_filtered() {
     use crate::{ClipboardConfig, ClipboardWorker};
     use std::sync::Arc;
@@ -502,10 +581,11 @@ fn settings_clear_removes_all_history_even_while_the_view_is_filtered() {
         root.join("clipboard.db"),
         root.join("payloads"),
         ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         },
-        Arc::new(|| {}),
+        Arc::new(|_| {}),
         |_| Ok(None)
     )
     .unwrap();

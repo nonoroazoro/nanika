@@ -4,7 +4,7 @@ use crate::ScanReport;
 
 /// Protocol input and discovery completion serialized onto the runtime loop.
 pub enum RuntimeEvent {
-    Protocol(Message),
+    Protocol(Box<Message>),
     CatalogUpdated {
         entry_ids: Vec<String>
     },

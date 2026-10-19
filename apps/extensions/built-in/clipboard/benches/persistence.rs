@@ -54,6 +54,7 @@ fn persistence(criterion: &mut Criterion) {
             });
         });
         let config = ClipboardConfig {
+            syntax_highlighting: true,
             max_entries: None,
             max_age_days: None
         };

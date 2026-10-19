@@ -13,6 +13,12 @@ mod built_in_extension;
 mod built_in_extension_inventory;
 #[path = "ConfigurationReply.rs"]
 mod configuration_reply;
+#[path = "ExtensionTextRead.rs"]
+mod extension_text_read;
+#[path = "TextReadReply.rs"]
+mod text_read_reply;
+pub(crate) use extension_text_read::ExtensionTextRead;
+pub(crate) use text_read_reply::{TextReadCompletion, TextReadReply};
 #[path = "ConfigurationSaveOutcome.rs"]
 mod configuration_save_outcome;
 #[path = "ConfigurationSaveReceipt.rs"]
@@ -276,6 +282,9 @@ pub use prepared_host_service::PreparedHostService;
 mod host_service_receipt;
 pub use host_service_receipt::HostServiceReceipt;
 
+#[path = "ViewInvalidationNotifier.rs"]
+mod view_invalidation_notifier;
+use view_invalidation_notifier::ViewInvalidationNotifier;
 
 #[path = "ConfigurationMenu.rs"]
 mod configuration_menu;

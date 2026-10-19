@@ -19,7 +19,7 @@ pub(crate) fn run_delivery(
         if matches!(event, ViewInvalidationDelivery::Shutdown) {
             break;
         }
-        refresh_invalidated_views(shared);
+        refresh_invalidated_views(shared, search_wakes);
         if matches!(
             search_wakes.try_send(SearchDelivery::Wake),
             Err(TrySendError::Disconnected(_))
@@ -29,7 +29,10 @@ pub(crate) fn run_delivery(
     }
 }
 
-fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
+fn refresh_invalidated_views(
+    shared: &Mutex<DesktopRuntime>,
+    search_wakes: &SyncSender<SearchDelivery>
+) {
     let invalidations = {
         let state = shared.lock().unwrap_or_else(|error| error.into_inner());
         state
@@ -37,6 +40,31 @@ fn refresh_invalidated_views(shared: &Mutex<DesktopRuntime>) {
             .as_ref()
             .map_or_else(Vec::new, |runtime| runtime.take_view_invalidations())
     };
+    // Revoke cached resources before waiting for a potentially slow view refresh.
+    {
+        let mut state = shared.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(session) = state.session.as_mut() {
+            for invalidation in &invalidations {
+                if !invalidation.text.is_empty() {
+                    session.navigation.revoke_text(
+                        &invalidation.extension_id,
+                        invalidation.instance_id,
+                        &invalidation.text
+                    );
+                    let notice = session
+                        .text_invalidations
+                        .entry((invalidation.extension_id.clone(), invalidation.instance_id))
+                        .or_insert_with(|| crate::TextInvalidationNotice {
+                            extension_id: invalidation.extension_id.clone(),
+                            instance_id: invalidation.instance_id,
+                            text: Default::default()
+                        });
+                    notice.text.merge(invalidation.text.clone());
+                }
+            }
+        }
+    }
+    let _ = search_wakes.try_send(SearchDelivery::Wake);
     for invalidation in invalidations {
         let Some((session_id, operation_lock)) = ({
             let state = shared.lock().unwrap_or_else(|error| error.into_inner());

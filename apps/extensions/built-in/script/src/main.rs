@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut input = BufReader::new(stdin().lock());
             loop {
                 let event = match read_frame(&mut input) {
-                    Ok(Some(message)) => RuntimeEvent::Protocol(message),
+                    Ok(Some(message)) => RuntimeEvent::Protocol(Box::new(message)),
                     Ok(None) => RuntimeEvent::ProtocolClosed,
                     Err(error) => RuntimeEvent::ProtocolError(error.to_string())
                 };
@@ -99,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut invocations = HashMap::<String, (String, u64)>::new();
     while let Ok(event) = discovery.receive() {
         match event {
-            RuntimeEvent::Protocol(message) => match message {
+            RuntimeEvent::Protocol(message) => match *message {
                 Message::CatalogRead { request_id } => match catalog.read() {
                     Ok(batch) => {
                         write_frame(&mut output, &Message::CatalogBatch { request_id, batch })?
@@ -346,6 +346,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ViewUpdated { request_id, .. }
         | Message::ViewClose { request_id, .. }
         | Message::ViewClosed { request_id, .. }
+        | Message::TextRead { request_id, .. }
+        | Message::TextReadResult { request_id, .. }
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
@@ -357,7 +359,7 @@ fn request_id(message: &Message) -> Option<String> {
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CatalogApplied { .. }
         | Message::CandidatesChanged
-        | Message::ViewsChanged
-        | Message::PrepareEntries { .. } => None,
+        | Message::ViewsChanged { .. }
+        | Message::PrepareEntries { .. } => None
     }
 }

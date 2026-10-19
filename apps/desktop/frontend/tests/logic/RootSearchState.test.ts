@@ -38,6 +38,7 @@ function _snapshot(ids: string[], update: Partial<RootSearchSnapshot> = {}): Roo
         totalResults: ids.length,
         results: ids.map(_result),
         error: null,
+        textInvalidations: [],
         pendingExtensions: [],
         warnings: [],
         ...update

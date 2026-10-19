@@ -120,17 +120,15 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
     }
     match &detail.content {
         DetailContent::Text {
-            value,
-            text_id,
-            chunk_index,
-            total_chunks,
+            value, document, ..
         } => {
-            validate_id("detail text identity", text_id)?;
-            if *total_chunks == 0
-                || *total_chunks > crate::MAX_DETAIL_TEXT_CHUNKS
-                || chunk_index >= total_chunks
-                || value.chars().count() > crate::DETAIL_TEXT_BATCH_CHARS
-                || (*total_chunks > 1 && value.is_empty())
+            document.validate()?;
+            let scalars = value.chars().count();
+            let utf16_length = value.encode_utf16().count();
+            if scalars > crate::DETAIL_TEXT_BATCH_CHARS
+                || (document.total_chunks > 1 && scalars != crate::DETAIL_TEXT_BATCH_CHARS)
+                || (document.total_chunks == 1 && utf16_length != document.utf16_length)
+                || utf16_length > document.utf16_length
             {
                 return Err("detail text chunk is invalid".into());
             }
@@ -214,7 +212,7 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_id(field: &str, value: &str) -> Result<(), String> {
+pub(crate) fn validate_id(field: &str, value: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 128
         || value

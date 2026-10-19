@@ -5,6 +5,9 @@ use crate::{RootSearchSnapshot, SearchPhase};
 
 /// One WebView lifetime, with at most one unacknowledged Channel message.
 pub(crate) struct SearchSession {
+    pub(crate) text_instances: std::collections::HashMap<String, u64>,
+    pub(crate) text_invalidations:
+        std::collections::HashMap<(String, u64), crate::TextInvalidationNotice>,
     pub(crate) view_operation_lock: Arc<Mutex<()>>,
     pub(crate) navigation: crate::NavigationState,
     pub(crate) delivered_navigation_revision: u64,
@@ -30,6 +33,8 @@ pub(crate) struct SearchSession {
 impl SearchSession {
     pub(crate) fn new(id: u64, updates: tauri::ipc::Channel<RootSearchSnapshot>) -> Self {
         Self {
+            text_instances: Default::default(),
+            text_invalidations: Default::default(),
             view_operation_lock: Arc::new(Mutex::new(())),
             navigation: crate::NavigationState::default(),
             delivered_navigation_revision: 0,

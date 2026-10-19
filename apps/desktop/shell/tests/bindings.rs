@@ -29,9 +29,14 @@ pub(super) fn write(output: &Path, config: &Config) {
                 title: None,
                 content: nanika_protocol::DetailContent::Text {
                     value: "Text".into(),
-                    text_id: "text".into(),
-                    chunk_index: 0,
-                    total_chunks: 1,
+                    document: nanika_protocol::TextDocumentIndex::new(
+                        "text".into(),
+                        "fixture".into(),
+                        &"Text"
+                    )
+                    .unwrap()
+                    .document,
+                    syntax_highlighting: false
                 },
                 metadata: Vec::new(),
                 actions: vec![action]
@@ -40,6 +45,7 @@ pub(super) fn write(output: &Path, config: &Config) {
     }));
     _sample(&navigation, config, &mut samples);
     let mut search = crate::RootSearchSnapshot {
+        text_invalidations: Vec::new(),
         navigation,
         session_id: 9_007_199_254_740_991,
         request_id: 1,

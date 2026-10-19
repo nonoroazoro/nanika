@@ -8,8 +8,7 @@ pub struct ClipboardViewState {
     pub offset: usize,
     pub count: usize,
     pub anchor_id: Option<String>,
-    pub text_chunk: usize,
-    pub revision: u64,
+    pub revision: u64
 }
 
 impl ClipboardViewState {
@@ -19,7 +18,6 @@ impl ClipboardViewState {
         self.offset = 0;
         self.anchor_id = None;
         self.selected_item_id = None;
-        self.text_chunk = 0;
     }
 
     pub fn new() -> Self {
@@ -30,8 +28,7 @@ impl ClipboardViewState {
             offset: 0,
             count: CLIPBOARD_BATCH_SIZE,
             anchor_id: None,
-            text_chunk: 0,
-            revision: 1,
+            revision: 1
         }
     }
 }

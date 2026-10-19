@@ -11,6 +11,7 @@ const MILLIS_PER_DAY: u64 = 24 * 60 * 60 * 1_000;
 /// Clipboard history retention policy supplied by the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardConfig {
+    pub syntax_highlighting: bool,
     pub max_entries: Option<u32>,
     pub max_age_days: Option<u32>
 }
@@ -19,6 +20,10 @@ impl ClipboardConfig {
     pub fn from_configuration(configuration: &ExtensionConfiguration) -> Result<Self, String> {
         let values = configuration.values();
         let config = Self {
+            syntax_highlighting: values
+                .get("clipboard.syntaxHighlighting")
+                .and_then(serde_json::Value::as_bool)
+                .ok_or("clipboard configuration is missing boolean clipboard.syntaxHighlighting")?,
             max_entries: _integer_limit(values, MAX_ENTRIES_KEY, MIN_MAX_ENTRIES, MAX_MAX_ENTRIES)?,
             max_age_days: _integer_limit(
                 values,

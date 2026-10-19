@@ -2,8 +2,10 @@
 import type { NavigationSnapshot } from "./NavigationSnapshot";
 import type { SearchPhase } from "./SearchPhase";
 import type { SearchResult } from "./SearchResult";
+import type { TextInvalidationNotice } from "./TextInvalidationNotice";
 
 export type RootSearchSnapshot = {
+    textInvalidations: Array<TextInvalidationNotice>;
     navigation: NavigationSnapshot;
     sessionId: number;
     requestId: number;

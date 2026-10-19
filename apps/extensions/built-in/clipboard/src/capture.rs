@@ -98,7 +98,7 @@ pub(crate) fn text_within_limits(value: &str) -> bool {
     value.len() <= MAX_TEXT_BYTES
 }
 
-fn stable_hash(kind: &str, payload: &[u8]) -> String {
+pub(crate) fn stable_hash(kind: &str, payload: &[u8]) -> String {
     let mut digest = Sha256::new();
     digest.update(kind.as_bytes());
     digest.update([0]);

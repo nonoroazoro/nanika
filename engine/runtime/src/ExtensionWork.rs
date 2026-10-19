@@ -12,6 +12,7 @@ pub(crate) enum ExtensionWork {
     },
     Invoke(ExtensionInvocation),
     ViewEvent(ExtensionViewRequest),
+    TextRead(crate::ExtensionTextRead),
     Refresh(ExtensionRefresh),
     ApplyConfiguration(ExtensionConfigurationUpdate)
 }

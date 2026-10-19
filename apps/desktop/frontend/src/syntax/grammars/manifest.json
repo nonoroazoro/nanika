@@ -1,0 +1,548 @@
+{
+    "upstreams": {
+        "vscode": {
+            "repository": "https://github.com/microsoft/vscode",
+            "revision": "114d61e889475758fd1c3b3fcbdd04e9717940c4",
+            "notices": [
+                {
+                    "path": "LICENSE.txt",
+                    "sha256": "cce33203a80863c22499035b1cfb6aba5df5f02e4ea2669cf5bc5730c1864236"
+                },
+                {
+                    "path": "ThirdPartyNotices.txt",
+                    "sha256": "51b3fd6b279f33c324ba7d32ed9f8849bb51cc2d7c61eaf13c2e8eba5efdd523"
+                }
+            ]
+        },
+        "svelte": {
+            "repository": "https://github.com/sveltejs/language-tools",
+            "notices": [
+                {
+                    "path": "LICENSE",
+                    "sha256": "ada595bb2ec8d71616dde1b956edb8fbad63eadab32b8d9ab9310a1aef08e5c5"
+                }
+            ],
+            "version": "110.3.1",
+            "archive": "https://open-vsx.org/api/svelte/svelte-vscode/110.3.1/file/svelte.svelte-vscode-110.3.1.vsix",
+            "sha256": "af8ec9796060b5442a6bad6b165543ce66ba5783885586d9de5f8ef7c53d5c61"
+        },
+        "taplo": {
+            "repository": "https://github.com/tamasfe/taplo",
+            "revision": "08f343be02ce1b20296470396a42f0fa47820449",
+            "notices": [
+                {
+                    "path": "LICENSE",
+                    "sha256": "b23690ab205e06bf09725ef88e0b321175cbc2dd4d9f8ec7f7cd0577302c244d"
+                }
+            ]
+        },
+        "just": {
+            "repository": "https://github.com/nefrob/vscode-just",
+            "revision": "2218b62d78a36afa1cf0007961d308639f28973c",
+            "notices": [
+                {
+                    "path": "LICENSE",
+                    "sha256": "a0667d0a44c36e5f9236b707a5ac5a91d550c84baf9804202e9b77f5eff10d2c"
+                }
+            ]
+        }
+    },
+    "grammars": {
+        "text.html.markdown": {
+            "asset": "text.html.markdown.json",
+            "source": "extensions/markdown-basics/syntaxes/markdown.tmLanguage.json",
+            "sha256": "ff4c245072aa0628b298481de17a1c8026b1587410bbb8ab74f3c29cc0f19b9e",
+            "language": "markdown",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.abap",
+                "source.asp.vb.net",
+                "source.batchfile",
+                "source.clojure",
+                "source.coffee",
+                "source.dart",
+                "source.diff",
+                "source.elixir",
+                "source.erlang",
+                "source.fsharp",
+                "source.groovy",
+                "source.ignore",
+                "source.json.lines",
+                "source.julia",
+                "source.makefile",
+                "source.perl",
+                "source.perl.6",
+                "source.r",
+                "source.rst",
+                "source.scala",
+                "source.twig",
+                "source.yang",
+                "text.bibtex",
+                "text.git-commit",
+                "text.git-rebase",
+                "text.html.handlebars",
+                "text.log",
+                "text.pug",
+                "text.tex.latex",
+                "text.xml.xsl"
+            ]
+        },
+        "source.js.jsx": {
+            "asset": "source.js.jsx.json",
+            "source": "extensions/javascript/syntaxes/JavaScriptReact.tmLanguage.json",
+            "sha256": "dd29ed97c74d9be896c76c1e8ba51534ca29b253ab50b2abb575f321cb2ac635",
+            "language": "javascriptreact",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.js": {
+            "asset": "source.js.json",
+            "source": "extensions/javascript/syntaxes/JavaScript.tmLanguage.json",
+            "sha256": "db6f17f15bc4f5e860a3b8fa6055a69720a53df845c8d5121cdc4f128c16291f",
+            "language": "javascript",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.js.regexp": {
+            "asset": "source.js.regexp.json",
+            "source": "extensions/javascript/syntaxes/Regular Expressions (JavaScript).tmLanguage",
+            "sha256": "00108c41e49aa8312f0e94e1da961580d79c92b64eab0d608f9071d1081718ef",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.ts": {
+            "asset": "source.ts.json",
+            "source": "extensions/typescript-basics/syntaxes/TypeScript.tmLanguage.json",
+            "sha256": "4e92e0d7de560217d6c8d3236d85e6e17a5d77825b15729a230c761743122661",
+            "language": "typescript",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.tsx": {
+            "asset": "source.tsx.json",
+            "source": "extensions/typescript-basics/syntaxes/TypeScriptReact.tmLanguage.json",
+            "sha256": "532fb887df3117e9f4eaf5d3ea1e850114fb6899fe3d3ddabedb153bec08b32a",
+            "language": "typescriptreact",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "documentation.injection.ts": {
+            "asset": "documentation.injection.ts.json",
+            "source": "extensions/typescript-basics/syntaxes/jsdoc.ts.injection.tmLanguage.json",
+            "sha256": "526076af53f330358ae3f5293a7779ac0dbd19d5ef27b71effd94faeef4f1249",
+            "language": null,
+            "injectTo": [
+                "source.ts",
+                "source.tsx"
+            ],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "documentation.injection.js.jsx": {
+            "asset": "documentation.injection.js.jsx.json",
+            "source": "extensions/typescript-basics/syntaxes/jsdoc.js.injection.tmLanguage.json",
+            "sha256": "c11fde5c9bb2d9b6bd6faaad51f398b127438a93b3047641a270552a760e76b6",
+            "language": null,
+            "injectTo": [
+                "source.js",
+                "source.js.jsx"
+            ],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.json": {
+            "asset": "source.json.json",
+            "source": "extensions/json/syntaxes/JSON.tmLanguage.json",
+            "sha256": "d7238f1cc9033993b9816b0945cab4bb8ea108de0399663c551f28f913e94c70",
+            "language": "json",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.json.comments": {
+            "asset": "source.json.comments.json",
+            "source": "extensions/json/syntaxes/JSONC.tmLanguage.json",
+            "sha256": "9f927bb3aa53e66efc3cace9d2fa1185822b2adfa3f4a9299e7c078f136e1ee2",
+            "language": "jsonc",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "text.html.basic": {
+            "asset": "text.html.basic.json",
+            "source": "extensions/html/syntaxes/html.tmLanguage.json",
+            "sha256": "80dedf4fb27e88889ac8fb72763954a6d2660502c686f4415208d8c8d00352cd",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "text.html.derivative": {
+            "asset": "text.html.derivative.json",
+            "source": "extensions/html/syntaxes/html-derivative.tmLanguage.json",
+            "sha256": "0d6495edf9edfb25ae89ef43d64c4b6ee2bbb2468179001c7c9574c789a1ed77",
+            "language": "html",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.css": {
+            "asset": "source.css.json",
+            "source": "extensions/css/syntaxes/css.tmLanguage.json",
+            "sha256": "55a3e184f702da6a5a64dc4d7ce82ab298a1bae8d35e2924483941eb223d54b1",
+            "language": "css",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.shell": {
+            "asset": "source.shell.json",
+            "source": "extensions/shellscript/syntaxes/shell-unix-bash.tmLanguage.json",
+            "sha256": "838a597b9bbc29bcfc89ca0190118550ae57517ec3e4b4baa1f8500edcf601d1",
+            "language": "shellscript",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.python": {
+            "asset": "source.python.json",
+            "source": "extensions/python/syntaxes/MagicPython.tmLanguage.json",
+            "sha256": "ca981430eb3df004f4955bb7cba51ad06c4d8408d168c81eec7059d7d9aec5c8",
+            "language": "python",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.regexp.python": {
+            "asset": "source.regexp.python.json",
+            "source": "extensions/python/syntaxes/MagicRegExp.tmLanguage.json",
+            "sha256": "d44f8811521bd35ea6bb9f7049b9e8a2cb6a04c514dcb9ec369633ab2cb139d1",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.rust": {
+            "asset": "source.rust.json",
+            "source": "extensions/rust/syntaxes/rust.tmLanguage.json",
+            "sha256": "015f28e49b5bd4f2b2bb9863cd62e5831a4b570d8b65fe24a7df9b25312da75f",
+            "language": "rust",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.sql": {
+            "asset": "source.sql.json",
+            "source": "extensions/sql/syntaxes/sql.tmLanguage.json",
+            "sha256": "284a00c971983e532aa0abd40cc0fa2e4c62f783014f022747a7800e8244f963",
+            "language": "sql",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml": {
+            "asset": "source.yaml.json",
+            "source": "extensions/yaml/syntaxes/yaml.tmLanguage.json",
+            "sha256": "17f25b037d082408b3ac7af5bb53e94125cc1a47857a75da451d6ea4ac0602df",
+            "language": "dockercompose",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml.1.3": {
+            "asset": "source.yaml.1.3.json",
+            "source": "extensions/yaml/syntaxes/yaml-1.3.tmLanguage.json",
+            "sha256": "4d2eb8e4139b82a610e4f02a0f663ebbb183d4d5e97b3f098a5a844f4efcf6b0",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml.1.2": {
+            "asset": "source.yaml.1.2.json",
+            "source": "extensions/yaml/syntaxes/yaml-1.2.tmLanguage.json",
+            "sha256": "1e62af3f7ccccce7ed45b4ee4f3d8461b7e9c3bee42d40b0057934ba6dd62f80",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml.1.1": {
+            "asset": "source.yaml.1.1.json",
+            "source": "extensions/yaml/syntaxes/yaml-1.1.tmLanguage.json",
+            "sha256": "577102ecafb5a6fe88b766ceed020c2cc32aa16f82556ae36385f23f7b834963",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml.1.0": {
+            "asset": "source.yaml.1.0.json",
+            "source": "extensions/yaml/syntaxes/yaml-1.0.tmLanguage.json",
+            "sha256": "6e521c226b702f17fca01ee380479e77350ac754fc4bc127d997ab52c140bd1e",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.yaml.embedded": {
+            "asset": "source.yaml.embedded.json",
+            "source": "extensions/yaml/syntaxes/yaml-embedded.tmLanguage.json",
+            "sha256": "b63b60dfef3237d9c51c7dfd2a488735ecc8e22fdb1a0e8fa8b34d2f77bf873e",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.svelte": {
+            "asset": "source.svelte.json",
+            "source": "syntaxes/svelte.tmLanguage.json",
+            "sha256": "fa9404724681c300ccda76b6d19902c87037858818a0a811ad963ea67a2338b5",
+            "language": "svelte",
+            "injectTo": [],
+            "upstream": "svelte",
+            "optionalScopes": [
+                "source.coffee",
+                "source.css.postcss",
+                "source.sass",
+                "source.stylus",
+                "text.pug"
+            ]
+        },
+        "source.objc": {
+            "asset": "source.objc.json",
+            "source": "extensions/objective-c/syntaxes/objective-c.tmLanguage.json",
+            "sha256": "6b65c883fb844ec6a5f9b9b6d82778189b613002d8d52d86ccd7e005c8e2bb6f",
+            "language": "objective-c",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.c": {
+            "asset": "source.c.json",
+            "source": "extensions/cpp/syntaxes/c.tmLanguage.json",
+            "sha256": "9d0a305bc6595526ffc0680eccbf23a12512ded99a632d9f1deab3ce81b62957",
+            "language": "c",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.arm",
+                "source.asm",
+                "source.x86",
+                "source.x86_64"
+            ]
+        },
+        "source.cpp": {
+            "asset": "source.cpp.json",
+            "source": "extensions/cpp/syntaxes/cpp.tmLanguage.json",
+            "sha256": "595766a3721e2ab8bb6d7e6d38700c8d912f5eeb992b48d1f96dfb013659be9a",
+            "language": "cpp",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.arm",
+                "source.asm",
+                "source.glsl",
+                "source.x86",
+                "source.x86_64"
+            ]
+        },
+        "source.cpp.embedded.macro": {
+            "asset": "source.cpp.embedded.macro.json",
+            "source": "extensions/cpp/syntaxes/cpp.embedded.macro.tmLanguage.json",
+            "sha256": "a99612957109efebbea2fbf9e5bec2ceb955b91d3e8543b5d4cdf74739d49181",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.arm",
+                "source.asm",
+                "source.glsl",
+                "source.x86",
+                "source.x86_64"
+            ]
+        },
+        "source.java": {
+            "asset": "source.java.json",
+            "source": "extensions/java/syntaxes/java.tmLanguage.json",
+            "sha256": "7152b50446fc97b2abf78755958ed8d27729b53365465ed89b6edebc1a6e9ba3",
+            "language": "java",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.go": {
+            "asset": "source.go.json",
+            "source": "extensions/go/syntaxes/go.tmLanguage.json",
+            "sha256": "de8f2fa64ff273ecd3bfd815164c460e2e406759fb7c8ffabf6cb3639a0efc5f",
+            "language": "go",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.cs": {
+            "asset": "source.cs.json",
+            "source": "extensions/csharp/syntaxes/csharp.tmLanguage.json",
+            "sha256": "152d4586a2ddf5184216928a99d1e17620aebcce13f5fd96735f43218fbd1c1c",
+            "language": "csharp",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.swift": {
+            "asset": "source.swift.json",
+            "source": "extensions/swift/syntaxes/swift.tmLanguage.json",
+            "sha256": "acd12f33c06092e1ccff5d44bee2b59f288d941bd94747e7178305d3a140e91b",
+            "language": "swift",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.ini": {
+            "asset": "source.ini.json",
+            "source": "extensions/ini/syntaxes/ini.tmLanguage.json",
+            "sha256": "a46613bd993739695cb62be04d23c5d779754bce9fda8a6ead61ecd4616f95fd",
+            "language": "ini",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "text.xml": {
+            "asset": "text.xml.json",
+            "source": "extensions/xml/syntaxes/xml.tmLanguage.json",
+            "sha256": "bb51c7b202f20254772c88f86889e0dbcdc734e045b950fe25c0a23b591203d7",
+            "language": "xml",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.dockerfile": {
+            "asset": "source.dockerfile.json",
+            "source": "extensions/docker/syntaxes/docker.tmLanguage.json",
+            "sha256": "4702cc4b636c67fb31627a19f77d7e8b33f8655aced4aef8764eba626257421d",
+            "language": "dockerfile",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.powershell": {
+            "asset": "source.powershell.json",
+            "source": "extensions/powershell/syntaxes/powershell.tmLanguage.json",
+            "sha256": "86a0d7bdc6b8c66528a34d27d977f8c6d4a9ff7f48a351430cee8356c9601244",
+            "language": "powershell",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "text.html.php": {
+            "asset": "text.html.php.json",
+            "source": "extensions/php/syntaxes/html.tmLanguage.json",
+            "sha256": "4eec00e50017cd82b3e2473ed9f774a9be6b1bb2de11371a0bf2785c3ae8b4f1",
+            "language": "php",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "text.html.php.blade"
+            ]
+        },
+        "source.php": {
+            "asset": "source.php.json",
+            "source": "extensions/php/syntaxes/php.tmLanguage.json",
+            "sha256": "dea92689034f878009c556d59abef08a16e0995ad423ac8ffe93fad78d065c1c",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.ruby": {
+            "asset": "source.ruby.json",
+            "source": "extensions/ruby/syntaxes/ruby.tmLanguage.json",
+            "sha256": "050632ddb85d98e2fa9db029951334575e26f6fcca2083675398f6a241605f98",
+            "language": "ruby",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.graphql",
+                "source.js.jquery",
+                "text.haml",
+                "text.slim"
+            ]
+        },
+        "source.lua": {
+            "asset": "source.lua.json",
+            "source": "extensions/lua/syntaxes/lua.tmLanguage.json",
+            "sha256": "df7f02454e0a284bf803453fb1d003fa48b219475d1d801346d6745da56b0641",
+            "language": "lua",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.css.scss": {
+            "asset": "source.css.scss.json",
+            "source": "extensions/scss/syntaxes/scss.tmLanguage.json",
+            "sha256": "8f2824a80a7c6fd558fc538ec52d0a7a42a4d7ecb7ddf20d79f0d1f00fa6602b",
+            "language": "scss",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.sassdoc": {
+            "asset": "source.sassdoc.json",
+            "source": "extensions/scss/syntaxes/sassdoc.tmLanguage.json",
+            "sha256": "e733d9c2ca02f250ffa5501732f3a1117d2f59d88ae8efaa7c471587fb7237b3",
+            "language": null,
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": [
+                "source.html"
+            ]
+        },
+        "source.css.less": {
+            "asset": "source.css.less.json",
+            "source": "extensions/less/syntaxes/less.tmLanguage.json",
+            "sha256": "7fe291c887e1bd51cef76efec09b03acdf62e2f28dae1260f358240372c16de9",
+            "language": "less",
+            "injectTo": [],
+            "upstream": "vscode",
+            "optionalScopes": []
+        },
+        "source.toml": {
+            "asset": "source.toml.json",
+            "source": "editors/vscode/toml.tmLanguage.json",
+            "sha256": "535d51829eee1b852589f501344d88348aa0b8a630285406f004cc51de656a33",
+            "language": "toml",
+            "injectTo": [],
+            "upstream": "taplo",
+            "optionalScopes": []
+        },
+        "markdown.toml.codeblock": {
+            "asset": "markdown.toml.codeblock.json",
+            "source": "editors/vscode/toml.markdown.tmLanguage.json",
+            "sha256": "19793298b828c68e56f237f3c3d84251134bc9032aa3a6eda1f95635d0f76c4c",
+            "language": null,
+            "injectTo": [
+                "text.html.markdown"
+            ],
+            "upstream": "taplo",
+            "optionalScopes": []
+        },
+        "source.just": {
+            "asset": "source.just.json",
+            "source": "syntaxes/just.tmLanguage.json",
+            "sha256": "10071ea84af1556cc082d45e9328cb9b36938a16062d191139535688ff554f15",
+            "language": "just",
+            "injectTo": [],
+            "upstream": "just",
+            "optionalScopes": [
+                "source.perl"
+            ]
+        }
+    }
+}

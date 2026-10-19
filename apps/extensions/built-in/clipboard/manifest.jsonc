@@ -26,6 +26,7 @@
     "configuration": {
       "title": "Clipboard History",
       "quickMenu": [
+        { "title": "Appearance", "items": [{ "kind": "toggle", "key": "clipboard.syntaxHighlighting" }] },
         { "title": "Danger zone", "items": [{ "kind": "action", "id": "clipboard.clear" }] }
       ],
       "actions": [{
@@ -43,6 +44,14 @@
         "description": "Permanently delete all clipboard history. This cannot be undone."
       }],
       "properties": {
+        "clipboard.syntaxHighlighting": {
+          "type": "boolean",
+          "title": "Syntax highlighting",
+          "group": "Appearance",
+          "order": 0,
+          "description": "Color recognized code and Markdown in text previews.",
+          "persistence": "afterApply", "default": true
+        },
         "clipboard.maxEntries": {
           "type": "integerLimit",
           "title": "Maximum history entries",

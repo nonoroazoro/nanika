@@ -150,12 +150,13 @@ impl ExtensionSearchWorker {
             let invalidation_queue = Arc::clone(&view_invalidations);
             let invalidation_notifier = Arc::clone(&notifier);
             let invalidation_instance = Arc::clone(&factory_instance);
-            runtime.set_view_invalidation_notifier(Arc::new(move || {
+            runtime.set_view_invalidation_notifier(Arc::new(move |text| {
                 invalidation_instance.with_active(|| {
                     queue_view_invalidation(
                         &invalidation_queue,
                         &invalidation_extension_id,
                         invalidation_instance.id,
+                        text
                     );
                     notify(&invalidation_notifier);
                 });
@@ -231,6 +232,7 @@ impl ExtensionSearchWorker {
                                     let _ = invocation.response.send(Err(message));
                                 }
                                 ExtensionWork::ViewEvent(request) => { let _ = request.completion.send(Err(message)); }
+                                ExtensionWork::TextRead(request) => { let _ = request.completion.send(Err(message)); }
                                 ExtensionWork::Refresh(refresh) => {
                                     let _ = refresh.completion.send(Err(message));
                                     worker_state.0.lock().unwrap_or_else(|error| error.into_inner()).refresh_pending = false;
@@ -351,6 +353,16 @@ impl ExtensionSearchWorker {
                                 );
                             }
                             result.map(|_| true)
+                        }
+                        ExtensionWork::TextRead(request) => {
+                            runtime.start_text_read(
+                                format!("text-read-{worker_extension_id}-{}", request.request_id),
+                                request.generation,
+                                request.view_id,
+                                request.read,
+                                Box::new(move |result| { let _ = request.completion.send(result); }),
+                            );
+                            Ok(false)
                         }
                         ExtensionWork::Refresh(refresh) => {
                             run_refresh(runtime, &worker_extension_id, refresh,
@@ -518,6 +530,26 @@ impl ExtensionSearchWorker {
         Ok(())
     }
 
+    pub(crate) fn read_text(
+        &self,
+        request: crate::ExtensionTextRead
+    ) -> Result<(), SupervisorError> {
+        let (lock, ready) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        if state.closed || state.shutdown.load(Ordering::Acquire) {
+            return Err(SupervisorError::ChannelClosed);
+        }
+        let previous = state.text_read.replace(request);
+        ready.notify_one();
+        drop(state);
+        if let Some(previous) = previous {
+            let _ = previous
+                .completion
+                .send(Err("Text read was superseded.".to_owned()));
+        }
+        Ok(())
+    }
+
     pub(crate) fn cancel_invocation(&self, invocation_id: u64) -> bool {
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
@@ -613,7 +645,7 @@ impl ExtensionSearchWorker {
     }
     fn _retire(&self, failure: Option<&str>) -> Result<(), String> {
         let (lock, changed) = &*self.state;
-        let (invocations, views, refreshes) = {
+        let (invocations, views, refreshes, text_read) = {
             let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
             state.closed = true;
             state.lifecycle = crate::RuntimeExtensionState::Stopping;
@@ -623,8 +655,14 @@ impl ExtensionSearchWorker {
                 state.invocations.drain(..).collect::<Vec<_>>(),
                 state.view_events.drain(..).collect::<Vec<_>>(),
                 state.refreshes.drain(..).collect::<Vec<_>>(),
+                state.text_read.take()
             )
         };
+        if let Some(read) = text_read {
+            let _ = read
+                .completion
+                .send(Err("Text source instance was retired.".to_owned()));
+        }
         changed.notify_all();
         for invocation in invocations {
             let _ = invocation.response.send(match failure {
@@ -653,18 +691,22 @@ pub(crate) fn queue_view_invalidation(
     pending: &Mutex<std::collections::HashMap<String, crate::RuntimeViewInvalidation>>,
     extension_id: &str,
     instance_id: u64,
+    text: nanika_protocol::TextInvalidation
 ) {
-    // All views of an instance share one dirty signal; distinct view changes cannot overwrite each other.
-    pending
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .insert(
-            extension_id.to_owned(),
-            crate::RuntimeViewInvalidation {
+    let mut pending = pending.lock().unwrap_or_else(|error| error.into_inner());
+    let entry =
+        pending
+            .entry(extension_id.to_owned())
+            .or_insert_with(|| crate::RuntimeViewInvalidation {
                 instance_id,
                 extension_id: extension_id.to_owned(),
-            },
-        );
+                text: nanika_protocol::TextInvalidation::default()
+            });
+    if entry.instance_id != instance_id {
+        entry.instance_id = instance_id;
+        entry.text = nanika_protocol::TextInvalidation::default();
+    }
+    entry.text.merge(text);
 }
 
 impl Drop for ExtensionSearchWorker {
@@ -685,6 +727,7 @@ pub(crate) fn next_work(
         && state.view_events.is_empty()
         && (state.configurations.is_empty() || state.configuration_pending || state.refresh_pending)
         && state.entry_preparation.is_none()
+        && state.text_read.is_none()
         && !state.shutdown.load(Ordering::Acquire)
         && !state.closed
     {
@@ -715,15 +758,20 @@ pub(crate) fn next_work(
         state.catalog_pending = false;
         return Some(ExtensionWork::Catalog);
     }
-    state.query.take().map(ExtensionWork::Query).or_else(|| {
-        state
-            .entry_preparation
-            .take()
-            .map(|(generation, entry_ids)| ExtensionWork::PrepareEntries {
-                generation,
-                entry_ids,
-            })
-    })
+    state
+        .query
+        .take()
+        .map(ExtensionWork::Query)
+        .or_else(|| {
+            state
+                .entry_preparation
+                .take()
+                .map(|(generation, entry_ids)| ExtensionWork::PrepareEntries {
+                    generation,
+                    entry_ids
+                })
+        })
+        .or_else(|| state.text_read.take().map(ExtensionWork::TextRead))
 }
 
 fn run_view_event(

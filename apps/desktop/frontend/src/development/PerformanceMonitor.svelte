@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isCompositionKey } from "../ui/keyboard";
 import { onMount } from "svelte";
 
 import { summarizeFrames } from "./index";
@@ -89,7 +90,7 @@ function toggle(): void
 
 function handleKeydown(event: KeyboardEvent): void
 {
-    if (event.isComposing || event.repeat || !visible)
+    if (isCompositionKey(event) || event.repeat || !visible)
     {
         return;
     }

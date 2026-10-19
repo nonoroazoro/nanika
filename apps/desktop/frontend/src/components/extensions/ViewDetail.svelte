@@ -3,11 +3,17 @@ import TextPreview from "./TextPreview.svelte";
 import type { DetailView } from "../../generated/DetailView";
 import CachedFileIcon from "./CachedFileIcon.svelte";
 import FileCollectionPreview from "./FileCollectionPreview.svelte";
+import type { TextDocument } from "../../generated/TextDocument";
+import type { TextRead } from "../../generated/TextRead";
+import type { TextChunk } from "../../generated/TextChunk";
+
 const COLLECTION_PREVIEW_LIMIT = 3;
 const FILE_PATH_PREVIEW_LIMIT = 5;
-const { detail, resourceOrigin, extensionId, busy, onReadText, viewport, revision }: {
+const { textScope, detail, resourceOrigin, extensionId, busy, onReadText, onLanguageChange, viewport, revision }: {
     busy: boolean;
-    onReadText: (textId: string, index: number) => Promise<number | null>;
+    onLanguageChange?: (document: TextDocument, language: string | null) => void;
+    textScope: string;
+    onReadText: (read: TextRead) => Promise<TextChunk>;
     viewport: HTMLElement | null;
     revision: number;
     detail: DetailView;
@@ -34,7 +40,7 @@ const previewKey = $derived(
 </script>
 
 <article class:image-detail={detail.content.kind === "image"} aria-label={detail.title ?? "Details"}>
-    {#if detail.title}<h2>{detail.title}</h2>{/if}
+    {#if detail.title && detail.content.kind !== "text"}<h2>{detail.title}</h2>{/if}
     {#if detail.content.kind === "image" && imageSource}
         <div class="image-preview">
             <img
@@ -44,7 +50,16 @@ const previewKey = $derived(
             />
         </div>
     {:else if detail.content.kind === "text"}
-        <TextPreview content={detail.content} {viewport} {busy} {revision} onRead={onReadText} />
+        <TextPreview
+            title={detail.title}
+            scope={textScope}
+            content={detail.content}
+            {viewport}
+            {busy}
+            {revision}
+            onRead={onReadText}
+            {onLanguageChange}
+        />
     {:else if detail.content.kind === "files"}
         {#if detail.content.files.length === 1}
             <div class="file-preview">

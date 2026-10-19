@@ -6,6 +6,8 @@ import type { ConfigurationMenuRequest } from "../generated/ConfigurationMenuReq
 import type { ContextMenuRequest } from "../generated/ContextMenuRequest";
 import type { InvokeCandidateRequest } from "../generated/InvokeCandidateRequest";
 import type { PublishQueryRequest } from "../generated/PublishQueryRequest";
+import type { ReadTextRequest } from "../generated/ReadTextRequest";
+import type { TextChunk } from "../generated/TextChunk";
 import type { ViewEventReceipt } from "../generated/ViewEventReceipt";
 import type { ReadResultsRequest } from "../types/ReadResultsRequest";
 import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
@@ -15,6 +17,7 @@ export interface NanikaBridge
 {
     readConfigurationMenu(request: ConfigurationMenuRequest): Promise<ConfigurationMenu>;
     invokeConfigurationMenu(request: ConfigurationMenuRequest, operation: ConfigurationMenuOperation): Promise<void>;
+    readText(request: ReadTextRequest): Promise<TextChunk>;
     readContextMenu(request: ContextMenuRequest): Promise<Action[]>;
     invokeContextMenu(
         request: ContextMenuRequest,

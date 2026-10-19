@@ -23,8 +23,13 @@ import StatusBar from "../ui/StatusBar.svelte";
 import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
 
+import type { TextDocument } from "../../generated/TextDocument";
+import type { TextRead } from "../../generated/TextRead";
+import type { TextChunk } from "../../generated/TextChunk";
 
 const {
+    textScope,
+    onReadText,
     snapshot,
     query,
     resourceOrigin,
@@ -39,6 +44,8 @@ const {
     menuOpen,
     onMenu
 }: {
+    textScope: string;
+    onReadText: (read: TextRead) => Promise<TextChunk>;
     snapshot: ExtensionViewSnapshot;
     query: string;
     resourceOrigin: string;
@@ -98,6 +105,15 @@ const leadingStatusEntries = $derived(secondaryActions.map(action => ({
     destructive: action.style === "destructive",
     disabled: busy || confirming || !action.enabled
 })));
+let detectedLanguage = $state<{ document: TextDocument; label: string | null; } | null>(null);
+// Follow the displayed preview, which remains visible while a selection is pending.
+const languageLabel = $derived(
+    detail?.content.kind === "text" && detail.content.syntax_highlighting
+        && detectedLanguage?.document.id === detail.content.document.id
+        && detectedLanguage.document.revision === detail.content.document.revision
+        ? detectedLanguage.label
+        : null
+);
 const trailingStatusEntries = $derived(
     primaryAction
         ? [{
@@ -146,7 +162,7 @@ const logicalTop = $derived(
         ? Math.min(scrollAnchor.logical, Math.max(0, logicalHeight - viewportHeight))
         : geometry.logical(scrollTop)
 );
-const coordinateShift = $derived(logicalTop - scrollTop);
+const coordinateShift = $derived(geometry.coordinateShift(scrollTop, logicalTop));
 
 $effect(() =>
 {
@@ -777,7 +793,12 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                         <ViewDetail
                             {detail}
                             busy={!canLoadMore || detailPending}
-                            onReadText={(text_id, index) => onEvent({ kind: "textChunkRequested", text_id, index })}
+                            {onReadText}
+                            onLanguageChange={(document, label) =>
+                            {
+                                detectedLanguage = { document, label };
+                            }}
+                            {textScope}
                             viewport={detailPane}
                             revision={snapshot.revision}
                             resourceOrigin={resourceOrigin}
@@ -796,6 +817,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
             menu: { controls: "context-menu", expanded: menuOpen }
         }, ...leadingStatusEntries]}
         trailingEntries={trailingStatusEntries}
+        trailingText={languageLabel}
         onInvoke={(id, trigger) =>
         {
             if (id === "extension-menu")

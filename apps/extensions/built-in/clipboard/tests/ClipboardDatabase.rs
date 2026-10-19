@@ -98,6 +98,7 @@ fn retention_removes_entries_outside_the_count_limit() {
         .apply_retention(
             20_000,
             &ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: Some(2),
                 max_age_days: Some(7)
             }
@@ -129,6 +130,7 @@ fn retention_removes_entries_older_than_the_age_limit() {
         .apply_retention(
             8 * DAY,
             &ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: Some(50),
                 max_age_days: Some(7)
             }
@@ -141,6 +143,7 @@ fn retention_removes_entries_older_than_the_age_limit() {
         .apply_retention(
             8 * DAY + 1,
             &ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: Some(50),
                 max_age_days: Some(7)
             }
@@ -194,6 +197,7 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
         (
             "unlimited",
             ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: None,
                 max_age_days: None
             },
@@ -202,6 +206,7 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
         (
             "count",
             ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: Some(2),
                 max_age_days: None
             },
@@ -210,6 +215,7 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
         (
             "age",
             ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: None,
                 max_age_days: Some(1)
             },
@@ -244,6 +250,7 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
             .apply_retention(
                 10 * DAY,
                 &ClipboardConfig {
+                    syntax_highlighting: true,
                     max_entries: Some(1),
                     max_age_days: Some(1)
                 }
@@ -327,6 +334,7 @@ fn image_ownership_delta_tracks_replacement_and_shared_paths() {
     let root = std::env::temp_dir().join(format!("nanika-image-delta-{}", std::process::id()));
     let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
     let config = ClipboardConfig {
+        syntax_highlighting: true,
         max_entries: None,
         max_age_days: None
     };

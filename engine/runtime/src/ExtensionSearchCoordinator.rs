@@ -290,6 +290,33 @@ impl ExtensionSearchCoordinator {
         Ok(())
     }
 
+    pub(crate) fn read_text(
+        &self,
+        extension_id: &str,
+        instance_id: u64,
+        generation: u64,
+        view_id: String,
+        read: nanika_protocol::TextRead
+    ) -> Result<Receiver<Result<nanika_protocol::TextChunk, String>>, SupervisorError> {
+        let worker = self
+            ._workers()
+            .iter()
+            .find(|worker| {
+                worker.extension_id() == extension_id && worker.instance.id == instance_id
+            })
+            .cloned()
+            .ok_or(SupervisorError::ChannelClosed)?;
+        let (completion, receiver) = mpsc::channel();
+        worker.read_text(crate::ExtensionTextRead {
+            request_id: self.next_view_request_id.fetch_add(1, Ordering::Relaxed),
+            generation,
+            view_id,
+            read,
+            completion
+        })?;
+        Ok(receiver)
+    }
+
     pub fn view_event(
         &self,
         extension_id: &str,

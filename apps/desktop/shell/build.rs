@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "open_session",
     "publish_query",
     "read_results",
+    "read_text",
     "view_event",
     "open_settings",
     "read_settings",

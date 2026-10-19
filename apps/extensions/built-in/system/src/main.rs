@@ -202,6 +202,8 @@ fn _request_id(message: &Message) -> Option<String> {
         | Message::ViewUpdated { request_id, .. }
         | Message::ViewClose { request_id, .. }
         | Message::ViewClosed { request_id, .. }
+        | Message::TextRead { request_id, .. }
+        | Message::TextReadResult { request_id, .. }
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }

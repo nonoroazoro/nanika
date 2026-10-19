@@ -61,6 +61,9 @@ use navigation_state::*;
 #[path = "ViewEventRequest.rs"]
 mod view_event_request;
 use view_event_request::*;
+#[path = "ReadTextRequest.rs"]
+mod read_text_request;
+use read_text_request::*;
 #[path = "ViewEventReceipt.rs"]
 mod view_event_receipt;
 use view_event_receipt::*;
@@ -176,6 +179,7 @@ pub fn run() -> Result<(), String> {
             open_session,
             publish_query,
             read_results,
+            read_text,
             view_event,
             open_settings,
             read_settings,
@@ -328,3 +332,7 @@ mod settings_search_catalog_tests;
 
 #[cfg(all(test, feature = "typescript"))]
 mod bindings;
+
+#[path = "TextInvalidationNotice.rs"]
+mod text_invalidation_notice;
+use text_invalidation_notice::TextInvalidationNotice;

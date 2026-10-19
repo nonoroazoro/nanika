@@ -10,7 +10,7 @@ pub(crate) enum ClipboardCommand {
     ClearAll {
         response: SyncSender<Result<(), String>>
     },
-    ApplyRetention {
+    ApplyConfiguration {
         config: ClipboardConfig,
         response: SyncSender<Result<(), String>>
     },

@@ -54,7 +54,9 @@
       "freezePrototype": true,
       "csp": {
         "default-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "worker-src": "'self'",
         "img-src": "'self' nanika-icon: http://nanika-icon.localhost",
         "style-src": "'self'"
       },

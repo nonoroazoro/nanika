@@ -100,10 +100,15 @@ fn pushed_views_are_bounded_host_rendered_documents() {
             detail: Some(DetailView {
                 title: Some("Example".to_owned()),
                 content: DetailContent::Text {
-                    text_id: "test.text".into(),
-                    chunk_index: 0,
-                    total_chunks: 1,
-                    value: "Content".to_owned(),
+                    document: nanika_protocol::TextDocumentIndex::new(
+                        "test.text".into(),
+                        "revision".into(),
+                        "Content"
+                    )
+                    .unwrap()
+                    .document,
+                    syntax_highlighting: false,
+                    value: "Content".to_owned()
                 },
                 metadata: Vec::new(),
                 actions: Vec::new()
@@ -154,10 +159,15 @@ fn view_action_confirmation_titles_are_validated() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
-                value: "Example".to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    "Example"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false,
+                value: "Example".to_owned()
             },
             metadata: Vec::new(),
             actions: vec![Action {
@@ -182,15 +192,20 @@ fn view_action_confirmation_titles_are_validated() {
 }
 
 #[test]
-fn view_action_confirmation_is_limited_to_destructive_actions() {
+fn view_action_confirmation_is_independent_of_visual_style() {
     let view = View::Detail {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
-                value: "Example".to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    "Example"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false,
+                value: "Example".to_owned()
             },
             metadata: Vec::new(),
             actions: vec![Action {
@@ -207,11 +222,8 @@ fn view_action_confirmation_is_limited_to_destructive_actions() {
         }
     };
 
-    assert_eq!(
-        view.validate()
-            .expect_err("non-destructive confirmation must fail"),
-        "view action confirmation requires destructive style"
-    );
+    view.validate()
+        .expect("ordinary actions can require confirmation");
 }
 
 #[test]
@@ -337,10 +349,15 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
             detail: Some(DetailView {
                 title: None,
                 content: DetailContent::Text {
-                    text_id: "test.text".into(),
-                    chunk_index: 0,
-                    total_chunks: 1,
-                    value: "Example".to_owned(),
+                    document: nanika_protocol::TextDocumentIndex::new(
+                        "test.text".into(),
+                        "revision".into(),
+                        "Example"
+                    )
+                    .unwrap()
+                    .document,
+                    syntax_highlighting: false,
+                    value: "Example".to_owned()
                 },
                 metadata: Vec::new(),
                 actions: vec![Action {
@@ -623,17 +640,25 @@ fn image_sources_accept_only_immutable_resource_paths() {
 #[test]
 fn view_changes_are_instance_scoped_and_bounded_text_chunks_preserve_controls() {
     assert_eq!(
-        serde_json::to_value(Message::ViewsChanged).unwrap(),
-        serde_json::json!({"type":"viewsChanged"})
+        serde_json::to_value(Message::ViewsChanged {
+            text: Default::default()
+        })
+        .unwrap(),
+        serde_json::json!({"type":"viewsChanged", "text": {"documents": []}})
     );
     let mut view = View::Detail {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
                 value: "\0\u{b}\n原文".into(),
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    "\0\u{b}\n原文"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false
             },
             metadata: vec![],
             actions: vec![]
@@ -645,34 +670,41 @@ fn view_changes_are_instance_scoped_and_bounded_text_chunks_preserve_controls() 
     };
     detail.content = DetailContent::Text {
         value: "x".repeat(16_385),
-        text_id: "test.text".into(),
-        chunk_index: 0,
-        total_chunks: 1,
+        document: nanika_protocol::TextDocumentIndex::new(
+            "test.text".into(),
+            "revision".into(),
+            &"x".repeat(16_385)
+        )
+        .unwrap()
+        .document,
+        syntax_highlighting: false
     };
     assert!(view.validate().is_err());
 }
 
 #[test]
 fn text_preview_resident_budget_bounds_invisible_and_maximum_size_chunks() {
-    for (chunks, index, valid) in [
-        (1, 0, true),
-        (nanika_protocol::MAX_DETAIL_TEXT_CHUNKS, 0, true),
-        (
-            nanika_protocol::MAX_DETAIL_TEXT_CHUNKS,
-            nanika_protocol::MAX_DETAIL_TEXT_CHUNKS - 1,
-            true,
-        ),
-        (nanika_protocol::MAX_DETAIL_TEXT_CHUNKS + 1, 0, false),
-        (u32::MAX as usize, 0, false),
+    for (chunks, valid) in [
+        (1, true),
+        (nanika_protocol::MAX_DETAIL_TEXT_CHUNKS, true),
+        (nanika_protocol::MAX_DETAIL_TEXT_CHUNKS + 1, false),
+        (u32::MAX as usize, false)
     ] {
+        let value = "\u{200b}".repeat(nanika_protocol::DETAIL_TEXT_BATCH_CHARS);
         let view = View::Detail {
             detail: DetailView {
                 title: None,
                 content: DetailContent::Text {
-                    value: "\u{200b}".repeat(nanika_protocol::DETAIL_TEXT_BATCH_CHARS),
-                    text_id: "test.bounded".into(),
-                    chunk_index: index,
-                    total_chunks: chunks,
+                    value,
+                    document: nanika_protocol::TextDocument {
+                        id: "test.bounded".into(),
+                        revision: "revision".into(),
+                        total_chunks: chunks,
+                        utf16_length: chunks * nanika_protocol::DETAIL_TEXT_BATCH_CHARS,
+                        line_count: 1,
+                        max_line_length: chunks * nanika_protocol::DETAIL_TEXT_BATCH_CHARS
+                    },
+                    syntax_highlighting: false
                 },
                 metadata: vec![],
                 actions: vec![]
@@ -790,31 +822,21 @@ fn content_reads_require_matching_identity_and_complete_requested_window() {
     };
     list.collection_id = "other".into();
     assert!(event.validate_response(Some(&view)).is_err());
-    let text = View::Detail {
-        detail: DetailView {
-            title: None,
-            content: DetailContent::Text {
-                value: "hello".into(),
-                text_id: "doc".into(),
-                chunk_index: 1,
-                total_chunks: 3,
-            },
-            metadata: vec![],
-            actions: vec![],
-        },
+    let read = nanika_protocol::TextRead {
+        document_id: "doc".into(),
+        revision: "current".into(),
+        index: 1
     };
-    let read = nanika_protocol::ViewEvent::TextChunkRequested {
-        text_id: "doc".into(),
+    let mut chunk = nanika_protocol::TextChunk {
+        document_id: "doc".into(),
+        revision: "current".into(),
         index: 1,
+        value: "hello".into()
     };
-    read.validate_response(Some(&text)).unwrap();
-    assert!(
-        nanika_protocol::ViewEvent::TextChunkRequested {
-            text_id: "doc".into(),
-            index: 2
-        }
-        .validate_response(Some(&text))
-        .is_err()
-    );
-    assert!(read.validate_response(None).is_err());
+    chunk.validate_for(&read).unwrap();
+    chunk.index = 2;
+    assert!(chunk.validate_for(&read).is_err());
+    chunk.index = 1;
+    chunk.revision = "old".into();
+    assert!(chunk.validate_for(&read).is_err());
 }

@@ -11,7 +11,8 @@ pub(crate) struct NavigationState {
     pub(crate) busy: bool,
     error: Option<String>,
     dismiss_count: u64,
-    next_route_id: u64
+    next_route_id: u64,
+    _revoked_text: std::collections::HashMap<u64, u64>
 }
 
 impl NavigationState {
@@ -58,6 +59,60 @@ impl NavigationState {
             .last()
             .filter(|route| route.route_id == route_id)
             .ok_or_else(|| "The extension view changed. Use its current state.".to_owned())
+    }
+
+    pub(crate) fn authorize_text_read(
+        &self,
+        request: &crate::ReadTextRequest
+    ) -> Result<&ExtensionViewSnapshot, String> {
+        request.read.validate()?;
+        let route = self.authorize_route(request.route_id)?;
+        self.authorize_text_revision(route.route_id, route.revision)?;
+        if !_text_document(&route.view).is_some_and(|document| request.read.matches(document)) {
+            return Err("Text source is no longer published by the current view.".to_owned());
+        }
+        Ok(route)
+    }
+
+    pub(crate) fn authorize_text_revision(
+        &self,
+        route_id: u64,
+        revision: u64
+    ) -> Result<(), String> {
+        if self
+            ._revoked_text
+            .get(&route_id)
+            .is_some_and(|revoked| revision <= *revoked)
+        {
+            return Err("Text source authority was revoked. Wait for a refreshed view.".to_owned());
+        }
+        Ok(())
+    }
+
+    /// Revoke source before waiting for view refresh. Rechecking a read on delivery
+    /// must reject late replies even while the visible route still has old metadata.
+    pub(crate) fn revoke_text(
+        &mut self,
+        extension_id: &str,
+        instance_id: u64,
+        invalidation: &nanika_protocol::TextInvalidation
+    ) {
+        // Authority is bounded by the navigation stack, never by document history.
+        self._revoked_text
+            .retain(|id, _| self.stack.iter().any(|route| route.route_id == *id));
+        for route in &self.stack {
+            if route.extension_id != extension_id || route.instance_id != instance_id {
+                continue;
+            }
+            if let Some(document) = _text_document(&route.view)
+                && invalidation
+                    .documents
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&document.id))
+            {
+                self._revoked_text.insert(route.route_id, route.revision);
+            }
+        }
     }
 
     /// Queued input addresses stable item/action IDs in the current route. Its
@@ -205,17 +260,6 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
                 && count.get() as usize <= nanika_protocol::MAX_VIEW_ITEMS
                 && (*offset < list.total() || (*offset == 0 && list.total() == 0))
         }
-        (_, ViewEvent::TextChunkRequested { text_id, index }) => {
-            let detail = match view {
-                View::List { list } => list.detail.as_ref(),
-                View::Detail { detail } => Some(detail),
-            };
-            detail.is_some_and(|detail| {
-                matches!(&detail.content,
-                nanika_protocol::DetailContent::Text { text_id: current, total_chunks, .. }
-                    if current == text_id && index < total_chunks)
-            })
-        }
         (
             View::List { list },
             ViewEvent::ActionInvoked {
@@ -245,5 +289,16 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
         Ok(())
     } else {
         Err("The requested interaction is not available in this view.".to_owned())
+    }
+}
+
+fn _text_document(view: &View) -> Option<&nanika_protocol::TextDocument> {
+    let detail = match view {
+        View::List { list } => list.detail.as_ref(),
+        View::Detail { detail } => Some(detail)
+    }?;
+    match &detail.content {
+        nanika_protocol::DetailContent::Text { document, .. } => Some(document),
+        _ => None
     }
 }

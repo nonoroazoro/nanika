@@ -122,10 +122,15 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             detail: nanika_protocol::DetailView {
                 title: None,
                 content: nanika_protocol::DetailContent::Text {
-                    text_id: "test.text".into(),
-                    chunk_index: 0,
-                    total_chunks: 1,
                     value: "detail".repeat(16000),
+                    document: nanika_protocol::TextDocumentIndex::new(
+                        "test.text".into(),
+                        "fixture".into(),
+                        &"detail".repeat(16000)
+                    )
+                    .unwrap()
+                    .document,
+                    syntax_highlighting: false
                 },
                 metadata: Vec::new(),
                 actions: Vec::new()
@@ -133,6 +138,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         })
     };
     let mut update = crate::RootSearchSnapshot {
+        text_invalidations: Vec::new(),
         pending_extensions: Vec::new(),
         navigation: crate::NavigationSnapshot {
             revision: 2,

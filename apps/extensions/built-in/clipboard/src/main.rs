@@ -58,14 +58,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notifications_enabled = Arc::new(AtomicBool::new(true));
     let callback_enabled = Arc::clone(&notifications_enabled);
     let invalidation_output = Arc::clone(&output);
-    let view_invalidated: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-        if !callback_enabled.load(Ordering::Acquire) {
-            return;
-        }
-        if let Err(error) = send_frame(&invalidation_output, &Message::ViewsChanged) {
-            eprintln!("clipboard view invalidation failed: {error}");
-        }
-    });
+    let view_invalidated: Arc<dyn Fn(nanika_protocol::TextInvalidation) + Send + Sync> =
+        Arc::new(move |text| {
+            if !callback_enabled.load(Ordering::Acquire) {
+                return;
+            }
+            if let Err(error) = send_frame(&invalidation_output, &Message::ViewsChanged { text }) {
+                eprintln!("clipboard view invalidation failed: {error}");
+            }
+        });
     let worker = ClipboardWorker::spawn(
         paths.database_path(),
         paths.payload_root(),
@@ -84,7 +85,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .cache_root
         .join("icons")
         .join(nanika_extension_clipboard::EXTENSION_ID);
-    let icon_worker = FileIconWorker::spawn(icon_root, view_invalidated)?;
+    let icon_worker = FileIconWorker::spawn(
+        icon_root,
+        Arc::new(move || view_invalidated(Default::default()))
+    )?;
     let mut view_state = None;
     while let Some(message) = read_frame(&mut input)? {
         match message {
@@ -186,6 +190,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 revision,
                 event
             )?,
+            Message::TextRead {
+                request_id,
+                generation,
+                view_id,
+                read
+            } if view_id == VIEW_ID && view_state.is_some() => match worker.read_text(&read) {
+                Ok(chunk) => send_frame(
+                    &output,
+                    &Message::TextReadResult {
+                        request_id,
+                        generation,
+                        chunk
+                    }
+                )?,
+                Err(error) => send_error(&output, Some(request_id), "text_read_failed", &error)?
+            },
             Message::ViewClose {
                 request_id,
                 view_id
@@ -219,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 configuration
             } => match ClipboardConfig::from_configuration(&configuration)
-                .and_then(|config| worker.apply_retention(config))
+                .and_then(|config| worker.apply_configuration(config))
             {
                 Ok(()) => send_frame(&output, &Message::ConfigurationApplied { request_id })?,
                 Err(message) => send_error(
@@ -332,14 +352,6 @@ fn handle_view_event(
             }
             expected_collection_revision = Some(current.collection_revision);
         }
-        ViewEvent::TextChunkRequested { text_id, index } => {
-            if let Err(message) =
-                nanika_extension_clipboard::read_text_chunk(state, &current.view, &text_id, index)
-            {
-                return send_error(output, Some(request_id), "invalid_text_chunk", &message);
-            }
-        }
-
         ViewEvent::ActionInvoked {
             item_id, action_id, ..
         } if action_id == COPY_ACTION_ID => {
@@ -519,6 +531,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ViewUpdated { request_id, .. }
         | Message::ViewClose { request_id, .. }
         | Message::ViewClosed { request_id, .. }
+        | Message::TextRead { request_id, .. }
+        | Message::TextReadResult { request_id, .. }
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
@@ -530,7 +544,7 @@ fn request_id(message: &Message) -> Option<String> {
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CatalogApplied { .. }
         | Message::CandidatesChanged
-        | Message::ViewsChanged
-        | Message::PrepareEntries { .. } => None,
+        | Message::ViewsChanged { .. }
+        | Message::PrepareEntries { .. } => None
     }
 }

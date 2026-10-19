@@ -23,9 +23,10 @@ type ReceivePoll = Option<Option<Message>>;
 pub struct ExtensionProcess {
     connection_exit: Arc<crate::ExtensionConnectionExit>,
     candidate_changes: ExtensionNotifier,
-    view_invalidations: ExtensionNotifier,
+    view_invalidations: crate::ViewInvalidationNotifier,
     configuration_reply: Arc<crate::ConfigurationReply>,
     refresh_reply: Arc<crate::RefreshReply>,
+    text_read_reply: Arc<crate::TextReadReply>,
     initialized: bool,
     query_generation: Option<u64>,
     clean_exit: bool,
@@ -96,12 +97,14 @@ impl ExtensionProcess {
         };
 
         let (sender, receiver) = mpsc::sync_channel(limits.frame_queue_capacity.max(1));
-        let view_invalidations = Arc::new(Mutex::new(None::<Arc<dyn Fn() + Send + Sync>>));
+        let view_invalidations: crate::ViewInvalidationNotifier = Arc::new(Mutex::new(None));
         let changes = Arc::clone(&candidate_changes);
         let invalidations = Arc::clone(&view_invalidations);
         let configuration_reply = Arc::new(crate::ConfigurationReply::default());
         let refresh_reply = Arc::new(crate::RefreshReply::default());
         let reader_refresh = Arc::clone(&refresh_reply);
+        let text_read_reply = Arc::new(crate::TextReadReply::default());
+        let reader_text = Arc::clone(&text_read_reply);
         let reader_configuration = Arc::clone(&configuration_reply);
         let connection_exit = Arc::new(crate::ExtensionConnectionExit::default());
         let reader_exit = Arc::clone(&connection_exit);
@@ -111,6 +114,10 @@ impl ExtensionProcess {
                 let mut reader = BufReader::new(output);
                 loop {
                     let frame = read_frame(&mut reader);
+                    // Dispatch failures to every independent reply owner before the main receiver.
+                    if reader_text.dispatch(&frame) {
+                        continue;
+                    }
                     if reader_configuration.dispatch(&frame) || reader_refresh.dispatch(&frame) {
                         continue;
                     }
@@ -124,13 +131,13 @@ impl ExtensionProcess {
                         }
                         continue;
                     }
-                    if let Ok(Some(Message::ViewsChanged)) = &frame {
+                    if let Ok(Some(Message::ViewsChanged { text })) = &frame {
                         let notify = invalidations
                             .lock()
                             .unwrap_or_else(|error| error.into_inner())
                             .clone();
                         if let Some(notify) = notify {
-                            notify();
+                            notify(text.clone());
                         }
                         continue;
                     }
@@ -146,6 +153,7 @@ impl ExtensionProcess {
                 }
                 reader_configuration.fail(SupervisorError::ChannelClosed);
                 reader_refresh.fail(SupervisorError::ChannelClosed);
+                reader_text.fail("Extension connection closed during text read.".to_owned());
             }) {
             Ok(thread) => thread,
             Err(error) => {
@@ -187,6 +195,7 @@ impl ExtensionProcess {
             view_invalidations,
             configuration_reply,
             refresh_reply,
+            text_read_reply,
             initialized: false,
             query_generation: None,
             clean_exit: false,
@@ -214,7 +223,10 @@ impl ExtensionProcess {
             .unwrap_or_else(|error| error.into_inner()) = Some(notify);
     }
 
-    pub(crate) fn set_view_invalidation_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
+    pub(crate) fn set_view_invalidation_notifier(
+        &mut self,
+        notify: Arc<dyn Fn(nanika_protocol::TextInvalidation) + Send + Sync>
+    ) {
         *self
             .view_invalidations
             .lock()
@@ -437,6 +449,38 @@ impl ExtensionProcess {
             configuration
         }) {
             self.configuration_reply.fail(error);
+        }
+    }
+
+    pub(crate) fn start_text_read(
+        &mut self,
+        request_id: String,
+        generation: u64,
+        view_id: String,
+        read: nanika_protocol::TextRead,
+        completion: crate::TextReadCompletion
+    ) {
+        if let Err(error) = self.ensure_initialized() {
+            completion(Err(error.to_string()));
+            return;
+        }
+        if let Err(error) = read.validate() {
+            completion(Err(error));
+            return;
+        }
+        if !self
+            .text_read_reply
+            .register(request_id.clone(), generation, read.clone(), completion)
+        {
+            return;
+        }
+        if let Err(error) = self.send(Message::TextRead {
+            request_id,
+            generation,
+            view_id,
+            read
+        }) {
+            self.text_read_reply.fail(error.to_string());
         }
     }
 

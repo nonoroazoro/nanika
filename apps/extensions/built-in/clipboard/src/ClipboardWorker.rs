@@ -13,7 +13,8 @@ use crate::{
 /// Single owner for clipboard capture and database writes.
 pub struct ClipboardWorker {
     commands: SyncSender<ClipboardCommand>,
-    thread: Option<JoinHandle<()>>,
+    _text_reader: crate::ClipboardTextReader,
+    thread: Option<JoinHandle<()>>
 }
 
 impl ClipboardWorker {
@@ -21,7 +22,7 @@ impl ClipboardWorker {
         database_path: PathBuf,
         payload_root: PathBuf,
         config: ClipboardConfig,
-        invalidated: Arc<dyn Fn() + Send + Sync>,
+        invalidated: Arc<dyn Fn(nanika_protocol::TextInvalidation) + Send + Sync>
     ) -> Result<Self, String> {
         let context = ClipboardContext::new().map_err(|error| error.to_string())?;
         Self::_spawn(
@@ -37,6 +38,13 @@ impl ClipboardWorker {
         self.commands.clone()
     }
 
+    pub fn read_text(
+        &self,
+        read: &nanika_protocol::TextRead
+    ) -> Result<nanika_protocol::TextChunk, String> {
+        self._text_reader.read(read)
+    }
+
     pub fn clear_all(&self) -> Result<(), String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
@@ -47,13 +55,13 @@ impl ClipboardWorker {
             .map_err(|_| "clipboard owner closed without reporting the clear result".to_owned())?
     }
 
-    pub fn apply_retention(&self, config: ClipboardConfig) -> Result<(), String> {
+    pub fn apply_configuration(&self, config: ClipboardConfig) -> Result<(), String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
-            .send(ClipboardCommand::ApplyRetention { config, response })
+            .send(ClipboardCommand::ApplyConfiguration { config, response })
             .map_err(|_| "clipboard capture owner is closed".to_owned())?;
         result.recv().map_err(|_| {
-            "clipboard owner closed without reporting the retention result".to_owned()
+            "clipboard owner closed without reporting the configuration result".to_owned()
         })?
     }
 
@@ -105,7 +113,7 @@ impl ClipboardWorker {
         database_path: PathBuf,
         payload_root: PathBuf,
         mut config: ClipboardConfig,
-        invalidated: Arc<dyn Fn() + Send + Sync>,
+        invalidated: Arc<dyn Fn(nanika_protocol::TextInvalidation) + Send + Sync>,
         mut capture: impl FnMut(&std::path::Path) -> Result<Option<ClipboardEntry>, String>
         + Send
         + 'static
@@ -122,18 +130,21 @@ impl ClipboardWorker {
                         return;
                     }
                 };
+                store.set_syntax_highlighting(config.syntax_highlighting);
                 let mut payloads = ClipboardPayloads::new(payload_root.clone());
                 let initial = store.apply_retention(unix_timestamp_millis(), &config)
                     .and_then(|_| store.retained_images()).and_then(|retained| payloads.reconcile(retained));
-                if initial.is_err() { let _ = ready.send(initial); return; }
-                if ready.send(Ok(())).is_err() { return; }
+                if let Err(error) = initial { let _ = ready.send(Err(error)); return; }
+                if ready.send(Ok(store.text_reader())).is_err() { return; }
                 while let Ok(command) = receiver.recv() {
                     match command {
                         ClipboardCommand::Capture => {
                             let result = capture(&payload_root).and_then(|entry| {
                                 let Some(entry) = entry else { return Ok(()); };
                                 let change = store.capture(&entry, unix_timestamp_millis(), &config)?;
-                                invalidated();
+                                let mut documents = change.removed.clone();
+                                documents.insert(entry.entry_id.clone());
+                                invalidated(nanika_protocol::TextInvalidation { documents: Some(documents.into_iter().collect()) });
                                 payloads.apply(change)
                             });
                             if let Err(error) = &result {
@@ -143,18 +154,25 @@ impl ClipboardWorker {
                         ClipboardCommand::ClearAll { response } => {
                             let result = store.all_ids().and_then(|ids| clear_entries(&mut store, &mut payloads, &ids, &*invalidated));
                             if response.send(result).is_err() {
-                                eprintln!(
-                                    "clipboard clear requester closed before receiving result"
-                                );
+                                eprintln!("clipboard clear requester closed before receiving result");
                             }
                         }
-                        ClipboardCommand::ApplyRetention {
+                        ClipboardCommand::ApplyConfiguration {
                             config: updated,
                             response,
                         } => {
-                            let result = store.apply_retention(unix_timestamp_millis(), &updated).map(|change| {
-                                invalidated();
+                            let result = if config.max_entries != updated.max_entries || config.max_age_days != updated.max_age_days {
+                                store.apply_retention(unix_timestamp_millis(), &updated)
+                            } else {
+                                Ok(crate::ClipboardChange::default())
+                            }.map(|change| {
+                                // Decoration preferences do not revoke immutable source authority.
+                                let text = nanika_protocol::TextInvalidation {
+                                    documents: Some(change.removed.iter().cloned().collect())
+                                };
+                                store.set_syntax_highlighting(updated.syntax_highlighting);
                                 config = updated;
+                                invalidated(text);
                                 if let Err(error) = payloads.apply(change) {
                                     // Retention has committed; cleanup cannot reject effective settings.
                                     eprintln!("clipboard payload cleanup failed: {error}");
@@ -192,14 +210,16 @@ impl ClipboardWorker {
                         ClipboardCommand::Shutdown => break,
                     }
                 }
+                store.close_view();
             })
             .map_err(|error| error.to_string())?;
-        initialized
+        let text_reader = initialized
             .recv()
             .map_err(|_| "clipboard owner closed during initialization".to_owned())??;
         Ok(Self {
             commands,
-            thread: Some(thread),
+            _text_reader: text_reader,
+            thread: Some(thread)
         })
     }
 
@@ -225,11 +245,13 @@ fn clear_entries(
     store: &mut ClipboardStore,
     payloads: &mut ClipboardPayloads,
     entry_ids: &[String],
-    invalidated: &dyn Fn(),
+    invalidated: &dyn Fn(nanika_protocol::TextInvalidation)
 ) -> Result<(), String> {
     let change = store.clear(entry_ids)?;
     // The owner has committed and updated its query cache before notification/cleanup.
-    invalidated();
+    invalidated(nanika_protocol::TextInvalidation {
+        documents: Some(change.removed.iter().cloned().collect())
+    });
     payloads
         .apply(change)
         .map_err(|error| format!("Entries were removed; payload cleanup failed: {error}"))

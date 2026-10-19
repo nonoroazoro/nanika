@@ -92,7 +92,10 @@ impl ExtensionRuntime {
         }
     }
 
-    pub(crate) fn set_view_invalidation_notifier(&mut self, notify: Arc<dyn Fn() + Send + Sync>) {
+    pub(crate) fn set_view_invalidation_notifier(
+        &mut self,
+        notify: Arc<dyn Fn(nanika_protocol::TextInvalidation) + Send + Sync>
+    ) {
         if let Self::Nanika(process) = self {
             process.set_view_invalidation_notifier(notify);
         }
@@ -150,8 +153,26 @@ impl ExtensionRuntime {
                 process.start_configuration_update(request_id, configuration, progress, completion)
             }
             Self::Acp(_) => completion(Err(SupervisorError::UnexpectedMessage(
-                "ACP does not support live configuration updates".to_owned(),
-            ))),
+                "ACP does not support live configuration updates".to_owned()
+            )))
+        }
+    }
+
+    pub(crate) fn start_text_read(
+        &mut self,
+        request_id: String,
+        generation: u64,
+        view_id: String,
+        read: nanika_protocol::TextRead,
+        completion: crate::TextReadCompletion
+    ) {
+        match self {
+            Self::Nanika(process) => {
+                process.start_text_read(request_id, generation, view_id, read, completion)
+            }
+            Self::Acp(_) => completion(Err(
+                "This runtime does not publish text document resources.".to_owned()
+            ))
         }
     }
 

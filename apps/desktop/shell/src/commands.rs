@@ -153,6 +153,18 @@ pub(crate) async fn view_event(
 }
 
 #[tauri::command]
+pub(crate) async fn read_text(
+    window: tauri::WebviewWindow,
+    request: crate::ReadTextRequest
+) -> Result<nanika_protocol::TextChunk, String> {
+    authorize_launcher(&window)?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || app.state::<DesktopState>().read_text(request))
+        .await
+        .map_err(|error| format!("Text read failed: {error}"))?
+}
+
+#[tauri::command]
 pub(crate) fn dismiss_launcher(window: tauri::WebviewWindow) -> Result<(), String> {
     authorize_launcher(&window)?;
     crate::window::hide_window(&window.as_ref().window())

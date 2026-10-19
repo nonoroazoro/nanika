@@ -11,6 +11,7 @@ use crate::{COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
 pub const FILE_COLLECTION_PREVIEW_LIMIT: usize = 3;
 
 pub(crate) fn clipboard_view(
+    syntax_highlighting: bool,
     state: &ClipboardViewState,
     visible: &[crate::ClipboardItem],
     selected: Option<&crate::ClipboardPreview>,
@@ -55,7 +56,7 @@ pub(crate) fn clipboard_view(
                 })
                 .transpose()?,
             detail: selected
-                .map(|entry| detail_view(entry, state.text_chunk))
+                .map(|entry| detail_view(entry, syntax_highlighting))
                 .transpose()?,
             filter: Some(ViewFilter {
                 id: "contentType".to_owned(),
@@ -85,21 +86,29 @@ fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
     })
 }
 
-fn detail_view(preview: &crate::ClipboardPreview, chunk: usize) -> Result<DetailView, String> {
+fn detail_view(
+    preview: &crate::ClipboardPreview,
+    syntax_highlighting: bool
+) -> Result<DetailView, String> {
     let entry = &preview.entry;
     Ok(DetailView {
         title: None,
         content: match &entry.content {
-            ClipboardContent::Text { value } => {
-                let range = preview
-                    .chunks
-                    .get(chunk)
-                    .ok_or("Text chunk is outside its document.")?;
+            ClipboardContent::Text { .. } => {
+                let document = &preview
+                    .document
+                    .as_ref()
+                    .ok_or("Text index is unavailable.")?
+                    .document;
+                let first = preview.read(&nanika_protocol::TextRead {
+                    document_id: document.id.clone(),
+                    revision: document.revision.clone(),
+                    index: 0
+                })?;
                 DetailContent::Text {
-                    value: value[range.clone()].to_owned(),
-                    text_id: entry.entry_id.clone(),
-                    chunk_index: chunk,
-                    total_chunks: preview.chunks.len(),
+                    value: first.value,
+                    document: document.clone(),
+                    syntax_highlighting
                 }
             }
             ClipboardContent::Files { paths } => DetailContent::Files {
@@ -204,33 +213,5 @@ pub fn read_range(
     state.offset = offset;
     state.count = count.get() as usize;
     state.anchor_id = None;
-    Ok(())
-}
-
-pub fn read_text_chunk(
-    state: &mut ClipboardViewState,
-    current: &View,
-    text_id: &str,
-    index: usize,
-) -> Result<(), String> {
-    let View::List { list } = current else {
-        return Err("Clipboard view is not a list.".into());
-    };
-    let Some(DetailView {
-        content:
-            DetailContent::Text {
-                text_id: current_id,
-                total_chunks,
-                ..
-            },
-        ..
-    }) = &list.detail
-    else {
-        return Err("Clipboard detail is not text.".into());
-    };
-    if text_id != current_id || index >= *total_chunks {
-        return Err("Text document changed.".into());
-    }
-    state.text_chunk = index;
     Ok(())
 }

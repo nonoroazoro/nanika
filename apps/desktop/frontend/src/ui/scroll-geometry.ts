@@ -21,6 +21,18 @@ export function scrollGeometry(totalHeight: number, viewportHeight: number)
         physical(top: number): number
         {
             return _scale(top, logicalRange, physicalRange);
+        },
+
+        /**
+         * Translate logical rows onto the physical track without counteracting
+         * native elastic overscroll. An exact keyboard anchor can override scaling.
+         *
+         * @param top Native scrollTop, which may extend beyond either endpoint
+         * @param logicalTop Bounded logical position or the preserved exact anchor
+         */
+        coordinateShift(top: number, logicalTop = _scale(top, physicalRange, logicalRange)): number
+        {
+            return logicalTop - _scale(top, physicalRange, physicalRange);
         }
     };
 }

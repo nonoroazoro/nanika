@@ -68,6 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut deferred_refresh = None;
     let mut pending_invoke = None;
     let mut previous_result = None;
+    let mut pending_text = None;
     let mut initialized_id = None;
     let mut open_views = std::collections::HashSet::new();
     let mut input = stdin().lock();
@@ -421,10 +422,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 detail: nanika_protocol::DetailView {
                                     title: None,
                                     content: nanika_protocol::DetailContent::Text {
-                                        text_id: "test.text".into(),
-                                        chunk_index: 0,
-                                        total_chunks: 1,
                                         value: "Fixture view".to_owned(),
+                                        document: nanika_protocol::TextDocumentIndex::new(
+                                            "test.text".into(),
+                                            "fixture".into(),
+                                            "Fixture view"
+                                        )
+                                        .unwrap()
+                                        .document,
+                                        syntax_highlighting: false
                                     },
                                     metadata: Vec::new(),
                                     actions: Vec::new()
@@ -511,6 +517,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         view: None
                     }
                 )?;
+                if let Some(response) = pending_text.take() {
+                    write_frame(&mut output, &response)?;
+                }
             }
             Message::ViewClose {
                 request_id,
@@ -661,10 +670,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 write_frame(&mut output, &Message::ConfigurationApplied { request_id })?;
             }
+            Message::TextRead {
+                request_id,
+                generation,
+                view_id,
+                read
+            } => {
+                if !open_views.contains(&view_id) {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            code: "text_unavailable".into(),
+                            message: "View is closed.".into()
+                        }
+                    )?;
+                    continue;
+                }
+                let index = nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "fixture".into(),
+                    "Fixture view"
+                )?;
+                let chunk = index.read("Fixture view", &read)?;
+                let response = Message::TextReadResult {
+                    request_id,
+                    generation,
+                    chunk
+                };
+                if arguments.iter().any(|arg| arg == "--defer-text-read")
+                    || data_root(&arguments)
+                        .is_some_and(|root| root.join("defer-text-read").exists())
+                {
+                    if let Some(root) = data_root(&arguments) {
+                        std::fs::write(root.join("text-read.entered"), b"pending")?;
+                    }
+                    pending_text = Some(response);
+                } else {
+                    write_frame(&mut output, &response)?;
+                }
+            }
+            Message::TextReadResult { .. } => {}
             Message::PrepareEntries { .. } => {}
             Message::Snapshot { .. }
             | Message::CandidatesChanged
-            | Message::ViewsChanged
+            | Message::ViewsChanged { .. }
             | Message::Result { .. }
             | Message::ViewUpdated { .. }
             | Message::ViewClosed { .. }

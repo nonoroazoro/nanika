@@ -10,6 +10,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
         std::env::temp_dir().join(format!("nanika-incremental-query-{}", std::process::id()));
     let path = root.join("clipboard.db");
     let config = ClipboardConfig {
+        syntax_highlighting: true,
         max_entries: None,
         max_age_days: None
     };
@@ -114,6 +115,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                 .apply_retention(
                     100,
                     &ClipboardConfig {
+                        syntax_highlighting: true,
                         max_entries: Some(1),
                         max_age_days: None
                     }
@@ -138,6 +140,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                     },
                     100,
                     &ClipboardConfig {
+                        syntax_highlighting: true,
                         max_entries: Some(1),
                         max_age_days: None
                     }
@@ -174,6 +177,7 @@ fn unmatched_capture_and_removal_preserve_query_identity() {
             },
             1,
             &ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: None,
                 max_age_days: None
             }
@@ -217,6 +221,7 @@ fn closing_a_view_releases_all_transient_query_and_preview_caches() {
             },
             1,
             &ClipboardConfig {
+                syntax_highlighting: true,
                 max_entries: None,
                 max_age_days: None
             }
@@ -238,4 +243,70 @@ fn closing_a_view_releases_all_transient_query_and_preview_caches() {
             value: "Document".into()
         }
     );
+}
+
+#[test]
+fn text_revisions_follow_committed_mutations_instead_of_selection_or_timestamps() {
+    let mut store = ClipboardStore::open(":memory:").unwrap();
+    let config = ClipboardConfig {
+        syntax_highlighting: true,
+        max_entries: Some(1),
+        max_age_days: None
+    };
+    let entry = |id: &str, value: &str| ClipboardEntry {
+        entry_id: id.to_owned(),
+        title: "Entry".to_owned(),
+        content: ClipboardContent::Text {
+            value: value.to_owned()
+        },
+        byte_size: value.len() as u64,
+        captured_at: 1
+    };
+    let document = |store: &ClipboardStore| {
+        store
+            ._preview
+            .as_ref()
+            .unwrap()
+            .document
+            .as_ref()
+            .unwrap()
+            .document
+            .clone()
+    };
+    store.capture(&entry("entry", "first"), 1, &config).unwrap();
+    store.present(ClipboardViewState::new(), None).unwrap();
+    let original = document(&store);
+    let reader = store.text_reader();
+    let old_read = nanika_protocol::TextRead {
+        document_id: original.id.clone(),
+        revision: original.revision.clone(),
+        index: 0
+    };
+    assert_eq!(reader.read(&old_read).unwrap().value, "first");
+    store.close_view();
+    store.present(ClipboardViewState::new(), None).unwrap();
+    assert_eq!(document(&store).revision, original.revision);
+
+    // Same ID, timestamp and byte count must still revoke the old source.
+    store.capture(&entry("entry", "other"), 1, &config).unwrap();
+    assert!(reader.read(&old_read).is_err());
+    store.present(ClipboardViewState::new(), None).unwrap();
+    let updated = document(&store);
+    assert_ne!(updated.revision, original.revision);
+    assert!(reader.read(&old_read).is_err());
+
+    store.clear(&["entry".to_owned()]).unwrap();
+    assert!(store._text_revisions.is_empty());
+    store.capture(&entry("entry", "again"), 1, &config).unwrap();
+    store.present(ClipboardViewState::new(), None).unwrap();
+    assert_ne!(document(&store).revision, updated.revision);
+
+    // Retention bounds revision metadata by the same retained entry set.
+    for index in 2..8 {
+        let mut next = entry(&format!("entry-{index}"), "next");
+        next.captured_at = index;
+        store.capture(&next, index, &config).unwrap();
+        assert_eq!(store._text_revisions.len(), 1);
+        assert!(store._text_revisions.contains_key(&next.entry_id));
+    }
 }

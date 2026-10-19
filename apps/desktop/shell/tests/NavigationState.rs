@@ -10,10 +10,15 @@ fn disabled_or_unknown_actions_cannot_be_invoked() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
                 value: "content".to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    "content"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false
             },
             metadata: Vec::new(),
             actions: vec![disabled, nanika_protocol::Action::primary("open", "Open")]
@@ -62,10 +67,15 @@ fn resumed_events_are_authorized_for_every_host_rendered_view() {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
                 value: "content".to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    "content"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false
             },
             metadata: Vec::new(),
             actions: Vec::new()
@@ -81,10 +91,15 @@ fn text_view(value: &str) -> View {
         detail: DetailView {
             title: None,
             content: DetailContent::Text {
-                text_id: "test.text".into(),
-                chunk_index: 0,
-                total_chunks: 1,
                 value: value.to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "revision".into(),
+                    value
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false
             },
             metadata: Vec::new(),
             actions: Vec::new()
@@ -510,9 +525,14 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
         title: None,
         content: DetailContent::Text {
             value: "second item".into(),
-            text_id: "second".into(),
-            chunk_index: 0,
-            total_chunks: 3,
+            document: nanika_protocol::TextDocumentIndex::new(
+                "second".into(),
+                "revision".into(),
+                "second item"
+            )
+            .unwrap()
+            .document,
+            syntax_highlighting: false
         },
         metadata: vec![],
         actions: vec![]
@@ -548,29 +568,8 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
                 offset: 0,
                 count: std::num::NonZeroU32::new(501).unwrap()
             },
-            false,
-        ),
-        (
-            ViewEvent::TextChunkRequested {
-                text_id: "first".into(),
-                index: 1,
-            },
             false
-        ),
-        (
-            ViewEvent::TextChunkRequested {
-                text_id: "second".into(),
-                index: 1,
-            },
-            true
-        ),
-        (
-            ViewEvent::TextChunkRequested {
-                text_id: "second".into(),
-                index: 3,
-            },
-            false
-        ),
+        )
     ] {
         assert_eq!(
             navigation
@@ -634,6 +633,128 @@ fn selection_authority_outlives_delivery_windows_but_not_collection_identity() {
     };
     list.collection_id = "new.collection".into();
     assert!(navigation.authorize_input(&request, None).is_err());
+}
+
+#[test]
+fn text_reads_follow_document_revision_and_current_route_without_navigation_pending() {
+    let mut navigation = crate::NavigationState::default();
+    navigation
+        .apply(
+            &_extension("test.extension"),
+            7,
+            3,
+            nanika_protocol::NavigationEffect::Push {
+                view_id: "text-view".into(),
+                revision: 1,
+                view: Box::new(text_view("source"))
+            }
+        )
+        .unwrap();
+    let mut request = crate::ReadTextRequest {
+        session_id: 1,
+        route_id: navigation.stack.last().unwrap().route_id,
+        read: nanika_protocol::TextRead {
+            document_id: "test.text".into(),
+            revision: "revision".into(),
+            index: 0
+        }
+    };
+    let before = navigation.revision;
+    assert!(navigation.authorize_text_read(&request).is_ok());
+    assert_eq!(navigation.revision, before);
+    assert!(!navigation.busy);
+    navigation.stack.last_mut().unwrap().revision += 1;
+    assert!(
+        navigation.authorize_text_read(&request).is_ok(),
+        "presentation revisions do not revoke immutable content"
+    );
+    request.read.revision = "obsolete".into();
+    assert!(navigation.authorize_text_read(&request).is_err());
+    request.read.revision = "revision".into();
+    request.read.index = 1;
+    assert!(navigation.authorize_text_read(&request).is_err());
+    request.read.index = 0;
+    request.read.document_id = "foreign".into();
+    assert!(navigation.authorize_text_read(&request).is_err());
+    request.read.document_id = "test.text".into();
+    request.route_id += 1;
+    assert!(navigation.authorize_text_read(&request).is_err());
+    navigation.stack.clear();
+    assert!(navigation.authorize_text_read(&request).is_err());
+}
+
+#[test]
+fn source_revocation_rejects_reads_before_refresh_and_preserves_presentation_authority() {
+    for documents in [None, Some(vec!["test.text".into()])] {
+        let mut navigation = crate::NavigationState::default();
+        navigation
+            .apply(
+                &_extension("test.extension"),
+                7,
+                3,
+                nanika_protocol::NavigationEffect::Push {
+                    view_id: "text-view".into(),
+                    revision: 1,
+                    view: Box::new(text_view("source"))
+                }
+            )
+            .unwrap();
+        let mut request = crate::ReadTextRequest {
+            session_id: 1,
+            route_id: navigation.stack.last().unwrap().route_id,
+            read: nanika_protocol::TextRead {
+                document_id: "test.text".into(),
+                revision: "revision".into(),
+                index: 0
+            }
+        };
+        navigation.revoke_text("test.extension", 7, &Default::default());
+        navigation.revoke_text(
+            "other.extension",
+            7,
+            &nanika_protocol::TextInvalidation { documents: None }
+        );
+        navigation.revoke_text(
+            "test.extension",
+            8,
+            &nanika_protocol::TextInvalidation { documents: None }
+        );
+        assert!(navigation.authorize_text_read(&request).is_ok());
+
+        navigation.revoke_text(
+            "test.extension",
+            7,
+            &nanika_protocol::TextInvalidation { documents }
+        );
+        assert!(navigation.authorize_text_read(&request).is_err());
+        // A fresh publication can reauthorize unchanged bytes after a conservative
+        // scope invalidation, but a reply admitted before revocation stays rejected.
+        let route = navigation.stack.last_mut().unwrap();
+        let admitted_revision = route.revision;
+        route.revision += 1;
+        assert!(navigation.authorize_text_read(&request).is_ok());
+        assert!(
+            navigation
+                .authorize_text_revision(request.route_id, admitted_revision)
+                .is_err()
+        );
+        assert!(
+            navigation
+                .authorize_text_revision(request.route_id, admitted_revision + 1)
+                .is_ok()
+        );
+        let View::Detail { detail } =
+            std::sync::Arc::make_mut(&mut navigation.stack.last_mut().unwrap().view)
+        else {
+            panic!("detail")
+        };
+        let DetailContent::Text { document, .. } = &mut detail.content else {
+            panic!("text")
+        };
+        document.revision = "new".into();
+        request.read.revision = "new".into();
+        assert!(navigation.authorize_text_read(&request).is_ok());
+    }
 }
 
 fn _extension(id: &str) -> nanika_host::RuntimeExtensionInfo {

@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut latest_generation = 1_u64;
     while let Ok(event) = discovery.receive() {
         match event {
-            RuntimeEvent::Protocol(message) => match message {
+            RuntimeEvent::Protocol(message) => match *message {
                 Message::CatalogRead { request_id } => match catalog.read() {
                     Ok(batch) => {
                         write_frame(&mut output, &Message::CatalogBatch { request_id, batch })?
@@ -462,7 +462,10 @@ fn spawn_protocol_reader(
             loop {
                 match read_frame(&mut input) {
                     Ok(Some(message)) => {
-                        if events.send(RuntimeEvent::Protocol(message)).is_err() {
+                        if events
+                            .send(RuntimeEvent::Protocol(Box::new(message)))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -508,6 +511,8 @@ fn request_id(message: &Message) -> Option<String> {
         | Message::ViewUpdated { request_id, .. }
         | Message::ViewClose { request_id, .. }
         | Message::ViewClosed { request_id, .. }
+        | Message::TextRead { request_id, .. }
+        | Message::TextReadResult { request_id, .. }
         | Message::Cancel { request_id, .. }
         | Message::Refresh { request_id, .. }
         | Message::Refreshed { request_id, .. }
@@ -520,7 +525,7 @@ fn request_id(message: &Message) -> Option<String> {
         Message::Error { request_id, .. } => request_id.clone(),
         Message::CatalogApplied { .. }
         | Message::CandidatesChanged
-        | Message::ViewsChanged
-        | Message::PrepareEntries { .. } => None,
+        | Message::ViewsChanged { .. }
+        | Message::PrepareEntries { .. } => None
     }
 }

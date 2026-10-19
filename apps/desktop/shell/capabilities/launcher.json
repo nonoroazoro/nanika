@@ -17,6 +17,7 @@
     "allow-open-settings",
     "allow-publish-query",
     "allow-read-results",
+    "allow-read-text",
     "allow-view-event"
   ]
 }

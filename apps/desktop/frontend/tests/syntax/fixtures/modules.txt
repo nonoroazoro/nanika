@@ -1,0 +1,18 @@
+declare module "@syntax-preview"
+{
+    import TextPreview from "../../src/components/extensions/TextPreview.svelte";
+    export default TextPreview;
+}
+
+declare module "@syntax-original"
+{
+    import type { Component } from "svelte";
+    const preview: Component<{
+        busy: boolean;
+        content: { chunk_index: number; kind: "text"; text_id: string; total_chunks: number; value: string; };
+        onRead: (id: string, index: number) => Promise<number | null>;
+        revision: number;
+        viewport: HTMLElement | null;
+    }>;
+    export default preview;
+}

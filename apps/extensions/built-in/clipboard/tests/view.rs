@@ -155,40 +155,42 @@ fn bounded_windows_reach_all_records_and_keep_offscreen_selection() {
 fn unicode_text_chunks_are_bounded_independent_and_preserve_the_full_copy_payload() {
     let original = "文字🙂\0\u{b}\n".repeat(30_000);
     _with_store(&[_entry(1, &original)], |store, _| {
-        let mut current = store.present(ClipboardViewState::new(), None).unwrap();
-        let mut displayed = String::new();
-        loop {
-            let View::List { list } = &current.view else {
-                unreachable!()
-            };
-            let DetailContent::Text {
-                value,
-                text_id,
-                chunk_index,
-                total_chunks,
-            } = &list.detail.as_ref().unwrap().content
-            else {
-                unreachable!()
-            };
-            assert!(value.chars().count() <= nanika_protocol::DETAIL_TEXT_BATCH_CHARS);
-            displayed.push_str(value);
-            if chunk_index + 1 == *total_chunks {
-                break;
-            }
-            let mut state = current.state.clone();
-            crate::read_text_chunk(&mut state, &current.view, text_id, chunk_index + 1).unwrap();
-            current = store.present(state, None).unwrap();
+        let current = store.present(ClipboardViewState::new(), None).unwrap();
+        let View::List { list } = &current.view else {
+            unreachable!()
+        };
+        let DetailContent::Text {
+            value, document, ..
+        } = &list.detail.as_ref().unwrap().content
+        else {
+            unreachable!()
+        };
+        let reader = store.text_reader();
+        let mut displayed = value.clone();
+        for index in 1..document.total_chunks {
+            let chunk = reader
+                .read(&nanika_protocol::TextRead {
+                    document_id: document.id.clone(),
+                    revision: document.revision.clone(),
+                    index
+                })
+                .unwrap();
+            assert!(chunk.value.chars().count() <= nanika_protocol::DETAIL_TEXT_BATCH_CHARS);
+            displayed.push_str(&chunk.value);
         }
         assert_eq!(displayed, original);
         assert_eq!(
             store.content("1").unwrap(),
             ClipboardContent::Text { value: original }
         );
-        let mut state = current.state.clone();
-        crate::read_text_chunk(&mut state, &current.view, "1", 0).unwrap();
-        assert!(crate::read_text_chunk(&mut state, &current.view, "other", 0).is_err());
-        let first = store.present(state, None).unwrap();
-        assert_eq!(first.state.text_chunk, 0);
+        let read = nanika_protocol::TextRead {
+            document_id: document.id.clone(),
+            revision: document.revision.clone(),
+            index: 0
+        };
+        assert_eq!(reader.read(&read).unwrap().value, *value);
+        store.close_view();
+        assert!(reader.read(&read).is_err());
     });
 }
 
@@ -282,6 +284,7 @@ fn selection_reuses_query_ids_and_capture_invalidates_continuations_without_losi
             .apply_retention(
                 100,
                 &ClipboardConfig {
+                    syntax_highlighting: true,
                     max_entries: Some(3),
                     max_age_days: None
                 }
@@ -499,6 +502,7 @@ fn _entry(id: u64, value: &str) -> ClipboardEntry {
 }
 fn _config() -> ClipboardConfig {
     ClipboardConfig {
+        syntax_highlighting: true,
         max_entries: None,
         max_age_days: None
     }
