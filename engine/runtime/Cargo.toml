@@ -29,6 +29,7 @@ tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+nanika-builtin-inventory = { path = "../../apps/extensions/built-in" }
 criterion.workspace = true
 
 [lints]

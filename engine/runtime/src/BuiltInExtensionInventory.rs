@@ -17,12 +17,6 @@ impl BuiltInExtensionInventory {
         let mut extensions = Vec::with_capacity(sources.len());
         for source in sources {
             let manifest = parse_extension_manifest(source).map_err(|error| error.to_string())?;
-            if !nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
-                return Err(format!(
-                    "built-in inventory contains an unreserved extension id: {}",
-                    manifest.id
-                ));
-            }
             if !identifiers.insert(manifest.id.clone()) {
                 return Err(format!(
                     "built-in inventory contains a duplicate extension id: {}",

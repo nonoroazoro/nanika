@@ -186,16 +186,9 @@ pub fn run() -> Result<(), String> {
             let initializer = std::thread::Builder::new()
                 .name("nanika-runtime-initializer".to_owned())
                 .spawn(move || {
-                    let built_in_manifests = [
-                        include_str!("../../../extensions/built-in/application/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/script/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/calculator/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/clipboard/manifest.jsonc"),
-                        include_str!("../../../extensions/built-in/system/manifest.jsonc")
-                    ];
                     match nanika_host::RuntimeService::start(
                         &runtime_paths,
-                        &built_in_manifests,
+                        nanika_builtin_inventory::MANIFESTS,
                         &runtime_resources
                     ) {
                         Ok(runtime) => {

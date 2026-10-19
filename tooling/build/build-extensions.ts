@@ -1,6 +1,7 @@
 import { copyFile, mkdir, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 
+import { readBuiltInExtensions } from "./built-in-extensions.ts";
 import tauriConfig from "../../apps/desktop/shell/tauri.conf.json";
 
 import type { BuildCommand } from "./BuildCommand.ts";
@@ -22,19 +23,23 @@ export async function buildExtensions(
 ): Promise<string>
 {
     const staging = join(target, "sidecars");
-    const externalBin = tauriConfig.bundle.externalBin.map(path => join(staging, basename(path)));
+    const triple = _hostTriple();
+    const extensions = await readBuiltInExtensions(triple);
+    const externalBin = extensions.map(extension => join(staging, extension.binaryName));
     const command = ["cargo", "build", "--locked"];
     if (profile === "release")
     {
         command.push("--release");
     }
-    for (const path of externalBin)
+    for (const extension of extensions)
     {
-        command.push("-p", basename(path));
+        command.push("-p", extension.packageName);
     }
-    await run(command);
+    if (extensions.length)
+    {
+        await run(command);
+    }
     await mkdir(staging, { recursive: true });
-    const triple = _hostTriple();
     const suffix = process.platform === "win32" ? ".exe" : "";
     for (const path of externalBin)
     {
@@ -47,17 +52,8 @@ export async function buildExtensions(
         }
     }
     const resources: Record<string, string> = { ...tauriConfig.bundle.resources };
-    for (const binary of tauriConfig.bundle.externalBin)
+    for (const { directory, manifest } of extensions)
     {
-        const directory = resolve(
-            import.meta.dirname,
-            "../../apps/extensions/built-in",
-            basename(binary).replace(/^nanika-extension-/, "")
-        );
-        const manifest = Bun.JSONC.parse(await Bun.file(join(directory, "manifest.jsonc")).text()) as {
-            icon: string;
-            id: string;
-        };
         for await (const path of new Bun.Glob("assets/**/*.png").scan(directory))
         {
             resources[join(directory, path)] = `extensions/${manifest.id}/${path.replaceAll("\\", "/")}`;

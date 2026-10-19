@@ -154,10 +154,10 @@ fn package_install_resolution_and_host_adapter_round_trip() {
     let package = root.join("dummy.nanika");
     create_package(&package, &dummy_executable());
 
-    install_package(&package, &paths, &store).expect("install ACP package");
+    install_package(&package, &paths, &store, &[]).expect("install ACP package");
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
-    let (mut active, errors) = resolve_installed_extensions(&paths, &records);
+    let (mut active, errors) = resolve_installed_extensions(&paths, &records, &[]);
     assert!(errors.is_empty(), "resolution errors: {errors:?}");
     assert_eq!(active.len(), 1);
     let extension = active.pop().expect("active ACP extension");

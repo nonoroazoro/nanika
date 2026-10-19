@@ -44,10 +44,18 @@ fn run() -> Result<String, String> {
     };
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root())
         .map_err(|error| error.to_string())?;
+    let built_in_ids = nanika_builtin_inventory::MANIFESTS
+        .iter()
+        .map(|source| {
+            nanika_extension_package::parse_extension_manifest(source)
+                .map(|manifest| manifest.id)
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     match command {
         Command::Install(package) => {
-            let installed =
-                install_package(&package, &paths, &store).map_err(|error| error.to_string())?;
+            let installed = install_package(&package, &paths, &store, &built_in_ids)
+                .map_err(|error| error.to_string())?;
             Ok(format!(
                 "installed {} from {}",
                 installed.extension_id,
@@ -55,8 +63,8 @@ fn run() -> Result<String, String> {
             ))
         }
         Command::Update(package) => {
-            let installed =
-                update_package(&package, &paths, &store).map_err(|error| error.to_string())?;
+            let installed = update_package(&package, &paths, &store, &built_in_ids)
+                .map_err(|error| error.to_string())?;
             Ok(format!(
                 "updated {} from {}",
                 installed.extension_id,

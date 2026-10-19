@@ -10,6 +10,29 @@ use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn host_inventory_reserves_identity_before_install_and_during_resolution() {
+    let root = temporary_root("host-inventory");
+    cleanup(&root);
+    let paths = NanikaPaths::from_roots(root.join("data"), root.join("cache"), root.join("config"));
+    let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).unwrap();
+    let package = root.join("example.nanika");
+    create_package(&package, false);
+    let reserved = vec!["com.example.extension".to_owned()];
+    let error = install_package(&package, &paths, &store, &reserved).unwrap_err();
+    assert!(error.to_string().contains("built-in extension id"));
+    let database = HostDatabase::open(paths.host_database()).unwrap();
+    assert!(database.load_extensions().unwrap().is_empty());
+    install_package(&package, &paths, &store, &[]).unwrap();
+    let records = database.load_extensions().unwrap();
+    let (active, errors) = resolve_installed_extensions(&paths, &records, &reserved);
+    assert!(active.is_empty());
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("built-in extension id"));
+    drop(database);
+    cleanup(&root);
+}
+
+#[test]
 fn package_install_enablement_resolution_and_removal_round_trip() {
     let root = temporary_root("round-trip");
     cleanup(&root);
@@ -22,7 +45,7 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
     let package = root.join("example.nanika");
     create_package(&package, false);
 
-    let installed = install_package(&package, &paths, &store).expect("install package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
     assert_eq!(installed.extension_id, "com.example.extension");
     assert_eq!(
         installed.protocol,
@@ -36,13 +59,13 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
 
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
-    let (active, errors) = resolve_installed_extensions(&paths, &records);
+    let (active, errors) = resolve_installed_extensions(&paths, &records, &[]);
     assert!(errors.is_empty());
     assert_eq!(active.len(), 1);
 
     set_extension_enabled("com.example.extension", false, &paths, &store)
         .expect("disable extension");
-    let (active, errors) = resolve_installed_extensions(&paths, &records);
+    let (active, errors) = resolve_installed_extensions(&paths, &records, &[]);
     assert!(errors.is_empty());
     assert_eq!(active.len(), 1, "disabled extensions remain discoverable");
     assert_eq!(
@@ -88,7 +111,7 @@ fn resolution_error_preserves_safe_extension_context() {
         package_digest: None
     };
 
-    let (active, errors) = resolve_installed_extensions(&paths, &[extension]);
+    let (active, errors) = resolve_installed_extensions(&paths, &[extension], &[]);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);
@@ -122,7 +145,7 @@ fn manifest_preserves_acp_protocol_version() {
         }))
     );
 
-    let installed = install_package(&package, &paths, &store).expect("install ACP package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install ACP package");
 
     assert_eq!(
         installed.protocol,
@@ -158,7 +181,7 @@ fn manifest_preserves_nanika_protocol_version() {
         }))
     );
 
-    let installed = install_package(&package, &paths, &store).expect("install Nanika package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install Nanika package");
 
     assert_eq!(
         installed.protocol,
@@ -204,7 +227,7 @@ fn manifest_preserves_valid_command_contributions() {
         }))
     );
 
-    let installed = install_package(&package, &paths, &store).expect("install package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
 
     assert!(installed.contributes.root_search.is_some());
     assert_eq!(installed.contributes.commands.len(), 1);
@@ -245,7 +268,7 @@ fn manifest_preserves_valid_view_contributions() {
         }))
     );
 
-    let installed = install_package(&package, &paths, &store).expect("install package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
 
     assert!(installed.contributes.commands.is_empty());
     assert_eq!(installed.contributes.views.len(), 1);
@@ -290,7 +313,7 @@ fn manifest_preserves_valid_configuration_contributions() {
         }))
     );
 
-    let installed = install_package(&package, &paths, &store).expect("install package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
     let contribution = installed
         .contributes
         .configuration
@@ -339,7 +362,7 @@ fn manifest_rejects_configuration_defaults_outside_the_declared_schema() {
         }))
     );
 
-    let error = install_package(&package, &paths, &store)
+    let error = install_package(&package, &paths, &store, &[])
         .expect_err("invalid configuration default must fail installation");
     assert!(error.to_string().contains("invalid default"));
     cleanup(&root);
@@ -378,13 +401,13 @@ fn manifest_rejects_acp_command_contributions() {
         }))
     );
 
-    let error =
-        install_package(&package, &paths, &store).expect_err("ACP command contributions must fail");
+    let error = install_package(&package, &paths, &store, &[])
+        .expect_err("ACP command contributions must fail");
 
     assert!(
-        error
-            .to_string()
-            .contains("command and view contributions require the Nanika protocol")
+        error.to_string().contains(
+            "command, view and settings action contributions require the Nanika protocol"
+        )
     );
     cleanup(&root);
 }
@@ -409,9 +432,9 @@ fn manifest_rejects_acp_view_contributions() {
     )
     .expect_err("ACP view contributions must fail");
     assert!(
-        error
-            .to_string()
-            .contains("command and view contributions require the Nanika protocol")
+        error.to_string().contains(
+            "command, view and settings action contributions require the Nanika protocol"
+        )
     );
 }
 
@@ -466,7 +489,7 @@ fn manifest_requires_runtime_protocol() {
     let package = root.join("missing-runtime.nanika");
     create_package_definition_with_runtime(&package, false, &[], "1.2.3", false, false, 1, None);
 
-    let error = install_package(&package, &paths, &store)
+    let error = install_package(&package, &paths, &store, &[])
         .expect_err("manifest without a runtime must fail");
 
     assert!(error.to_string().contains("missing field `runtime`"));
@@ -498,7 +521,7 @@ fn manifest_rejects_unsupported_acp_protocol_version() {
         }))
     );
 
-    let error = install_package(&package, &paths, &store)
+    let error = install_package(&package, &paths, &store, &[])
         .expect_err("unsupported ACP protocol version must fail");
 
     assert!(
@@ -534,7 +557,7 @@ fn unsupported_manifest_version_is_rejected() {
         }))
     );
 
-    let error = install_package(&package, &paths, &store)
+    let error = install_package(&package, &paths, &store, &[])
         .expect_err("unsupported manifest version must fail");
 
     assert!(error.to_string().contains("unsupported manifest format"));
@@ -554,7 +577,7 @@ fn package_rejects_path_traversal() {
     let package = root.join("traversal.nanika");
     create_package(&package, true);
 
-    assert!(install_package(&package, &paths, &store).is_err());
+    assert!(install_package(&package, &paths, &store, &[]).is_err());
     assert!(!root.join("escape.txt").exists());
     cleanup(&root);
 }
@@ -595,12 +618,12 @@ fn same_version_update_repairs_content_and_preserves_disablement() {
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
     create_package(&package, false);
-    let installed = install_package(&package, &paths, &store).expect("install package");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
     set_extension_enabled("com.example.extension", false, &paths, &store)
         .expect("disable extension");
     std::fs::write(&installed.program, "corrupt").expect("corrupt installed executable");
 
-    let repaired = install_package(&package, &paths, &store).expect("repair package");
+    let repaired = install_package(&package, &paths, &store, &[]).expect("repair package");
 
     assert_eq!(
         std::fs::read(&repaired.program).expect("repaired executable"),
@@ -628,8 +651,9 @@ fn removal_preflights_registry_before_mutating_artifacts_or_storage() {
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
     create_package(&package, false);
-    let installed = install_package(&package, &paths, &store).expect("install package");
-    std::fs::write(store.extensions_file(), "{ malformed").expect("malformed registry fixture");
+    let installed = install_package(&package, &paths, &store, &[]).expect("install package");
+    std::fs::remove_file(store.extensions_file()).expect("remove registry fixture");
+    std::fs::create_dir(store.extensions_file()).expect("unwritable registry fixture");
 
     assert!(remove_extension("com.example.extension", &paths, &store).is_err());
     assert!(installed.program.is_file());
@@ -656,7 +680,7 @@ fn unresolved_manifest_dependencies_are_rejected_explicitly() {
     let package = root.join("dependency.nanika");
     create_package_with_dependencies(&package, false, &["com.example.required"]);
 
-    let error = install_package(&package, &paths, &store)
+    let error = install_package(&package, &paths, &store, &[])
         .expect_err("unsupported dependencies should fail");
     assert!(error.to_string().contains("dependency resolver"));
     cleanup(&root);
@@ -675,18 +699,18 @@ fn install_and_update_enforce_existence_and_version_direction() {
     let package = root.join("example.nanika");
     create_package_definition(&package, false, &[], "1.2.3", false, false);
 
-    assert!(update_package(&package, &paths, &store).is_err());
-    install_package(&package, &paths, &store).expect("initial install");
+    assert!(update_package(&package, &paths, &store, &[]).is_err());
+    install_package(&package, &paths, &store, &[]).expect("initial install");
 
     create_package_definition(&package, false, &[], "1.0.0", false, false);
-    let downgrade = update_package(&package, &paths, &store).expect_err("downgrade must fail");
+    let downgrade = update_package(&package, &paths, &store, &[]).expect_err("downgrade must fail");
     assert!(downgrade.to_string().contains("cannot downgrade"));
 
     create_package_definition(&package, false, &[], "2.0.0", false, false);
-    let reinstall = install_package(&package, &paths, &store)
+    let reinstall = install_package(&package, &paths, &store, &[])
         .expect_err("install must not replace a different version");
     assert!(reinstall.to_string().contains("use update"));
-    let updated = update_package(&package, &paths, &store).expect("newer update");
+    let updated = update_package(&package, &paths, &store, &[]).expect("newer update");
     assert!(updated.program.to_string_lossy().contains("2.0.0"));
     cleanup(&root);
 }
@@ -704,7 +728,8 @@ fn manifest_rejects_unknown_fields() {
     let package = root.join("unknown.nanika");
     create_package_definition(&package, false, &[], "1.2.3", true, false);
 
-    let error = install_package(&package, &paths, &store).expect_err("unknown field must fail");
+    let error =
+        install_package(&package, &paths, &store, &[]).expect_err("unknown field must fail");
     assert!(error.to_string().contains("unknown field"));
     cleanup(&root);
 }
@@ -723,7 +748,7 @@ fn package_rejects_unicode_filesystem_collisions() {
     let package = root.join("collision.nanika");
     create_package_definition(&package, false, &[], "1.2.3", false, true);
 
-    let error = install_package(&package, &paths, &store).expect_err("collision must fail");
+    let error = install_package(&package, &paths, &store, &[]).expect_err("collision must fail");
     assert!(error.to_string().contains("colliding paths"));
     cleanup(&root);
 }
@@ -740,7 +765,7 @@ fn interrupted_same_version_replacement_fails_without_mutation() {
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
     create_package(&package, false);
-    install_package(&package, &paths, &store).expect("install package");
+    install_package(&package, &paths, &store, &[]).expect("install package");
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let installed = database
         .extension("com.example.extension")
@@ -766,7 +791,7 @@ fn interrupted_same_version_replacement_fails_without_mutation() {
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
 
-    let (active, errors) = resolve_installed_extensions(&paths, &records);
+    let (active, errors) = resolve_installed_extensions(&paths, &records, &[]);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);
@@ -796,7 +821,7 @@ fn interrupted_removal_fails_without_mutation() {
     let store = ConfigStore::open(paths.app_data_root(), paths.config_root()).expect("store");
     let package = root.join("example.nanika");
     create_package(&package, false);
-    install_package(&package, &paths, &store).expect("install package");
+    install_package(&package, &paths, &store, &[]).expect("install package");
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let installed = database
         .extension("com.example.extension")
@@ -820,7 +845,7 @@ fn interrupted_removal_fails_without_mutation() {
     .expect("write journal");
     let records = database.load_extensions().expect("extension records");
 
-    let (active, errors) = resolve_installed_extensions(&paths, &records);
+    let (active, errors) = resolve_installed_extensions(&paths, &records, &[]);
 
     assert!(active.is_empty());
     assert_eq!(errors.len(), 1);

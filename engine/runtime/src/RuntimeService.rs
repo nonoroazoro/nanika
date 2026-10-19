@@ -44,6 +44,11 @@ impl RuntimeService {
         built_in_resources: &Path
     ) -> Result<Arc<Self>, String> {
         let inventory = BuiltInExtensionInventory::parse(built_in_manifests)?;
+        let built_in_ids = inventory
+            .extensions
+            .iter()
+            .map(|entry| entry.manifest.id.clone())
+            .collect::<Vec<_>>();
         let mut diagnostics = Vec::new();
         let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
             .map_err(|error| format!("configuration is unavailable: {error}"))?;
@@ -115,7 +120,8 @@ impl RuntimeService {
             ));
         }
 
-        let (mut external, errors) = resolve_installed_extensions(paths, &storage_state.extensions);
+        let (mut external, errors) =
+            resolve_installed_extensions(paths, &storage_state.extensions, &built_in_ids);
         diagnostics.extend(errors.into_iter().map(|error| error.message));
         installed_extensions.append(&mut external);
         let installed = installed_extensions

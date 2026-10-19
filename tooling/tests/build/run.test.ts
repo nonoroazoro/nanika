@@ -108,7 +108,16 @@ async function _fixture(): Promise<string>
     );
     await Bun.write(
         join(fixture, "apps/desktop/shell/tauri.conf.json"),
-        JSON.stringify({ bundle: { externalBin: ["freshness-extension"] } })
+        JSON.stringify({ bundle: { resources: {} } })
+    );
+    await Bun.write(
+        join(fixture, "tooling/build/built-in-extensions.ts"),
+        `import {fileURLToPath} from "node:url";
+        export async function readBuiltInExtensions() {
+            return [{directory: fileURLToPath(new URL('../../apps/extensions/built-in/freshness-extension', import.meta.url)),
+                packageName: "freshness-extension", binaryName: "freshness-extension",
+                manifest: {id: "test.freshness", icon: "assets/icon.png"}}];
+        }`
     );
     await Bun.write(
         join(fixture, "apps/extensions/built-in/freshness-extension/manifest.jsonc"),

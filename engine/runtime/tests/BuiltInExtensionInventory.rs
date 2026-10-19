@@ -1,28 +1,12 @@
-use std::collections::HashSet;
-
 use crate::BuiltInExtensionInventory;
 
 #[test]
 fn every_built_in_uses_the_ordinary_manifest_contract() {
-    let sources = [
-        include_str!("../../../apps/extensions/built-in/application/manifest.jsonc"),
-        include_str!("../../../apps/extensions/built-in/script/manifest.jsonc"),
-        include_str!("../../../apps/extensions/built-in/calculator/manifest.jsonc"),
-        include_str!("../../../apps/extensions/built-in/clipboard/manifest.jsonc"),
-        include_str!("../../../apps/extensions/built-in/system/manifest.jsonc")
-    ];
-    let inventory = BuiltInExtensionInventory::parse(&sources).expect("built-in manifests");
-    assert_eq!(inventory.extensions.len(), 5);
-    let identifiers = inventory
-        .extensions
-        .iter()
-        .map(|extension| extension.manifest.id.as_str())
-        .collect::<HashSet<_>>();
+    let inventory = BuiltInExtensionInventory::parse(nanika_builtin_inventory::MANIFESTS)
+        .expect("built-in manifests");
     assert_eq!(
-        identifiers,
-        nanika_foundation::BUILTIN_EXTENSION_IDS
-            .into_iter()
-            .collect::<HashSet<_>>()
+        inventory.extensions.len(),
+        nanika_builtin_inventory::MANIFESTS.len()
     );
     let clipboard = inventory
         .extensions
@@ -43,4 +27,19 @@ fn every_built_in_uses_the_ordinary_manifest_contract() {
     assert!(calculator.manifest.contributes.commands.is_empty());
     assert!(calculator.manifest.contributes.views.is_empty());
     assert!(calculator.manifest.contributes.root_search.is_some());
+}
+
+#[test]
+fn host_inventory_accepts_new_identities_and_rejects_duplicates() {
+    assert!(
+        BuiltInExtensionInventory::parse(&[])
+            .unwrap()
+            .extensions
+            .is_empty()
+    );
+    let source = nanika_builtin_inventory::MANIFESTS[0]
+        .replace("com.nanika.application", "org.example.custom");
+    let inventory = BuiltInExtensionInventory::parse(&[&source]).unwrap();
+    assert_eq!(inventory.extensions[0].manifest.id, "org.example.custom");
+    assert!(BuiltInExtensionInventory::parse(&[&source, &source]).is_err());
 }

@@ -31,24 +31,39 @@ const MAX_CONTRIBUTION_KEYWORDS: usize = 16;
 pub fn install_package(
     package_path: &Path,
     paths: &NanikaPaths,
-    store: &ConfigStore
+    store: &ConfigStore,
+    built_in_ids: &[String]
 ) -> Result<InstalledExtension, ExtensionPackageError> {
-    apply_package(package_path, paths, store, PackageOperation::Install)
+    apply_package(
+        package_path,
+        paths,
+        store,
+        built_in_ids,
+        PackageOperation::Install
+    )
 }
 
 /// Validate and activate a newer local `.nanika` package for an installed extension.
 pub fn update_package(
     package_path: &Path,
     paths: &NanikaPaths,
-    store: &ConfigStore
+    store: &ConfigStore,
+    built_in_ids: &[String]
 ) -> Result<InstalledExtension, ExtensionPackageError> {
-    apply_package(package_path, paths, store, PackageOperation::Update)
+    apply_package(
+        package_path,
+        paths,
+        store,
+        built_in_ids,
+        PackageOperation::Update
+    )
 }
 
 fn apply_package(
     package_path: &Path,
     paths: &NanikaPaths,
     store: &ConfigStore,
+    built_in_ids: &[String],
     operation: PackageOperation
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     validate_package_path(package_path)?;
@@ -66,7 +81,7 @@ fn apply_package(
     extract_package(staged_package.path(), stage.path())?;
 
     let manifest = load_manifest(stage.path().join("manifest.jsonc"))?;
-    reject_external_builtin_identity(&manifest)?;
+    reject_external_builtin_identity(&manifest, built_in_ids)?;
     let target = nanika_platform::target_triple();
     let entrypoint = target_entrypoint(&manifest, target)?;
     let staged_program = stage.path().join(&entrypoint);
@@ -304,7 +319,8 @@ pub fn remove_extension(
 /// Resolve installed external processes without allowing one broken package to block startup.
 pub fn resolve_installed_extensions(
     paths: &NanikaPaths,
-    installed: &[StoredExtension]
+    installed: &[StoredExtension],
+    built_in_ids: &[String]
 ) -> (Vec<InstalledExtension>, Vec<ExtensionResolutionError>) {
     let mut resolved = Vec::new();
     let mut errors = Vec::new();
@@ -319,7 +335,7 @@ pub fn resolve_installed_extensions(
         .iter()
         .filter(|extension| extension.kind == ExtensionKind::External)
     {
-        match resolve_installed_extension(paths, extension) {
+        match resolve_installed_extension(paths, extension, built_in_ids) {
             Ok(extension) => resolved.push(extension),
             Err(error) => errors.push(ExtensionResolutionError::new(
                 &extension.extension_id,
@@ -332,7 +348,8 @@ pub fn resolve_installed_extensions(
 
 fn resolve_installed_extension(
     paths: &NanikaPaths,
-    installed: &StoredExtension
+    installed: &StoredExtension,
+    built_in_ids: &[String]
 ) -> Result<InstalledExtension, ExtensionPackageError> {
     let install_path = installed.install_path.as_deref().ok_or_else(|| {
         ExtensionPackageError::Manifest("active install path is missing".to_owned())
@@ -343,7 +360,7 @@ fn resolve_installed_extension(
     let canonical_install = fs::canonicalize(install_path)?;
     validate_managed_path(&canonical_root, &canonical_install)?;
     let manifest = load_manifest(canonical_install.join("manifest.jsonc"))?;
-    reject_external_builtin_identity(&manifest)?;
+    reject_external_builtin_identity(&manifest, built_in_ids)?;
     if manifest.id != installed.extension_id
         || installed.version.as_deref() != Some(manifest.version.as_str())
     {
@@ -689,9 +706,10 @@ pub fn validate_extension_manifest(
 }
 
 fn reject_external_builtin_identity(
-    manifest: &ExtensionManifest
+    manifest: &ExtensionManifest,
+    built_in_ids: &[String]
 ) -> Result<(), ExtensionPackageError> {
-    if nanika_foundation::BUILTIN_EXTENSION_IDS.contains(&manifest.id.as_str()) {
+    if built_in_ids.contains(&manifest.id) {
         return Err(ExtensionPackageError::Manifest(
             "external packages cannot use a built-in extension id".to_owned()
         ));

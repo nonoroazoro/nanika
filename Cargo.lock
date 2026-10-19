@@ -2466,9 +2466,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanika-builtin-inventory"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "nanika-cli"
 version = "0.1.0"
 dependencies = [
+ "nanika-builtin-inventory",
  "nanika-config",
  "nanika-extension-package",
  "nanika-foundation",
@@ -2502,6 +2510,7 @@ name = "nanika-desktop"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "nanika-builtin-inventory",
  "nanika-config",
  "nanika-foundation",
  "nanika-host",
@@ -2657,6 +2666,7 @@ dependencies = [
  "criterion",
  "futures",
  "futures-lite",
+ "nanika-builtin-inventory",
  "nanika-config",
  "nanika-extension-package",
  "nanika-foundation",
