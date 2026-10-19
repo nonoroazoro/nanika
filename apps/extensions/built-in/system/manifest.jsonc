@@ -104,7 +104,8 @@
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Confirm Log Out",
+          "confirmation_title": "Log Out?",
+          "confirmation_description": "Your current session will end and open apps will close. Save your work before continuing.",
           "icon": "log-out"
         },
         "title": "Log Out",
@@ -125,7 +126,8 @@
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Confirm Restart",
+          "confirmation_title": "Restart?",
+          "confirmation_description": "Your computer will restart and open apps will close. Save your work before continuing.",
           "icon": "rotate-cw"
         },
         "title": "Restart",
@@ -146,7 +148,8 @@
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Confirm Shut Down",
+          "confirmation_title": "Shut Down?",
+          "confirmation_description": "Your computer will shut down and open apps will close. Save your work before continuing.",
           "icon": "power"
         },
         "title": "Shut Down",
@@ -162,14 +165,14 @@
         "command": "trash.open",
         "action": {
           "id": "command.execute",
-          "title": "Open Trash / Recycle Bin",
+          "title": "Open Trash",
           "style": "primary",
           "enabled": true,
           "allow_default_execution": true,
           "group": null,
           "icon": "folder-open"
         },
-        "title": "Open Trash / Recycle Bin",
+        "title": "Open Trash",
         "description": "Open deleted items in the system file manager",
         "category": "System",
         "keywords": [
@@ -182,15 +185,16 @@
         "command": "trash.empty",
         "action": {
           "id": "command.execute",
-          "title": "Empty Trash / Recycle Bin",
+          "title": "Empty Trash",
           "style": "destructive",
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Confirm Permanent Deletion",
+          "confirmation_title": "Empty Trash?",
+          "confirmation_description": "All items in the Trash will be permanently deleted. This cannot be undone.",
           "icon": "trash"
         },
-        "title": "Empty Trash / Recycle Bin",
+        "title": "Empty Trash",
         "description": "Permanently delete all items in Trash or Recycle Bin",
         "category": "System",
         "keywords": [

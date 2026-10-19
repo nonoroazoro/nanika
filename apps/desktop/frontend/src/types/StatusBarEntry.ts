@@ -2,7 +2,7 @@ export interface StatusBarEntry
 {
     id: string;
     title: string;
-    icon?: "app";
+    icon?: "app" | { src: string; };
     iconOnly?: boolean;
     menu?: {
         controls: string;
@@ -11,10 +11,6 @@ export interface StatusBarEntry
     interactive?: boolean;
     disabled?: boolean;
     destructive?: boolean;
-    confirmation?: {
-        active: boolean;
-        title: string;
-    };
     keys?: string[];
     ariaShortcut?: string;
     pending?: {

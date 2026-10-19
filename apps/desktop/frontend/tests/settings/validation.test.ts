@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { configurationSchema } from "./schema";
+import { configurationSchema } from "../../fixtures/configuration";
 import { settingsError } from "../../src/settings/validation.ts";
 
 import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
+import type { JsonValue } from "../../src/generated/serde_json/JsonValue";
 
 const integer: ConfigurationSchema = configurationSchema({
     type: "integer",
     minimum: 1,
-    allowUnlimited: true,
     properties: {},
     required: []
 });
@@ -19,7 +19,7 @@ test("automatic saves reject incomplete numbers and oversized UTF-8 text", () =>
 {
     assert.equal(settingsError({ limit: integer }, { limit: "" }), "limit: Enter a whole number.");
     assert.equal(settingsError({ name: text }, { name: "你好" }), "name: Enter at most 4 UTF-8 bytes.");
-    assert.equal(settingsError({ limit: integer }, { limit: null }), null);
+    assert.notEqual(settingsError({ limit: integer }, { limit: null }), null);
 });
 
 test("automatic saves validate entries beyond the rendered array page", () =>
@@ -62,5 +62,32 @@ test("optional prototype-named properties are absent until explicitly included",
     assert.equal(
         settingsError({ options: schema }, { options: { constructor: 0 } }),
         "options: constructor: Enter 1 or more."
+    );
+});
+
+test("integer limits validate remembered numbers even while unlimited", () =>
+{
+    const limit = configurationSchema({ type: "integerLimit", minimum: 1, maximum: 5000 });
+    for (const unlimited of [false, true])
+    {
+        assert.equal(settingsError({ limit }, { limit: { unlimited, value: "200" } }), null);
+        assert.notEqual(settingsError({ limit }, { limit: { unlimited, value: "" } }), null);
+        assert.notEqual(settingsError({ limit }, { limit: { unlimited, value: 5001 } }), null);
+    }
+    for (
+        const value of [null, 0, { unlimited: true }, { unlimited: "true", value: 50 }, {
+            unlimited: true,
+            value: 50,
+            extra: 1
+        }] as JsonValue[]
+    )
+    {
+        assert.notEqual(settingsError({ limit }, { limit: value }), null);
+    }
+    const unbounded = configurationSchema({ type: "integerLimit" });
+    assert.equal(settingsError({ limit: unbounded }, { limit: { unlimited: false, value: -50 } }), null);
+    assert.notEqual(
+        settingsError({ limit: unbounded }, { limit: { unlimited: true, value: Number.MAX_SAFE_INTEGER + 1 } }),
+        null
     );
 });

@@ -61,18 +61,12 @@ impl SettingsSearchCatalog {
             return Vec::new();
         }
         let mut matcher = TextMatcher::new();
-        let mut ranked: Vec<_> = self
-            .entries
+        // Search filters the settings page; it must not reorder its navigation targets.
+        // Matching still uses the shared matcher, but scores do not change presentation order.
+        self.entries
             .into_iter()
-            .filter_map(|entry| {
-                matcher
-                    .score(&query, &entry.search_values)
-                    .map(|score| (score, entry))
-            })
-            .collect();
-        // Stable sort keeps presentation order as the tie-break. No arbitrary result truncation.
-        ranked.sort_by_key(|entry| std::cmp::Reverse(entry.0));
-        ranked.into_iter().map(|(_, entry)| entry).collect()
+            .filter(|entry| matcher.score(&query, &entry.search_values).is_some())
+            .collect()
     }
 
     fn _extension(&mut self, extension: &ExtensionLifecycle) {
@@ -98,14 +92,59 @@ impl SettingsSearchCatalog {
                 .cmp(&right.order)
                 .then_with(|| left_key.cmp(right_key))
         });
+        // Match the renderer's first-appearance group order, then its field order.
+        let mut property_groups: Vec<(&str, Vec<_>)> = Vec::new();
         for (key, property) in properties {
-            self._add(
-                &info.id,
-                SettingsSearchTarget::Field { key: key.clone() },
-                &property.title,
-                &[&info.name],
-                ""
-            );
+            let title = property
+                .group
+                .as_deref()
+                .unwrap_or(&configuration.contribution.title);
+            if let Some((_, entries)) = property_groups
+                .iter_mut()
+                .find(|(group, _)| *group == title)
+            {
+                entries.push((key, property));
+            } else {
+                property_groups.push((title, vec![(key, property)]));
+            }
+        }
+        for (group, properties) in property_groups {
+            for (key, property) in properties {
+                self._add(
+                    &info.id,
+                    SettingsSearchTarget::Field { key: key.clone() },
+                    &property.title,
+                    &[&info.name, group],
+                    ""
+                );
+            }
+        }
+        // SettingsActions renders groups in first-appearance order, including the
+        // default "Actions" group, then preserves declaration order within each group.
+        let mut groups: Vec<(&str, Vec<_>)> = Vec::new();
+        for item in &configuration.contribution.actions {
+            let title = item.action.group.as_deref().unwrap_or("Actions");
+            if let Some((_, items)) = groups.iter_mut().find(|(group, _)| *group == title) {
+                items.push(item);
+            } else {
+                groups.push((title, vec![item]));
+            }
+        }
+        for (_, items) in groups {
+            for item in items {
+                self._add(
+                    &info.id,
+                    SettingsSearchTarget::Action {
+                        key: item.action.id.clone()
+                    },
+                    &item.action.title,
+                    &[
+                        &info.name,
+                        item.action.group.as_deref().unwrap_or("Actions")
+                    ],
+                    ""
+                );
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isCompositionKey } from "../ui/keyboard";
 import Button from "../components/ui/Button.svelte";
 import { onDestroy } from "svelte";
 import { settingsBridge } from "../bridge/settingsBridge";
@@ -127,7 +128,8 @@ function capture(event: KeyboardEvent): void
         setRecording(false);
     }
     else if (
-        !event.repeat && !event.isComposing && !["Control", "Alt", "Shift", "Meta", "AltGraph"].includes(event.key)
+        !event.repeat && !isCompositionKey(event)
+        && !["Control", "Alt", "Shift", "Meta", "AltGraph"].includes(event.key)
     )
     {
         error = "Use Ctrl, Alt, or Command/Windows with a key.";

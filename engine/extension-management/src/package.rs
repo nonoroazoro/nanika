@@ -722,11 +722,17 @@ pub fn validate_extension_contributions(
     protocol: ExtensionProtocol,
     contributions: &ExtensionContributions
 ) -> Result<(), ExtensionPackageError> {
-    if (!contributions.commands.is_empty() || !contributions.views.is_empty())
+    if (!contributions.commands.is_empty()
+        || !contributions.views.is_empty()
+        || contributions
+            .configuration
+            .as_ref()
+            .is_some_and(|configuration| !configuration.actions.is_empty()))
         && !matches!(protocol, ExtensionProtocol::Nanika { .. })
     {
         return Err(ExtensionPackageError::Manifest(
-            "command and view contributions require the Nanika protocol".to_owned()
+            "command, view and settings action contributions require the Nanika protocol"
+                .to_owned()
         ));
     }
     if contributions
@@ -782,7 +788,9 @@ fn validate_command_contributions(
                 "static command action id must be command.execute".to_owned()
             ));
         }
-        if !is_valid_contribution_id(&command.command) {
+        if !is_valid_contribution_id(&command.command)
+            || command.command == nanika_protocol::SETTINGS_ENTRY_ID
+        {
             return Err(ExtensionPackageError::Manifest(
                 "extension command id is invalid".to_owned()
             ));
@@ -820,7 +828,7 @@ fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), Extensi
         if let Some(icon) = &view.icon {
             _validate_icon_path(icon)?;
         }
-        if !is_valid_contribution_id(&view.id) {
+        if !is_valid_contribution_id(&view.id) || view.id == nanika_protocol::SETTINGS_ENTRY_ID {
             return Err(ExtensionPackageError::Manifest(
                 "extension view id is invalid".to_owned()
             ));

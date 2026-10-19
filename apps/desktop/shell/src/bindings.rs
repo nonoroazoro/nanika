@@ -16,11 +16,16 @@ fn export() {
     crate::PublishQueryRequest::export_all(&config).expect("export PublishQueryRequest");
     crate::InvokeCandidateRequest::export_all(&config).expect("export InvokeCandidateRequest");
     crate::ReadResultsRequest::export_all(&config).expect("export ReadResultsRequest");
+    crate::ConfigurationMenuRequest::export_all(&config).expect("export ConfigurationMenuRequest");
+    crate::ConfigurationMenuOperation::export_all(&config)
+        .expect("export ConfigurationMenuOperation");
+    nanika_host::ConfigurationMenu::export_all(&config).expect("export ConfigurationMenu");
     crate::ContextMenuRequest::export_all(&config).expect("export ContextMenuRequest");
     crate::ViewEventRequest::export_all(&config).expect("export ViewEventRequest");
     crate::ViewEventReceipt::export_all(&config).expect("export ViewEventReceipt");
     crate::SettingsSnapshot::export_all(&config).expect("export SettingsSnapshot");
     crate::SettingsEvent::export_all(&config).expect("export SettingsEvent");
+    crate::SettingsActionRequest::export_all(&config).expect("export SettingsActionRequest");
     crate::SaveSettingsRequest::export_all(&config).expect("export SaveSettingsRequest");
     crate::SettingsWindowAction::export_all(&config).expect("export SettingsWindowAction");
     crate::SettingsSearchEntry::export_all(&config).expect("export SettingsSearchEntry");
@@ -30,6 +35,13 @@ fn export() {
         .expect("export ConfigurationSaveOutcome");
     crate::SettingsWriteResult::<nanika_config::LauncherPreferences>::export_all(&config)
         .expect("export SettingsWriteResult");
+    std::fs::write(config.out_dir().join("limits.ts"), format!(
+        "// Generated from Rust boundary constants.\nexport const DETAIL_TEXT_BATCH_CHARS = {};\nexport const MAX_DETAIL_TEXT_CHUNKS = {};\nexport const MAX_CONFIGURATION_STRING_BYTES = {};\nexport const MAX_VIEW_SEARCH_CHARS = {};\n",
+        nanika_protocol::DETAIL_TEXT_BATCH_CHARS,
+        nanika_protocol::MAX_DETAIL_TEXT_CHUNKS,
+        nanika_host::MAX_CONFIGURATION_STRING_BYTES,
+        nanika_protocol::MAX_VIEW_SEARCH_CHARS
+    )).expect("export boundary limits");
     contracts::write(
         &config.out_dir().parent().unwrap().join("contracts.ts"),
         &config

@@ -5,7 +5,7 @@ use serde_json::Value;
 
 const MAX_PROPERTIES: usize = 64;
 const MAX_SCHEMA_DEPTH: usize = 4;
-const MAX_STRING_BYTES: u64 = 4_096;
+pub const MAX_CONFIGURATION_STRING_BYTES: u64 = 4_096;
 const MAX_ARRAY_ITEMS: u64 = 5_000;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const MAX_SAFE_INTEGER_MULTIPLE: u64 = MAX_SAFE_INTEGER as u64;
@@ -17,8 +17,6 @@ const MAX_SAFE_INTEGER_MULTIPLE: u64 = MAX_SAFE_INTEGER as u64;
 pub struct ConfigurationSchema {
     #[serde(rename = "type")]
     pub value_type: ConfigurationValueType,
-    #[serde(default)]
-    pub allow_unlimited: bool,
     #[serde(default)]
     pub format: Option<ConfigurationStringFormat>,
     #[serde(default)]
@@ -57,9 +55,6 @@ impl ConfigurationSchema {
     }
 
     fn validate_definition_at_depth(&self, depth: usize) -> Result<(), String> {
-        if self.allow_unlimited && self.value_type != ConfigurationValueType::Integer {
-            return Err("allowUnlimited is supported only for integer limits".to_owned());
-        }
         if depth > MAX_SCHEMA_DEPTH {
             return Err(format!(
                 "configuration schema exceeds depth {MAX_SCHEMA_DEPTH}"
@@ -67,20 +62,14 @@ impl ConfigurationSchema {
         }
         match self.value_type {
             ConfigurationValueType::Boolean => self.require_no_shape_constraints(),
-            ConfigurationValueType::Integer => {
+            ConfigurationValueType::Integer | ConfigurationValueType::IntegerLimit => {
                 self.require_no_collection_constraints()?;
                 if self.format.is_some() || self.max_length.is_some() {
                     return Err("integer configuration has string constraints".to_owned());
                 }
-                let minimum = self
-                    .minimum
-                    .ok_or_else(|| "integer configuration is missing minimum".to_owned())?;
-                let maximum = self
-                    .maximum
-                    .ok_or_else(|| "integer configuration is missing maximum".to_owned())?;
-                let multiple_of = self
-                    .multiple_of
-                    .ok_or_else(|| "integer configuration is missing multipleOf".to_owned())?;
+                let minimum = self.minimum.unwrap_or(-MAX_SAFE_INTEGER);
+                let maximum = self.maximum.unwrap_or(MAX_SAFE_INTEGER);
+                let multiple_of = self.multiple_of.unwrap_or(1);
                 if minimum > maximum || multiple_of == 0 {
                     return Err("integer configuration has invalid bounds".to_owned());
                 }
@@ -97,9 +86,11 @@ impl ConfigurationSchema {
             ConfigurationValueType::String => {
                 self.require_no_number_constraints()?;
                 self.require_no_collection_constraints()?;
-                if self.max_length.unwrap_or(MAX_STRING_BYTES) > MAX_STRING_BYTES {
+                if self.max_length.unwrap_or(MAX_CONFIGURATION_STRING_BYTES)
+                    > MAX_CONFIGURATION_STRING_BYTES
+                {
                     return Err(format!(
-                        "string configuration exceeds the {MAX_STRING_BYTES} byte limit"
+                        "string configuration exceeds the {MAX_CONFIGURATION_STRING_BYTES} byte limit"
                     ));
                 }
                 Ok(())
@@ -158,30 +149,24 @@ impl ConfigurationSchema {
     }
 
     fn validate_value_at_path(&self, value: &Value, path: &str) -> Result<(), String> {
-        if self.allow_unlimited
-            && self.value_type == ConfigurationValueType::Integer
-            && value.is_null()
-        {
-            return Ok(());
-        }
         match self.value_type {
             ConfigurationValueType::Boolean if value.is_boolean() => Ok(()),
-            ConfigurationValueType::Integer => {
-                let value = value
-                    .as_i64()
-                    .ok_or_else(|| format!("{path} must be an integer"))?;
+            ConfigurationValueType::Integer | ConfigurationValueType::IntegerLimit => {
+                let value = if self.value_type == ConfigurationValueType::IntegerLimit {
+                    serde_json::from_value::<nanika_protocol::IntegerLimit>(value.clone())
+                        .map_err(|error| format!("{path} must be an integer limit: {error}"))?
+                        .value
+                } else {
+                    value
+                        .as_i64()
+                        .ok_or_else(|| format!("{path} must be an integer"))?
+                };
                 if !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value) {
                     return Err(format!("{path} exceeds the safe integer limit"));
                 }
-                let minimum = self
-                    .minimum
-                    .ok_or_else(|| format!("{path} schema is missing minimum"))?;
-                let maximum = self
-                    .maximum
-                    .ok_or_else(|| format!("{path} schema is missing maximum"))?;
-                let multiple_of = self
-                    .multiple_of
-                    .ok_or_else(|| format!("{path} schema is missing multipleOf"))?;
+                let minimum = self.minimum.unwrap_or(-MAX_SAFE_INTEGER);
+                let maximum = self.maximum.unwrap_or(MAX_SAFE_INTEGER);
+                let multiple_of = self.multiple_of.unwrap_or(1);
                 if value < minimum || value > maximum {
                     return Err(format!("{path} is outside its bounds"));
                 }
@@ -194,7 +179,7 @@ impl ConfigurationSchema {
                 let value = value
                     .as_str()
                     .ok_or_else(|| format!("{path} must be a string"))?;
-                let maximum = self.max_length.unwrap_or(MAX_STRING_BYTES);
+                let maximum = self.max_length.unwrap_or(MAX_CONFIGURATION_STRING_BYTES);
                 if value.len() as u64 > maximum {
                     return Err(format!("{path} exceeds {maximum} bytes"));
                 }
@@ -283,6 +268,7 @@ impl ConfigurationSchema {
 pub enum ConfigurationValueType {
     Boolean,
     Integer,
+    IntegerLimit,
     String,
     Array,
     Object

@@ -53,6 +53,21 @@ impl SearchSession {
         }
     }
 
+    pub(crate) fn configuration_menu_route(
+        &self,
+        request: &crate::ConfigurationMenuRequest
+    ) -> Result<&crate::ExtensionViewSnapshot, String> {
+        self.authorize(request.session_id)?;
+        if self.navigation.busy {
+            return Err("An extension operation is still pending.".into());
+        }
+        let route = self.navigation.authorize_route(request.route_id)?;
+        if route.instance_id != request.instance_id {
+            return Err("The menu belongs to a retired extension instance.".into());
+        }
+        Ok(route)
+    }
+
     /// Resolve menu entries from the session-authorized target, excluding row activation.
     pub(crate) fn menu_actions(
         &self,

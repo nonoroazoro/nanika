@@ -50,7 +50,7 @@ fn added_fields_use_schema_metadata_and_stable_keys_not_saved_values() {
 }
 
 #[test]
-fn matching_uses_all_terms_across_title_and_breadcrumb_with_stable_ranking() {
+fn matching_uses_all_terms_across_title_and_breadcrumb_with_page_order() {
     let extension = _extension();
     let results =
         SettingsSearchCatalog::new(std::slice::from_ref(&extension)).search("applications folder");
@@ -201,9 +201,13 @@ fn descriptions_do_not_admit_unrelated_fuzzy_matches() {
 fn about_and_version_queries_reveal_the_host_page_without_extensions() {
     for query in ["about", "version", "nanika"] {
         let results = SettingsSearchCatalog::new(&[]).search(query);
-        assert_eq!(results[0].page_id, "about");
-        assert_eq!(results[0].title, "About");
-        assert_eq!(results[0].target, SettingsSearchTarget::Page);
+        // Other fuzzy matches may precede About in navigation order.
+        let about = results
+            .iter()
+            .find(|entry| entry.page_id == "about")
+            .unwrap();
+        assert_eq!(about.title, "About");
+        assert_eq!(about.target, SettingsSearchTarget::Page);
     }
 }
 
@@ -238,4 +242,133 @@ fn _extension() -> ExtensionLifecycle {
             effective: None
         })
     }
+}
+
+#[test]
+fn declared_settings_actions_are_searchable_by_their_group_and_title() {
+    let mut extension = _extension();
+    extension
+        .configuration
+        .as_mut()
+        .unwrap()
+        .contribution
+        .actions
+        .push(
+            serde_json::from_value(serde_json::json!({
+                "description": "Reset test data.",
+                "action": { "id": "reset", "title": "Reset data", "style": "destructive",
+                    "enabled": true, "allow_default_execution": false,
+                    "confirmation_title": "Reset now?", "group": "Danger zone" }
+            }))
+            .unwrap()
+        );
+    let results = SettingsSearchCatalog::new(&[extension]).search("danger reset");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].target,
+        SettingsSearchTarget::Action {
+            key: "reset".into()
+        }
+    );
+}
+
+#[test]
+fn matches_keep_visual_field_order_even_when_later_titles_match_better() {
+    let mut extension = _extension();
+    let properties = &mut extension
+        .configuration
+        .as_mut()
+        .unwrap()
+        .contribution
+        .properties;
+    properties.get_mut("folders").unwrap().title = "Extra folders".into();
+    properties.get_mut("other").unwrap().title = "Folders".into();
+    let results = SettingsSearchCatalog::new(&[extension]).search("folders");
+    assert_eq!(
+        results
+            .iter()
+            .map(|entry| entry.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Extra folders", "Folders"]
+    );
+}
+
+#[test]
+fn extension_matches_follow_fields_then_actions_in_rendered_group_order() {
+    let mut extension = _extension();
+    let configuration = extension.configuration.as_mut().unwrap();
+    // Deliberately disagree with both key order and match-score order.
+    configuration
+        .contribution
+        .properties
+        .get_mut("other")
+        .unwrap()
+        .order = 0;
+    for (id, group) in [
+        ("first", Some("Danger zone")),
+        ("second", None),
+        ("third", Some("Danger zone")),
+        ("fourth", Some("Actions"))
+    ] {
+        configuration.contribution.actions.push(
+            serde_json::from_value(serde_json::json!({
+                "description": "Test operation.",
+                "action": {"id": id, "title": "Applications", "style": "secondary",
+                    "enabled": true, "allow_default_execution": false, "group": group}
+            }))
+            .unwrap()
+        );
+    }
+    let results = SettingsSearchCatalog::new(&[extension]).search("applications");
+    assert_eq!(
+        results
+            .into_iter()
+            .map(|entry| entry.target)
+            .collect::<Vec<_>>(),
+        vec![
+            SettingsSearchTarget::Page,
+            SettingsSearchTarget::Enabled,
+            SettingsSearchTarget::Field {
+                key: "other".into()
+            },
+            SettingsSearchTarget::Field {
+                key: "folders".into()
+            },
+            SettingsSearchTarget::Action {
+                key: "first".into()
+            },
+            SettingsSearchTarget::Action {
+                key: "third".into()
+            },
+            SettingsSearchTarget::Action {
+                key: "second".into()
+            },
+            SettingsSearchTarget::Action {
+                key: "fourth".into()
+            }
+        ]
+    );
+}
+
+#[test]
+fn general_matches_follow_section_and_field_order() {
+    let results = SettingsSearchCatalog::new(&[]).search("general");
+    let mut expected = vec![SettingsSearchTarget::Page];
+    for section in crate::general_settings::sections() {
+        expected.push(SettingsSearchTarget::Section {
+            key: section.key.into()
+        });
+        for field in section.fields {
+            expected.push(SettingsSearchTarget::Field {
+                key: field.key.as_str().into()
+            });
+        }
+    }
+    assert_eq!(
+        results
+            .into_iter()
+            .map(|entry| entry.target)
+            .collect::<Vec<_>>(),
+        expected
+    );
 }

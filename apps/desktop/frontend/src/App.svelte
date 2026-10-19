@@ -1,4 +1,9 @@
 <script lang="ts">
+import { isCompositionKey } from "./ui/keyboard";
+import { confirmAction, confirmationPending } from "./ui/confirmation";
+import { configurationMenuOperation, configurationMenuSections } from "./logic/configuration-menu";
+import type { ConfigurationMenu } from "./generated/ConfigurationMenu";
+import ExtensionMenuIdentity from "./components/extensions/ExtensionMenuIdentity.svelte";
 import Button from "./components/ui/Button.svelte";
 import { RootSearchState } from "./logic/RootSearchState.svelte";
 import { onMount, tick } from "svelte";
@@ -9,6 +14,7 @@ import { orderedViewEvents } from "./bridge/orderedViewEvents";
 import { viewInputScheduler } from "./bridge/viewInputScheduler";
 import ContextMenu from "./components/ui/ContextMenu.svelte";
 import AppMenuBrand from "./components/launcher/AppMenuBrand.svelte";
+import type { ExtensionViewSnapshot } from "./generated/ExtensionViewSnapshot";
 import type { ContextMenuPresentation } from "./types/ContextMenuPresentation";
 import type { MenuTarget } from "./generated/MenuTarget";
 import ExtensionView from "./components/extensions/ExtensionView.svelte";
@@ -28,6 +34,7 @@ let invoking = $state(false);
 let contextMenu = $state.raw<ContextMenuPresentation | null>(null);
 let menuRequest = 0;
 let menuOpen = $state(false);
+let configurationPending = $state(false);
 let operationFailure = $state<string | null>(null);
 // A completed empty view survives pending queries just like a completed list.
 let hasCompletedSearch = $state(false);
@@ -165,7 +172,7 @@ function closeContextMenu(): void
     menuOpen = false;
 }
 
-async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<void>
+async function invokeContextMenu(actionId: string): Promise<void>
 {
     const current = contextMenu;
     closeContextMenu();
@@ -175,6 +182,28 @@ async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<
     }
     try
     {
+        const action = (current.sections?.flatMap(section => section.items) ?? current.actions)
+            .find(item => item.id === actionId);
+        let confirmed = false;
+        if (action?.confirmation_title)
+        {
+            const fallbackIcon = current.extensionIconUrl
+                ? { kind: "image" as const, url: current.extensionIconUrl }
+                : null;
+            confirmed = await confirmAction({
+                title: action.confirmation_title,
+                destructive: action.style === "destructive",
+                label: action.title,
+                message: action.confirmation_description ?? "",
+                icon: action.icon
+                    ? { kind: "symbol", name: action.icon }
+                    : fallbackIcon
+            });
+            if (!confirmed || disposed)
+            {
+                return;
+            }
+        }
         if (current.request)
         {
             const request = current.request;
@@ -212,9 +241,36 @@ async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<
                 }
             }
         }
+        else if (current.configurationMenu && actionId !== "settings")
+        {
+            if (configurationPending)
+            {
+                return;
+            }
+            const operation = configurationMenuOperation(current.configurationMenu.snapshot, actionId, confirmed);
+            if (!operation)
+            {
+                return;
+            }
+            operationFailure = null;
+            configurationPending = true;
+            try
+            {
+                await tauriBridge.invokeConfigurationMenu(current.configurationMenu.request, operation);
+            }
+            finally
+            {
+                configurationPending = false;
+                // A menu reopened during this write must fetch the committed state next time.
+                if (contextMenu?.configurationMenu?.request.routeId === current.configurationMenu.request.routeId)
+                {
+                    closeContextMenu();
+                }
+            }
+        }
         else if (actionId === "settings")
         {
-            await openSettings();
+            await openSettings(current.settingsExtensionId);
         }
     }
     catch (error)
@@ -223,13 +279,13 @@ async function invokeContextMenu(actionId: string, confirmed: boolean): Promise<
     }
 }
 
-async function openSettings(): Promise<void>
+async function openSettings(extensionId?: string): Promise<void>
 {
     closeContextMenu();
     operationFailure = null;
     try
     {
-        await tauriBridge.openSettings();
+        await tauriBridge.openSettings(extensionId);
     }
     catch (error)
     {
@@ -237,32 +293,69 @@ async function openSettings(): Promise<void>
     }
 }
 
-async function showAppMenu(trigger: HTMLButtonElement): Promise<void>
+async function showAppMenu(trigger: HTMLButtonElement, extension?: ExtensionViewSnapshot): Promise<void>
 {
-    const wasOpen = menuOpen && contextMenu?.request === null;
+    const wasOpen = menuOpen && contextMenu?.request === null
+        && contextMenu.settingsExtensionId === extension?.extensionId;
     closeContextMenu();
     if (wasOpen)
     {
         return;
     }
     const token = menuRequest;
+    const request = extension && application
+        ? { sessionId: application.sessionId, routeId: extension.routeId, instanceId: extension.instanceId }
+        : null;
+    let snapshot: ConfigurationMenu | null = null;
+    operationFailure = null;
+    try
+    {
+        if (request)
+        {
+            snapshot = await tauriBridge.readConfigurationMenu(request);
+        }
+    }
+    catch (error)
+    {
+        if (token === menuRequest)
+        {
+            operationFailure = String(error);
+        }
+        return;
+    }
     await tick();
     if (token !== menuRequest || !document.hasFocus())
     {
         return;
     }
+    if (
+        request
+        && (navigation.current?.routeId !== request.routeId || navigation.current.instanceId !== request.instanceId)
+    )
+    {
+        return;
+    }
+    const settings = {
+        id: "settings",
+        title: "Settings",
+        enabled: true,
+        allow_default_execution: false,
+        style: "secondary" as const,
+        group: null
+    };
     contextMenu = {
         request: null,
-        heading: "Nanika",
-        shortcuts: { settings: ["Ctrl", ","] },
-        actions: [{
-            id: "settings",
-            title: "Settings",
-            enabled: true,
-            allow_default_execution: false,
-            style: "secondary",
-            group: null
-        }],
+        settingsExtensionId: extension?.extensionId,
+        extensionIconUrl: extension?.extensionIconUrl,
+        heading: extension?.extensionName ?? "Nanika",
+        shortcuts: { settings: [application?.platform === "macos" ? "⌘" : "Ctrl", ","] },
+        actions: [settings],
+        ...(request && snapshot
+            ? {
+                configurationMenu: { request, snapshot },
+                sections: [...configurationMenuSections(snapshot, configurationPending), { items: [settings] }]
+            }
+            : {}),
         position: null,
         anchor: trigger
     };
@@ -329,7 +422,7 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
     {
         invoking = true;
         operationFailure = null;
-        await tauriBridge.invokeCandidate({
+        const request = {
             sessionId: application.sessionId,
             requestId: rootSearch.requestId,
             resultRevision: rootSearch.resultRevision,
@@ -337,7 +430,28 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
             entryId: result.entryId,
             actionId: result.actionId,
             confirmed
-        });
+        };
+        if (
+            confirmed
+            && !await confirmAction({
+                destructive: result.actionStyle === "destructive",
+                title: result.confirmationTitle!,
+                label: result.title,
+                message: result.confirmationDescription ?? "",
+                icon: result.icon
+            })
+        )
+        {
+            return;
+        }
+        if (
+            disposed || rootSearch.phase !== "ready" || rootSearch.requestId !== request.requestId
+            || rootSearch.resultRevision !== request.resultRevision || application?.sessionId !== request.sessionId
+        )
+        {
+            return;
+        }
+        await tauriBridge.invokeCandidate(request);
     }
     catch (error)
     {
@@ -411,6 +525,13 @@ function updateNavigation(next: NavigationSnapshot): void
     if (next.error)
     {
         console.error("View operation failed", next.error);
+    }
+    if (
+        next.current?.routeId !== navigation.current?.routeId
+        || next.current?.instanceId !== navigation.current?.instanceId
+    )
+    {
+        closeContextMenu();
     }
     navigation = next;
     viewInput.update(next);
@@ -508,8 +629,15 @@ function observeSearch(requestId: number, stage: SearchObservation["stage"]): vo
 
 function controlLauncherKeyboard(event: KeyboardEvent): void
 {
+    if (confirmationPending())
+    {
+        return;
+    }
+    const settingsModifier = application?.platform === "macos"
+        ? event.metaKey && !event.ctrlKey
+        : application?.platform === "windows" && event.ctrlKey && !event.metaKey;
     if (
-        !navigation.current && !event.isComposing && (event.metaKey || event.ctrlKey)
+        !isCompositionKey(event) && settingsModifier
         && event.key === "," && !event.altKey && !event.shiftKey
     )
     {
@@ -517,7 +645,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
         event.stopPropagation();
         if (!event.repeat)
         {
-            void openSettings();
+            void openSettings(navigation.current?.extensionId);
         }
         return;
     }
@@ -554,6 +682,8 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
                     onResume={resumeView}
+                    menuOpen={menuOpen && contextMenu?.settingsExtensionId === navigation.current.extensionId}
+                    onMenu={trigger => showAppMenu(trigger, navigation.current!)}
                     onContextMenu={(itemId, position) =>
                     {
                         const route = navigation.current;
@@ -612,6 +742,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 
 <ContextMenu
     actions={contextMenu?.actions ?? []}
+    sections={contextMenu?.sections}
     position={contextMenu?.position ?? null}
     anchor={contextMenu?.anchor}
     heading={contextMenu?.heading}
@@ -625,13 +756,15 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
             contextMenu = null;
         }
     }}
-    onInvoke={(id, confirmed) =>
+    onInvoke={id =>
     {
-        void invokeContextMenu(id, confirmed);
+        void invokeContextMenu(id);
     }}
 >
     {#snippet footer()}
-        {#if application}<AppMenuBrand version={application.version} />{/if}
+        {#if contextMenu?.settingsExtensionId}
+            <ExtensionMenuIdentity name={contextMenu.heading!} iconUrl={contextMenu.extensionIconUrl!} />
+        {:else if application}<AppMenuBrand version={application.version} />{/if}
     {/snippet}
 </ContextMenu>
 

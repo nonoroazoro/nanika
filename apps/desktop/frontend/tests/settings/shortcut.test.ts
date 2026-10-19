@@ -6,6 +6,7 @@ import { shortcutFromKey, shortcutKeys } from "../../src/settings/shortcut.ts";
 const key = {
     key: "k",
     code: "KeyK",
+    keyCode: 75,
     ctrlKey: true,
     altKey: false,
     shiftKey: false,
@@ -31,6 +32,7 @@ test("typing, modifiers, repeats, IME and unidentified events do not create shor
             { key: "Control" },
             { repeat: true },
             { isComposing: true },
+            { keyCode: 229 },
             { key: "Dead" },
             { code: "Unidentified" },
             { code: "" }

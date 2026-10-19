@@ -324,6 +324,8 @@ function _navigation(revision: number, text = "", routeId = 1, busy = false): Na
         error: null,
         dismissCount: 0,
         current: {
+            extensionName: "Test",
+            extensionIconUrl: "icon.png",
             routeId,
             instanceId: 1,
             extensionId: "nanika.test",

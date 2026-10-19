@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { configurationSchema } from "./schema";
+import { configurationSchema } from "../../fixtures/configuration";
 import { SettingsState } from "../../src/settings/SettingsState.svelte.ts";
 import { prepareSetting } from "../../src/settings/validation.ts";
 
@@ -237,7 +237,6 @@ const integer: ConfigurationSchema = configurationSchema({
     minimum: 1,
     maximum: 5000,
     multipleOf: 1,
-    allowUnlimited: true,
     properties: {},
     required: []
 });
@@ -259,7 +258,11 @@ test("equivalent numeric drafts never enter the operation queue, including neste
     const cases: Array<{ draft: JsonValue; saved: JsonValue; schema: ConfigurationSchema; }> = [
         { schema: integer, saved: 50, draft: "50" },
         { schema: integer, saved: 50, draft: "0050" },
-        { schema: integer, saved: null, draft: null },
+        {
+            schema: { ...integer, type: "integerLimit" },
+            saved: { unlimited: true, value: 50 },
+            draft: { unlimited: true, value: "0050" }
+        },
         { schema: nested, saved: [{ limit: 50, name: "001" }], draft: [{ limit: "0050", name: "001" }] }
     ];
     for (const { schema, saved, draft } of cases)

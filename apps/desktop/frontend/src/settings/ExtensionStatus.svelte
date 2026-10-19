@@ -49,4 +49,6 @@ p { display: flex; align-items: center; gap: 0.375rem; margin: var(--space-1) 0 
 .dot { flex: 0 0 var(--status-dot-size); width: var(--status-dot-size); height: var(--status-dot-size); border: 1px solid transparent; border-radius: 50%; background: var(--status-inactive); }
 p[data-state="ready"] .dot, p[data-state="dormant"] .dot { background: var(--status-available); }
 p[data-state="failed"] .dot { background: var(--status-failed); }
+/* The status label remains authoritative while an inactive window neutralizes its dot. */
+:global(:root[data-ui-active="false"]) p .dot { background: var(--status-inactive); }
 </style>

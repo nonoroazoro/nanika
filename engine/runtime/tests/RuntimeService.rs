@@ -1695,3 +1695,104 @@ fn progress_only_publication_preserves_runtime_action_authority() {
     ));
     fixture.stop(runtime);
 }
+
+#[test]
+fn settings_actions_validate_declaration_confirmation_and_instance_and_share_admission() {
+    use nanika_protocol::ActionInvocation::{Confirmed, Default as DefaultInvocation, Explicit};
+    let mut fixture = Fixture::new();
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["contributes"]["configuration"]["actions"] = serde_json::json!([{
+        "description": "Delete fixture data.",
+        "action": {"id": "fixture.reset", "title": "Reset", "style": "destructive",
+            "enabled": true, "allow_default_execution": false, "confirmation_title": "Reset now?"}
+    }]);
+    manifest["contributes"]["configuration"]["quickMenu"] = serde_json::json!([
+        {"title": "Display", "items": [{"kind": "toggle", "key": "fixture.enabled"}]},
+        {"title": "Danger zone", "items": [{"kind": "action", "id": "fixture.reset"}]}
+    ]);
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let menu = runtime.configuration_menu(HEALTHY, instance).unwrap();
+    assert_eq!(menu.groups.len(), 2);
+    assert!(runtime.configuration_menu(HEALTHY, instance + 1).is_err());
+    assert!(
+        runtime
+            .save_menu_configuration(
+                HEALTHY,
+                instance + 1,
+                menu.revision,
+                "fixture.enabled".into(),
+                false,
+                std::sync::Arc::new(|_| {})
+            )
+            .is_err()
+    );
+    let outcome = runtime
+        .save_menu_configuration(
+            HEALTHY,
+            instance,
+            menu.revision,
+            "fixture.enabled".into(),
+            false,
+            std::sync::Arc::new(|_| {})
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.saved["fixture.enabled"], false);
+    assert!(matches!(
+        runtime
+            .configuration_menu(HEALTHY, instance)
+            .unwrap()
+            .groups[0]
+            .items[0],
+        nanika_host::ConfigurationMenuControl::Toggle { checked: false, .. }
+    ));
+    assert!(
+        runtime
+            .save_menu_configuration(
+                HEALTHY,
+                instance,
+                menu.revision,
+                "fixture.enabled".into(),
+                true,
+                std::sync::Arc::new(|_| {})
+            )
+            .is_err()
+    );
+    for (id, owner, invocation) in [
+        ("fixture.reset", instance, Explicit),
+        ("fixture.reset", instance, DefaultInvocation),
+        ("undeclared", instance, Confirmed),
+        ("fixture.reset", instance + 1, Confirmed)
+    ] {
+        assert!(
+            runtime
+                .invoke_configuration_menu_action(HEALTHY, owner, id, invocation)
+                .is_err()
+        );
+    }
+    let invoking = format!("invoke-{HEALTHY}-1");
+    fixture.block(&invoking);
+    let worker = std::sync::Arc::clone(&runtime);
+    let task = std::thread::spawn(move || {
+        worker.invoke_configuration_menu_action(HEALTHY, instance, "fixture.reset", Confirmed)
+    });
+    wait_until(|| fixture.entered(&invoking));
+    assert!(
+        runtime
+            .invoke_settings_action(HEALTHY, instance, "fixture.reset", Confirmed)
+            .is_err()
+    );
+    assert!(runtime.set_extension_enabled(HEALTHY, false).is_err());
+    fixture.release(&invoking);
+    task.join().unwrap().unwrap();
+    runtime
+        .invoke_settings_action(HEALTHY, instance, "fixture.reset", Confirmed)
+        .unwrap();
+    fixture.stop(runtime);
+}

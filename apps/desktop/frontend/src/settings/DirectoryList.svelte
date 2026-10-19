@@ -15,7 +15,7 @@ const { paths, maximum, label, titleId, description, onPick, onChange }: {
     onPick: () => Promise<string | null>;
     onChange: (paths: string[]) => void;
 } = $props();
-let picking = $state(false);
+let picking = false;
 let error = $state<string | null>(null);
 let active = true;
 onDestroy(() =>
@@ -66,8 +66,8 @@ async function add(): Promise<void>
         </div>
         <Button
             variant="outline"
-            class="add-folder"
-            disabled={picking || paths.length >= maximum}
+            size="action"
+            disabled={paths.length >= maximum}
             onclick={() =>
             {
                 void add();
@@ -86,7 +86,6 @@ async function add(): Promise<void>
                             class="remove-folder"
                             aria-label={`Remove folder ${path}`}
                             title="Remove folder"
-                            disabled={picking}
                             onclick={() => onChange(paths.filter((_, position) => position !== index))}
                         >
                             <CircleMinusIcon size={18} strokeWidth={1.6} />
@@ -104,7 +103,6 @@ async function add(): Promise<void>
 .copy { min-width: 0; }
 h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
 .copy p { margin: 4px 0 0; color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
-.directories :global(.add-folder) { flex-shrink: 0; }
 .directory-items { display: grid; gap: var(--space-2); border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
 .directory { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .directory > :global(svg) { flex-shrink: 0; color: var(--text-secondary); }

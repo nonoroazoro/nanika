@@ -76,34 +76,17 @@ impl ExtensionConfigurationRegistry {
         key: String,
         value: Value
     ) -> Result<ConfigurationOperation, String> {
-        let mut registered = self
-            .registered
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let reservation = self.operations.reserve(extension_id)?;
-        let current = registered.get_mut(extension_id).ok_or_else(|| {
-            format!("extension does not contribute configuration: {extension_id}")
-        })?;
-        let visible = current
-            .contribution
-            .for_platform(nanika_platform::target_platform());
-        let property = visible
-            .properties
-            .get(&key)
-            .ok_or_else(|| format!("unknown or unavailable configuration property: {key}"))?;
-        let persistence = property.persistence;
-        let mut values = Self::_values(current);
-        values.insert(key.clone(), value.clone());
-        current.contribution.validate_values(&values)?;
-        Ok(ConfigurationOperation {
-            _reservation: reservation,
-            registry: Arc::clone(self),
-            extension_id: extension_id.to_owned(),
-            key,
-            value,
-            persistence,
-            configuration: ExtensionConfiguration::new(values)
-        })
+        self._prepare(extension_id, key, value, None)
+    }
+
+    pub(crate) fn prepare_menu(
+        self: &Arc<Self>,
+        extension_id: &str,
+        key: String,
+        value: bool,
+        revision: u64
+    ) -> Result<ConfigurationOperation, String> {
+        self._prepare(extension_id, key, Value::Bool(value), Some(revision))
     }
 
     pub(crate) fn persist(
@@ -310,6 +293,53 @@ impl ExtensionConfigurationRegistry {
             }
         }
         values
+    }
+
+    fn _prepare(
+        self: &Arc<Self>,
+        extension_id: &str,
+        key: String,
+        value: Value,
+        menu_revision: Option<u64>
+    ) -> Result<ConfigurationOperation, String> {
+        let mut registered = self
+            .registered
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let reservation = self.operations.reserve(extension_id)?;
+        let current = registered.get_mut(extension_id).ok_or_else(|| {
+            format!("extension does not contribute configuration: {extension_id}")
+        })?;
+        let visible = current
+            .contribution
+            .for_platform(nanika_platform::target_platform());
+        if let Some(revision) = menu_revision {
+            if revision != current.revision {
+                return Err("Configuration changed. Reopen the menu.".into());
+            }
+            if !visible.exposes_menu_item(
+                &nanika_extension_package::ConfigurationMenuItem::Toggle { key: key.clone() }
+            ) {
+                return Err("This setting is not exposed in the quick menu.".into());
+            }
+        }
+        let property = visible
+            .properties
+            .get(&key)
+            .ok_or_else(|| format!("unknown or unavailable configuration property: {key}"))?;
+        let persistence = property.persistence;
+        let mut values = Self::_values(current);
+        values.insert(key.clone(), value.clone());
+        current.contribution.validate_values(&values)?;
+        Ok(ConfigurationOperation {
+            _reservation: reservation,
+            registry: Arc::clone(self),
+            extension_id: extension_id.to_owned(),
+            key,
+            value,
+            persistence,
+            configuration: ExtensionConfiguration::new(values)
+        })
     }
 
     fn _values(current: &RegisteredConfiguration) -> BTreeMap<String, Value> {

@@ -5,7 +5,8 @@ import Button from "./Button.svelte";
 import type { TruncatedButtonProps } from "../../types/TruncatedButtonProps";
 import { uiActivity } from "../../ui/activity";
 
-let { label, icon, ref = $bindable(), variant, disabled = false, ...attributes }: TruncatedButtonProps = $props();
+let { label, icon, ref = $bindable(), variant, disabled = false, pressFeedback, ...attributes }: TruncatedButtonProps =
+    $props();
 let text = $state<HTMLSpanElement>();
 let open = $state(false);
 const active = $derived($uiActivity.visible && $uiActivity.focused);
@@ -31,7 +32,7 @@ function _setOpen(next: boolean): void
 <Tooltip.Root bind:open={() => open && active, _setOpen} disabled={!active}>
     <Tooltip.Trigger {...triggerProps}>
         {#snippet child({ props })}
-            <Button {...props} {variant} bind:ref>
+            <Button {...props} {variant} {pressFeedback} bind:ref>
                 {@render icon?.()}
                 <span class="truncated-label" bind:this={text}>{label}</span>
             </Button>

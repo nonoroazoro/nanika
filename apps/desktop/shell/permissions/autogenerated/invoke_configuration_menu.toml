@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invoke-configuration-menu"
+description = "Enables the invoke_configuration_menu command without any pre-configured scope."
+commands.allow = ["invoke_configuration_menu"]
+
+[[permission]]
+identifier = "deny-invoke-configuration-menu"
+description = "Denies the invoke_configuration_menu command without any pre-configured scope."
+commands.deny = ["invoke_configuration_menu"]

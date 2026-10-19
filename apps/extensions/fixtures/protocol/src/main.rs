@@ -432,6 +432,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                         }
                     }
+                } else if entry_id == nanika_protocol::SETTINGS_ENTRY_ID
+                    && action_id == "fixture.reset"
+                {
+                    Message::Result {
+                        request_id,
+                        generation,
+                        effect: nanika_protocol::NavigationEffect::None
+                    }
                 } else if entry_id == "fixture.entry"
                     && (action_id == "fixture.run"
                         || action_id == nanika_protocol::COMMAND_EXECUTE_ACTION_ID)

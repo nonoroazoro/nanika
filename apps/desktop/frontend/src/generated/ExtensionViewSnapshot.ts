@@ -4,6 +4,8 @@ import type { View } from "./View";
 export type ExtensionViewSnapshot = {
     routeId: number;
     extensionId: string;
+    extensionName: string;
+    extensionIconUrl: string;
     instanceId: number;
     generation: number;
     viewId: string;

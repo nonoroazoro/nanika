@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isCompositionKey } from "../ui/keyboard";
 import { Tooltip } from "bits-ui";
 import TruncatedButton from "../components/ui/TruncatedButton.svelte";
 import Button from "../components/ui/Button.svelte";
@@ -35,9 +36,7 @@ let navigation = $state<HTMLElement | null>(null);
 let selectedButton = $state<HTMLElement | null>(null);
 // Keep navigation until the first completed search, just as later queries retain their results.
 const showingResults = $derived(search.query.trim().length > 0 && (search.hasCompletedSearch || search.error !== null));
-const groups = $derived(
-    groupSearchResults(search.results, ["general", ...extensions.map(extension => extension.id), "about"])
-);
+const groups = $derived(groupSearchResults(search.results));
 
 // Resolve the selected DOM destination after the keyed navigation has been rendered.
 $effect(() =>
@@ -83,7 +82,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
         }}
         onkeydown={event =>
         {
-            if (!event.isComposing && event.key === "ArrowDown")
+            if (!isCompositionKey(event) && event.key === "ArrowDown")
             {
                 event.preventDefault();
                 navigation?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -128,6 +127,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                         <section class="result-group" aria-label={group.title}>
                             <h2>
                                 <TruncatedButton
+                                    pressFeedback={false}
                                     label={group.title}
                                     class={{ active: revealed === settingsAnchor(group.pageId, { kind: "page" }) }}
                                     aria-disabled={search.busy || undefined}
@@ -144,6 +144,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                             </h2>
                             {#each group.entries as entry (settingsAnchor(entry.pageId, entry.target))}
                                 <TruncatedButton
+                                    pressFeedback={false}
                                     label={entry.title}
                                     class={["result-field", { active: _resultSelected(entry) }]}
                                     aria-current={_resultSelected(entry) ? "location" : undefined}
@@ -162,6 +163,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                 {/if}
             {:else}
                 <Button
+                    pressFeedback={false}
                     class={{ active: selection === "general" }}
                     aria-current={selection === "general" ? "page" : undefined}
                     onclick={() => onNavigate("general", { kind: "page" })}
@@ -171,6 +173,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                 <h2 class="nav-heading">Extensions</h2>
                 {#each extensions as extension (extension.id)}
                     <TruncatedButton
+                        pressFeedback={false}
                         label={extension.name}
                         class={{ active: selection === extension.id }}
                         aria-current={selection === extension.id ? "page" : undefined}
@@ -181,6 +184,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                 {/each}
                 <div class="nav-group-start">
                     <Button
+                        pressFeedback={false}
                         class={{ active: selection === "about" }}
                         aria-current={selection === "about" ? "page" : undefined}
                         onclick={() => onNavigate("about", { kind: "page" })}

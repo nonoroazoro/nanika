@@ -1,4 +1,4 @@
-use nanika_protocol::ExtensionConfiguration;
+use nanika_protocol::{ExtensionConfiguration, IntegerLimit};
 
 const MAX_ENTRIES_KEY: &str = "clipboard.maxEntries";
 const MAX_AGE_DAYS_KEY: &str = "clipboard.maxAgeDays";
@@ -19,8 +19,13 @@ impl ClipboardConfig {
     pub fn from_configuration(configuration: &ExtensionConfiguration) -> Result<Self, String> {
         let values = configuration.values();
         let config = Self {
-            max_entries: unsigned_integer(values, MAX_ENTRIES_KEY)?,
-            max_age_days: unsigned_integer(values, MAX_AGE_DAYS_KEY)?
+            max_entries: _integer_limit(values, MAX_ENTRIES_KEY, MIN_MAX_ENTRIES, MAX_MAX_ENTRIES)?,
+            max_age_days: _integer_limit(
+                values,
+                MAX_AGE_DAYS_KEY,
+                MIN_MAX_AGE_DAYS,
+                MAX_MAX_AGE_DAYS
+            )?
         };
         config.validate()?;
         Ok(config)
@@ -52,17 +57,23 @@ impl ClipboardConfig {
     }
 }
 
-fn unsigned_integer(
+fn _integer_limit(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
-    key: &str
+    key: &str,
+    minimum: u32,
+    maximum: u32
 ) -> Result<Option<u32>, String> {
-    if values.get(key).is_some_and(serde_json::Value::is_null) {
-        return Ok(None);
-    }
-    values
-        .get(key)
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|value| u32::try_from(value).ok())
-        .map(Some)
-        .ok_or_else(|| format!("clipboard configuration is missing integer {key}"))
+    let limit: IntegerLimit = serde_json::from_value(
+        values
+            .get(key)
+            .cloned()
+            .ok_or_else(|| format!("missing integer limit {key}"))?
+    )
+    .map_err(|error| format!("invalid integer limit {key}: {error}"))?;
+    // Validate the remembered value even when the effective limit is unlimited.
+    let value = u32::try_from(limit.value)
+        .ok()
+        .filter(|value| (minimum..=maximum).contains(value))
+        .ok_or_else(|| format!("{key} must be between {minimum} and {maximum}"))?;
+    Ok(limit.effective().map(|_| value))
 }

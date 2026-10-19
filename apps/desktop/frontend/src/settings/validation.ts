@@ -1,4 +1,4 @@
-import { integerError, normalizeSetting } from "./integerValue";
+import { integerError, integerLimitDraft, normalizeSetting } from "./integerValue";
 import { stringError } from "./stringValue";
 
 import type { SettingsEditResult } from "./SettingsEditResult";
@@ -46,6 +46,11 @@ export function prepareSetting(
 
 function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
 {
+    if (schema.type === "integerLimit")
+    {
+        const limit = integerLimitDraft(value);
+        return limit ? integerError(schema, limit.value) : "Choose a finite or unlimited integer limit.";
+    }
     if (schema.type === "integer")
     {
         return integerError(schema, value);

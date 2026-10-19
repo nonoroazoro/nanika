@@ -7,9 +7,13 @@ export type Action = {
     title: string;
     icon?: ActionIcon;
     /**
-     * Replacement label that requires a second click before invoking a destructive action.
+     * Question displayed in a confirmation dialog before explicit invocation.
      */
     confirmation_title?: string;
+    /**
+     * Concrete consequences of accepting the confirmation.
+     */
+    confirmation_description?: string;
     style: ActionStyle;
     enabled: boolean;
     /**

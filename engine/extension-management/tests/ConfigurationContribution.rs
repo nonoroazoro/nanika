@@ -47,3 +47,79 @@ fn unknown_platforms_are_rejected_during_deserialization() {
     }));
     assert!(contribution.is_err());
 }
+
+#[test]
+fn settings_actions_are_explicit_operations_outside_configuration_values() {
+    let mut contribution: ConfigurationContribution = serde_json::from_value(json!({
+        "title": "Operations", "properties": {},
+        "actions": [{
+            "description": "Delete stored data.",
+            "action": { "id": "reset", "title": "Reset", "style": "destructive",
+                "enabled": true, "allow_default_execution": false,
+                "confirmation_title": "Reset all data?", "group": "Danger zone" }
+        }]
+    }))
+    .unwrap();
+    contribution.validate().unwrap();
+    assert!(contribution.defaults().is_empty());
+    contribution.validate_values(&Default::default()).unwrap();
+    let valid = contribution.actions[0].clone();
+    contribution.actions[0].action.confirmation_title = None;
+    assert!(contribution.validate().is_err());
+    contribution.actions[0] = valid.clone();
+    contribution.actions[0].action.allow_default_execution = true;
+    assert!(contribution.validate().is_err());
+    contribution.actions[0] = valid.clone();
+    contribution.actions.push(valid);
+    assert!(contribution.validate().is_err());
+}
+
+#[test]
+fn quick_menu_requires_bounded_unique_references_to_boolean_settings_or_actions() {
+    let base = json!({
+        "title": "Fixture", "properties": {
+            "enabled": {"type": "boolean", "title": "Enabled", "persistence": "afterApply", "default": true},
+            "limit": {"type": "integer", "title": "Limit", "persistence": "beforeApply", "default": 1, "minimum": 1, "maximum": 10, "multipleOf": 1}
+        },
+        "actions": [{"description": "Delete data.", "action": {"id": "clear", "title": "Clear", "style": "destructive", "enabled": true, "allow_default_execution": false, "confirmation_title": "Clear all?"}}],
+        "quickMenu": [
+            {"title": "Appearance", "items": [{"kind": "toggle", "key": "enabled"}]},
+            {"title": "Danger zone", "items": [{"kind": "action", "id": "clear"}]}
+        ]
+    });
+    serde_json::from_value::<ConfigurationContribution>(base.clone())
+        .unwrap()
+        .validate()
+        .unwrap();
+    for items in [
+        json!([]),
+        json!([{"kind": "toggle", "key": "missing"}]),
+        json!([{"kind": "toggle", "key": "limit"}]),
+        json!([{"kind": "action", "id": "missing"}]),
+        json!([{"kind": "toggle", "key": "enabled"}, {"kind": "toggle", "key": "enabled"}])
+    ] {
+        let mut candidate = base.clone();
+        candidate["quickMenu"][0]["items"] = items;
+        assert!(
+            serde_json::from_value::<ConfigurationContribution>(candidate)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+    }
+    let mut oversized = base.clone();
+    oversized["quickMenu"] = json!(vec![base["quickMenu"][0].clone(); 9]);
+    assert!(
+        serde_json::from_value::<ConfigurationContribution>(oversized)
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    let mut platform = base;
+    platform["properties"]["enabled"]["platforms"] = json!(["windows"]);
+    let contribution: ConfigurationContribution = serde_json::from_value(platform).unwrap();
+    let visible = contribution.for_platform(TargetPlatform::Macos);
+    visible.validate().unwrap();
+    assert_eq!(visible.quick_menu.len(), 1);
+    assert_eq!(visible.quick_menu[0].title, "Danger zone");
+}

@@ -199,3 +199,201 @@ fn apply_first_cannot_save_a_deferred_operation() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn menu_changes_share_settings_admission_and_reject_stale_values_and_unexposed_keys() {
+    let (registry, _, root) = fixture("quick-menu", "afterApply");
+    let revision = registry.snapshots()[0].revision;
+    assert!(
+        registry
+            .prepare_menu("test.extension", "other".into(), false, revision)
+            .is_err()
+    );
+    let operation = registry
+        .prepare_menu("test.extension", "enabled".into(), true, revision)
+        .unwrap();
+    assert!(
+        registry
+            .prepare("test.extension", "other".into(), false.into())
+            .is_err()
+    );
+    assert!(
+        registry
+            .prepare_menu("test.extension", "enabled".into(), true, revision)
+            .is_err()
+    );
+    let outcome = operation.run(|_, live| {
+        assert!(live);
+        Ok(ConfigurationApplication::Applied)
+    });
+    assert_eq!(outcome.saved["enabled"], true);
+    assert!(
+        registry
+            .prepare_menu("test.extension", "enabled".into(), false, revision)
+            .is_err()
+    );
+    let outcome = registry
+        .prepare_menu("test.extension", "enabled".into(), false, outcome.revision)
+        .unwrap()
+        .run(|_, _| Err("Application failed".into()));
+    assert!(outcome.error.is_some());
+    assert_eq!(
+        outcome.saved["enabled"], true,
+        "failed afterApply writes preserve saved intent"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn integer_limits_preserve_values_across_reload() {
+    let root = std::env::temp_dir().join(format!("nanika-integer-limit-{}", std::process::id()));
+    let store = ConfigStore::open(root.join("machine"), root.join("configuration")).unwrap();
+    let contribution: ConfigurationContribution = serde_json::from_value(serde_json::json!({
+        "title":"Limits", "properties": {
+            "count":{"type":"integerLimit","title":"Count","default":{"unlimited":false,"value":50},"minimum":1,"maximum":5000,"persistence":"beforeApply"},
+            "age":{"type":"integerLimit","title":"Age","default":{"unlimited":false,"value":7},"persistence":"beforeApply"}
+        }
+    })).unwrap();
+    let path = store.extension_configuration_file("test.limits");
+    store
+        .save(
+            &path,
+            &ExtensionConfigurationFile::new(std::collections::BTreeMap::from([
+                (
+                    "count".into(),
+                    serde_json::json!({"unlimited":false,"value":200})
+                ),
+                (
+                    "age".into(),
+                    serde_json::json!({"unlimited":true,"value":7})
+                )
+            ]))
+        )
+        .unwrap();
+    let registry = Arc::new(ExtensionConfigurationRegistry::new(store.clone()));
+    let values = registry
+        .register("test.limits", Some(&contribution))
+        .unwrap();
+    assert_eq!(
+        values.values()["count"],
+        serde_json::json!({"unlimited":false,"value":200})
+    );
+    assert_eq!(
+        values.values()["age"],
+        serde_json::json!({"unlimited":true,"value":7})
+    );
+    let stored = store.load::<ExtensionConfigurationFile>(&path).unwrap();
+    assert_eq!(&stored.values, values.values());
+
+    let outcome = registry
+        .prepare(
+            "test.limits",
+            "count".into(),
+            serde_json::json!({"unlimited":true,"value":200})
+        )
+        .unwrap()
+        .run(|_, _| Ok(ConfigurationApplication::Applied));
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    let reloaded = Arc::new(ExtensionConfigurationRegistry::new(store.clone()));
+    let values = reloaded
+        .register("test.limits", Some(&contribution))
+        .unwrap();
+    assert_eq!(
+        values.values()["count"],
+        serde_json::json!({"unlimited":true,"value":200})
+    );
+    let outcome = reloaded
+        .prepare(
+            "test.limits",
+            "count".into(),
+            serde_json::json!({"unlimited":false,"value":200})
+        )
+        .unwrap()
+        .run(|_, _| Ok(ConfigurationApplication::Applied));
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert_eq!(
+        store
+            .load::<ExtensionConfigurationFile>(&path)
+            .unwrap()
+            .values["count"],
+        serde_json::json!({"unlimited":false,"value":200})
+    );
+    assert!(
+        reloaded
+            .prepare("test.limits", "count".into(), serde_json::Value::Null)
+            .is_err()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn invalid_integer_limits_use_defaults_without_modifying_the_file() {
+    let root = std::env::temp_dir().join(format!("nanika-invalid-limit-{}", std::process::id()));
+    let store = ConfigStore::open(root.join("machine"), root.join("configuration")).unwrap();
+    let contribution: ConfigurationContribution = serde_json::from_value(serde_json::json!({
+        "title":"Limits", "properties": {
+            "count":{"type":"integerLimit","title":"Count","default":{"unlimited":false,"value":50},"minimum":1,"persistence":"beforeApply"}
+        }
+    })).unwrap();
+    let path = store.extension_configuration_file("test.limits");
+    for invalid in [
+        serde_json::json!(200),
+        serde_json::Value::Null,
+        serde_json::json!({"unlimited":false,"value":0}),
+        serde_json::json!({"unlimited":true}),
+        serde_json::json!({"unlimited":true,"value":50,"extra":true})
+    ] {
+        store
+            .save(
+                &path,
+                &ExtensionConfigurationFile::new(std::collections::BTreeMap::from([(
+                    "count".into(),
+                    invalid.clone()
+                )]))
+            )
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let registry = ExtensionConfigurationRegistry::new(store.clone());
+        let values = registry
+            .register("test.limits", Some(&contribution))
+            .unwrap();
+        assert_eq!(
+            values.values()["count"],
+            contribution.properties["count"].default
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn configuration_recovery_preserves_valid_options_and_saves_only_on_edit() {
+    let (initial, store, root) = fixture("option-defaults", "beforeApply");
+    let contribution = initial.snapshots()[0].contribution.clone();
+    let path = store.extension_configuration_file("test.extension");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for text in [
+        r#"{"formatVersion":1,"values":{"enabled":"wrong","other":false}}"#,
+        r#"{"formatVersion":1,"values":{"enabled":"wrong","other":false,"unknown":true}}"#,
+        "{ malformed"
+    ] {
+        std::fs::write(&path, text).unwrap();
+        let registry = Arc::new(ExtensionConfigurationRegistry::new(store.clone()));
+        let values = registry
+            .register("test.extension", Some(&contribution))
+            .unwrap();
+        assert_eq!(values.values()["enabled"], false);
+        assert_eq!(values.values()["other"], text == "{ malformed");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        let outcome = registry
+            .prepare("test.extension", "enabled".into(), true.into())
+            .unwrap()
+            .run(|_, _| Ok(ConfigurationApplication::Applied));
+        assert!(outcome.error.is_none(), "{:?}", outcome.error);
+        let saved = store.load::<ExtensionConfigurationFile>(&path).unwrap();
+        contribution.validate_values(&saved.values).unwrap();
+        assert_eq!(saved.values["enabled"], true);
+        assert_eq!(saved.values["other"], text == "{ malformed");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

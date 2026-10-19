@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-invoke-settings-action"
+description = "Enables the invoke_settings_action command without any pre-configured scope."
+commands.allow = ["invoke_settings_action"]
+
+[[permission]]
+identifier = "deny-invoke-settings-action"
+description = "Denies the invoke_settings_action command without any pre-configured scope."
+commands.deny = ["invoke_settings_action"]

@@ -49,6 +49,8 @@ test("wire omissions retain results and navigation identity; null explicitly ret
     assert.ok(channel);
     const initial = _update();
     initial.navigation.current = {
+        extensionName: "Test",
+        extensionIconUrl: "icon.png",
         routeId: 1,
         extensionId: "test.extension",
         instanceId: 1,
@@ -125,3 +127,13 @@ function _update(): SearchUpdate
         pendingExtensions: []
     };
 }
+
+test("configuration menu bridge preserves route authority and typed operation", async () =>
+{
+    const request = { sessionId: 7, routeId: 11, instanceId: 3 };
+    await tauriBridge.readConfigurationMenu(request);
+    expect(harness.invoke).toHaveBeenLastCalledWith("read_configuration_menu", { request });
+    const operation = { kind: "set" as const, key: "example.colors", value: false, revision: 5 };
+    await tauriBridge.invokeConfigurationMenu(request, operation);
+    expect(harness.invoke).toHaveBeenLastCalledWith("invoke_configuration_menu", { request, operation });
+});

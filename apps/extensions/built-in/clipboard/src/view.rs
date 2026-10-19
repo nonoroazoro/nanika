@@ -6,7 +6,7 @@ use nanika_protocol::{
     ViewMetadata
 };
 
-use crate::{CLEAR_ACTION_ID, COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
+use crate::{COPY_ACTION_ID, ClipboardEntry, ClipboardViewState};
 
 pub const FILE_COLLECTION_PREVIEW_LIMIT: usize = 3;
 
@@ -81,7 +81,7 @@ fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
             "image" => ViewItemIcon::Image,
             _ => return Err("invalid clipboard content kind".into())
         }),
-        actions: vec![clear_action(), copy_action()]
+        actions: vec![copy_action()]
     })
 }
 
@@ -149,22 +149,10 @@ fn copy_action() -> Action {
         icon: None,
         id: COPY_ACTION_ID.to_owned(),
         title: "Copy to Clipboard".to_owned(),
+        confirmation_description: None,
         confirmation_title: None,
         allow_default_execution: true,
         style: ActionStyle::Primary,
-        enabled: true,
-        group: None
-    }
-}
-
-fn clear_action() -> Action {
-    Action {
-        icon: None,
-        id: CLEAR_ACTION_ID.to_owned(),
-        title: "Clear history".to_owned(),
-        confirmation_title: Some("Clear now?".to_owned()),
-        allow_default_execution: false,
-        style: ActionStyle::Destructive,
         enabled: true,
         group: None
     }

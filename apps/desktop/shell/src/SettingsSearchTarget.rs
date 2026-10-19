@@ -6,5 +6,6 @@ pub(crate) enum SettingsSearchTarget {
     Page,
     Section { key: String },
     Field { key: String },
+    Action { key: String },
     Enabled
 }

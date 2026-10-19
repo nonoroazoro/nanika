@@ -11,10 +11,10 @@ const feedback = styleMotion({
 });
 
 /**
- * Only real pointer movement engages the brand. Menu dismissal can expose the
+ * Only real pointer movement engages the menu icon. Menu dismissal can expose the
  * button under a stationary pointer; that must not replay its hover entrance.
  */
-export const appMarkMotion: Attachment<HTMLElement> = element =>
+export const menuIconMotion: Attachment<HTMLElement> = element =>
 {
     const button = element.closest("button");
     if (!button)

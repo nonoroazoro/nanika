@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-configuration-menu"
+description = "Enables the read_configuration_menu command without any pre-configured scope."
+commands.allow = ["read_configuration_menu"]
+
+[[permission]]
+identifier = "deny-read-configuration-menu"
+description = "Denies the read_configuration_menu command without any pre-configured scope."
+commands.deny = ["read_configuration_menu"]

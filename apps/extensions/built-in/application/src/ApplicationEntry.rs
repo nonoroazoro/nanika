@@ -103,6 +103,7 @@ impl ApplicationEntry {
                 style: nanika_protocol::ActionStyle::Secondary,
                 enabled: true,
                 group: Some("location".to_owned()),
+                confirmation_description: None,
                 confirmation_title: None
             });
             if self.launch_kind == "windows-shell-link" {
@@ -114,6 +115,7 @@ impl ApplicationEntry {
                     style: nanika_protocol::ActionStyle::Secondary,
                     enabled: true,
                     group: Some("location".to_owned()),
+                    confirmation_description: None,
                     confirmation_title: None
                 });
             }

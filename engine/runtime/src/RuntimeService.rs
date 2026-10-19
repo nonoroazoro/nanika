@@ -356,6 +356,76 @@ impl RuntimeService {
             .map_err(|error| error.to_string())
     }
 
+    /// Admit a declared Settings action against the exact instance shown by Settings.
+    pub fn invoke_settings_action(
+        &self,
+        extension_id: &str,
+        instance_id: u64,
+        action_id: &str,
+        invocation: nanika_protocol::ActionInvocation
+    ) -> Result<(), String> {
+        let _operation = self.configurations.operations.reserve(extension_id)?;
+        let extension = self
+            .installed
+            .get(extension_id)
+            .ok_or("Extension is not installed.")?;
+        let action = extension
+            .contributes
+            .configuration
+            .as_ref()
+            .and_then(|configuration| {
+                configuration
+                    .actions
+                    .iter()
+                    .find(|item| item.action.id == action_id)
+            })
+            .ok_or("Settings action is not declared by this extension.")?;
+        if invocation == nanika_protocol::ActionInvocation::Default
+            || !action.action.allows_invocation(invocation)
+        {
+            return Err("Settings action requires explicit confirmation or is disabled.".into());
+        }
+        if self.instance_id(extension_id) != Some(instance_id) {
+            return Err("Settings action belongs to a retired extension instance.".into());
+        }
+        let result = self
+            .extensions
+            .invoke(
+                extension_id,
+                instance_id,
+                0,
+                nanika_protocol::SETTINGS_ENTRY_ID,
+                action_id,
+                ""
+            )
+            .map_err(|error| error.to_string())?
+            .recv()
+            .map_err(|_| "Extension closed without a settings action result.")??;
+        match result {
+            ExtensionInvocationOutcome::Completed {
+                effect: nanika_protocol::NavigationEffect::None,
+                ..
+            } => Ok(()),
+            ExtensionInvocationOutcome::Cancelled => Err("Settings action was cancelled.".into()),
+            ExtensionInvocationOutcome::Completed {
+                effect:
+                    nanika_protocol::NavigationEffect::Push {
+                        view_id, revision, ..
+                    },
+                ..
+            } => {
+                // A rejected navigation must not leave an extension-owned view alive.
+                self.close_view(extension_id, instance_id, 0, view_id, revision)?
+                    .recv()
+                    .map_err(
+                        |_| "Extension closed without retiring the rejected settings view."
+                    )??;
+                Err("Settings actions cannot navigate the launcher.".into())
+            }
+            _ => Err("Settings actions cannot navigate the launcher.".into())
+        }
+    }
+
     /// Complete an accepted action and submit its usage to the bounded storage owner.
     /// Storage owns persistence and diagnostics; navigation never waits for its commit.
     pub fn invoke_with_usage(
@@ -477,6 +547,89 @@ impl RuntimeService {
 
     pub fn extension_configurations(&self) -> Vec<crate::RuntimeExtensionConfiguration> {
         self.configurations.snapshots()
+    }
+
+    pub fn configuration_menu(
+        &self,
+        extension_id: &str,
+        instance_id: u64
+    ) -> Result<crate::ConfigurationMenu, String> {
+        if self.instance_id(extension_id) != Some(instance_id) {
+            return Err("Configuration menu belongs to a retired extension instance.".into());
+        }
+        let Some(configuration) = self
+            .extension_configurations()
+            .into_iter()
+            .find(|item| item.extension_id == extension_id)
+        else {
+            return Ok(crate::ConfigurationMenu::default());
+        };
+        let groups = configuration
+            .contribution
+            .quick_menu
+            .iter()
+            .map(|group| {
+                let items = group
+                    .items
+                    .iter()
+                    .map(|item| match item {
+                        nanika_extension_package::ConfigurationMenuItem::Toggle { key } => {
+                            crate::ConfigurationMenuControl::Toggle {
+                                key: key.clone(),
+                                title: configuration.contribution.properties[key].title.clone(),
+                                checked: configuration.values[key]
+                                    .as_bool()
+                                    .expect("validated boolean setting")
+                            }
+                        }
+                        nanika_extension_package::ConfigurationMenuItem::Action { id } => {
+                            crate::ConfigurationMenuControl::Action {
+                                action: configuration
+                                    .contribution
+                                    .actions
+                                    .iter()
+                                    .find(|item| item.action.id == *id)
+                                    .expect("validated menu action")
+                                    .action
+                                    .clone()
+                            }
+                        }
+                    })
+                    .collect();
+                crate::ConfigurationMenuSection {
+                    title: group.title.clone(),
+                    items
+                }
+            })
+            .collect();
+        Ok(crate::ConfigurationMenu {
+            revision: configuration.revision,
+            groups
+        })
+    }
+
+    pub fn invoke_configuration_menu_action(
+        &self,
+        extension_id: &str,
+        instance_id: u64,
+        action_id: &str,
+        invocation: nanika_protocol::ActionInvocation
+    ) -> Result<(), String> {
+        if !self
+            .installed
+            .get(extension_id)
+            .and_then(|extension| extension.contributes.configuration.as_ref())
+            .is_some_and(|configuration| {
+                configuration.exposes_menu_item(
+                    &nanika_extension_package::ConfigurationMenuItem::Action {
+                        id: action_id.into()
+                    }
+                )
+            })
+        {
+            return Err("This action is not exposed in the quick menu.".into());
+        }
+        self.invoke_settings_action(extension_id, instance_id, action_id, invocation)
     }
 
     /// Installed presentation metadata remains available without a live process.
@@ -666,8 +819,55 @@ impl RuntimeService {
         progress: crate::ConfigurationProgressHandler
     ) -> Result<crate::ConfigurationSaveReceipt, String> {
         let operation = self.configurations.prepare(extension_id, key, value)?;
+        self._submit_configuration(operation, request_id, progress)
+    }
+
+    pub fn save_menu_configuration(
+        &self,
+        extension_id: &str,
+        instance_id: u64,
+        revision: u64,
+        key: String,
+        value: bool,
+        progress: crate::ConfigurationProgressHandler
+    ) -> Result<crate::ConfigurationSaveReceipt, String> {
+        // Reserve before checking instance/revision so lifecycle and Settings cannot race admission.
+        let operation = self
+            .configurations
+            .prepare_menu(extension_id, key, value, revision)?;
+        if self.instance_id(extension_id) != Some(instance_id) {
+            return Err("Configuration menu belongs to a retired extension instance.".into());
+        }
+        self._submit_configuration(
+            operation,
+            format!("menu-{instance_id}-{revision}"),
+            progress
+        )
+    }
+
+    pub fn take_updates(&self) -> RuntimeUpdateBatch {
+        let outputs = self
+            .extensions
+            .take_invocation_outputs()
+            .into_iter()
+            .map(|update| RuntimeOutputUpdate {
+                instance_id: update.instance_id,
+                invocation_id: update.invocation_id,
+                extension_id: update.extension_id,
+                generation: update.generation,
+                text: update.text
+            })
+            .collect();
+        RuntimeUpdateBatch { outputs }
+    }
+    fn _submit_configuration(
+        &self,
+        operation: crate::ConfigurationOperation,
+        request_id: impl Into<String>,
+        progress: crate::ConfigurationProgressHandler
+    ) -> Result<crate::ConfigurationSaveReceipt, String> {
         let extensions = Arc::clone(&self.extensions);
-        let extension_id = extension_id.to_owned();
+        let extension_id = operation.extension_id.clone();
         let request_id = request_id.into();
         let (completion, received) = std::sync::mpsc::sync_channel(1);
         std::thread::Builder::new()
@@ -695,22 +895,6 @@ impl RuntimeService {
             })
             .map_err(|error| error.to_string())?;
         Ok(crate::ConfigurationSaveReceipt(received))
-    }
-
-    pub fn take_updates(&self) -> RuntimeUpdateBatch {
-        let outputs = self
-            .extensions
-            .take_invocation_outputs()
-            .into_iter()
-            .map(|update| RuntimeOutputUpdate {
-                instance_id: update.instance_id,
-                invocation_id: update.invocation_id,
-                extension_id: update.extension_id,
-                generation: update.generation,
-                text: update.text
-            })
-            .collect();
-        RuntimeUpdateBatch { outputs }
     }
     fn _set_extension_enabled(&self, extension_id: &str, enabled: bool) -> Result<(), String> {
         use crate::RuntimeExtensionState as State;

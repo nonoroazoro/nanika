@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
 
-use crate::{Action, ActionStyle, DetailContent, DetailView, ListView};
+use crate::{Action, DetailContent, DetailView, ListView};
+
+pub const MAX_VIEW_SEARCH_CHARS: usize = 4_096;
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -187,7 +189,7 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
     let mut ids = HashSet::new();
     for action in actions {
         if let Some(group) = &action.group {
-            validate_id("action group", group)?;
+            validate_text("action group", group, 128, false)?;
         }
         validate_id("view action id", &action.id)?;
         validate_text("view action title", &action.title, 128, false)?;
@@ -198,9 +200,12 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
                 );
             }
             validate_text("view action confirmation title", title, 128, false)?;
-            if action.style != ActionStyle::Destructive {
-                return Err("view action confirmation requires destructive style".to_owned());
+        }
+        if let Some(description) = &action.confirmation_description {
+            if action.confirmation_title.is_none() {
+                return Err("confirmation description requires a confirmation title".into());
             }
+            validate_text("action confirmation description", description, 512, false)?;
         }
         if !ids.insert(action.id.as_str()) {
             return Err("view action ids must be unique".to_owned());
@@ -255,7 +260,7 @@ fn validate_item(item: &crate::ListItem) -> Result<(), String> {
 
 /// Search input is plain user data; control characters do not become markup or labels.
 pub fn validate_view_search_text(value: &str) -> Result<(), String> {
-    if value.chars().count() > 4096 {
+    if value.chars().count() > MAX_VIEW_SEARCH_CHARS {
         return Err("view search text exceeds the supported size".to_owned());
     }
     Ok(())

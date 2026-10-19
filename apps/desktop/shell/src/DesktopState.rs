@@ -106,6 +106,87 @@ impl DesktopState {
         }
     }
 
+    pub(crate) fn configuration_menu(
+        &self,
+        request: &crate::ConfigurationMenuRequest
+    ) -> Result<nanika_host::ConfigurationMenu, String> {
+        let (runtime, extension_id) = self._configuration_menu_authority(request)?;
+        runtime.configuration_menu(&extension_id, request.instance_id)
+    }
+
+    pub(crate) fn invoke_configuration_menu(
+        &self,
+        request: &crate::ConfigurationMenuRequest,
+        operation: crate::ConfigurationMenuOperation,
+        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static
+    ) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
+        let (runtime, extension_id) = self._configuration_menu_authority(request)?;
+        match operation {
+            crate::ConfigurationMenuOperation::Action { id, confirmed } => runtime
+                .invoke_configuration_menu_action(
+                    &extension_id,
+                    request.instance_id,
+                    &id,
+                    if confirmed {
+                        nanika_protocol::ActionInvocation::Confirmed
+                    } else {
+                        nanika_protocol::ActionInvocation::Explicit
+                    }
+                ),
+            crate::ConfigurationMenuOperation::Set {
+                key,
+                value,
+                revision
+            } => {
+                let (update, receipt) = {
+                    let _settings = self
+                        .settings_operation_lock
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
+                    let id = self.next_settings_request.fetch_add(1, Ordering::Relaxed);
+                    let owner = extension_id.clone();
+                    let property = key.clone();
+                    let receipt = runtime.save_menu_configuration(
+                        &extension_id,
+                        request.instance_id,
+                        revision,
+                        key.clone(),
+                        value,
+                        Arc::new(move |value| progress(id, &owner, &property, value))
+                    )?;
+                    let update = crate::SettingsApplicationUpdate {
+                        request_id: id,
+                        extension_id,
+                        key,
+                        result: crate::SettingsSaveResult::Running { progress: None }
+                    };
+                    self.publish_settings_application(update.clone());
+                    (update, receipt)
+                };
+                self.complete_settings_save(update, receipt)
+            }
+        }
+    }
+
+    pub(crate) fn complete_settings_save(
+        &self,
+        mut update: crate::SettingsApplicationUpdate,
+        receipt: nanika_host::ConfigurationSaveReceipt
+    ) -> Result<(), String> {
+        let result = receipt.wait();
+        let error = match &result {
+            Ok(outcome) => outcome.error.clone(),
+            Err(error) => Some(error.clone())
+        };
+        if let Some(error) = &error {
+            tracing::error!(extension_id = update.extension_id, %error, "settings operation failed");
+        }
+        update.result = result.into();
+        self.publish_settings_application(update);
+        error.map_or(Ok(()), Err)
+    }
+
     pub(crate) fn new(
         instance: nanika_platform::SingleInstance,
         diagnostics: nanika_host::Diagnostics
@@ -491,6 +572,23 @@ impl DesktopState {
         })
     }
 
+    fn _configuration_menu_authority(
+        &self,
+        request: &crate::ConfigurationMenuRequest
+    ) -> Result<(Arc<nanika_host::RuntimeService>, String), String> {
+        let state = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let session = state
+            .session
+            .as_ref()
+            .ok_or("The window session is not open.")?;
+        let route = session.configuration_menu_route(request)?;
+        let runtime = state.runtime.clone().ok_or("Nanika is still starting.")?;
+        Ok((runtime, route.extension_id.clone()))
+    }
+
     fn _apply_navigation(
         &self,
         session_id: u64,
@@ -576,6 +674,11 @@ impl DesktopState {
             .session
             .as_ref()
             .is_none_or(|session| session.id != session_id);
+        let info = runtime
+            .extension_info()
+            .into_iter()
+            .find(|info| info.id == extension_id)
+            .ok_or("Extension metadata is unavailable.")?;
         let result = if let Some(session) = state
             .session
             .as_mut()
@@ -585,7 +688,7 @@ impl DesktopState {
                 .with_extension_instance(extension_id, instance_id, || {
                     session
                         .navigation
-                        .apply(extension_id, instance_id, generation, effect)
+                        .apply(&info, instance_id, generation, effect)
                 })
                 .unwrap_or(Ok(()))
         } else {
@@ -752,6 +855,7 @@ impl DesktopState {
             })
             .collect();
         Ok(crate::SettingsSnapshot {
+            navigation: Default::default(),
             lifecycle_revision: applications.lifecycle_revision,
             maximized: false,
             version: env!("CARGO_PKG_VERSION"),
@@ -759,6 +863,49 @@ impl DesktopState {
             general_sections: crate::general_settings::sections(),
             extensions
         })
+    }
+
+    pub(crate) fn invoke_settings_action(
+        &self,
+        request: crate::SettingsActionRequest
+    ) -> Result<(), String> {
+        let _operation = self.begin_operation()?;
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone()
+            .ok_or("Nanika is still starting.")?;
+        runtime.invoke_settings_action(
+            &request.extension_id,
+            request.instance_id,
+            &request.action_id,
+            if request.confirmed {
+                nanika_protocol::ActionInvocation::Confirmed
+            } else {
+                nanika_protocol::ActionInvocation::Explicit
+            }
+        )
+    }
+
+    pub(crate) fn validate_settings_destination(&self, extension_id: &str) -> Result<(), String> {
+        let runtime = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .runtime
+            .clone()
+            .ok_or("Nanika is still starting.")?;
+        if runtime
+            .extension_info()
+            .iter()
+            .any(|extension| extension.id == extension_id)
+        {
+            Ok(())
+        } else {
+            Err("Settings destination is not an installed extension.".into())
+        }
     }
 
     pub(crate) fn search_settings(&self, query: &str) -> Vec<crate::SettingsSearchEntry> {

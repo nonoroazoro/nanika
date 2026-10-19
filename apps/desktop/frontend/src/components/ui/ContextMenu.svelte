@@ -3,7 +3,10 @@ import { createAttachmentKey } from "svelte/attachments";
 import { menuMotion } from "./popup-motion";
 import { ContextMenu as Menu } from "bits-ui";
 import ScrollArea from "./ScrollArea.svelte";
+import { confirmationPending } from "../../ui/confirmation";
 import { uiActivity } from "../../ui/activity";
+import CheckIcon from "../icons/CheckIcon.svelte";
+import type { ContextMenuSection } from "../../types/ContextMenuSection";
 import ShortcutKeys from "./ShortcutKeys.svelte";
 
 import type { Snippet } from "svelte";
@@ -11,8 +14,9 @@ import type { Action } from "../../generated/Action";
 
 const motionKey = createAttachmentKey();
 
-const { actions, position, anchor, open, heading, footer, shortcuts = {}, onClose, onClosed, onInvoke }: {
+const { actions, sections, position, anchor, open, heading, footer, shortcuts = {}, onClose, onClosed, onInvoke }: {
     actions: Action[];
+    sections?: ContextMenuSection[];
     position: [number, number] | null;
     anchor?: HTMLElement;
     open: boolean;
@@ -21,9 +25,8 @@ const { actions, position, anchor, open, heading, footer, shortcuts = {}, onClos
     shortcuts?: Record<string, string[]>;
     onClose: () => void;
     onClosed: () => void;
-    onInvoke: (id: string, confirmed: boolean) => void;
+    onInvoke: (id: string) => void;
 } = $props();
-let confirmation = $state.raw<Action | null>(null);
 let outsideTarget: Element | null = null;
 let returnFocus: HTMLElement | null = null;
 const reference = $derived(
@@ -33,9 +36,28 @@ const reference = $derived(
 );
 // Align the popup to the trigger margin box while its icon keeps its own inset.
 const attachedAlignOffset = $derived(anchor ? -Number.parseFloat(getComputedStyle(anchor).marginInlineStart) : 0);
-const ordered = $derived(
-    [...actions].sort((a, b) => Number(a.style === "destructive") - Number(b.style === "destructive"))
-);
+const displayedSections = $derived.by(() =>
+{
+    if (sections)
+    {
+        return sections;
+    }
+    const ordered = [...actions].sort((a, b) => Number(a.style === "destructive") - Number(b.style === "destructive"));
+    const result: ContextMenuSection[] = [];
+    for (const [index, action] of ordered.entries())
+    {
+        const previous = ordered[index - 1];
+        if (
+            !previous || action.group !== previous.group
+            || (action.style === "destructive") !== (previous.style === "destructive")
+        )
+        {
+            result.push({ items: [] });
+        }
+        result[result.length - 1]!.items.push(action);
+    }
+    return result;
+});
 
 function _activate(action: Action): void
 {
@@ -43,12 +65,7 @@ function _activate(action: Action): void
     {
         return;
     }
-    if (action.confirmation_title && confirmation !== action)
-    {
-        confirmation = action;
-        return;
-    }
-    onInvoke(action.id, confirmation === action);
+    onInvoke(action.id);
 }
 
 function _keydown(event: KeyboardEvent): void
@@ -80,7 +97,6 @@ function _keydown(event: KeyboardEvent): void
     {
         if (!next)
         {
-            confirmation = null;
             onClosed();
         }
     }}
@@ -117,7 +133,7 @@ function _keydown(event: KeyboardEvent): void
                     {
                         event.preventDefault();
                         if (
-                            !open && document.hasFocus() && document.visibilityState === "visible"
+                            !open && !confirmationPending() && document.hasFocus() && document.visibilityState === "visible"
                             && returnFocus?.isConnected
                             && !outsideTarget?.closest("input, textarea, select, button, a[href], [contenteditable=true]")
                         )
@@ -144,23 +160,39 @@ function _keydown(event: KeyboardEvent): void
                             {#if heading && !(anchor && footer)}<Menu.GroupHeading class="popup-heading">{
                                     heading
                                 }</Menu.GroupHeading>{/if}
-                            {#each ordered as action, index (action.id)}
-                                {#if index > 0 && (action.group !== ordered[index - 1]?.group
-    || (action.style === "destructive") !== (ordered[index - 1]?.style === "destructive"))}
-                                    <Menu.Separator class="popup-separator" />
-                                {/if}
-                                {@const keys = shortcuts[action.id]}
-                                <Menu.Item
-                                    class="popup-item"
-                                    disabled={!action.enabled}
-                                    data-destructive={action.style === "destructive" ? "" : undefined}
-                                    data-confirming={confirmation === action ? "" : undefined}
-                                    closeOnSelect={false}
-                                    onSelect={() => _activate(action)}
-                                >
-                                    <span>{confirmation === action ? action.confirmation_title : action.title}</span>
-                                    {#if keys}<ShortcutKeys {keys} />{/if}
-                                </Menu.Item>
+                            {#each displayedSections as section, sectionIndex (section.items[0]?.id ?? sectionIndex)}
+                                {#if sectionIndex > 0}<Menu.Separator class="popup-separator" />{/if}
+                                <Menu.Group>
+                                    {#if section.title}<Menu.GroupHeading class="popup-heading">{
+                                            section.title
+                                        }</Menu.GroupHeading>{/if}
+                                    {#each section.items as action (action.id)}
+                                        {@const keys = shortcuts[action.id]}
+                                        {#if action.checked !== undefined}
+                                            <Menu.CheckboxItem
+                                                class="popup-item"
+                                                checked={action.checked}
+                                                disabled={!action.enabled}
+                                                closeOnSelect={false}
+                                                onSelect={() => _activate(action)}
+                                            >
+                                                <span>{action.title}</span>
+                                                {#if action.checked}<CheckIcon size={16} />{/if}
+                                            </Menu.CheckboxItem>
+                                        {:else}
+                                            <Menu.Item
+                                                class="popup-item"
+                                                disabled={!action.enabled}
+                                                data-destructive={action.style === "destructive" ? "" : undefined}
+                                                closeOnSelect={false}
+                                                onSelect={() => _activate(action)}
+                                            >
+                                                <span>{action.title}</span>
+                                                {#if keys}<ShortcutKeys {keys} />{/if}
+                                            </Menu.Item>
+                                        {/if}
+                                    {/each}
+                                </Menu.Group>
                             {/each}
                         </Menu.Group>
                     </ScrollArea>

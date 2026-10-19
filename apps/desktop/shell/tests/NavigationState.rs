@@ -107,7 +107,7 @@ fn completed_view_is_presented() {
         }
     };
     crate::apply_invocation_completion(completion, |effect| {
-        navigation.apply("test.extension", 1, 1, effect)
+        navigation.apply(&_extension("test.extension"), 1, 1, effect)
     })
     .unwrap();
     assert_eq!(navigation.stack.last().unwrap().view_id, "created-view");
@@ -146,7 +146,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
     for index in 0..crate::MAX_NAVIGATION_DEPTH {
         navigation
             .apply(
-                "test.extension",
+                &_extension("test.extension"),
                 1,
                 1,
                 nanika_protocol::NavigationEffect::Push {
@@ -161,7 +161,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
     assert!(
         navigation
             .apply(
-                "test.extension",
+                &_extension("test.extension"),
                 1,
                 1,
                 nanika_protocol::NavigationEffect::Push {
@@ -177,7 +177,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
     assert_eq!(navigation.stack.last().unwrap().route_id, previous);
     navigation
         .apply(
-            "test.extension",
+            &_extension("test.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Pop
@@ -185,7 +185,7 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
         .unwrap();
     navigation
         .apply(
-            "test.extension",
+            &_extension("test.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Push {
@@ -202,7 +202,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
     let mut old = crate::SearchSession::new(1, tauri::ipc::Channel::new(|_| Ok(())));
     old.navigation
         .apply(
-            "old.extension",
+            &_extension("old.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Push {
@@ -216,7 +216,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
     let mut new = crate::SearchSession::new(2, tauri::ipc::Channel::new(|_| Ok(())));
     new.navigation
         .apply(
-            "new.extension",
+            &_extension("new.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Push {
@@ -352,7 +352,7 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
     request.revision = 1;
     navigation
         .apply(
-            "test.extension",
+            &_extension("test.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Pop
@@ -360,7 +360,7 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
         .unwrap();
     navigation
         .apply(
-            "test.extension",
+            &_extension("test.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Push {
@@ -377,7 +377,7 @@ fn _input_navigation() -> crate::NavigationState {
     let mut navigation = crate::NavigationState::default();
     navigation
         .apply(
-            "test.extension",
+            &_extension("test.extension"),
             1,
             1,
             nanika_protocol::NavigationEffect::Push {
@@ -634,4 +634,19 @@ fn selection_authority_outlives_delivery_windows_but_not_collection_identity() {
     };
     list.collection_id = "new.collection".into();
     assert!(navigation.authorize_input(&request, None).is_err());
+}
+
+fn _extension(id: &str) -> nanika_host::RuntimeExtensionInfo {
+    nanika_host::RuntimeExtensionInfo {
+        id: id.into(),
+        name: "Test extension".into(),
+        enabled: true,
+        pending: false,
+        state: nanika_host::RuntimeExtensionState::Ready,
+        instance_id: Some(1),
+        lifecycle_error: None,
+        configuration_error: None,
+        icon: "icon.png".into(),
+        icon_hash: None
+    }
 }

@@ -101,6 +101,8 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
             title: format!("Application {index}"),
             subtitle: None,
             icon: None,
+            confirmation_description: None,
+            action_style: nanika_protocol::ActionStyle::Primary,
             confirmation_title: None,
 
             kind: "Extension".to_owned(),
@@ -111,6 +113,8 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         instance_id: 1,
         route_id: 1,
         extension_id: "test.extension".to_owned(),
+        extension_name: "Test extension".into(),
+        extension_icon_url: "icon.png".into(),
         generation: 1,
         view_id: "view".to_owned(),
         revision: 1,

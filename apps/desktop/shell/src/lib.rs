@@ -6,6 +6,12 @@ mod adapters;
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
 mod commands;
+#[path = "ConfigurationMenuRequest.rs"]
+mod configuration_menu_request;
+use configuration_menu_request::*;
+#[path = "ConfigurationMenuOperation.rs"]
+mod configuration_menu_operation;
+use configuration_menu_operation::*;
 #[path = "ReadResultsRequest.rs"]
 mod read_results_request;
 use read_results_request::*;
@@ -64,6 +70,12 @@ use view_invalidation_delivery::*;
 #[path = "HostSettings.rs"]
 mod host_settings;
 mod settings;
+#[path = "SettingsNavigation.rs"]
+mod settings_navigation;
+use settings_navigation::*;
+#[path = "SettingsActionRequest.rs"]
+mod settings_action_request;
+use settings_action_request::*;
 #[path = "SettingsWindow.rs"]
 mod settings_window;
 use settings_window::*;
@@ -155,6 +167,8 @@ pub fn run() -> Result<(), String> {
         .invoke_handler(tauri::generate_handler![
             dismiss_launcher,
             read_context_menu,
+            read_configuration_menu,
+            invoke_configuration_menu,
             invoke_context_menu,
             acknowledge_search,
             close_session,
@@ -170,6 +184,7 @@ pub fn run() -> Result<(), String> {
             settings_ready,
             settings_window_action,
             save_settings,
+            invoke_settings_action,
             set_extension_enabled,
             pick_settings_directory,
             save_host_settings,

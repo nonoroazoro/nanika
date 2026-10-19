@@ -33,6 +33,7 @@
           "type": "boolean",
           "title": "System applications",
           "description": "Search system application folders.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["macos"],
           "order": 10
@@ -41,6 +42,7 @@
           "type": "boolean",
           "title": "User applications",
           "description": "Search applications in your user folder.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["macos"],
           "order": 20
@@ -49,6 +51,7 @@
           "type": "boolean",
           "title": "Packaged applications",
           "description": "Search registered packaged applications available to your user.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 10
@@ -57,6 +60,7 @@
           "type": "boolean",
           "title": "System Start Menu",
           "description": "Search the shared Windows Start Menu.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 20
@@ -65,6 +69,7 @@
           "type": "boolean",
           "title": "Global Scoop shims",
           "description": "Search active shims from the machine-wide Scoop installation.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 30
@@ -73,6 +78,7 @@
           "type": "boolean",
           "title": "User Scoop shims",
           "description": "Search active shims from your Scoop installation.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 40
@@ -81,6 +87,7 @@
           "type": "boolean",
           "title": "User Start Menu",
           "description": "Search your Windows Start Menu.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": true,
           "platforms": ["windows"],
           "order": 60
@@ -89,6 +96,7 @@
           "type": "array",
           "title": "Folders",
           "description": "Search these folders in addition to your system applications.",
+          "group": "Search locations",
           "persistence": "beforeApply", "default": [],
           "order": 100,
           "maxItems": 256,

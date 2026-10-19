@@ -7,7 +7,6 @@ import type { ConfigurationValueType } from "./ConfigurationValueType";
  */
 export type ConfigurationSchema = {
     type: ConfigurationValueType;
-    allowUnlimited: boolean;
     format: ConfigurationStringFormat | null;
     minimum: number | null;
     maximum: number | null;

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isCompositionKey } from "../../ui/keyboard";
 import { initialListItemCount } from "../../ui/list-loading";
 import ChevronLeftIcon from "../icons/ChevronLeftIcon.svelte";
 import SearchIcon from "../icons/SearchIcon.svelte";
@@ -7,7 +8,8 @@ import EmptyState from "../ui/EmptyState.svelte";
 import ScrollArea from "../ui/ScrollArea.svelte";
 import Button from "../ui/Button.svelte";
 import Input from "../ui/Input.svelte";
-import { onMount, untrack } from "svelte";
+import { confirmAction } from "../../ui/confirmation";
+import { onDestroy, onMount, untrack } from "svelte";
 import { scrollGeometry } from "../../ui/scroll-geometry";
 import { RangeReadState } from "../../ui/RangeReadState.svelte";
 import { uiActivity } from "../../ui/activity";
@@ -21,20 +23,36 @@ import StatusBar from "../ui/StatusBar.svelte";
 import SemanticContentIcon from "./SemanticContentIcon.svelte";
 import ViewDetail from "./ViewDetail.svelte";
 
-const { snapshot, query, resourceOrigin, busy, canLoadMore, error, onQuery, onEvent, onResume, onBack, onContextMenu }:
-    {
-        snapshot: ExtensionViewSnapshot;
-        query: string;
-        resourceOrigin: string;
-        busy: boolean;
-        canLoadMore: boolean;
-        error: string | null;
-        onQuery: (text: string, minimumItems: number) => void;
-        onEvent: (event: ViewInteraction) => Promise<number | null>;
-        onResume: () => void;
-        onBack: () => void;
-        onContextMenu: (itemId: string | null, position: [number, number] | null) => Promise<void>;
-    } = $props();
+
+const {
+    snapshot,
+    query,
+    resourceOrigin,
+    busy,
+    canLoadMore,
+    error,
+    onQuery,
+    onEvent,
+    onResume,
+    onBack,
+    onContextMenu,
+    menuOpen,
+    onMenu
+}: {
+    snapshot: ExtensionViewSnapshot;
+    query: string;
+    resourceOrigin: string;
+    busy: boolean;
+    canLoadMore: boolean;
+    error: string | null;
+    onQuery: (text: string, minimumItems: number) => void;
+    onEvent: (event: ViewInteraction) => Promise<number | null>;
+    onResume: () => void;
+    onBack: () => void;
+    menuOpen: boolean;
+    onMenu: (trigger: HTMLButtonElement) => void;
+    onContextMenu: (itemId: string | null, position: [number, number] | null) => Promise<void>;
+} = $props();
 const list = $derived(snapshot.view.kind === "list" ? snapshot.view.list : null);
 const items = $derived(list?.sections.flatMap(section => section.items) ?? []);
 let selection = $state<{ item: ListItem; index: number; revision: number | null; token: number; } | null>(null);
@@ -67,20 +85,23 @@ const primaryAction = $derived(
     ) ?? null
 );
 const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
-let confirmation = $state<{ actionId: string; itemId: string | null; revision: number; } | null>(null);
+let alive = true;
+let confirming = $state(false);
+let confirmationError = $state<string | null>(null);
+onDestroy(() =>
+{
+    alive = false;
+});
 const leadingStatusEntries = $derived(secondaryActions.map(action => ({
-    id: action.id,
+    id: `action:${action.id}`,
     title: action.title,
-    confirmation: action.confirmation_title
-        ? { title: action.confirmation_title, active: isConfirming(action.id) }
-        : undefined,
     destructive: action.style === "destructive",
-    disabled: busy || !action.enabled
+    disabled: busy || confirming || !action.enabled
 })));
 const trailingStatusEntries = $derived(
     primaryAction
         ? [{
-            id: primaryAction.id,
+            id: `action:${primaryAction.id}`,
             title: primaryAction.title,
             interactive: list === null,
             disabled: busy,
@@ -217,18 +238,6 @@ $effect(() =>
 
 $effect(() =>
 {
-    const current = confirmation;
-    if (
-        current && (current.revision !== snapshot.revision || current.itemId !== (selected?.id ?? null)
-            || !actions.some(action => action.id === current.actionId && Boolean(action.confirmation_title)))
-    )
-    {
-        confirmation = null;
-    }
-});
-
-$effect(() =>
-{
     // Reconcile only the completed request revision; earlier responses may describe an old selection.
     if (
         selection && selection.revision !== null && snapshot.revision >= selection.revision
@@ -345,7 +354,6 @@ function _initialItemCount(): number
 function selectItem(id: string): void
 {
     pendingKeyboard = null;
-    cancelConfirmation();
     const token = ++selectionToken;
     const item = items.find(candidate => candidate.id === id) ?? list?.selection?.item;
     const index = list ? itemIndex(list.sections, id) ?? list.selection?.index : null;
@@ -386,32 +394,6 @@ function handleFocus(): void
     onResume();
 }
 
-function cancelConfirmation(): void
-{
-    confirmation = null;
-}
-
-function cancelConfirmationOutsideAction(event: PointerEvent): void
-{
-    const current = confirmation;
-    if (!current || !(event.target instanceof Element))
-    {
-        return;
-    }
-    const action = event.target.closest<HTMLElement>("[data-entry-id]");
-    if (action?.dataset.entryId !== current.actionId)
-    {
-        cancelConfirmation();
-    }
-}
-
-function isConfirming(actionId: string): boolean
-{
-    return confirmation?.actionId === actionId
-        && confirmation.itemId === (selected?.id ?? null)
-        && confirmation.revision === snapshot.revision;
-}
-
 function focusSearch(): void
 {
     if (input)
@@ -435,14 +417,13 @@ function activateItem(item: typeof items[number]): void
     );
     if (primary)
     {
-        cancelConfirmation();
         onEvent({ kind: "actionInvoked", item_id: item.id, action_id: primary.id, invocation: "default" });
     }
 }
 
-function invokeAction(actionId: string): void
+async function invokeAction(actionId: string): Promise<void>
 {
-    if (busy)
+    if (busy || confirming)
     {
         return;
     }
@@ -451,24 +432,51 @@ function invokeAction(actionId: string): void
     {
         return;
     }
-    focusSearch();
+    const current = snapshot;
     const itemId = selected?.id ?? null;
-    if (
-        action.confirmation_title
-        && !isConfirming(action.id)
-    )
+    confirming = true;
+    confirmationError = null;
+    try
     {
-        confirmation = { actionId: action.id, itemId, revision: snapshot.revision };
-        return;
+        const confirmed = action.confirmation_title
+            ? await confirmAction({
+                title: action.confirmation_title,
+                destructive: action.style === "destructive",
+                label: action.title,
+                message: action.confirmation_description ?? "",
+                icon: action.icon
+                    ? { kind: "symbol", name: action.icon }
+                    : { kind: "image", url: snapshot.extensionIconUrl }
+            })
+            : false;
+        if (
+            !alive || busy || snapshot.routeId !== current.routeId || snapshot.instanceId !== current.instanceId
+            || snapshot.revision !== current.revision || itemId !== (selected?.id ?? null)
+            || (action.confirmation_title && !confirmed)
+        )
+        {
+            return;
+        }
+        await onEvent({
+            kind: "actionInvoked",
+            item_id: itemId,
+            action_id: action.id,
+            invocation: confirmed ? "confirmed" : "explicit"
+        });
     }
-    const invocation = isConfirming(action.id) ? "confirmed" : "explicit";
-    cancelConfirmation();
-    onEvent({ kind: "actionInvoked", item_id: itemId, action_id: action.id, invocation });
+    catch (failure)
+    {
+        confirmationError = String(failure);
+    }
+    finally
+    {
+        confirming = false;
+    }
 }
 
 function handleKeydown(event: KeyboardEvent): void
 {
-    if (event.defaultPrevented || event.isComposing)
+    if (event.defaultPrevented || isCompositionKey(event))
     {
         return;
     }
@@ -479,11 +487,6 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Escape")
     {
         event.preventDefault();
-        if (confirmation)
-        {
-            cancelConfirmation();
-            return;
-        }
         if (!busy)
         {
             onBack();
@@ -559,16 +562,13 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
     {
         return;
     }
-    cancelConfirmation();
     void onContextMenu(itemId, [event.clientX, event.clientY]);
 }
 </script>
 
 <svelte:window
-    onpointerdown={cancelConfirmationOutsideAction}
     onkeydown={handleKeydown}
     onfocus={handleFocus}
-    onblur={cancelConfirmation}
 />
 
 <main
@@ -596,7 +596,6 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                 spellcheck="false"
                 oninput={(event =>
                 {
-                    cancelConfirmation();
                     onQuery(event.currentTarget.value, _initialItemCount());
                 })}
             />
@@ -609,7 +608,6 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                             onmousedown={(event => event.preventDefault())}
                             onclick={() =>
                             {
-                                cancelConfirmation();
                                 if (!busy && list?.filter && option.value !== list.filter.selected_value)
                                 {
                                     onEvent({
@@ -630,7 +628,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
             <h1>{detail?.title ?? "Details"}</h1>
         {/if}
     </header>
-    {#if error}<div class="error" role="alert">{error}</div>{/if}
+    {#if error || confirmationError}<div class="error" role="alert">{error ?? confirmationError}</div>{/if}
     <div class="content" class:split={list?.layout === "split"} aria-busy={busy}>
         {#if list}
             <!-- The combobox owns list navigation, including clicks on empty space. -->
@@ -700,7 +698,6 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                                 }}
                                                 onclick={() =>
                                                 {
-                                                    cancelConfirmation();
                                                     focusSearch();
                                                     if (!busy && item.id !== selected?.id)
                                                     {
@@ -791,9 +788,25 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
             </div>{/if}
     </div>
     <StatusBar
-        leadingEntries={leadingStatusEntries}
+        leadingEntries={[{
+            id: "extension-menu",
+            title: `${snapshot.extensionName} menu`,
+            icon: { src: snapshot.extensionIconUrl },
+            iconOnly: true,
+            menu: { controls: "context-menu", expanded: menuOpen }
+        }, ...leadingStatusEntries]}
         trailingEntries={trailingStatusEntries}
-        onInvoke={invokeAction}
+        onInvoke={(id, trigger) =>
+        {
+            if (id === "extension-menu")
+            {
+                onMenu(trigger);
+            }
+            else
+            {
+                invokeAction(id.slice("action:".length));
+            }
+        }}
     />
 </main>
 

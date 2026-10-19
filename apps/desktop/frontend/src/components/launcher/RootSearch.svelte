@@ -1,4 +1,5 @@
 <script lang="ts">
+import { isCompositionKey } from "../../ui/keyboard";
 import SearchIcon from "../icons/SearchIcon.svelte";
 import EmptyState from "../ui/EmptyState.svelte";
 import type { ReadResultsRequest } from "../../types/ReadResultsRequest";
@@ -120,20 +121,6 @@ onMount(() =>
 {
     query = snapshot.query;
     void tick().then(() => focusQuery(true));
-    const cancel = (): void => searchState.cancelConfirmation();
-    window.addEventListener("blur", cancel);
-    window.addEventListener("pointerdown", _cancelOutsideConfirmation, true);
-    window.addEventListener("keydown", _cancelOnOtherKey, true);
-    document.addEventListener("visibilitychange", cancel);
-    document.addEventListener("compositionstart", cancel);
-    return () =>
-    {
-        window.removeEventListener("blur", cancel);
-        window.removeEventListener("pointerdown", _cancelOutsideConfirmation, true);
-        window.removeEventListener("keydown", _cancelOnOtherKey, true);
-        document.removeEventListener("visibilitychange", cancel);
-        document.removeEventListener("compositionstart", cancel);
-    };
 });
 
 function focusQuery(selectAll = false): void
@@ -160,13 +147,13 @@ function invoke(result: SearchResult): void
         return;
     }
     selectOnNextFocus = true;
-    onInvoke(result, invocation === "confirmed");
+    onInvoke(result, invocation === "confirmation");
 }
 
 function handleKeydown(event: KeyboardEvent): void
 {
     if (
-        event.isComposing
+        isCompositionKey(event)
         || (["Enter", "ArrowUp", "ArrowDown"].includes(event.key)
             && (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey))
     )
@@ -210,29 +197,19 @@ function handleKeydown(event: KeyboardEvent): void
     if (event.key === "Escape")
     {
         event.preventDefault();
-        if (searchState.confirmationTitle)
-        {
-            searchState.cancelConfirmation();
-            return;
-        }
         onDismiss();
     }
 }
 
 function handleWindowKeydown(event: KeyboardEvent): void
 {
-    if (event.defaultPrevented || event.isComposing)
+    if (event.defaultPrevented || isCompositionKey(event))
     {
         return;
     }
     if (event.key === "Escape")
     {
         event.preventDefault();
-        if (searchState.confirmationTitle)
-        {
-            searchState.cancelConfirmation();
-            return;
-        }
         onDismiss();
         return;
     }
@@ -257,32 +234,6 @@ function moveSelection(delta: number): void
     }
 }
 
-function _cancelOutsideConfirmation(event: PointerEvent): void
-{
-    if (!searchState.confirmationTitle)
-    {
-        return;
-    }
-    const row = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
-    // Keep the second click on the reviewed row; every other pointer press abandons it.
-    if (event.button !== 0 || row?.id !== activeId || !list?.contains(row))
-    {
-        searchState.cancelConfirmation();
-    }
-}
-
-function _cancelOnOtherKey(event: KeyboardEvent): void
-{
-    if (event.key === "Escape" || ["Shift", "Control", "Alt", "Meta"].includes(event.key))
-    {
-        return;
-    }
-    if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey)
-    {
-        searchState.cancelConfirmation();
-    }
-}
-
 function _openContextMenu(result: SearchResult, event: MouseEvent): void
 {
     event.preventDefault();
@@ -290,7 +241,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
     {
         return;
     }
-    searchState.cancelConfirmation();
     searchState.select(snapshot.resultOffset + results.indexOf(result));
     void onContextMenu(result, [event.clientX, event.clientY]);
 }
@@ -319,7 +269,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             oninput={(event =>
             {
                 selectOnNextFocus = false;
-                searchState.cancelConfirmation();
                 onQuery(event.currentTarget.value);
             })}
             onkeydown={handleKeydown}
@@ -351,7 +300,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                 viewportClass="root-viewport"
                 onscroll={() =>
                 {
-                    searchState.cancelConfirmation();
                     searchState.scrollTop = list?.scrollTop ?? 0;
                 }}
             >
@@ -365,7 +313,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                         <ResultRow
                             {platform}
                             {result}
-                            confirmationTitle={activeResult === result ? searchState.confirmationTitle : null}
                             position={snapshot.resultOffset + index + 1}
                             total={snapshot.totalResults}
                             onContextMenu={event =>
@@ -400,11 +347,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             </div>
         {/if}
     </section>
-    <span class="confirmation-announcement" role="status" aria-live="polite" aria-atomic="true">
-        {
-            searchState.confirmationTitle ? `${searchState.confirmationTitle}. Press Enter to confirm or Escape to cancel.` : ""
-        }
-    </span>
     <StatusBar
         trailingEntries={snapshot.pendingExtensions.length
         ? [{
@@ -426,7 +368,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
         {
             if (id === "app-menu")
             {
-                searchState.cancelConfirmation();
                 onAppMenu(trigger);
             }
         }}
@@ -434,8 +375,6 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
 </main>
 
 <style>
-.confirmation-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
 .launcher {
   position: relative;
   display: grid;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { configurationSchema } from "./schema";
+import { configurationSchema } from "../../fixtures/configuration";
 import { stringError } from "../../src/settings/stringValue.ts";
 
 import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";

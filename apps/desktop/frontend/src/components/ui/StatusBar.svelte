@@ -1,8 +1,9 @@
 <script lang="ts">
 import { cubicBezier } from "animejs/easings/cubic-bezier";
 import { repeatMotion } from "../motion/repeat";
+import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import AppMark from "../icons/AppMark.svelte";
-import { appMarkMotion } from "./app-mark-motion";
+import { menuIconMotion } from "./menu-icon-motion";
 import Button from "./Button.svelte";
 import ShortcutKeys from "./ShortcutKeys.svelte";
 
@@ -17,9 +18,10 @@ const shimmer = repeatMotion({
     }
 }, "--motion-progress-duration");
 
-const { leadingEntries = [], trailingEntries = [], onInvoke }: {
+const { leadingEntries = [], trailingEntries = [], trailingText = null, onInvoke }: {
     leadingEntries?: StatusBarEntry[];
     trailingEntries?: StatusBarEntry[];
+    trailingText?: string | null;
     onInvoke?: (id: string, trigger: HTMLButtonElement) => void;
 } = $props();
 const statusAnnouncement = $derived.by(() =>
@@ -27,16 +29,16 @@ const statusAnnouncement = $derived.by(() =>
     const titles: string[] = [];
     for (const entry of leadingEntries)
     {
-        if (entry.pending?.active || entry.confirmation?.active)
+        if (entry.pending?.active)
         {
-            titles.push(entry.pending?.active ? entry.pending.title : entry.confirmation?.title ?? "");
+            titles.push(entry.pending.title);
         }
     }
     for (const entry of trailingEntries)
     {
-        if (entry.pending?.active || entry.confirmation?.active)
+        if (entry.pending?.active)
         {
-            titles.push(entry.pending?.active ? entry.pending.title : entry.confirmation?.title ?? "");
+            titles.push(entry.pending.title);
         }
     }
     return titles.join(". ");
@@ -47,10 +49,6 @@ function displayedTitle(entry: StatusBarEntry): string
     if (entry.pending?.active)
     {
         return entry.pending.title;
-    }
-    if (entry.confirmation?.active)
-    {
-        return entry.confirmation.title;
     }
     return entry.title;
 }
@@ -68,15 +66,14 @@ function handleInvoke(event: MouseEvent): void
 
 {#snippet statusEntry(entry: StatusBarEntry)}
     {#snippet content()}
-        {#if entry.icon === "app"}
-            <span class="app-mark-motion" {@attach appMarkMotion}><AppMark /></span>
+        {#if entry.icon}
+            <span class="menu-icon-motion" {@attach menuIconMotion}>
+                {#if entry.icon === "app"}<AppMark />{:else}<ExtensionIcon src={entry.icon.src} />{/if}
+            </span>
         {/if}
         {#if !entry.iconOnly}
             <span class="entry-label-stack" aria-hidden="true">
                 <span class="entry-label-reserve">{entry.title}</span>
-                {#if entry.confirmation}
-                    <span class="entry-label-reserve">{entry.confirmation.title}</span>
-                {/if}
                 {#if entry.pending}
                     <span class="entry-label-reserve">{entry.pending.title}</span>
                 {/if}
@@ -105,7 +102,7 @@ function handleInvoke(event: MouseEvent): void
                 selected: entry.menu?.expanded,
                 pending: Boolean(entry.pending?.active)
             }]}
-            feedback={entry.icon !== "app"}
+            feedback={!entry.icon}
             variant={entry.destructive ? "danger" : "ghost"}
             data-entry-id={entry.id}
             disabled={entry.disabled || Boolean(entry.pending?.active)}
@@ -122,7 +119,7 @@ function handleInvoke(event: MouseEvent): void
     {/if}
 {/snippet}
 
-{#if leadingEntries.length || trailingEntries.length}
+{#if leadingEntries.length || trailingEntries.length || trailingText}
     <span class="status-announcement" role="status" aria-live="polite" aria-atomic="true">
         {statusAnnouncement}
     </span>
@@ -137,8 +134,11 @@ function handleInvoke(event: MouseEvent): void
             {/each}
         </div>
         <div class="trailing-entries">
+            {#if trailingText}
+                <span class="status-entry passive metadata"><span class="entry-label">{trailingText}</span></span>
+            {/if}
             {#each trailingEntries as entry, index (entry.id)}
-                {#if index > 0}<span class="separator" aria-hidden="true"></span>{/if}
+                {#if index > 0 || trailingText}<span class="separator" aria-hidden="true"></span>{/if}
                 {@render statusEntry(entry)}
             {/each}
         </div>
@@ -153,15 +153,16 @@ function handleInvoke(event: MouseEvent): void
 .trailing-entries { flex: 0 1 auto; margin-left: auto; }
 .status-bar :global(.status-entry) { display: inline-flex; min-width: 0; max-width: 40vw; flex: 0 1 auto; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .passive { min-height: var(--control-height); padding: 0.25rem 0.375rem; border: 1px solid transparent; color: var(--text-primary); font-size: var(--font-meta); font-weight: 500; line-height: 1.2; }
+.metadata { color: var(--text-secondary); font-weight: 400; }
 .status-bar :global(button.icon-only) { width: var(--control-height); min-width: var(--control-height); height: var(--control-height); min-height: var(--control-height); flex: 0 0 var(--control-height); align-self: flex-end; justify-content: center; border: 0; border-radius: 0.625rem; background: transparent; color: var(--text-tertiary); padding: 0; }
 /* Match the collection icon center: outer inset + row padding + half the icon width. */
 .leading-entries :global(button.icon-only:first-child) { margin-inline-start: calc(var(--collection-icon-inset) - var(--space-2) + (var(--icon-size) - var(--control-height)) / 2); }
-.status-bar :global(.app-mark-motion) { display: inline-flex; color: var(--text-secondary); opacity: 0.48; transform: scale(1); transform-origin: center; }
-.status-bar :global(button.icon-only.selected .app-mark-motion) { opacity: 0.82; }
-.status-bar :global(button.icon-only:focus-visible .app-mark-motion) { opacity: 0.9; }
-.status-bar :global(button.icon-only:active:not(:disabled) .app-mark-motion) { opacity: 0.95; }
+.status-bar :global(.menu-icon-motion) { display: inline-flex; --icon-size: 20px; color: var(--text-secondary); opacity: 0.48; transform: scale(1); transform-origin: center; }
+.status-bar :global(button.icon-only.selected .menu-icon-motion) { opacity: 0.82; }
+.status-bar :global(button.icon-only:focus-visible .menu-icon-motion) { opacity: 0.9; }
+.status-bar :global(button.icon-only:active:not(:disabled) .menu-icon-motion) { opacity: 0.95; }
 @media (hover: hover) and (pointer: fine) {
-  .status-bar :global(button.icon-only[data-hovered]:not(:disabled, :focus-visible) .app-mark-motion) { opacity: 0.9; }
+  .status-bar :global(button.icon-only[data-hovered]:not(:disabled, :focus-visible) .menu-icon-motion) { opacity: 0.9; }
 }
 .status-bar :global(button.icon-only:focus-visible) { background: transparent; box-shadow: none; color: var(--text-secondary); }
 .status-bar :global(button.pending:disabled) { opacity: 1; }
@@ -171,7 +172,7 @@ function handleInvoke(event: MouseEvent): void
 .entry-label-reserve { visibility: hidden; }
 :global(.pending) .entry-label { color: var(--text-secondary); }
 @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
-  :global(:root[data-ui-active="true"]) .status-bar :global(button.icon-only[data-hovered]:not(:disabled, :focus-visible) .app-mark-motion) { --motion-ease: var(--motion-popup-ease); transform: scale(1.16); }
+  :global(:root[data-ui-active="true"]) .status-bar :global(button.icon-only[data-hovered]:not(:disabled, :focus-visible) .menu-icon-motion) { --motion-ease: var(--motion-popup-ease); transform: scale(1.16); }
 }
 @media (prefers-reduced-motion: no-preference) {
   :global(:root[data-ui-active="true"]) :global(.pending) .entry-label { background: linear-gradient(100deg, var(--text-secondary) 20%, var(--text-primary) 50%, var(--text-secondary) 80%); background-position: 100% 0; background-size: 250% 100%; background-clip: text; color: transparent; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }

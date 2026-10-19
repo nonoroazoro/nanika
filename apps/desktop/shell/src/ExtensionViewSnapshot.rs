@@ -6,6 +6,8 @@ use serde::Serialize;
 pub(crate) struct ExtensionViewSnapshot {
     pub(crate) route_id: u64,
     pub(crate) extension_id: String,
+    pub(crate) extension_name: String,
+    pub(crate) extension_icon_url: String,
     pub(crate) instance_id: u64,
     pub(crate) generation: u64,
     pub(crate) view_id: String,

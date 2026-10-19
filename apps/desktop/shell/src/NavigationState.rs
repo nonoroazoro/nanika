@@ -100,11 +100,12 @@ impl NavigationState {
 
     pub(crate) fn apply(
         &mut self,
-        extension_id: &str,
+        extension: &nanika_host::RuntimeExtensionInfo,
         instance_id: u64,
         generation: u64,
         effect: NavigationEffect
     ) -> Result<(), String> {
+        let extension_id = extension.id.as_str();
         effect.validate()?;
         match effect {
             NavigationEffect::None => {}
@@ -135,6 +136,17 @@ impl NavigationState {
                 self.stack.push(ExtensionViewSnapshot {
                     route_id: self.next_route_id,
                     extension_id: extension_id.to_owned(),
+                    extension_name: extension.name.clone(),
+                    extension_icon_url: crate::resource_protocol::url(&format!(
+                        "{}/package/{}{}",
+                        extension.id,
+                        extension.icon,
+                        extension
+                            .icon_hash
+                            .as_ref()
+                            .map(|hash| format!("?sha256={hash}"))
+                            .unwrap_or_default()
+                    )),
                     instance_id,
                     generation,
                     view_id,

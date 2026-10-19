@@ -3,4 +3,4 @@
 /**
  * JSON value categories supported by the declarative Settings renderer.
  */
-export type ConfigurationValueType = "boolean" | "integer" | "string" | "array" | "object";
+export type ConfigurationValueType = "boolean" | "integer" | "integerLimit" | "string" | "array" | "object";

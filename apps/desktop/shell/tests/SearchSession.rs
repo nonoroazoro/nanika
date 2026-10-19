@@ -62,10 +62,10 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                     detail: DetailView {
                         title: None,
                         content: DetailContent::Text {
+                            value: "test".into(),
                             text_id: "test.text".into(),
                             chunk_index: 0,
                             total_chunks: 1,
-                            value: "test".into(),
                         },
                         metadata: vec![],
                         actions: actions.clone()
@@ -109,12 +109,45 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
             session.navigation.stack.push(ExtensionViewSnapshot {
                 route_id: 1,
                 extension_id: "test.extension".into(),
+                extension_name: "Test extension".into(),
+                extension_icon_url: "icon.png".into(),
                 instance_id: 1,
                 generation: 1,
                 view_id: "view".into(),
                 revision: 2,
                 view: Arc::new(view)
             });
+            let menu = crate::ConfigurationMenuRequest {
+                session_id: 1,
+                route_id: 1,
+                instance_id: 1
+            };
+            assert_eq!(
+                session
+                    .configuration_menu_route(&menu)
+                    .unwrap()
+                    .extension_id,
+                "test.extension"
+            );
+            for request in [
+                crate::ConfigurationMenuRequest {
+                    session_id: 2,
+                    ..menu.clone()
+                },
+                crate::ConfigurationMenuRequest {
+                    route_id: 2,
+                    ..menu.clone()
+                },
+                crate::ConfigurationMenuRequest {
+                    instance_id: 2,
+                    ..menu.clone()
+                }
+            ] {
+                assert!(session.configuration_menu_route(&request).is_err());
+            }
+            session.navigation.busy = true;
+            assert!(session.configuration_menu_route(&menu).is_err());
+            session.navigation.busy = false;
             let mut request = ContextMenuRequest {
                 session_id: 1,
                 target: MenuTarget::View {

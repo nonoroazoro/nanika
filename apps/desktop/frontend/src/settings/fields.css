@@ -1,0 +1,7 @@
+.extension-page .fields { display: grid; gap: 0; min-width: 0; margin: 0 0 var(--settings-group-gap); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); padding: 0; background: var(--surface-form); }
+.extension-page .property { min-width: 0; padding: var(--settings-row-padding); }
+.extension-page .property + .property { border-top: 1px solid var(--border-subtle); }
+.extension-page .property.scalar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); }
+.extension-page .property :is(h2, h3) { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
+.extension-page .property-copy p { color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); margin: 4px 0 0; }
+.extension-page .property:not(.scalar):not(.directory) .property-control { margin-top: var(--space-2); }

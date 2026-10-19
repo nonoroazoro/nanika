@@ -1,5 +1,5 @@
-import type { ConfigurationProperty } from "../../src/generated/ConfigurationProperty";
-import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
+import type { ConfigurationProperty } from "../src/generated/ConfigurationProperty";
+import type { ConfigurationSchema } from "../src/generated/ConfigurationSchema";
 
 /**
  * Builds the complete schema shape serialized by Rust, including Serde defaults.
@@ -11,7 +11,6 @@ export function configurationSchema(
 ): ConfigurationSchema
 {
     return {
-        allowUnlimited: false,
         format: null,
         minimum: null,
         maximum: null,
@@ -40,6 +39,7 @@ export function configurationProperty(
         ...configurationSchema(overrides),
         description: null,
         platforms: [],
+        group: null,
         order: 0,
         ...overrides
     };

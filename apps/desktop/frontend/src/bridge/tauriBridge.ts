@@ -7,6 +7,8 @@ import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
 let _rangeSequence = 0;
 
 export const tauriBridge: NanikaBridge = {
+    readConfigurationMenu: async request => invoke("read_configuration_menu", { request }),
+    invokeConfigurationMenu: async (request, operation) => invoke("invoke_configuration_menu", { request, operation }),
     readContextMenu: async request => invoke("read_context_menu", { request }),
     invokeContextMenu: async (request, actionId, confirmed) =>
         invoke("invoke_context_menu", { request, actionId, confirmed }),
@@ -52,5 +54,5 @@ export const tauriBridge: NanikaBridge = {
     invokeCandidate: async request => invoke("invoke_candidate", { request }),
     viewEvent: async request => invoke("view_event", { request }),
     dismissLauncher: async () => invoke("dismiss_launcher"),
-    openSettings: async () => invoke("open_settings")
+    openSettings: async extensionId => invoke("open_settings", { extensionId: extensionId ?? null })
 };

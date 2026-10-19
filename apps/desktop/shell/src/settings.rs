@@ -5,10 +5,31 @@ use tauri::Manager;
 use crate::{SettingsEvent, SettingsWindow, SettingsWindowAction};
 
 // WebView construction stays on blocking workers; presentation stays on the shell thread.
-pub(crate) fn show_settings(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn show_settings(
+    app: &tauri::AppHandle,
+    extension_id: Option<String>
+) -> Result<(), String> {
     prepare_settings(app)?;
     let owner = app.clone();
     app.run_on_main_thread(move || {
+        let state = owner.state::<SettingsWindow>();
+        let navigation = {
+            let mut current = state
+                .navigation
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            current.revision += 1;
+            current.extension_id = extension_id;
+            current.clone()
+        };
+        // A cold WebView receives the retained destination in read_settings instead.
+        if state.ready.load(Ordering::Acquire)
+            && let Err(error) = owner
+                .state::<crate::DesktopState>()
+                .send_settings_event(SettingsEvent::Navigation { navigation })
+        {
+            tracing::error!(%error, "settings destination could not be delivered");
+        }
         owner
             .state::<SettingsWindow>()
             .requested
@@ -49,6 +70,17 @@ pub(crate) fn ready(window: &tauri::WebviewWindow) -> Result<(), String> {
         .state::<SettingsWindow>()
         .ready
         .store(true, Ordering::Release);
+    // Re-send the retained destination after subscription to close the race
+    // between read_settings and a concurrent open_settings request.
+    let navigation = window
+        .state::<SettingsWindow>()
+        .navigation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    window
+        .state::<crate::DesktopState>()
+        .send_settings_event(SettingsEvent::Navigation { navigation })?;
     _present(window)
 }
 

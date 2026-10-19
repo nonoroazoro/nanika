@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { configurationProperty } from "./schema";
+import { configurationProperty } from "../../fixtures/configuration";
 import { orderedProperties } from "../../src/settings/properties.ts";
 
 import type { ConfigurationProperty } from "../../src/generated/ConfigurationProperty";

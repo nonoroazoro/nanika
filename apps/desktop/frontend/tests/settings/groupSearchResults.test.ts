@@ -12,15 +12,15 @@ const field: SettingsSearchEntry = {
     title: "Folders"
 };
 
-test("groups use navigation order while fields preserve rank without duplicate page destinations", () =>
+test("groups and fields preserve host order without duplicate page destinations", () =>
 {
     const scripts = { ...field, pageId: "scripts", pageTitle: "Scripts" };
     const enabled: SettingsSearchEntry = { ...field, target: { kind: "enabled" }, title: "Enable extension" };
     const page: SettingsSearchEntry = { ...field, target: { kind: "page" }, title: "Applications" };
     const results = [field, scripts, page, enabled];
-    assert.deepEqual(groupSearchResults(results, ["scripts", "applications"]), [
-        { pageId: "scripts", title: "Scripts", entries: [scripts] },
-        { pageId: "applications", title: "Applications", entries: [field, enabled] }
+    assert.deepEqual(groupSearchResults(results), [
+        { pageId: "applications", title: "Applications", entries: [field, enabled] },
+        { pageId: "scripts", title: "Scripts", entries: [scripts] }
     ]);
     assert.deepEqual(results, [field, scripts, page, enabled]);
 });
@@ -28,18 +28,15 @@ test("groups use navigation order while fields preserve rank without duplicate p
 test("page-only matches remain navigable headings and empty results produce no groups", () =>
 {
     assert.deepEqual(
-        groupSearchResults([{ ...field, target: { kind: "page" }, title: "Applications" }], [
-            "general",
-            "applications"
-        ]),
+        groupSearchResults([{ ...field, target: { kind: "page" }, title: "Applications" }]),
         [
             { pageId: "applications", title: "Applications", entries: [] }
         ]
     );
-    assert.deepEqual(groupSearchResults([], ["general", "applications"]), []);
+    assert.deepEqual(groupSearchResults([]), []);
 });
 
-test("General stays first regardless of match scores and unmatched pages remain absent", () =>
+test("page groups are never independently sorted and unmatched pages remain absent", () =>
 {
     const general: SettingsSearchEntry = {
         pageId: "general",
@@ -47,9 +44,8 @@ test("General stays first regardless of match scores and unmatched pages remain 
         target: { kind: "field", key: "theme" },
         title: "Theme"
     };
-    const order = ["general", "applications", "scripts"];
     for (const results of [[field, general], [general, field]])
     {
-        assert.deepEqual(groupSearchResults(results, order).map(group => group.pageId), ["general", "applications"]);
+        assert.deepEqual(groupSearchResults(results).map(group => group.pageId), results.map(entry => entry.pageId));
     }
 });

@@ -8,6 +8,9 @@ use crate::{ConfigurationPersistence, ConfigurationSchema};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationProperty {
     pub title: String,
+    /// Named presentation group. Omission uses the contribution title.
+    #[serde(default)]
+    pub group: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     pub default: Value,

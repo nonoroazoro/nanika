@@ -37,13 +37,10 @@ impl ClipboardWorker {
         self.commands.clone()
     }
 
-    pub fn clear(&self, entry_ids: Arc<Vec<String>>) -> Result<(), String> {
+    pub fn clear_all(&self) -> Result<(), String> {
         let (response, result) = mpsc::sync_channel(1);
         self.commands
-            .send(ClipboardCommand::Clear {
-                entry_ids,
-                response
-            })
+            .send(ClipboardCommand::ClearAll { response })
             .map_err(|_| "clipboard capture owner is closed".to_owned())?;
         result
             .recv()
@@ -143,8 +140,8 @@ impl ClipboardWorker {
                                 eprintln!("clipboard capture failed: {error}");
                             }
                         }
-                        ClipboardCommand::Clear { entry_ids, response } => {
-                            let result = clear_entries(&mut store, &mut payloads, &entry_ids, &*invalidated);
+                        ClipboardCommand::ClearAll { response } => {
+                            let result = store.all_ids().and_then(|ids| clear_entries(&mut store, &mut payloads, &ids, &*invalidated));
                             if response.send(result).is_err() {
                                 eprintln!(
                                     "clipboard clear requester closed before receiving result"

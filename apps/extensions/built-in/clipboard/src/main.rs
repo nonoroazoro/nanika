@@ -108,6 +108,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 generation,
                 entry_id,
                 action_id
+            } if entry_id == nanika_protocol::SETTINGS_ENTRY_ID && action_id == CLEAR_ACTION_ID => {
+                match worker.clear_all() {
+                    Ok(()) => send_frame(
+                        &output,
+                        &Message::Result {
+                            request_id,
+                            generation,
+                            effect: NavigationEffect::None
+                        }
+                    )?,
+                    Err(error) => send_error(
+                        &output,
+                        Some(request_id),
+                        "clipboard_history_clear_failed",
+                        &error
+                    )?
+                }
+            }
+            Message::Invoke {
+                request_id,
+                generation,
+                entry_id,
+                action_id
             } => {
                 if entry_id != VIEW_ID || action_id != nanika_protocol::VIEW_OPEN_ACTION_ID {
                     send_error(
@@ -264,18 +287,6 @@ fn handle_view_event(
     match event {
         ViewEvent::Resumed => {}
         ViewEvent::Invalidated => {}
-        ViewEvent::ActionInvoked { action_id, .. } if action_id == CLEAR_ACTION_ID => {
-            let entry_ids = Arc::clone(&current.matching_ids);
-            if let Err(message) = worker.clear(entry_ids) {
-                return send_error(
-                    output,
-                    Some(request_id),
-                    "clipboard_history_clear_failed",
-                    &message
-                );
-            }
-            state.selected_item_id = None;
-        }
         ViewEvent::SearchChanged {
             text,
             minimum_items

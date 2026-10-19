@@ -19,8 +19,11 @@ impl HostSettings {
     pub(crate) fn open(paths: &nanika_storage::NanikaPaths) -> Result<Self, String> {
         let store = ConfigStore::open(paths.app_data_root(), paths.config_root())
             .map_err(|error| error.to_string())?;
-        let preferences = LauncherPreferences::load(&store, crate::DEFAULT_HOTKEY)?;
-        parse(&preferences.launcher_shortcut)?;
+        let mut preferences = LauncherPreferences::load(&store, crate::DEFAULT_HOTKEY)?;
+        if let Err(error) = parse(&preferences.launcher_shortcut) {
+            tracing::warn!(%error, "invalid launcher shortcut; using default");
+            preferences.launcher_shortcut = crate::DEFAULT_HOTKEY.to_owned();
+        }
         let hide_on_blur = AtomicBool::new(preferences.hide_on_blur);
         let executable = std::env::current_exe().map_err(|error| error.to_string())?;
         let startup = nanika_platform::StartupService::spawn(executable)

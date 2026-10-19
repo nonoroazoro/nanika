@@ -3,10 +3,6 @@ import type { JsonValue } from "../generated/serde_json/JsonValue";
 
 export function integerError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
 {
-    if (value === null && schema.allowUnlimited)
-    {
-        return null;
-    }
     const text = typeof value === "number" || typeof value === "string" ? String(value) : "";
     const number = Number(text);
     if (!/^-?\d+$/.test(text) || !Number.isSafeInteger(number))
@@ -30,6 +26,13 @@ export function integerError(schema: ConfigurationSchema, value: JsonValue | und
 
 export function normalizeSetting(schema: ConfigurationSchema, value: JsonValue): JsonValue
 {
+    if (schema.type === "integerLimit")
+    {
+        const limit = integerLimitDraft(value);
+        return limit && integerError(schema, limit.value) === null
+            ? { unlimited: limit.unlimited, value: Number(limit.value) }
+            : value;
+    }
     if (schema.type === "integer" && value !== null && integerError(schema, value) === null)
     {
         return Number(value);
@@ -56,4 +59,21 @@ export function normalizeSettings(
             [key, value]
         ) => [key, properties[key] ? normalizeSetting(properties[key], value) : value])
     );
+}
+
+/**
+ * Read only the explicit two-field shape, preserving unfinished numeric drafts.
+ * @param value Stored limit or editor draft
+ */
+export function integerLimitDraft(value: JsonValue | undefined): { unlimited: boolean; value: number | string; } | null
+{
+    if (
+        !value || typeof value !== "object" || Array.isArray(value)
+        || Object.keys(value).length !== 2 || typeof value.unlimited !== "boolean"
+        || (typeof value.value !== "number" && typeof value.value !== "string")
+    )
+    {
+        return null;
+    }
+    return { unlimited: value.unlimited, value: value.value };
 }

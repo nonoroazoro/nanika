@@ -4,8 +4,10 @@ import type { ExtensionLifecycle } from "../generated/ExtensionLifecycle";
 import type { HostSettingsChange } from "../generated/HostSettingsChange";
 import type { LauncherPreferences } from "../generated/LauncherPreferences";
 import type { SaveSettingsRequest } from "../generated/SaveSettingsRequest";
+import type { SettingsActionRequest } from "../generated/SettingsActionRequest";
 import type { SettingsApplicationUpdate } from "../generated/SettingsApplicationUpdate";
 import type { SettingsEvent } from "../generated/SettingsEvent";
+import type { SettingsNavigation } from "../generated/SettingsNavigation";
 import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 import type { SettingsSnapshot } from "../generated/SettingsSnapshot";
 import type { SettingsWindowAction } from "../generated/SettingsWindowAction";
@@ -22,7 +24,8 @@ export const settingsBridge = {
         onClose: () => void,
         onWindowState: (maximized: boolean) => void,
         onError: (error: unknown) => void,
-        onLifecycle: (revision: number, extensions: ExtensionLifecycle[]) => void
+        onLifecycle: (revision: number, extensions: ExtensionLifecycle[]) => void,
+        onNavigate: (navigation: SettingsNavigation) => void
     ): Promise<SettingsSnapshot> =>
     {
         const subscribe = updates === undefined;
@@ -40,6 +43,10 @@ export const settingsBridge = {
             else if (event.type === "shortcutPressed")
             {
                 onShortcut?.();
+            }
+            else if (event.type === "navigation")
+            {
+                onNavigate(event.navigation);
             }
             else if (event.type === "lifecycle")
             {
@@ -88,6 +95,8 @@ export const settingsBridge = {
     setStartup: async (enabled: boolean): Promise<StartupStatus> => invoke("set_startup", { enabled }),
     setEnabled: async (extensionId: string, enabled: boolean): Promise<void> =>
         invoke("set_extension_enabled", { extensionId, enabled }),
+    invokeAction: async (request: SettingsActionRequest): Promise<void> =>
+        invoke("invoke_settings_action", { request }),
     save: async (request: SaveSettingsRequest): Promise<SettingsApplicationUpdate> =>
         invoke("save_settings", { request }),
     pickDirectory: async (extensionId: string, key: string): Promise<string | null> =>

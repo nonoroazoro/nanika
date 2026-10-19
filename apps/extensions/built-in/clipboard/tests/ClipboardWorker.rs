@@ -263,12 +263,8 @@ fn retention_and_clear_notify_after_commit_even_when_payload_cleanup_fails() {
         1
     );
     assert_eq!(changes.load(Ordering::SeqCst), 1);
-    let ids = worker
-        .present(ClipboardViewState::new(), None)
-        .unwrap()
-        .matching_ids;
     worker
-        .clear(ids)
+        .clear_all()
         .expect_err("cleanup failure remains concrete");
     assert!(
         worker
@@ -352,9 +348,7 @@ fn recaptured_images_remain_owned_after_old_copy_leases_release() {
     )
     .unwrap();
     let lease = worker.content(entry.entry_id.clone()).unwrap();
-    worker
-        .clear(Arc::new(vec![entry.entry_id.clone()]))
-        .unwrap();
+    worker.clear_all().unwrap();
     assert!(image.exists());
     worker
         .command_sender()
@@ -367,7 +361,7 @@ fn recaptured_images_remain_owned_after_old_copy_leases_release() {
         "a new committed row owns the same immutable payload"
     );
     assert!(worker.content(entry.entry_id.clone()).is_ok());
-    worker.clear(Arc::new(vec![entry.entry_id])).unwrap();
+    worker.clear_all().unwrap();
     assert!(!image.exists());
     worker.shutdown().unwrap();
     std::fs::remove_dir_all(root).unwrap();
@@ -444,7 +438,7 @@ fn stored_image_paths_cannot_expand_payload_deletion_authority() {
     )
     .unwrap();
     assert!(worker.content(entry.entry_id.clone()).is_err());
-    let error = worker.clear(Arc::new(vec![entry.entry_id])).unwrap_err();
+    let error = worker.clear_all().unwrap_err();
     assert!(error.contains("Entries were removed; payload cleanup failed"));
     worker.shutdown().unwrap();
     assert!(
@@ -484,4 +478,52 @@ fn seed_copy_image(label: &str) -> (std::path::PathBuf, std::path::PathBuf, Clip
         .upsert(&entry)
         .unwrap();
     (root, image, entry)
+}
+
+#[test]
+fn settings_clear_removes_all_history_even_while_the_view_is_filtered() {
+    use crate::{ClipboardConfig, ClipboardWorker};
+    use std::sync::Arc;
+    let (root, image, _) = seed_copy_image("settings-clear");
+    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    database
+        .upsert(&ClipboardEntry {
+            entry_id: "text".into(),
+            title: "Text".into(),
+            content: ClipboardContent::Text {
+                value: "Visible text".into()
+            },
+            byte_size: 12,
+            captured_at: 2
+        })
+        .unwrap();
+    drop(database);
+    let worker = ClipboardWorker::_spawn(
+        root.join("clipboard.db"),
+        root.join("payloads"),
+        ClipboardConfig {
+            max_entries: None,
+            max_age_days: None
+        },
+        Arc::new(|| {}),
+        |_| Ok(None)
+    )
+    .unwrap();
+    let mut filtered = ClipboardViewState::new();
+    filtered.content_type = "text".into();
+    assert_eq!(
+        worker.present(filtered, None).unwrap().matching_ids.len(),
+        1
+    );
+    worker.clear_all().unwrap();
+    assert!(
+        worker
+            .present(ClipboardViewState::new(), None)
+            .unwrap()
+            .matching_ids
+            .is_empty()
+    );
+    assert!(!image.exists());
+    worker.shutdown().unwrap();
+    std::fs::remove_dir_all(root).unwrap();
 }

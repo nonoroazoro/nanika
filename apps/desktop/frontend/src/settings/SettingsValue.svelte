@@ -1,7 +1,9 @@
 <script lang="ts">
+import { MAX_CONFIGURATION_STRING_BYTES } from "../generated/limits";
 import Button from "../components/ui/Button.svelte";
 import Input from "../components/ui/Input.svelte";
 import SettingsValue from "./SettingsValue.svelte";
+import IntegerLimitSetting from "./IntegerLimitSetting.svelte";
 import IntegerSetting from "./IntegerSetting.svelte";
 import Switch from "../components/ui/Switch.svelte";
 import { emptyValue, fieldTitle } from "./values";
@@ -15,7 +17,7 @@ const { schema, value, label, id, onChange, onCommit }: {
     label: string;
     id: string;
     onChange: (value: JsonValue) => void;
-    onCommit: () => void;
+    onCommit: () => void | Promise<void>;
 } = $props();
 const array = $derived(Array.isArray(value) ? value : []);
 const object = $derived(value && typeof value === "object" && !Array.isArray(value) ? value : {});
@@ -32,8 +34,10 @@ function _change(next: JsonValue): void
 
 {#if schema.type === "boolean"}
     <Switch {id} {label} checked={value === true} onChange={_change} />
+{:else if schema.type === "integerLimit"}
+    <IntegerLimitSetting {id} {schema} {value} {label} {onChange} {onCommit} />
 {:else if schema.type === "integer"}
-    <IntegerSetting {id} {schema} {value} {label} {onChange} {onCommit} />
+    <IntegerSetting {id} {schema} {value} {label} {onChange} />
 {:else if schema.type === "string"}
     <Input
         bind:ref={stringInput}
@@ -41,7 +45,7 @@ function _change(next: JsonValue): void
         type="text"
         aria-label={label}
         spellcheck={schema.format !== "path"}
-        maxlength={schema.maxLength ?? 4096}
+        maxlength={schema.maxLength ?? MAX_CONFIGURATION_STRING_BYTES}
         value={typeof value === "string" ? value : ""}
         oninput={event => onChange(event.currentTarget.value)}
         aria-invalid={currentStringError !== null ? true : undefined}
@@ -61,6 +65,7 @@ function _change(next: JsonValue): void
                     />
                 </div>
                 <Button
+                    variant="outline"
                     class="remove"
                     aria-label={`Remove ${label} entry ${index + 1}`}
                     onclick={() => _change(array.filter((_, position) => position !== index))}
@@ -71,6 +76,8 @@ function _change(next: JsonValue): void
         {/each}
         <div class="array-actions">
             <Button
+                variant="outline"
+                size="action"
                 disabled={array.length >= (schema.maxItems ?? 0)}
                 onclick={() =>
                 {
@@ -84,6 +91,8 @@ function _change(next: JsonValue): void
                 Add entry
             </Button>
             {#if array.length > visibleCount}<Button
+                    variant="outline"
+                    size="action"
                     onclick={() =>
                     {
                         visibleCount += 20;

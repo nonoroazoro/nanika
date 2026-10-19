@@ -13,10 +13,14 @@ export function emptyValue(schema: ConfigurationSchema): JsonValue
     {
         case "boolean":
             return false;
+        case "integerLimit":
         case "integer":
         {
             const step = schema.multipleOf ?? 1;
-            return Math.ceil((schema.minimum ?? 0) / step) * step;
+            const value = schema.minimum != null
+                ? Math.ceil(schema.minimum / step) * step
+                : Math.floor(Math.min(0, schema.maximum ?? 0) / step) * step;
+            return schema.type === "integerLimit" ? { unlimited: false, value } : value;
         }
         case "string":
             return "";

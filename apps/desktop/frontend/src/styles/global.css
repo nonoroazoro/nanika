@@ -28,6 +28,10 @@
   --accent: #2563eb;
   --accent-foreground: #ffffff;
   --text-danger: #9f514a;
+  --danger-solid: #d43838;
+  --danger-solid-hover: #c42f2f;
+  --danger-solid-pressed: #ad2929;
+  --danger-foreground: #ffffff;
   --text-success: #267a4b;
   --text-primary: #17181a;
   --text-secondary: #5f636c;
@@ -159,6 +163,9 @@
    Keep content, status colors, editing and disabled states independent of it.
    Root scope also reaches portaled controls. State changes are immediate. */
 :root[data-ui-active="false"] {
+  --danger-solid: var(--control-inactive-fill);
+  --danger-solid-hover: var(--control-inactive-fill);
+  --danger-solid-pressed: var(--control-inactive-fill);
   --accent: var(--text-secondary);
   --accent-hover: var(--text-primary);
   --surface-accent: var(--surface-selected);
@@ -344,6 +351,5 @@ button:focus-visible {
 .popup-item[data-highlighted] { background: var(--surface-selected); }
 .popup-item[data-disabled] { color: var(--text-tertiary); }
 .popup-item[data-destructive]:not([data-disabled]) { color: var(--text-danger); }
-.popup-item[data-confirming] { background: var(--surface-danger-hover); }
 .popup-separator { height: 1px; margin: var(--space-1) var(--space-2); background: var(--border-subtle); }
 .popup-heading { padding: var(--space-2) var(--space-3); color: var(--text-secondary); font-size: var(--font-control); font-weight: 600; }

@@ -67,3 +67,14 @@ pub use configuration_persistence::*;
 #[path = "RootSearchMode.rs"]
 mod root_search_mode;
 pub use root_search_mode::RootSearchMode;
+
+#[path = "SettingsAction.rs"]
+mod settings_action;
+pub use settings_action::SettingsAction;
+
+#[path = "ConfigurationMenuItem.rs"]
+mod configuration_menu_item;
+pub use configuration_menu_item::ConfigurationMenuItem;
+#[path = "ConfigurationMenuGroup.rs"]
+mod configuration_menu_group;
+pub use configuration_menu_group::ConfigurationMenuGroup;

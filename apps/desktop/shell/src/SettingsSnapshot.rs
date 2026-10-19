@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsSnapshot {
+    pub(crate) navigation: crate::SettingsNavigation,
     pub(crate) lifecycle_revision: u64,
     pub(crate) maximized: bool,
     pub(crate) version: &'static str,
@@ -62,6 +63,9 @@ pub(crate) struct SettingsApplicationUpdate {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum SettingsEvent {
+    Navigation {
+        navigation: crate::SettingsNavigation
+    },
     Lifecycle {
         #[serde(rename = "deliveryId")]
         delivery_id: u64,

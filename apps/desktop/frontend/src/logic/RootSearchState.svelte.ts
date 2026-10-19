@@ -14,7 +14,6 @@ export class RootSearchState
     private _resultRequestId: number | null = null;
     private _selectedIndex = $state(-1);
     private _selectedId = $state<string | null>(null);
-    private _confirmation = $state<string | null>(null);
 
     constructor(snapshot: RootSearchSnapshot)
     {
@@ -44,14 +43,6 @@ export class RootSearchState
             : null;
     }
 
-    get confirmationTitle(): string | null
-    {
-        const selected = this.selectedResult;
-        return selected && this._confirmation === this._confirmationKey(selected)
-            ? selected.confirmationTitle
-            : null;
-    }
-
     static identity(result: SearchResult): string
     {
         return JSON.stringify([result.extensionId, result.entryId, result.actionId]);
@@ -61,38 +52,19 @@ export class RootSearchState
      * Resolves direct activation against the displayed result revision.
      * @param result The visible result the user activated.
      */
-    activate(result: SearchResult): "confirmed" | "default" | null
+    activate(result: SearchResult): "confirmation" | "default" | null
     {
         const index = this.snapshot.results.indexOf(result);
         if (this.snapshot.phase !== "ready" || index < 0)
         {
-            this.cancelConfirmation();
             return null;
         }
         this.select(this.snapshot.resultOffset + index);
-        if (result.allowDefaultExecution)
+        if (result.confirmationTitle)
         {
-            this.cancelConfirmation();
-            return "default";
+            return "confirmation";
         }
-        if (!result.confirmationTitle)
-        {
-            this.cancelConfirmation();
-            return null;
-        }
-        const key = this._confirmationKey(result);
-        if (this._confirmation === key)
-        {
-            this.cancelConfirmation();
-            return "confirmed";
-        }
-        this._confirmation = key;
-        return null;
-    }
-
-    cancelConfirmation(): void
-    {
-        this._confirmation = null;
+        return result.allowDefaultExecution ? "default" : null;
     }
 
     /**
@@ -105,7 +77,6 @@ export class RootSearchState
         const previous = this.snapshot;
         if (next.phase === "searching")
         {
-            this.cancelConfirmation();
             this._snapshot = {
                 ...next,
                 results: previous.results,
@@ -125,7 +96,6 @@ export class RootSearchState
         }
         if (rankingChanged)
         {
-            this.cancelConfirmation();
             const matched = queryChanged
                 ? -1
                 : next.results.findIndex(result => RootSearchState.identity(result) === this._selectedId);
@@ -141,34 +111,13 @@ export class RootSearchState
             // Keyboard navigation can select an index before its requested page arrives.
             this.select(this._selectedIndex);
         }
-        // A page or payload replacement must not resurrect a previously reviewed target.
-        if (this._confirmation !== null && this.confirmationTitle === null)
-        {
-            this.cancelConfirmation();
-        }
     }
 
     select(index: number): void
     {
         const nextIndex = clampIndex(index, this.snapshot.totalResults);
-        if (nextIndex !== this._selectedIndex)
-        {
-            this.cancelConfirmation();
-        }
         this._selectedIndex = nextIndex;
         const result = this.snapshot.results[this._selectedIndex - this.snapshot.resultOffset];
         this._selectedId = result ? RootSearchState.identity(result) : null;
-    }
-
-    private _confirmationKey(result: SearchResult): string
-    {
-        return JSON.stringify([
-            this.snapshot.sessionId,
-            this.snapshot.requestId,
-            this.snapshot.resultRevision,
-            RootSearchState.identity(result),
-            result.title,
-            result.confirmationTitle
-        ]);
     }
 }

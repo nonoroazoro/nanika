@@ -27,4 +27,4 @@ zip.workspace = true
 workspace = true
 
 [features]
-typescript = ["dep:ts-rs", "nanika-config/typescript", "nanika-platform/typescript"]
+typescript = ["dep:ts-rs", "nanika-config/typescript", "nanika-platform/typescript", "nanika-protocol/typescript"]

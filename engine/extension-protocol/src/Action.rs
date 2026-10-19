@@ -10,14 +10,19 @@ pub struct Action {
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<crate::ActionIcon>,
-    /// Replacement label that requires a second click before invoking a destructive action.
+    /// Question displayed in a confirmation dialog before explicit invocation.
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirmation_title: Option<String>,
+    /// Concrete consequences of accepting the confirmation.
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmation_description: Option<String>,
     pub style: ActionStyle,
     pub enabled: bool,
     /// Permit direct activation without choosing an action. Incompatible with confirmation.
     pub allow_default_execution: bool,
+    // Display label shared by menu grouping and Settings sections, not an invocation ID.
     pub group: Option<String>
 }
 
@@ -40,6 +45,7 @@ impl Action {
             id: id.into(),
             title: title.into(),
             icon: None,
+            confirmation_description: None,
             confirmation_title: None,
             style: ActionStyle::Primary,
             enabled: true,

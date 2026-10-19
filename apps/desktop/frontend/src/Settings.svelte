@@ -1,4 +1,6 @@
 <script lang="ts">
+import { isCompositionKey } from "./ui/keyboard";
+import "./settings/fields.css";
 import SettingsSidebar from "./settings/SettingsSidebar.svelte";
 import { SettingsSearchState } from "./settings/SettingsSearchState.svelte";
 import { settingsAnchor } from "./settings/anchor";
@@ -14,6 +16,8 @@ import Button from "./components/ui/Button.svelte";
 import { onMount, tick } from "svelte";
 
 import { settingsBridge } from "./bridge/settingsBridge";
+import SettingsActions from "./settings/SettingsActions.svelte";
+import type { SettingsNavigation } from "./generated/SettingsNavigation";
 import SettingsValue from "./settings/SettingsValue.svelte";
 import DirectoryList from "./settings/DirectoryList.svelte";
 import GeneralSettings from "./settings/GeneralSettings.svelte";
@@ -28,7 +32,7 @@ import { uiActivity } from "./ui/activity";
 import { ExtensionSettingsState } from "./settings/ExtensionSettingsState.svelte";
 import SettingsTitleBar from "./settings/SettingsTitleBar.svelte";
 import type { SettingsWindowAction } from "./generated/SettingsWindowAction";
-import { orderedProperties } from "./settings/properties";
+import { propertyGroups } from "./settings/properties";
 import ExtensionIcon from "./components/extensions/ExtensionIcon.svelte";
 import type { ExtensionSettings } from "./generated/ExtensionSettings";
 import type { LauncherSettings } from "./settings/LauncherSettings";
@@ -50,6 +54,7 @@ const applications = new SettingsApplications();
 const search = new SettingsSearchState(settingsBridge.search);
 let revealed = $state<string | null>(null);
 let navigationRevision = 0;
+let requestedNavigation: SettingsNavigation | null = null;
 let detailViewport = $state<HTMLDivElement | null>(null);
 let detailContent = $state<HTMLElement | null>(null);
 let highlightedTarget = $state<HTMLElement | null>(null);
@@ -61,7 +66,12 @@ let lifecycleRevision = 0;
 let lifecycle: ExtensionLifecycle[] = [];
 const extensions = $derived(snapshot?.extensions ?? []);
 const selected = $derived(extensions.find(extension => extension.id === selection) ?? null);
-const properties = $derived(orderedProperties(selected?.configuration?.contribution.properties ?? {}));
+const groups = $derived(
+    propertyGroups(
+        selected?.configuration?.contribution.properties ?? {},
+        selected?.configuration?.contribution.title ?? "Settings"
+    )
+);
 const selectedState = $derived(states[selection]);
 const values = $derived(selectedState?.values ?? {});
 
@@ -81,6 +91,20 @@ onMount(() =>
         active = next;
     });
 });
+
+function _requestedNavigation(next: SettingsNavigation): void
+{
+    if (requestedNavigation && next.revision <= requestedNavigation.revision)
+    {
+        return;
+    }
+    requestedNavigation = next;
+    search.update("");
+    if (!loading)
+    {
+        void _navigate(next.extensionId ?? "general", { kind: "page" });
+    }
+}
 
 function _prepare(): void
 {
@@ -111,7 +135,8 @@ async function _load(): Promise<void>
                 maximized = next;
             },
             error => console.error("Settings progress receipt failed", error),
-            _lifecycle
+            _lifecycle,
+            _requestedNavigation
         );
         if (lifecycleRevision > snapshot.lifecycleRevision)
         {
@@ -127,6 +152,7 @@ async function _load(): Promise<void>
             lifecycleRevision = snapshot.lifecycleRevision;
             lifecycle = snapshot.extensions;
         }
+        _requestedNavigation(snapshot.navigation);
         maximized = snapshot.maximized;
         host = new SettingsState<LauncherSettings>(
             { values: snapshot.general, saved: snapshot.general, effective: snapshot.general, error: null },
@@ -157,6 +183,10 @@ async function _load(): Promise<void>
     finally
     {
         loading = false;
+        if (requestedNavigation)
+        {
+            void _navigate(requestedNavigation.extensionId ?? "general", { kind: "page" });
+        }
         search.refresh();
     }
 }
@@ -355,7 +385,7 @@ function _searchKeydown(event: KeyboardEvent): void
 {
     const modifier = customControls ? event.ctrlKey && !event.metaKey : event.metaKey && !event.ctrlKey;
     if (
-        event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey || !modifier
+        event.defaultPrevented || isCompositionKey(event) || event.altKey || event.shiftKey || !modifier
         || event.key.toLowerCase() !== "f"
     )
     {
@@ -499,62 +529,87 @@ function _windowAction(action: SettingsWindowAction): void
                                         </div>
                                     </section>
                                 </div>
-                                {#if !selected.configurationError && properties.length > 0}
-                                    <div class="fields">
-                                        {#each properties as [key, property] (key)}
-                                            <section
-                                                class="property settings-search-target"
-                                                id={settingsAnchor(selected.id, { kind: "field", key })}
-                                                class:directory={property.type === "array" && property.items?.format === "directory"}
-                                                class:scalar={property.type === "boolean" || property.type === "integer"}
-                                                aria-labelledby={`title-${key}`}
-                                            >
-                                                {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
-                                                        <h2 id={`title-${key}`}>{property.title}</h2>
-                                                        {#if property.description}<p>{property.description}</p>{/if}
-                                                    </div>{/if}
-                                                <div class="property-control">
-                                                    <SettingsField
-                                                        busy={selectedState?.phase.get(key) !== undefined}
-                                                        label={property.title}
-                                                        startedAt={selectedState?.startedAt.get(key)}
-                                                        progress={selectedState?.progress.get(key)}
-                                                        onCommit={() =>
-                                                        {
-                                                            void selectedState?.commit(key);
-                                                        }}
+                                {#if !selected.configurationError && groups.length > 0}
+                                    {#each groups as [group, properties] (group)}
+                                        <section class="configuration-group" aria-label={group}>
+                                            <h2>{group}</h2>
+                                            <div class="fields">
+                                                {#each properties as [key, property] (key)}
+                                                    <section
+                                                        class="property settings-search-target"
+                                                        id={settingsAnchor(selected.id, { kind: "field", key })}
+                                                        class:directory={property.type === "array" && property.items?.format === "directory"}
+                                                        class:scalar={property.type === "boolean" || property.type === "integer" || property.type === "integerLimit"}
+                                                        aria-labelledby={`title-${key}`}
                                                     >
-                                                        {#if property.type === "array" && property.items?.format === "directory"}
-                                                            <DirectoryList
-                                                                paths={values[key] as string[]}
-                                                                maximum={property.maxItems ?? 0}
+                                                        {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
+                                                                <h3 id={`title-${key}`}>{property.title}</h3>
+                                                                {#if property.description}<p>
+                                                                        {property.description}
+                                                                    </p>{/if}
+                                                            </div>{/if}
+                                                        <div class="property-control">
+                                                            <SettingsField
+                                                                busy={selectedState?.phase.get(key) !== undefined}
                                                                 label={property.title}
-                                                                titleId={`title-${key}`}
-                                                                description={property.description}
-                                                                onPick={() => settingsBridge.pickDirectory(selection, key)}
-                                                                onChange={paths =>
-                                                                {
-                                                                    void selectedState?.change(key, paths);
-                                                                }}
-                                                            />
-                                                        {:else}
-                                                            <SettingsValue
-                                                                schema={property}
-                                                                value={values[key]}
-                                                                label={property.title}
-                                                                id={`setting-${key}`}
-                                                                onChange={value => selectedState?.edit(key, value)}
+                                                                startedAt={selectedState?.startedAt.get(key)}
+                                                                progress={selectedState?.progress.get(key)}
                                                                 onCommit={() =>
                                                                 {
-                                                                    void selectedState?.commit(key);
+                                                                    return selectedState?.commit(key);
                                                                 }}
-                                                            />
-                                                        {/if}
-                                                    </SettingsField>
-                                                </div>
-                                            </section>
-                                        {/each}
-                                    </div>
+                                                            >
+                                                                {#if property.type === "array" && property.items?.format === "directory"}
+                                                                    <DirectoryList
+                                                                        paths={values[key] as string[]}
+                                                                        maximum={property.maxItems ?? 0}
+                                                                        label={property.title}
+                                                                        titleId={`title-${key}`}
+                                                                        description={property.description}
+                                                                        onPick={() => settingsBridge.pickDirectory(selection, key)}
+                                                                        onChange={paths =>
+                                                                        {
+                                                                            void selectedState?.change(key, paths);
+                                                                        }}
+                                                                    />
+                                                                {:else}
+                                                                    <SettingsValue
+                                                                        schema={property}
+                                                                        value={values[key]}
+                                                                        label={property.title}
+                                                                        id={`setting-${key}`}
+                                                                        onChange={value => selectedState?.edit(key, value)}
+                                                                        onCommit={() =>
+                                                                        {
+                                                                            return selectedState?.commit(key);
+                                                                        }}
+                                                                    />
+                                                                {/if}
+                                                            </SettingsField>
+                                                        </div>
+                                                    </section>
+                                                {/each}
+                                            </div>
+                                        </section>
+                                    {/each}
+                                {/if}
+                                {#if selected.configuration?.contribution.actions.length}
+                                    {#key selected.instanceId}
+                                        <SettingsActions
+                                            extensionId={selected.id}
+                                            iconUrl={selected.iconUrl}
+                                            actions={selected.configuration.contribution.actions}
+                                            disabled={!selected.enabled || selected.pending || selected.instanceId === null}
+                                            onInvoke={(actionId, confirmed) =>
+                                            settingsBridge.invokeAction({
+                                                extensionId: selected!.id,
+                                                instanceId: selected!.instanceId!,
+                                                actionId,
+                                                confirmed
+                                            })}
+                                            onError={_notify}
+                                        />
+                                    {/key}
                                 {/if}
                                 {#if selected.configurationError}<p role="alert">{selected.configurationError}</p>{/if}
                             </form>
@@ -567,6 +622,7 @@ function _windowAction(action: SettingsWindowAction): void
 </div>
 
 <style>
+.configuration-group > h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); color: var(--text-secondary); font-weight: 600; }
 .settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: clip; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
 .settings-window.maximized { border: 0; border-radius: 0; }
 /* macOS owns the outer clipping and overlays native controls on these surfaces. */
@@ -587,13 +643,6 @@ header { margin-bottom: var(--settings-group-gap); }
 h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
 p { color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
 form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.fields { display: grid; gap: 0; min-width: 0; margin: 0 0 var(--settings-group-gap); border: 1px solid var(--border-subtle); border-radius: var(--radius-row); padding: 0; background: var(--surface-form); }
-.property { min-width: 0; padding: var(--settings-row-padding); }
-.property + .property { border-top: 1px solid var(--border-subtle); }
-.property.scalar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); }
-.property h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settings-label-line-height); font-weight: 400; }
-.property-copy p { margin: 4px 0 0; }
-.property:not(.scalar):not(.directory) .property-control { margin-top: var(--space-2); }
 .empty-state { display: grid; min-height: 100%; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; }
 @media (width < 800px) { .settings { grid-template-columns: 12rem minmax(0, 1fr); } .extension-page { padding: var(--space-4) var(--space-4) 0; } }
 </style>

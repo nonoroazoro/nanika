@@ -8,6 +8,10 @@ import type { JsonValue } from "./serde_json/JsonValue";
 
 export type ConfigurationProperty = {
     title: string;
+    /**
+     * Named presentation group. Omission uses the contribution title.
+     */
+    group: string | null;
     description: string | null;
     default: JsonValue;
     persistence: ConfigurationPersistence;
@@ -17,7 +21,6 @@ export type ConfigurationProperty = {
     platforms: Array<TargetPlatform>;
     order: number;
     type: ConfigurationValueType;
-    allowUnlimited: boolean;
     format: ConfigurationStringFormat | null;
     minimum: number | null;
     maximum: number | null;

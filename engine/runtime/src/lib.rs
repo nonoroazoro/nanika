@@ -20,6 +20,7 @@ mod configuration_save_receipt;
 pub(crate) use configuration_reply::{ConfigurationCompletion, ConfigurationReply};
 pub use configuration_save_outcome::ConfigurationSaveOutcome;
 pub use configuration_save_receipt::ConfigurationSaveReceipt;
+pub use nanika_extension_package::MAX_CONFIGURATION_STRING_BYTES;
 #[path = "DiagnosticSource.rs"]
 mod diagnostic_source;
 #[path = "Diagnostics.rs"]
@@ -274,3 +275,16 @@ pub use prepared_host_service::PreparedHostService;
 #[path = "HostServiceReceipt.rs"]
 mod host_service_receipt;
 pub use host_service_receipt::HostServiceReceipt;
+
+
+#[path = "ConfigurationMenu.rs"]
+mod configuration_menu;
+pub use configuration_menu::ConfigurationMenu;
+
+#[path = "ConfigurationMenuSection.rs"]
+mod configuration_menu_section;
+pub use configuration_menu_section::ConfigurationMenuSection;
+
+#[path = "ConfigurationMenuControl.rs"]
+mod configuration_menu_control;
+pub use configuration_menu_control::ConfigurationMenuControl;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { configurationSchema } from "./schema";
+import { configurationSchema } from "../../fixtures/configuration";
 import { integerError, normalizeSettings } from "../../src/settings/integerValue.ts";
 
 import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
@@ -10,7 +10,6 @@ const schema: ConfigurationSchema = configurationSchema({
     type: "integer",
     minimum: 1,
     maximum: 5000,
-    allowUnlimited: true,
     properties: {},
     required: []
 });
@@ -33,11 +32,16 @@ test("valid integer drafts normalize at the commit boundary", () =>
     }
 });
 
-test("unlimited is explicit and requires schema support", () =>
+test("integer limits preserve their finite value and normalize the whole object", () =>
 {
-    assert.equal(integerError(schema, null), null);
-    assert.notEqual(integerError({ ...schema, allowUnlimited: false }, null), null);
-    assert.equal(normalizeSettings({ limit: schema }, { limit: null }).limit, null);
+    const limit = { ...schema, type: "integerLimit" } as const;
+    for (const unlimited of [false, true])
+    {
+        assert.deepEqual(normalizeSettings({ limit }, { limit: { unlimited, value: "0050" } }), {
+            limit: { unlimited, value: 50 }
+        });
+    }
+    assert.notEqual(integerError(schema, null), null);
     assert.notEqual(integerError({ ...schema, multipleOf: 5 }, "12"), null);
 });
 
@@ -58,7 +62,7 @@ test("nested integer configuration preserves string properties and optional fiel
             })
         })
     };
-    assert.deepEqual(normalizeSettings(properties, { entries: [{ limit: "50", name: "001" }, { limit: null }] }), {
-        entries: [{ limit: 50, name: "001" }, { limit: null }]
+    assert.deepEqual(normalizeSettings(properties, { entries: [{ limit: "50", name: "001" }, { limit: "1" }] }), {
+        entries: [{ limit: 50, name: "001" }, { limit: 1 }]
     });
 });

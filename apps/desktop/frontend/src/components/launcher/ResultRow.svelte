@@ -1,24 +1,22 @@
 <script lang="ts">
+import { isCompositionKey } from "../../ui/keyboard";
 import type { SearchResult } from "../../generated/SearchResult";
 import type { TargetPlatform } from "../../generated/TargetPlatform";
 import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import ActionSymbol from "../extensions/ActionSymbol.svelte";
-import ShortcutKeys from "../ui/ShortcutKeys.svelte";
 
 interface Props
 {
     platform: TargetPlatform | null;
     result: SearchResult;
     active: boolean;
-    confirmationTitle?: string | null;
     position: number;
     total: number;
     onInvoke: () => void;
     onContextMenu: (event: MouseEvent) => void;
 }
 
-const { platform, result, active, confirmationTitle = null, position, total, onInvoke, onContextMenu }: Props =
-    $props();
+const { platform, result, active, position, total, onInvoke, onContextMenu }: Props = $props();
 </script>
 
 <li
@@ -40,7 +38,7 @@ const { platform, result, active, confirmationTitle = null, position, total, onI
         if (event.key === "Enter" || event.key === " ")
         {
             event.preventDefault();
-            if (!event.repeat && !event.isComposing)
+            if (!event.repeat && !isCompositionKey(event))
             {
                 onInvoke();
             }
@@ -56,16 +54,10 @@ const { platform, result, active, confirmationTitle = null, position, total, onI
     </span>
     <span
         class="copy"
-        class:confirming={Boolean(confirmationTitle)}
-        class:description={!confirmationTitle && result.subtitle?.kind === "description"}
+        class:description={result.subtitle?.kind === "description"}
     >
         <span class="title collection-title" title={result.title}>{result.title}</span>
-        {#if confirmationTitle}
-            <span class="confirmation" title={confirmationTitle}>
-                <span class="confirmation-label">{confirmationTitle}</span>
-                <span class="confirmation-key"><ShortcutKeys keys={["↵"]} /></span>
-            </span>
-        {:else if result.subtitle}
+        {#if result.subtitle}
             <span class="subtitle" class:label={result.subtitle.kind === "label"} title={result.subtitle.text}>{
                 result.subtitle.text
             }</span>
@@ -89,14 +81,12 @@ li.active {
 .copy {
   display: flex;
   min-width: 0;
-  /* The confirmation keycap must not shift text by changing the shared baseline group. */
   align-items: center;
   gap: var(--space-2);
 }
 
 .title,
-.subtitle,
-.confirmation-label {
+.subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -110,9 +100,6 @@ li.active {
   min-width: 0;
 }
 
-.confirming .title { max-width: 45%; }
-.confirmation { display: inline-flex; min-width: 0; align-items: center; gap: var(--space-2); color: var(--text-danger); font-size: var(--font-meta); font-weight: 500; }
-.confirmation-key { flex: 0 0 auto; }
 
 .subtitle.label,
 .kind {

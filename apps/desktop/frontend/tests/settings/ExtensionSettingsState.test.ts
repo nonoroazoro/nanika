@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
-import { configurationProperty } from "./schema";
+import { configurationProperty } from "../../fixtures/configuration";
 import { ExtensionSettingsState } from "../../src/settings/ExtensionSettingsState.svelte";
 
 import type { ConfigurationSaveOutcome } from "../../src/generated/ConfigurationSaveOutcome";
@@ -16,6 +16,8 @@ function _configuration(revision: number, enabled: boolean): NonNullable<Extensi
         saved: { enabled, title: "Saved" },
         effective: { enabled, title: "Saved" },
         contribution: {
+            actions: [],
+            quickMenu: [],
             title: "Test",
             properties: {
                 enabled: configurationProperty({

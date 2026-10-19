@@ -1,5 +1,6 @@
 import { mount } from "svelte";
 
+import ConfirmationDialog from "./components/ui/ConfirmationDialog.svelte";
 import { uiActivity } from "./ui/activity";
 
 import "./styles/global.css";
@@ -19,6 +20,8 @@ if (!target)
 {
     throw new Error("Nanika frontend mount point is missing");
 }
+
+mount(ConfirmationDialog, { target });
 
 // Load only the requested surface to keep Settings out of the launcher search session.
 if (isSettings)

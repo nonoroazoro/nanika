@@ -2,8 +2,10 @@
 import type { ExtensionSettings } from "./ExtensionSettings";
 import type { GeneralSettingsSection } from "./GeneralSettingsSection";
 import type { LauncherPreferences } from "./LauncherPreferences";
+import type { SettingsNavigation } from "./SettingsNavigation";
 
 export type SettingsSnapshot = {
+    navigation: SettingsNavigation;
     lifecycleRevision: number;
     maximized: boolean;
     version: string;

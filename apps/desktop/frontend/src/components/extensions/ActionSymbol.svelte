@@ -39,7 +39,7 @@ const windowsSymbols: Record<ActionIcon, string> = {
 </script>
 
 <script lang="ts">
-const { name, platform }: { name: ActionIcon; platform: TargetPlatform; } = $props();
+const { name, platform }: { name: ActionIcon; platform?: TargetPlatform | null; } = $props();
 const SymbolIcon = $derived(symbols[name]);
 </script>
 
@@ -47,7 +47,7 @@ const SymbolIcon = $derived(symbols[name]);
     <span class="windows-icon" aria-hidden="true">{windowsSymbols[name]}</span>
 {:else}
     <span class="action-icon" aria-hidden="true">
-        <SymbolIcon size="1.125rem" strokeWidth={1.8} />
+        <SymbolIcon size="var(--action-symbol-size, 1.125rem)" strokeWidth={1.8} />
     </span>
 {/if}
 

@@ -1,3 +1,5 @@
+import { isCompositionKey } from "../ui/keyboard";
+
 export function shortcutKeys(value: string): string[]
 {
     return value.split("+").map(key => key.replace(/^Key([A-Z])$/, "$1").replace(/^Digit([0-9])$/, "$1"));
@@ -12,12 +14,12 @@ export function shortcutModifiers(event: Pick<KeyboardEvent, "altKey" | "ctrlKey
 export function shortcutFromKey(
     event: Pick<
         KeyboardEvent,
-        "altKey" | "code" | "ctrlKey" | "isComposing" | "key" | "metaKey" | "repeat" | "shiftKey"
+        "altKey" | "code" | "ctrlKey" | "isComposing" | "key" | "keyCode" | "metaKey" | "repeat" | "shiftKey"
     >
 ): string | null
 {
     if (
-        event.repeat || event.isComposing || !event.code || event.code === "Unidentified"
+        event.repeat || isCompositionKey(event) || !event.code || event.code === "Unidentified"
         || ["Control", "Alt", "Shift", "Meta", "AltGraph", "Dead", "Process"].includes(event.key)
     )
     {

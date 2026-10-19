@@ -3,7 +3,9 @@
 /**
  * Stable identities, never labels or selectors supplied by an extension.
  */
-export type SettingsSearchTarget = { "kind": "page"; } | { "kind": "section"; key: string; } | {
-    "kind": "field";
-    key: string;
-} | { "kind": "enabled"; };
+export type SettingsSearchTarget =
+    | { "kind": "page"; }
+    | { "kind": "section"; key: string; }
+    | { "kind": "field"; key: string; }
+    | { "kind": "action"; key: string; }
+    | { "kind": "enabled"; };

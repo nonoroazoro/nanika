@@ -7,8 +7,7 @@ pub(crate) enum ClipboardCommand {
     CloseView {
         response: SyncSender<()>
     },
-    Clear {
-        entry_ids: std::sync::Arc<Vec<String>>,
+    ClearAll {
         response: SyncSender<Result<(), String>>
     },
     ApplyRetention {

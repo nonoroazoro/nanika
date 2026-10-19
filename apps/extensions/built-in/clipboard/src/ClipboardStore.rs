@@ -53,6 +53,10 @@ impl ClipboardStore {
         Ok(change)
     }
 
+    pub(crate) fn all_ids(&self) -> Result<Vec<String>, String> {
+        self._database.matching_ids("", "all")
+    }
+
     pub fn clear(&mut self, ids: &[String]) -> Result<ClipboardChange, String> {
         let change = self._database.clear(ids)?;
         if !change.removed.is_empty() {

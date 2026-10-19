@@ -81,12 +81,12 @@ fn clear_scope_matches_full_type_and_query() {
                 list.sections[0].items.len(),
                 count.min(CLIPBOARD_BATCH_SIZE)
             );
-            let clear = list.sections[0].items[0]
-                .actions
-                .iter()
-                .find(|a| a.id == crate::CLEAR_ACTION_ID)
-                .unwrap();
-            assert_eq!(clear.confirmation_title.as_deref(), Some("Clear now?"));
+            assert!(
+                list.sections[0].items[0]
+                    .actions
+                    .iter()
+                    .all(|action| action.id != crate::CLEAR_ACTION_ID)
+            );
         }
         let mut state = ClipboardViewState::new();
         state.query = "missing".into();

@@ -135,6 +135,42 @@ fn root_confirmation_is_exposed_only_for_the_enabled_primary_action() {
 }
 
 #[test]
+fn results_preserve_confirmation_style_and_consequences() {
+    for style in [
+        nanika_protocol::ActionStyle::Primary,
+        nanika_protocol::ActionStyle::Secondary,
+        nanika_protocol::ActionStyle::Destructive
+    ] {
+        let mut action = nanika_protocol::Action::primary("run", "Run");
+        action.style = style;
+        action.allow_default_execution = false;
+        action.confirmation_title = Some("Run this action?".into());
+        action.confirmation_description = Some("The selected operation will be executed.".into());
+        nanika_protocol::validate_actions(&[action.clone()]).unwrap();
+        let candidate = Candidate::new(
+            CandidateKind::Action,
+            "test.extension",
+            "entry",
+            "Entry",
+            "run",
+            vec![action],
+            Vec::new()
+        );
+        let result = SearchResult::from_candidate(&candidate, None);
+        assert_eq!(result.action_style, style);
+        assert_eq!(
+            result.confirmation_title.as_deref(),
+            Some("Run this action?")
+        );
+        assert_eq!(
+            result.confirmation_description.as_deref(),
+            Some("The selected operation will be executed.")
+        );
+        assert!(!result.allow_default_execution);
+    }
+}
+
+#[test]
 fn native_images_take_priority_over_semantic_action_symbols() {
     let mut action = nanika_protocol::Action::primary("power", "Power");
     action.icon = Some(nanika_protocol::ActionIcon::Power);

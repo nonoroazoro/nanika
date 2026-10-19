@@ -16,6 +16,8 @@ pub(super) fn write(output: &Path, config: &Config) {
     navigation.current = Some(None);
     _sample(&navigation, config, &mut samples);
     navigation.current = Some(Some(crate::ExtensionViewSnapshot {
+        extension_name: "Test extension".into(),
+        extension_icon_url: "icon.png".into(),
         route_id: 1,
         extension_id: "test.extension".into(),
         instance_id: 2,

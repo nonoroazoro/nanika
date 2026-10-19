@@ -27,6 +27,9 @@ pub use system_action::*;
 mod detail_content;
 #[path = "DetailView.rs"]
 mod detail_view;
+#[path = "IntegerLimit.rs"]
+mod integer_limit;
+pub use integer_limit::*;
 #[path = "ExtensionConfiguration.rs"]
 mod extension_configuration;
 #[path = "FrameBuffer.rs"]
@@ -130,3 +133,7 @@ use catalog_publication::CatalogPublication;
 #[path = "ListSelection.rs"]
 mod list_selection;
 pub use list_selection::*;
+
+
+/// Reserved Invoke entry for manifest-declared Settings actions.
+pub const SETTINGS_ENTRY_ID: &str = "nanika.settings";
