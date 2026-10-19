@@ -16,37 +16,40 @@
         "test": "bun tooling/quality/test.ts",
         "lint": "bun node_modules/eslint/bin/eslint.js apps/desktop/frontend tooling *.config.ts --max-warnings 0",
         "lint:fix": "bun run lint --fix",
-        "format": "DPRINT_CACHE_DIR=\"$(pwd)/target/dprint-cache\" dprint fmt",
+        "format": "DPRINT_CACHE_DIR=\"$(pwd)/target/dprint-cache\" dprint fmt && cargo fmt --all -- --config trailing_comma=Never",
         "format:check": "DPRINT_CACHE_DIR=\"$(pwd)/target/dprint-cache\" dprint check",
         "preinstall": "bun tooling/runtime.ts",
         "check": "bun tooling/quality/check.ts"
     },
     "dependencies": {
-        "@tauri-apps/api": "2.11.1",
+        "@tauri-apps/api": "2.12.3",
         "animejs": "4.5.0",
-        "bits-ui": "2.19.3",
-        "svelte": "5.57.1"
+        "bits-ui": "2.19.5",
+        "svelte": "5.57.2",
+        "vscode-oniguruma": "2.0.1",
+        "vscode-textmate": "9.3.2"
     },
     "devDependencies": {
-        "@sveltejs/vite-plugin-svelte": "7.3.0",
-        "@tauri-apps/cli": "2.11.5",
+        "@sveltejs/vite-plugin-svelte": "7.3.1",
+        "@tauri-apps/cli": "2.12.2",
         "@tsconfig/svelte": "5.0.8",
-        "@types/bun": "1.4.2",
-        "@types/node": "24.13.6",
-        "@typescript-eslint/eslint-plugin": "8.70.0",
-        "@typescript-eslint/parser": "8.70.0",
-        "dprint": "0.57.4",
+        "@types/bun": "1.4.3",
+        "@types/node": "24.19.2",
+        "@typescript-eslint/eslint-plugin": "8.71.2",
+        "@typescript-eslint/parser": "8.71.2",
+        "dprint": "0.63.0",
         "eslint": "9.39.5",
-        "eslint-config-zoro": "9.3.0",
-        "eslint-plugin-svelte": "3.23.0",
+        "eslint-config-zoro": "9.3.1",
+        "eslint-plugin-svelte": "3.23.1",
         "svelte-check": "4.7.6",
-        "typescript": "6.0.2",
-        "vite": "8.3.0",
-        "vitest": "5.0.1"
+        "typescript": "6.0.3",
+        "vite": "8.3.4",
+        "vitest": "5.0.4",
+        "webdriverio": "10.0.2"
     },
-    "packageManager": "bun@1.4.2",
+    "packageManager": "bun@1.4.3",
     "engines": {
-        "bun": "1.4.2"
+        "bun": "1.4.3"
     },
     "trustedDependencies": [
         "dprint"

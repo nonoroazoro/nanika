@@ -509,7 +509,7 @@ fn configuration_progress_requires_real_bounded_work_units() {
             label: "x".repeat(129),
             completed: 0,
             total: None
-        }
+        },
         OperationProgress {
             label: "Scanning".into(),
             completed: 3,
@@ -524,7 +524,7 @@ fn configuration_progress_requires_real_bounded_work_units() {
             label: "Connecting".into(),
             completed: 1,
             total: None
-        },
+        }
     ] {
         assert!(progress.validate().is_err());
     }

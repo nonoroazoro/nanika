@@ -524,7 +524,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
                 offset: 1,
                 count: std::num::NonZeroU32::new(30).unwrap()
             },
-            true,
+            true
         ),
         (
             ViewEvent::ListRangeChanged {
@@ -532,7 +532,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
                 offset: 0,
                 count: std::num::NonZeroU32::new(30).unwrap()
             },
-            false,
+            false
         ),
         (
             ViewEvent::ListRangeChanged {
@@ -540,7 +540,7 @@ fn content_reads_bind_to_collection_or_text_identity_not_selection_revision() {
                 offset: 2,
                 count: std::num::NonZeroU32::new(30).unwrap()
             },
-            false,
+            false
         ),
         (
             ViewEvent::ListRangeChanged {

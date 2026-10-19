@@ -355,7 +355,7 @@ pub(crate) fn set_shortcut_recording(
 
 #[tauri::command]
 pub(crate) async fn read_startup(
-    window: tauri::WebviewWindow,
+    window: tauri::WebviewWindow
 ) -> Result<nanika_platform::StartupStatus, String> {
     authorize_settings(&window)?;
     let app = window.app_handle().clone();
@@ -371,7 +371,7 @@ pub(crate) async fn read_startup(
 
 #[tauri::command]
 pub(crate) async fn set_startup(
-    window: tauri::WebviewWindow
+    window: tauri::WebviewWindow,
     enabled: bool
 ) -> Result<nanika_platform::StartupStatus, String> {
     authorize_settings(&window)?;

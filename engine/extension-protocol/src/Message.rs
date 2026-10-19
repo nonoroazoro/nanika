@@ -87,11 +87,11 @@ pub enum Message {
     },
     Cancel {
         request_id: String,
-        generation: u64,
+        generation: u64
     },
     Refresh {
         request_id: String,
-        generation: u64,
+        generation: u64
     },
     Refreshed {
         request_id: String,
@@ -106,18 +106,18 @@ pub enum Message {
         progress: crate::OperationProgress
     },
     ConfigurationApplied {
-        request_id: String,
+        request_id: String
     },
     HostRequest {
         request_id: String,
         parent_request_id: String,
-        generation: u64
+        generation: u64,
         request: HostServiceRequest
     },
     HostResponse {
-        request_id: String
+        request_id: String,
         parent_request_id: String,
-        generation: u64
+        generation: u64,
         response: HostServiceResponse
     },
     Error {

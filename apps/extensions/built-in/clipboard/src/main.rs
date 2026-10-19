@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
             Message::ViewClose {
                 request_id,
-                view_id,
+                view_id
             } if view_id == VIEW_ID => {
                 if let Err(message) = worker.close_view() {
                     send_error(&output, Some(request_id), "view_close_failed", &message)?;

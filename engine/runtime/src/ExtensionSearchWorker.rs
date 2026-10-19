@@ -674,7 +674,7 @@ impl Drop for ExtensionSearchWorker {
 }
 
 pub(crate) fn next_work(
-    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>
 ) -> Option<ExtensionWork> {
     let (lock, ready) = &**state;
     let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
@@ -778,7 +778,7 @@ fn run_configuration_update(
     runtime: &mut ExtensionRuntime,
     update: ExtensionConfigurationUpdate,
     extension_id: &str,
-    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>
+    state: &Arc<(Mutex<ExtensionSearchState>, Condvar)>,
     error: &Arc<Mutex<Option<HostDiagnostic>>>,
     notifier: &ExtensionNotifier
 ) {

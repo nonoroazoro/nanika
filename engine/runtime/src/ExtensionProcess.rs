@@ -401,7 +401,7 @@ impl ExtensionProcess {
     pub fn apply_configuration(
         &mut self,
         request_id: impl Into<String>,
-        configuration: ExtensionConfiguration,
+        configuration: ExtensionConfiguration
     ) -> Result<(), SupervisorError> {
         self.ensure_initialized()?;
         let request_id = request_id.into();
@@ -415,7 +415,7 @@ impl ExtensionProcess {
     pub(crate) fn start_configuration_update(
         &mut self,
         request_id: String,
-        configuration: ExtensionConfiguration
+        configuration: ExtensionConfiguration,
         progress: crate::ConfigurationProgressHandler,
         completion: crate::ConfigurationCompletion
     ) {
@@ -455,7 +455,7 @@ impl ExtensionProcess {
         }
         if let Err(error) = self.send(Message::Refresh {
             request_id,
-            generation,
+            generation
         }) {
             self.refresh_reply.fail(error);
         }
@@ -474,7 +474,7 @@ impl ExtensionProcess {
         let request_id = request_id.into();
         self.send(Message::Invoke {
             request_id: request_id.clone(),
-            generation
+            generation,
             entry_id: entry_id.into(),
             action_id: action_id.into()
         })?;
@@ -552,7 +552,7 @@ impl ExtensionProcess {
     ) -> Result<nanika_protocol::CatalogBatch, SupervisorError> {
         self.ensure_initialized()?;
         self.send(Message::CatalogRead {
-            request_id: request_id.clone(),
+            request_id: request_id.clone()
         })?;
         match self.receive()? {
             Some(Message::CatalogBatch {
@@ -590,7 +590,7 @@ impl ExtensionProcess {
         let request_id = request_id.into();
         self.send(Message::Query {
             incremental,
-            request_id: request_id.clone()
+            request_id: request_id.clone(),
             generation,
             query: query.into()
         })?;
@@ -973,10 +973,10 @@ impl ExtensionProcess {
         loop {
             match self.receive()? {
                 Some(Message::ConfigurationApplied {
-                    request_id: response_id,
+                    request_id: response_id
                 }) if response_id == request_id => return Ok(()),
                 Some(Message::Error {
-                    request_id: response_id
+                    request_id: response_id,
                     code,
                     message
                 }) => {
