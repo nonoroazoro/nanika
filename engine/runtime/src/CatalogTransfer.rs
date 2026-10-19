@@ -1,7 +1,8 @@
 use crate::SupervisorError;
 use nanika_protocol::CatalogBatch;
 
-/// Batches are prepared outside the search owner and become visible in one commit.
+/// Bounded raw staging is indexed only after a complete transaction is admitted.
+/// Rejection releases staged input and leaves the published catalog untouched.
 #[derive(Default)]
 pub(crate) struct CatalogTransfer {
     _transaction: u64,
@@ -9,20 +10,30 @@ pub(crate) struct CatalogTransfer {
     _replace: bool,
     _established: bool,
     _complete: bool,
-    _entries: Vec<nanika_search::Candidate>,
-    _removed: Vec<String>
+    _entries: Vec<nanika_protocol::Candidate>,
+    _removed: Vec<String>,
+    _budget: crate::CatalogBudget,
+    _rejected: bool
 }
 
+#[cfg(test)]
+#[path = "../tests/CatalogTransfer.rs"]
+mod tests;
+
 impl CatalogTransfer {
-    pub(crate) fn accept(
-        &mut self,
-        extension_id: &str,
-        batch: CatalogBatch
-    ) -> Result<bool, SupervisorError> {
+    pub(crate) fn accept(&mut self, batch: CatalogBatch) -> Result<bool, SupervisorError> {
         let invalid =
             || SupervisorError::UnexpectedMessage("catalog batches are out of sequence".into());
-        if self._complete {
+        if self._complete || self._rejected {
             return Err(invalid());
+        }
+        if let Err(error) = self._budget.admit(&batch) {
+            // The peer owns an unacknowledged publication. Only a new instance
+            // may establish another baseline after exhausting its staging budget.
+            self._rejected = true;
+            self._entries = Vec::new();
+            self._removed = Vec::new();
+            return Err(SupervisorError::UnexpectedMessage(error));
         }
         if self._index == 0 {
             if batch.transaction <= self._transaction
@@ -52,8 +63,7 @@ impl CatalogTransfer {
                 ));
             }
         }
-        self._entries
-            .extend(crate::search_candidates(extension_id, batch.entries));
+        self._entries.extend(batch.entries);
         self._removed.extend(batch.removed);
         self._index += 1;
         self._complete = batch.complete;
@@ -76,15 +86,14 @@ impl CatalogTransfer {
             .map(|entry| entry.entry_id.as_str())
             .collect::<std::collections::HashSet<_>>();
         self._entries
-            .retain(|entry| !reserved.contains(entry.entry_id()));
+            .retain(|entry| !reserved.contains(entry.entry_id.as_str()));
         self._removed.retain(|id| !reserved.contains(id.as_str()));
         if self._replace {
-            self._entries
-                .extend(crate::search_candidates(extension_id, contributions));
+            self._entries.extend(contributions);
         }
         let committed = search.commit_catalog(
             self._replace,
-            std::mem::take(&mut self._entries),
+            crate::search_candidates(extension_id, std::mem::take(&mut self._entries)),
             std::mem::take(&mut self._removed)
         );
         match committed {
@@ -95,6 +104,7 @@ impl CatalogTransfer {
         self._index = 0;
         self._complete = false;
         self._established = true;
+        self._budget = Default::default();
         Ok(Some(self._transaction))
     }
 }

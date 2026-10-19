@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use async_process::{Child, ChildStderr, ChildStdin, ChildStdout};
+use async_process::{Child, ChildStderr, ChildStdin};
 use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use futures::{Sink, Stream};
 
@@ -11,19 +11,48 @@ use nanika_platform::ProcessTree;
 pub(crate) const ACP_STDERR_LIMIT: usize = 64 * 1024;
 
 pub(crate) fn incoming_lines(
-    stdout: ChildStdout
-) -> impl Stream<Item = io::Result<String>> + Send + 'static {
-    futures::stream::try_unfold(BufReader::new(stdout), |mut reader| async move {
-        read_acp_line(&mut reader)
-            .await
-            .map(|line| line.map(|line| (line, reader)))
-    })
+    stdout: impl AsyncRead + Unpin + Send + 'static
+) -> impl Stream<Item = io::Result<String>> + Send + Unpin + 'static {
+    Box::pin(futures::stream::try_unfold(
+        BufReader::new(stdout),
+        |mut reader| async move {
+            let mut bytes = Vec::new();
+            let count = (&mut reader)
+                .take(nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES as u64 + 1)
+                .read_until(b'\n', &mut bytes)
+                .await?;
+            if count == 0 {
+                return Ok(None);
+            }
+            if count > nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "ACP message exceeds 64 MiB"
+                ));
+            }
+            if bytes.last() == Some(&b'\n') {
+                bytes.pop();
+                if bytes.last() == Some(&b'\r') {
+                    bytes.pop();
+                }
+            }
+            let line = String::from_utf8(bytes)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            Ok(Some((line, reader)))
+        }
+    ))
 }
 
 pub(crate) fn outgoing_lines(
     stdin: ChildStdin
 ) -> impl Sink<String, Error = io::Error> + Send + 'static {
     futures::sink::unfold(stdin, |mut writer, line: String| async move {
+        if line.len() >= nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "ACP message exceeds 64 MiB"
+            ));
+        }
         writer.write_all(line.as_bytes()).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
@@ -73,20 +102,4 @@ pub(crate) async fn terminate_child(
     }
     child.status().await?;
     first_error.map_or(Ok(()), Err)
-}
-
-pub(crate) async fn read_acp_line<R: AsyncRead + Unpin>(
-    reader: &mut BufReader<R>
-) -> io::Result<Option<String>> {
-    let mut line = String::new();
-    if reader.read_line(&mut line).await? == 0 {
-        return Ok(None);
-    }
-    if line.ends_with('\n') {
-        line.pop();
-    }
-    if line.ends_with('\r') {
-        line.pop();
-    }
-    Ok(Some(line))
 }

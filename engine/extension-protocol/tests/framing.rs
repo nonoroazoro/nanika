@@ -98,7 +98,10 @@ fn large_snapshot_round_trips_without_losing_the_following_frame() {
 
 #[test]
 fn unfulfilled_lengths_are_rejected_without_reserving_the_declared_payload() {
-    for length in [8 * 1024 * 1024 + 1, u32::MAX] {
+    for length in [
+        8 * 1024 * 1024 + 1,
+        nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES as u32
+    ] {
         let header = length.to_le_bytes();
         assert!(
             matches!(read_frame(&mut Cursor::new(header)), Err(FrameError::Io(error))
@@ -146,4 +149,30 @@ fn invalid_payloads_do_not_consume_the_next_frame() {
             Some(Message::CandidatesChanged)
         );
     }
+}
+
+#[test]
+fn oversized_headers_are_rejected_before_reading_payload() {
+    for length in [
+        nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES as u32 + 1,
+        u32::MAX
+    ] {
+        let mut reader = Cursor::new(length.to_le_bytes());
+        assert!(
+            matches!(read_frame(&mut reader), Err(FrameError::InvalidLength(actual)) if actual == length as usize)
+        );
+        assert_eq!(reader.position(), 4);
+    }
+}
+
+#[test]
+fn oversized_writes_leave_the_transport_unchanged() {
+    let message = Message::Error {
+        request_id: None,
+        code: "oversized".into(),
+        message: "x".repeat(nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES)
+    };
+    let mut output = Vec::new();
+    assert!(write_frame(&mut output, &message).is_err());
+    assert!(output.is_empty());
 }

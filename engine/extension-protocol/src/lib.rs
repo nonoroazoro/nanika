@@ -29,6 +29,8 @@ mod detail_content;
 mod detail_view;
 #[path = "ExtensionConfiguration.rs"]
 mod extension_configuration;
+#[path = "FrameBuffer.rs"]
+mod frame_buffer;
 #[path = "FrameError.rs"]
 mod frame_error;
 mod framing;

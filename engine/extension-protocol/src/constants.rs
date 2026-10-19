@@ -1,5 +1,8 @@
 pub const PROTOCOL_NAME: &str = "nanika.extension.v1";
 
+/// Bound transport allocation before decoding or applying message-specific budgets.
+pub const MAX_EXTENSION_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Host-defined activation action for a static command contribution.
 pub const COMMAND_EXECUTE_ACTION_ID: &str = "command.execute";
 

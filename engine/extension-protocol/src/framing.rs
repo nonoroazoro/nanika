@@ -1,11 +1,13 @@
 use std::io::{Read, Write};
 
-use crate::{FrameError, Message};
+use crate::{FrameError, MAX_EXTENSION_MESSAGE_BYTES, Message};
 
-/// Write one message with its 32-bit byte length. Neither direction has a byte quota.
+/// Serialize within the transport budget before publishing any frame bytes.
 pub fn write_frame(writer: &mut impl Write, message: &Message) -> Result<(), FrameError> {
-    let payload =
-        serde_json::to_vec(message).map_err(|error| FrameError::Json(error.to_string()))?;
+    let mut buffer = crate::frame_buffer::FrameBuffer::default();
+    serde_json::to_writer(&mut buffer, message)
+        .map_err(|error| FrameError::Json(error.to_string()))?;
+    let payload = buffer.0;
     let length =
         u32::try_from(payload.len()).map_err(|_| FrameError::InvalidLength(payload.len()))?;
     writer.write_all(&length.to_le_bytes())?;
@@ -24,6 +26,9 @@ pub fn read_frame(reader: &mut impl Read) -> Result<Option<Message>, FrameError>
     }
     reader.read_exact(&mut length_bytes[1..])?;
     let length = u32::from_le_bytes(length_bytes);
+    if length as usize > MAX_EXTENSION_MESSAGE_BYTES {
+        return Err(FrameError::InvalidLength(length as usize));
+    }
     let mut payload = Vec::new();
     // A length header is a boundary, not proof that the sender has supplied that much data.
     // Grow with received bytes and keep the next frame outside this reader.

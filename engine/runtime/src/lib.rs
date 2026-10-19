@@ -259,10 +259,9 @@ pub(crate) use refresh_reply::{RefreshCompletion, RefreshReply};
 mod catalog_transfer;
 use catalog_transfer::CatalogTransfer;
 
-#[cfg(test)]
-#[path = "../tests/CatalogTransfer.rs"]
-mod catalog_transfer_tests;
-
+#[path = "CatalogBudget.rs"]
+mod catalog_budget;
+use catalog_budget::CatalogBudget;
 
 #[path = "ExtensionInput.rs"]
 mod extension_input;

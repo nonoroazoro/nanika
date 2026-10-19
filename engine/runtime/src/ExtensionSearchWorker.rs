@@ -251,7 +251,7 @@ impl ExtensionSearchWorker {
                         ExtensionWork::Catalog => {
                             catalog_request += 1;
                             let result = runtime.read_catalog(format!("catalog-{worker_extension_id}-{catalog_request}"))
-                                .and_then(|batch| catalog_transfer.accept(&worker_extension_id, batch));
+                                .and_then(|batch| catalog_transfer.accept(batch));
                             match result {
                                 Ok(true) => {
                                     // The search owner serializes publication with retirement. Peer I/O
