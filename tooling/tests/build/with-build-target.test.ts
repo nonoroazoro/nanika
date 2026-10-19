@@ -48,7 +48,7 @@ test("Cargo pipelines exclude each other through staging and reuse cache after t
         await withBuildTarget(fixture, "dev", async (_target, run) =>
         {
             await run(["bun", "-e", 'await Bun.write(process.env.CARGO_TARGET_DIR + "/shared", "cache");']);
-            for (const slot of ["dev", "check", "build", "computer-use"] as const)
+            for (const slot of ["dev", "check", "build"] as const)
             {
                 await expect(withBuildTarget(fixture, slot, async () =>
                 {})).rejects.toThrow("Build output is in use");

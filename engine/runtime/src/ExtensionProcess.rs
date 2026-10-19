@@ -1,4 +1,4 @@
-use nanika_platform::{ExtensionProcessTree, configure_extension_command};
+use nanika_platform::{ProcessTree, configure_process_command};
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -31,7 +31,7 @@ pub struct ExtensionProcess {
     clean_exit: bool,
     shutdown_requested: Arc<AtomicBool>,
     child: Child,
-    process_tree: ExtensionProcessTree,
+    process_tree: ProcessTree,
     input: Option<crate::ExtensionInput>,
     output: Option<Receiver<Result<Option<Message>, FrameError>>>,
     stderr_tail: Arc<Mutex<VecDeque<u8>>>,
@@ -73,9 +73,9 @@ impl ExtensionProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        configure_extension_command(&mut process);
+        configure_process_command(&mut process);
         let mut child = process.spawn()?;
-        let process_tree = match ExtensionProcessTree::attach_std(&child) {
+        let process_tree = match ProcessTree::attach_std(&child) {
             Ok(process_tree) => process_tree,
             Err(error) => {
                 cleanup_failed_spawn(&mut child, None);
@@ -1140,7 +1140,7 @@ fn drain_stderr(
     }
 }
 
-fn cleanup_failed_spawn(child: &mut Child, process_tree: Option<&ExtensionProcessTree>) {
+fn cleanup_failed_spawn(child: &mut Child, process_tree: Option<&ProcessTree>) {
     if let Some(tree) = process_tree
         && let Err(error) = tree.terminate(child.id())
     {

@@ -122,7 +122,7 @@ pub fn run() -> Result<(), String> {
                         .to_owned(),
                 );
             }
-            nanika_platform::signal_activate(identity, paths.app_data_root())
+            nanika_platform::signal_activate(identity, paths.app_data_root(), None)
                 .map_err(|error| error.to_string())?;
             return Ok(());
         }

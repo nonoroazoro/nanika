@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "tooling/process",
     "apps/cli",
     "apps/desktop/shell",
     "apps/extensions/built-in/application",

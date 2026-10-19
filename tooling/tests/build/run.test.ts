@@ -84,6 +84,7 @@ async function _fixture(): Promise<string>
             "tooling/build/publish-bundle.ts",
             "tooling/build/with-build-target.ts",
             "tooling/build/with-build-lock.ts",
+            "tooling/quality/OwnedProcess.ts",
             "tooling/quality/process-tree.ts"
         ]
     )

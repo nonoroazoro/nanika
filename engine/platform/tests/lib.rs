@@ -16,7 +16,19 @@ mod instance {
             acquire_instance(&identity, &root).expect("second launch should acquire role"),
             InstanceRole::Secondary
         ));
-        signal_activate(&identity, &root).expect("second launch should signal activation");
+        assert!(signal_activate(&identity, &root, Some(std::process::id() + 1)).is_err());
+        assert!(events.try_recv().is_err());
+        for _ in 0..3 {
+            signal_activate(&identity, &root, Some(std::process::id()))
+                .expect("targeted activation");
+            assert_eq!(
+                events
+                    .recv_timeout(std::time::Duration::from_secs(1))
+                    .expect("activation event"),
+                nanika_platform::PlatformEvent::Open
+            );
+        }
+        signal_activate(&identity, &root, None).expect("second launch should signal activation");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
             let event = events
@@ -37,6 +49,37 @@ mod instance {
 
         let _ = std::fs::remove_file(root.join("nanika.instance.lock"));
         let _ = std::fs::remove_dir(root);
+    }
+
+    #[test]
+    fn activation_waits_for_startup_and_absent_instances_fail() {
+        let identity = format!("com.nanika.readiness.{}", std::process::id());
+        let root = std::env::temp_dir().join(&identity);
+        let worker_identity = identity.clone();
+        let worker_root = root.clone();
+        let signal = std::thread::spawn(move || {
+            signal_activate(&worker_identity, &worker_root, Some(std::process::id()))
+        });
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        let InstanceRole::Primary(mut instance) =
+            acquire_instance(&identity, &root).expect("acquire")
+        else {
+            panic!("unexpected secondary");
+        };
+        let events = instance.take_events().expect("events");
+        signal
+            .join()
+            .expect("activation thread")
+            .expect("activation after startup");
+        assert_eq!(
+            events
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("activation"),
+            nanika_platform::PlatformEvent::Open
+        );
+        drop(instance);
+        assert!(signal_activate(&identity, &root, Some(std::process::id())).is_err());
+        let _ = std::fs::remove_dir_all(root);
     }
 }
 

@@ -40,3 +40,10 @@ pub(crate) fn windows_packaged_application(_id: &str) -> std::io::Result<()> {
         "Windows packaged application activation is unsupported on this platform"
     ))
 }
+
+// Accepted user work outlives the launcher and its development supervisor.
+pub(crate) fn configure_handoff(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    command.process_group(0);
+}

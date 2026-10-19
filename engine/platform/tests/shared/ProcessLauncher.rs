@@ -219,3 +219,120 @@ fn registered_activation_reports_native_rejection_without_an_error_dialog() {
         "the native activation manager must reject this well-formed, unregistered identity: {error}"
     );
 }
+
+#[test]
+fn user_work_survives_workflow_shutdown() {
+    _verify_handoff(true);
+}
+
+#[cfg(windows)]
+#[test]
+fn extension_containment_rejects_process_breakaway() {
+    _verify_handoff(false);
+}
+
+#[test]
+fn handoff_owner_fixture() {
+    let Some(root) = std::env::var_os("NANIKA_HANDOFF_TEST_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let launcher = ProcessLauncher::spawn().unwrap();
+    let result = launcher.launch(LaunchDescriptor::Program {
+        program: std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        arguments: nanika_protocol::LaunchArguments::Structured {
+            values: vec!["--exact".into(), "handoff_task_fixture".into()]
+        },
+        working_directory: None
+    });
+    std::fs::write(
+        root.join("receipt"),
+        if result.is_ok() {
+            "accepted"
+        } else {
+            "rejected"
+        }
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_secs(15));
+}
+
+#[test]
+fn handoff_task_fixture() {
+    let Some(root) = std::env::var_os("NANIKA_HANDOFF_TEST_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    std::fs::write(root.join("ready"), "ready").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !root.join("continue").exists() {
+        if Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::fs::write(root.join("completed"), "completed").unwrap();
+}
+
+fn _verify_handoff(workflow: bool) {
+    use nanika_platform::{ProcessTree, configure_process_command};
+    let root =
+        std::env::temp_dir().join(format!("nanika-handoff-{}-{workflow}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", "handoff_owner_fixture"])
+        .env("NANIKA_HANDOFF_TEST_ROOT", &root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    configure_process_command(&mut command);
+    let mut child = command.spawn().unwrap();
+    let result = (|| -> Result<(), String> {
+        let tree = if workflow {
+            ProcessTree::attach_workflow(&child)
+        } else {
+            ProcessTree::attach_std(&child)
+        }
+        .map_err(|error| error.to_string())?;
+        _wait_for_marker(&root.join("receipt"))?;
+        let receipt =
+            std::fs::read_to_string(root.join("receipt")).map_err(|error| error.to_string())?;
+        if workflow {
+            if receipt != "accepted" {
+                return Err("workflow must permit user work handoff".into());
+            }
+            _wait_for_marker(&root.join("ready"))?;
+            tree.terminate(child.id())
+                .map_err(|error| error.to_string())?;
+            child.wait().map_err(|error| error.to_string())?;
+            std::fs::write(root.join("continue"), "continue").map_err(|error| error.to_string())?;
+            _wait_for_marker(&root.join("completed"))?;
+        } else {
+            tree.terminate(child.id())
+                .map_err(|error| error.to_string())?;
+            if receipt != "rejected" {
+                return Err("extension must not allow child breakaway".into());
+            }
+        }
+        Ok(())
+    })();
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(root);
+    result.unwrap();
+}
+
+fn _wait_for_marker(path: &std::path::Path) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while path.metadata().map_or(0, |metadata| metadata.len()) == 0 {
+        if Instant::now() >= deadline {
+            return Err(format!("timed out waiting for {}", path.display()));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Ok(())
+}

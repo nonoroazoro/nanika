@@ -1,5 +1,5 @@
 use std::fs::OpenOptions;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
@@ -15,7 +15,7 @@ const STOP_REQUEST: u8 = b's';
 
 pub fn acquire(_identity: &str, app_data_root: &Path) -> Result<InstanceRole, PlatformError> {
     std::fs::create_dir_all(app_data_root)?;
-    let lock_file = OpenOptions::new()
+    let mut lock_file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
@@ -28,6 +28,9 @@ pub fn acquire(_identity: &str, app_data_root: &Path) -> Result<InstanceRole, Pl
         }
         return Err(PlatformError::Io(error));
     }
+
+    lock_file.set_len(0)?;
+    lock_file.write_all(&std::process::id().to_le_bytes())?;
 
     let activation_path = app_data_root.join(SOCKET_FILE);
     if activation_path.exists() {
@@ -47,14 +50,20 @@ pub fn acquire(_identity: &str, app_data_root: &Path) -> Result<InstanceRole, Pl
     }))
 }
 
-pub fn signal_activate(_identity: &str, app_data_root: &Path) -> Result<(), PlatformError> {
+pub fn signal_activate(
+    _identity: &str,
+    app_data_root: &Path,
+    expected_pid: Option<u32>
+) -> Result<(), PlatformError> {
     let path = app_data_root.join(SOCKET_FILE);
     let deadline = Instant::now() + Duration::from_secs(2);
+    let mut request = [0; 5];
+    request[0] = ACTIVATE_REQUEST;
+    request[1..].copy_from_slice(&expected_pid.unwrap_or(0).to_le_bytes());
     loop {
         let socket = UnixDatagram::unbound()?;
-        match socket.send_to(&[ACTIVATE_REQUEST], &path) {
-            Ok(1) => return Ok(()),
-            Ok(_) => return Err(PlatformError::ActivationChannelClosed),
+        match socket.connect(&path) {
+            Ok(()) => {}
             Err(error)
                 if matches!(
                     error.kind(),
@@ -62,30 +71,44 @@ pub fn signal_activate(_identity: &str, app_data_root: &Path) -> Result<(), Plat
                 ) && Instant::now() < deadline =>
             {
                 std::thread::sleep(Duration::from_millis(10));
+                continue;
             }
             Err(error) => return Err(PlatformError::Io(error))
         }
+        if let Some(expected) = expected_pid {
+            let mut recorded = [0; 4];
+            std::fs::File::open(app_data_root.join(LOCK_FILE))?.read_exact(&mut recorded)?;
+            if u32::from_le_bytes(recorded) != expected {
+                return Err(PlatformError::Message(
+                    "Activation target changed".to_owned()
+                ));
+            }
+        }
+        return match socket.send(&request) {
+            Ok(5) => Ok(()),
+            Ok(_) => Err(PlatformError::ActivationChannelClosed),
+            Err(error) => Err(PlatformError::Io(error))
+        };
     }
 }
 
 fn run_event_loop(socket: UnixDatagram, events: mpsc::Sender<PlatformEvent>) {
     loop {
-        let mut request = [0; 1];
+        let mut request = [0; 6];
         match socket.recv(&mut request) {
-            Ok(1) => {}
+            Ok(1) if request[0] == STOP_REQUEST => break,
+            Ok(5) => {}
             Ok(_) => continue,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
             Err(_) => break
         };
-        match request[0] {
-            ACTIVATE_REQUEST => {
-                if events.send(PlatformEvent::Open).is_err() {
-                    eprintln!("single-instance event receiver closed during activation");
-                    break;
-                }
-            }
-            STOP_REQUEST => break,
-            _ => {}
+        let target = u32::from_le_bytes(request[1..5].try_into().expect("four-byte PID"));
+        if request[0] == ACTIVATE_REQUEST
+            && (target == 0 || target == std::process::id())
+            && events.send(PlatformEvent::Open).is_err()
+        {
+            eprintln!("single-instance event receiver closed during activation");
+            break;
         }
     }
 }

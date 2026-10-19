@@ -7,27 +7,39 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
-    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+    TerminateJobObject
 };
 use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
-/// Owns the Job Object containing one extension child and its descendants.
-pub struct ExtensionProcessTree {
+/// Owns the Job Object containing a child and its descendants.
+pub struct ProcessTree {
     job: OwnedHandle
 }
 
-impl ExtensionProcessTree {
-    /// Attach a child spawned with [`configure_extension_command`] before it can run.
+impl ProcessTree {
+    /// Attach a child spawned with [`configure_process_command`] before it can run.
     pub fn attach_std(child: &std::process::Child) -> io::Result<Self> {
-        Self::attach_windows(child.as_raw_handle(), child.id())
+        Self::attach_windows(child.as_raw_handle(), child.id(), false)
+    }
+
+    /// Own a development workflow while allowing explicitly handed-off user tasks to escape.
+    pub fn attach_workflow(child: &std::process::Child) -> io::Result<Self> {
+        Self::attach_windows(child.as_raw_handle(), child.id(), true)
     }
 
     /// Attach an asynchronous child before its initial thread is resumed.
     pub fn attach_async(child: &async_process::Child) -> io::Result<Self> {
-        Self::attach_windows(child.as_raw_handle(), child.id())
+        Self::attach_windows(child.as_raw_handle(), child.id(), false)
+    }
+
+    /// Console-free Windows processes have no group signal. Cooperative shutdown
+    /// belongs to the caller's protocol; forced cancellation terminates the Job.
+    pub fn request_stop(&self, process_id: u32, _interrupt: bool) -> io::Result<()> {
+        self.terminate(process_id)
     }
 
     /// Terminate all processes contained in the owned Job Object.
@@ -57,7 +69,11 @@ impl ExtensionProcessTree {
         Ok(accounting.ActiveProcesses == 0)
     }
 
-    fn attach_windows(process: RawHandle, process_id: u32) -> io::Result<Self> {
+    fn attach_windows(
+        process: RawHandle,
+        process_id: u32,
+        allow_handoff: bool
+    ) -> io::Result<Self> {
         let raw_job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if raw_job.is_null() {
             return Err(io::Error::last_os_error());
@@ -65,6 +81,9 @@ impl ExtensionProcessTree {
         let job = unsafe { OwnedHandle::from_raw_handle(raw_job.cast()) };
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if allow_handoff {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        }
         if unsafe {
             SetInformationJobObject(
                 job.as_raw_handle().cast(),
@@ -111,7 +130,7 @@ fn resume_initial_thread(process_id: u32) -> io::Result<()> {
                 u32::MAX => return Err(io::Error::last_os_error()),
                 suspend_count => {
                     return Err(io::Error::other(format!(
-                        "extension initial thread had unexpected suspend count {suspend_count}"
+                        "process initial thread had unexpected suspend count {suspend_count}"
                     )));
                 }
             }
@@ -121,7 +140,7 @@ fn resume_initial_thread(process_id: u32) -> io::Result<()> {
             return if error.raw_os_error() == Some(ERROR_NO_MORE_FILES.cast_signed()) {
                 Err(io::Error::new(
                     io::ErrorKind::NotFound,
-                    "extension initial thread was not found"
+                    "process initial thread was not found"
                 ))
             } else {
                 Err(error)
@@ -131,7 +150,7 @@ fn resume_initial_thread(process_id: u32) -> io::Result<()> {
 }
 
 /// Suspend the initial thread so Job assignment precedes any descendant creation.
-pub fn configure_extension_command(command: &mut std::process::Command) {
+pub fn configure_process_command(command: &mut std::process::Command) {
     use std::os::windows::process::CommandExt;
     use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 

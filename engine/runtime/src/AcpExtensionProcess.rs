@@ -1,4 +1,4 @@
-use nanika_platform::{ExtensionProcessTree, configure_extension_command};
+use nanika_platform::{ProcessTree, configure_process_command};
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -343,7 +343,7 @@ async fn run_connection(
 ) -> agent_client_protocol::Result<()> {
     let mut command = std::process::Command::new(context.command.program);
     command.args(context.arguments);
-    configure_extension_command(&mut command);
+    configure_process_command(&mut command);
     let mut command = async_process::Command::from(command);
     command
         .stdin(std::process::Stdio::piped())
@@ -352,7 +352,7 @@ async fn run_connection(
     let mut child = command
         .spawn()
         .map_err(|error| agent_client_protocol::util::internal_error(error.to_string()))?;
-    let process_tree = match ExtensionProcessTree::attach_async(&child) {
+    let process_tree = match ProcessTree::attach_async(&child) {
         Ok(process_tree) => process_tree,
         Err(error) => {
             let _ = child.kill();

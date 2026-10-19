@@ -1,5 +1,6 @@
 export type BuildCommand = (
     command: string[],
     cwd?: string,
-    environment?: Record<string, string | undefined>
+    environment?: Record<string, string | undefined>,
+    shutdown?: "cooperative"
 ) => Promise<void>;

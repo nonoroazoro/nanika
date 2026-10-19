@@ -6,7 +6,7 @@ use async_process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use futures::{Sink, Stream};
 
-use nanika_platform::ExtensionProcessTree;
+use nanika_platform::ProcessTree;
 
 pub(crate) const ACP_STDERR_LIMIT: usize = 64 * 1024;
 
@@ -62,7 +62,7 @@ pub(crate) async fn drain_stderr(
 
 pub(crate) async fn terminate_child(
     child: &mut Child,
-    process_tree: &ExtensionProcessTree
+    process_tree: &ProcessTree
 ) -> io::Result<()> {
     let mut first_error = process_tree.terminate(child.id()).err();
     match child.kill() {

@@ -2704,6 +2704,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanika-process"
+version = "0.1.0"
+dependencies = [
+ "nanika-platform",
+ "serde_json",
+]
+
+[[package]]
 name = "nanika-protocol"
 version = "0.1.0"
 dependencies = [

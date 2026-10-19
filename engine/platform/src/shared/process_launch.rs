@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use crate::adapter::process_launch::{
-    apply_windows_raw, mac_application, shell_command, windows_application,
+    apply_windows_raw, configure_handoff, mac_application, shell_command, windows_application,
     windows_packaged_application
 };
 use nanika_protocol::{LaunchArguments, LaunchDescriptor};
@@ -55,6 +55,7 @@ pub(crate) fn process_launch(descriptor: &LaunchDescriptor) -> std::io::Result<O
             return Ok(None);
         }
     };
+    configure_handoff(&mut command);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())

@@ -55,14 +55,15 @@ export async function withBuildTarget(
         process.on("SIGTERM", terminate);
         try
         {
-            await execute(target, async (command, cwd = root, overrides = {}) =>
+            await execute(target, async (command, cwd, overrides, shutdown) =>
             {
                 cancellation.signal.throwIfAborted();
                 const child = await runProcessTree(
                     command,
-                    cwd,
+                    cwd ?? root,
                     { ...environment, ...overrides },
-                    cancellation.signal
+                    cancellation.signal,
+                    shutdown
                 );
                 if (cancellation.signal.aborted || child.exitCode !== 0)
                 {

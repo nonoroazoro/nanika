@@ -1,59 +1,74 @@
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { OwnedProcess } from "./OwnedProcess.ts";
+import { withBuildLock } from "../build/with-build-lock.ts";
+
+let preparedRunner: Promise<string> | null = null;
+
 /**
- * Runs a build command with platform-specific process ownership.
- * macOS cancellation signals the owned group and waits until it is absent.
- * Windows hides command windows; cancellation uses taskkill /T /F and waits for the child.
- * A termination failure rejects without claiming that descendants have exited.
- *
+ * Run immutable supervisor artifacts so independent workflows can rebuild safely.
+ */
+export async function processRunner(): Promise<string>
+{
+    preparedRunner = preparedRunner ?? _prepareRunner();
+    return preparedRunner;
+}
+
+/**
+ * Run one command until its entire owned tree exits.
  * @param command Executable and arguments
- * @param cwd Command working directory
- * @param environment Explicit command environment
- * @param cancellation Cancellation shared by the build pipeline
+ * @param cwd Working directory
+ * @param environment Command environment
+ * @param cancellation Workflow cancellation
+ * @param shutdown Cooperative stdin protocol for runners that restore OS state
  */
 export async function runProcessTree(
     command: string[],
     cwd: string,
     environment: Record<string, string | undefined>,
-    cancellation: AbortSignal
-): Promise<Bun.Subprocess>
+    cancellation: AbortSignal,
+    shutdown?: "cooperative"
+): Promise<OwnedProcess>
 {
+    const runner = await processRunner();
     cancellation.throwIfAborted();
-    if (process.platform !== "darwin" && process.platform !== "win32")
-    {
-        throw new Error(`Unsupported validation platform: ${process.platform}`);
-    }
-    const child = Bun.spawn(command, {
+    const child = await OwnedProcess.spawn(
+        runner,
+        command,
         cwd,
-        env: environment,
-        // macOS cancellation owns a process group; Windows must not create a new console.
-        detached: process.platform === "darwin",
-        windowsHide: true,
-        stdin: "ignore",
-        stdout: "inherit",
-        stderr: "inherit"
-    });
-    const stopped = Promise.withResolvers<undefined>();
+        { ...environment, NANIKA_PROCESS_RUNNER: runner },
+        shutdown === "cooperative"
+    );
+    const interrupted = Promise.withResolvers<undefined>();
     const cancel = () =>
     {
-        void _terminate(child, cancellation.reason === "SIGINT" ? "SIGINT" : "SIGTERM")
-            .then(() =>
-            {
-                stopped.resolve(undefined);
-            }, stopped.reject);
+        interrupted.resolve(undefined);
     };
     cancellation.addEventListener("abort", cancel, { once: true });
     try
     {
-        // A failed termination must surface even when the child is still running.
-        await Promise.race([child.exited, stopped.promise]);
         if (cancellation.aborted)
         {
-            await stopped.promise;
+            cancel();
         }
-        else if (process.platform === "darwin" && _groupExists(child.pid))
+        await Promise.race([child.exited, interrupted.promise]);
+        if (cancellation.aborted)
         {
-            // A successful CLI can leave descendants; stop them before releasing the build slot.
-            await _terminate(child, "SIGTERM");
+            let control: "interrupt" | "shutdown" | "stop" = "stop";
+            if (shutdown === "cooperative")
+            {
+                control = "shutdown";
+            }
+            else if (cancellation.reason === "SIGINT")
+            {
+                control = "interrupt";
+            }
+            await child.control(control);
         }
+        await child.exited;
         return child;
     }
     finally
@@ -62,70 +77,55 @@ export async function runProcessTree(
     }
 }
 
-async function _terminate(child: Bun.Subprocess, signal: "SIGINT" | "SIGTERM"): Promise<void>
+/**
+ * Stop and await an owned tree, including when its leader has already exited.
+ * @param child Owned command
+ * @param signal Requested interruption
+ */
+export async function stopProcessTree(child: OwnedProcess, signal: "SIGINT" | "SIGTERM"): Promise<void>
 {
-    if (process.platform === "darwin")
+    await child.control(signal === "SIGINT" ? "interrupt" : "stop");
+    await child.exited;
+}
+
+async function _prepareRunner(): Promise<string>
+{
+    if (process.env.NANIKA_PROCESS_RUNNER)
     {
-        _signalGroup(child.pid, signal);
-        await child.exited;
-        // The group leader can exit before a descendant finishes handling the signal.
-        while (_groupExists(child.pid))
-        {
-            await Bun.sleep(10);
-        }
+        return process.env.NANIKA_PROCESS_RUNNER;
     }
-    else if (process.platform === "win32")
+    const root = fileURLToPath(new URL("../../", import.meta.url));
+    let runner = "";
+    await withBuildLock(root, "supervisor", async () =>
     {
-        const termination = Bun.spawn(["taskkill", "/PID", String(child.pid), "/T", "/F"], {
+        // Bootstrap is the only command that cannot be launched by the binary it builds.
+        const build = Bun.spawn(["cargo", "build", "-p", "nanika-process", "--locked"], {
+            cwd: root,
+            env: {
+                ...process.env,
+                CARGO_TARGET_DIR: join(root, "target/cargo"),
+                ...(process.platform === "darwin" ? { MACOSX_DEPLOYMENT_TARGET: "13.0" } : {})
+            },
             windowsHide: true,
             stdin: "ignore",
-            stdout: "pipe",
-            stderr: "pipe"
+            stdout: "inherit",
+            stderr: "inherit"
         });
-        const [exitCode, stdout, stderr] = await Promise.all([
-            termination.exited,
-            new Response(termination.stdout).text(),
-            new Response(termination.stderr).text()
-        ]);
-        if (exitCode !== 0)
+        if (await build.exited !== 0)
         {
-            throw new Error(
-                `Could not terminate validation process tree ${child.pid} (${exitCode}): ${stderr}${stdout}`
-            );
+            throw new Error("Could not build the process supervisor");
         }
-        await child.exited;
-    }
-    else
-    {
-        throw new Error(`Unsupported validation platform: ${process.platform}`);
-    }
-}
-
-function _signalGroup(pid: number, signal: "SIGINT" | "SIGTERM"): void
-{
-    try
-    {
-        process.kill(-pid, signal);
-    }
-    catch (error)
-    {
-        if (error instanceof Error && "code" in error && error.code === "ESRCH")
+        const name = `nanika-process${process.platform === "win32" ? ".exe" : ""}`;
+        const source = join(root, "target/cargo/debug", name);
+        const digest = createHash("sha256").update(await readFile(source)).digest("hex");
+        const directory = join(root, "target/process-runners", digest);
+        runner = join(directory, name);
+        if (!await Bun.file(runner).exists())
         {
-            return;
+            await mkdir(directory, { recursive: true });
+            await copyFile(source, `${runner}.tmp`);
+            await rename(`${runner}.tmp`, runner);
         }
-        throw error;
-    }
-}
-
-function _groupExists(pid: number): boolean
-{
-    // Reparented descendants retain group membership; inspect it without requiring signal permission.
-    const result = Bun.spawnSync(["lsof", "-a", "-g", String(pid), "-d", "cwd", "-t"], { stderr: "pipe" });
-    if ((result.exitCode !== 0 && result.exitCode !== 1) || result.stderr.length > 0)
-    {
-        throw new Error(
-            `Could not inspect validation process group ${pid} (${result.exitCode}): ${result.stderr.toString()}`
-        );
-    }
-    return result.stdout.length > 0;
+    });
+    return runner;
 }

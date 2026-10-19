@@ -10,12 +10,12 @@ export const buildSlotLocks = ".build-locks";
  * Manual cleanup may remove the lock files only after builds have stopped.
  *
  * @param root Repository root
- * @param slot Cargo pipeline or standalone tooling tests
+ * @param slot Build or test ownership boundary
  * @param execute Work protected until completion
  */
 export async function withBuildLock(
     root: string,
-    slot: "cargo" | "test",
+    slot: "cargo" | "supervisor" | "test",
     execute: () => Promise<void>
 ): Promise<void>
 {

@@ -23,6 +23,10 @@ dev-fresh:
     bun tooling/development/reset-state.ts
     just dev
 
+# Activate an existing development process, rejecting a different target.
+activate pid:
+    bun tooling/development/activate.ts {{pid}}
+
 check:
     bun run check
 

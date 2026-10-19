@@ -32,6 +32,5 @@ impl Drop for SingleInstance {
         unsafe {
             let _ = libc::flock(self.lock_file.as_raw_fd(), libc::LOCK_UN);
         }
-        let _ = std::fs::remove_file(&self.activation_path);
     }
 }

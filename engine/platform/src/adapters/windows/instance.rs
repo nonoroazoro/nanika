@@ -10,8 +10,8 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW, GetMessageW, HWND_MESSAGE, MSG,
-    PostMessageW, RegisterClassW, WM_APP, WNDCLASSW
+    CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW, GetMessageW,
+    GetWindowThreadProcessId, HWND_MESSAGE, MSG, PostMessageW, RegisterClassW, WM_APP, WNDCLASSW
 };
 
 use crate::{InstanceRole, PlatformError, PlatformEvent, SingleInstance};
@@ -87,7 +87,8 @@ pub fn acquire(
 
 pub fn signal_activate(
     identity: &str,
-    _app_data_root: &std::path::Path
+    _app_data_root: &std::path::Path,
+    expected_pid: Option<u32>
 ) -> Result<(), PlatformError> {
     let class_name = to_wide(&format!("{identity}.activation"));
     let window_name = to_wide(identity);
@@ -102,7 +103,16 @@ pub fn signal_activate(
             )
         };
         if !window.is_null() {
-            if unsafe { PostMessageW(window, ACTIVATE_MESSAGE, 0, 0) } != 0 {
+            let mut pid = 0;
+            if unsafe { GetWindowThreadProcessId(window, &mut pid) } == 0 {
+                return Err(os_error("GetWindowThreadProcessId"));
+            }
+            if expected_pid.is_some_and(|expected| expected != pid) {
+                return Err(PlatformError::Message(
+                    "Activation target changed".to_owned()
+                ));
+            }
+            if unsafe { PostMessageW(window, ACTIVATE_MESSAGE, pid as usize, 0) } != 0 {
                 return Ok(());
             }
             return Err(os_error("PostMessageW"));
@@ -145,7 +155,10 @@ fn run_event_loop(
         if result <= 0 || message.message == STOP_MESSAGE {
             break;
         }
-        if message.message == ACTIVATE_MESSAGE && events.send(PlatformEvent::Open).is_err() {
+        if message.message == ACTIVATE_MESSAGE
+            && message.wParam == std::process::id() as usize
+            && events.send(PlatformEvent::Open).is_err()
+        {
             eprintln!("single-instance event receiver closed during activation");
             break;
         }

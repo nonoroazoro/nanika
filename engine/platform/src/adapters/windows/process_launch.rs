@@ -140,3 +140,11 @@ pub(crate) fn windows_packaged_application(id: &str) -> std::io::Result<()> {
     }
     result.map_err(|error| std::io::Error::other(error.to_string()))
 }
+
+// Accepted user work outlives the launcher and its development supervisor.
+pub(crate) fn configure_handoff(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+
+    command.creation_flags(CREATE_BREAKAWAY_FROM_JOB);
+}
