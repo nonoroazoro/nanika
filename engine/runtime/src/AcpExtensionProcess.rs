@@ -165,7 +165,9 @@ impl AcpExtensionProcess {
 
     pub fn initialize(&mut self) -> Result<(), SupervisorError> {
         if self.initialized {
-            return Ok(());
+            return Err(SupervisorError::UnexpectedMessage(
+                "ACP extension is already initialized".into()
+            ));
         }
         let result = loop {
             if self.shutdown_requested.load(Ordering::Acquire) {

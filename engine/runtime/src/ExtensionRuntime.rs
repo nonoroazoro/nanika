@@ -125,10 +125,6 @@ impl ExtensionRuntime {
         }
     }
 
-    pub fn supports_live_configuration(&self) -> bool {
-        matches!(self, Self::Nanika(_))
-    }
-
     pub fn apply_configuration(
         &mut self,
         request_id: impl Into<String>,

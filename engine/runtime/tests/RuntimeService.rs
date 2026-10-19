@@ -161,6 +161,7 @@ impl Drop for Fixture {
     }
 }
 
+#[track_caller]
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + WAIT;
     while !condition() {
@@ -1011,9 +1012,8 @@ fn installed_extensions_share_disablement_configuration_and_reenable_contracts()
 }
 
 #[test]
-fn invalid_configuration_keeps_installed_metadata_visible() {
-    let mut fixture = Fixture::new();
-    fixture.manifests.truncate(1);
+fn malformed_configuration_keeps_extensions_running_and_is_saved_only_after_editing() {
+    let fixture = Fixture::new();
     let store = nanika_config::ConfigStore::open(
         fixture.paths.app_data_root(),
         fixture.paths.config_root()
@@ -1023,24 +1023,43 @@ fn invalid_configuration_keeps_installed_metadata_visible() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "{ malformed").unwrap();
     let runtime = fixture.start();
-    assert_eq!(runtime.extension_info().len(), 1);
-    assert!(runtime.extension_info()[0].configuration_error.is_some());
-    assert!(runtime.extension_configurations().is_empty());
-    std::fs::write(
-        &path,
-        r#"{"formatVersion":1,"values":{"fixture.enabled":false}}"#
-    )
-    .unwrap();
-    runtime
-        .set_extension_enabled(HEALTHY, true)
-        .unwrap()
-        .recv_timeout(WAIT)
-        .unwrap()
-        .unwrap();
-    wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
-    assert!(runtime.extension_info()[0].configuration_error.is_none());
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY) && has_result(&runtime, generation, DELAYED)
+    });
+    assert!(
+        runtime
+            .extension_info()
+            .iter()
+            .all(|info| info.configuration_error.is_none())
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ malformed");
     assert_eq!(
-        runtime.extension_configurations()[0].values["fixture.enabled"],
+        runtime
+            .extension_configurations()
+            .iter()
+            .find(|item| item.extension_id == HEALTHY)
+            .unwrap()
+            .values["fixture.enabled"],
+        true
+    );
+    let outcome = runtime
+        .save_configuration(
+            HEALTHY,
+            "repair-settings",
+            "fixture.enabled".into(),
+            false.into(),
+            std::sync::Arc::new(|_| {})
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert_eq!(
+        store
+            .load::<nanika_config::ExtensionConfigurationFile>(&path)
+            .unwrap()
+            .values["fixture.enabled"],
         false
     );
     runtime.shutdown();
@@ -1478,8 +1497,13 @@ fn repeated_exit_stops_after_one_restart_and_reports_both_failures() {
     let runtime = fixture.start();
     wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
     runtime.begin_query("fixture.exit").unwrap();
+    let deadline = Instant::now() + WAIT;
     wait_until(|| {
         let info = &runtime.extension_info()[0];
+        assert!(
+            Instant::now() < deadline,
+            "restart did not settle: {info:?}"
+        );
         !info.pending
             && info
                 .lifecycle_error

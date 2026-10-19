@@ -2494,6 +2494,7 @@ dependencies = [
  "nanika-platform",
  "serde",
  "serde_json",
+ "tracing",
  "ts-rs",
  "uuid",
 ]

@@ -306,7 +306,10 @@ impl ExtensionProcess {
         configuration: ExtensionConfiguration
     ) -> Result<(), SupervisorError> {
         if self.initialized {
-            return Ok(());
+            return Err(SupervisorError::UnexpectedMessage(
+                "extension is already initialized; configuration requires an explicit update"
+                    .into()
+            ));
         }
         let request_id = request_id.into();
         if let Err(error) = self.send(Message::Initialize {

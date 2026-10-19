@@ -1,13 +1,13 @@
 use std::fs::File;
 
-use crate::{ConfigStore, ExtensionRegistryConfig};
+use crate::{ConfigStore, ExtensionRegistryConfig, save_atomic};
 
 /// Serializes read-modify-write and explicit rollback across all registry writers.
 /// The separate lock file survives atomic replacement of the JSONC document.
 pub struct ExtensionRegistryTransaction {
     _lock: File,
     _store: ConfigStore,
-    _original: Option<ExtensionRegistryConfig>,
+    _original: Option<Vec<u8>>,
     _current: ExtensionRegistryConfig
 }
 
@@ -23,7 +23,11 @@ impl ExtensionRegistryTransaction {
         lock.lock()
             .map_err(|error| format!("could not lock extension registry: {error}"))?;
         let current = ExtensionRegistryConfig::load(store)?;
-        let original = store.extensions_file().is_file().then(|| current.clone());
+        let original = match std::fs::read(store.extensions_file()) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string())
+        };
         Ok(Self {
             _lock: lock,
             _store: store.clone(),
@@ -51,7 +55,8 @@ impl ExtensionRegistryTransaction {
     /// Caller-owned package rollback remains inside the same registry transaction.
     pub fn rollback(&self) -> Result<(), String> {
         if let Some(original) = &self._original {
-            original._save(&self._store)
+            save_atomic(self._store.extensions_file(), original, None)
+                .map_err(|error| error.to_string())
         } else {
             match std::fs::remove_file(self._store.extensions_file()) {
                 Ok(()) => Ok(()),

@@ -33,7 +33,7 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
     coordinator
         .register_source(
             "test.extension",
-            crate::ExtensionRuntimeSource::Factory {
+            crate::ExtensionRuntimeSource {
                 activation: nanika_extension_package::ExtensionActivation::OnDemand,
                 live_configuration: true,
                 start: Box::new(move |_| {
@@ -222,7 +222,7 @@ fn worker_panic_is_a_failed_stop() {
     coordinator
         .register_source(
             "test.panic",
-            crate::ExtensionRuntimeSource::Factory {
+            crate::ExtensionRuntimeSource {
                 activation: nanika_extension_package::ExtensionActivation::Startup,
                 live_configuration: true,
                 start: Box::new(|_| panic!("fixture factory panic"))
@@ -252,7 +252,7 @@ fn dormant_factory_receives_the_last_accepted_configuration() {
     coordinator
         .register_source(
             "test.configuration",
-            crate::ExtensionRuntimeSource::Factory {
+            crate::ExtensionRuntimeSource {
                 activation: nanika_extension_package::ExtensionActivation::OnDemand,
                 live_configuration: true,
                 start: Box::new(move |configuration| {

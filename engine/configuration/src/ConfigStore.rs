@@ -10,8 +10,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    BootstrapConfig, CONFIG_FORMAT_VERSION, ConfigError, backup_path, copy_atomic, load_jsonc,
-    relative_config_path, save_jsonc, save_text_atomic, validate_bootstrap
+    BootstrapConfig, CONFIG_FORMAT_VERSION, ConfigError, ConfigOptions, backup_path, copy_atomic,
+    load_jsonc, relative_config_path, save_atomic, save_jsonc, validate_bootstrap
 };
 
 /// Store for bootstrap metadata and the effective user configuration root.
@@ -37,23 +37,33 @@ impl ConfigStore {
         fs::create_dir_all(machine_root)?;
         let bootstrap_path = machine_root.join("bootstrap.jsonc");
         let bootstrap_backup = backup_path(machine_root, None, &bootstrap_path)?;
-        let bootstrap = if bootstrap_path.is_file() {
-            load_jsonc::<BootstrapConfig>(&bootstrap_path).and_then(|bootstrap| {
-                validate_bootstrap(&bootstrap)?;
-                Ok(bootstrap)
-            })?
-        } else {
-            let bootstrap = BootstrapConfig {
-                format_version: CONFIG_FORMAT_VERSION,
-                config_root: default_config_root.as_ref().to_path_buf(),
-                machine_id: Uuid::new_v4()
-            };
-            validate_bootstrap(&bootstrap)?;
-            save_jsonc(&bootstrap_path, &bootstrap, None)?;
-            bootstrap
+        let missing = matches!(fs::metadata(&bootstrap_path), Err(error) if error.kind() == std::io::ErrorKind::NotFound);
+        let options = ConfigOptions::load(&bootstrap_path);
+        let bootstrap = BootstrapConfig {
+            format_version: CONFIG_FORMAT_VERSION,
+            config_root: options.get_validated(
+                "configRoot",
+                default_config_root.as_ref().to_path_buf(),
+                |path: &PathBuf| {
+                    if is_normalized_absolute(path) {
+                        Ok(())
+                    } else {
+                        Err("config root must be a normalized absolute path".into())
+                    }
+                }
+            ),
+            machine_id: options.get("machineId", Uuid::new_v4())
         };
+        validate_bootstrap(&bootstrap)?;
+        if missing {
+            save_jsonc(&bootstrap_path, &bootstrap, None)?;
+        }
         fs::create_dir_all(&bootstrap.config_root)?;
-        copy_if_changed(&bootstrap_path, &bootstrap_backup)?;
+        if load_jsonc::<BootstrapConfig>(&bootstrap_path)
+            .is_ok_and(|stored| validate_bootstrap(&stored).is_ok())
+        {
+            copy_if_changed(&bootstrap_path, &bootstrap_backup)?;
+        }
         Ok(Self {
             bootstrap_path,
             config_root: bootstrap.config_root,
@@ -91,6 +101,14 @@ impl ConfigStore {
             relative_config_path(&self.config_root, path)?;
         }
         load_jsonc(path)
+    }
+
+    pub fn options(&self, path: impl AsRef<Path>) -> Result<ConfigOptions, ConfigError> {
+        let path = path.as_ref();
+        if path != self.bootstrap_path {
+            relative_config_path(&self.config_root, path)?;
+        }
+        Ok(ConfigOptions::load(path))
     }
 
     /// Serialize a typed value and replace a config file with a synced temporary file.
@@ -145,7 +163,7 @@ impl ConfigStore {
             .map_err(|error| ConfigError::Parse(error.to_string()))?;
         validate(&typed).map_err(ConfigError::Invalid)?;
         let backup = backup_path(&self.machine_root, Some(&self.config_root), path)?;
-        save_text_atomic(path, &text, Some(&backup))?;
+        save_atomic(path, text.as_bytes(), Some(&backup))?;
         Ok(typed)
     }
 
@@ -187,7 +205,7 @@ impl ConfigStore {
             .map_err(|error| ConfigError::Parse(error.to_string()))?;
         validate(&typed).map_err(ConfigError::Invalid)?;
         let backup = backup_path(&self.machine_root, Some(&self.config_root), path)?;
-        save_text_atomic(path, &text, Some(&backup))?;
+        save_atomic(path, text.as_bytes(), Some(&backup))?;
         Ok(typed)
     }
 }

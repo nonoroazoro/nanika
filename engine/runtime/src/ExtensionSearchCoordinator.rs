@@ -8,7 +8,7 @@ use nanika_search::SearchHandle;
 
 use crate::{
     ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
-    ExtensionRuntime, ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionViewRequest,
+    ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionViewRequest,
     ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation,
     SupervisorError
 };
@@ -50,39 +50,6 @@ impl ExtensionSearchCoordinator {
             .host_services
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = Some(host_services);
-    }
-
-    pub fn register(
-        &self,
-        extension_id: impl Into<String>,
-        runtime: impl Into<ExtensionRuntime>,
-        search: SearchHandle,
-        contributions: ExtensionContributions
-    ) -> std::io::Result<()> {
-        self.register_with_configuration(
-            extension_id,
-            runtime,
-            search,
-            contributions,
-            nanika_protocol::ExtensionConfiguration::default()
-        )
-    }
-
-    pub fn register_with_configuration(
-        &self,
-        extension_id: impl Into<String>,
-        runtime: impl Into<ExtensionRuntime>,
-        search: SearchHandle,
-        contributions: ExtensionContributions,
-        configuration: nanika_protocol::ExtensionConfiguration
-    ) -> std::io::Result<()> {
-        self.register_source(
-            extension_id,
-            crate::ExtensionRuntimeSource::Started(Box::new(runtime.into())),
-            search,
-            contributions,
-            configuration
-        )
     }
 
     pub fn register_source(

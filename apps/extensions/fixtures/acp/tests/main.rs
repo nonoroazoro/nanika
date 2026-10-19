@@ -57,24 +57,16 @@ fn coordinator_shutdown_interrupts_acp_initialization() {
     let root = temporary_root("blocked-initialization");
     std::fs::create_dir_all(&root).unwrap();
     let marker = root.join("initializing");
-    let runtime = ExtensionRuntime::spawn_with(
-        "com.example.acp-dummy",
-        ExtensionProtocol::Acp {
-            protocol_version: 1
-        },
-        dummy_executable(),
-        [format!("--hang-initialize={}", marker.display()).into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let runtime = _runtime_source([format!("--hang-initialize={}", marker.display()).into()]);
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let coordinator = ExtensionSearchCoordinator::new();
     coordinator
-        .register(
+        .register_source(
             "com.example.acp-dummy",
             runtime,
             owner.handle(),
-            ExtensionContributions::default()
+            ExtensionContributions::default(),
+            Default::default()
         )
         .unwrap();
     let deadline = Instant::now() + TEST_TIMEOUT;
@@ -271,11 +263,12 @@ fn coordinator_shutdown_does_not_restart_a_cancelled_extension() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner");
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "com.example.acp-dummy",
-            hanging_runtime_with_arguments([argument.into()]),
+            _runtime_source([argument.into()]),
             owner.handle(),
-            ExtensionContributions::default()
+            ExtensionContributions::default(),
+            Default::default()
         )
         .expect("register ACP extension");
     coordinator
@@ -486,4 +479,26 @@ fn graceful_stop_waits_for_descendants_without_killing_them() {
         "graceful stop must preserve descendant completion"
     );
     std::fs::remove_dir_all(root).unwrap();
+}
+
+fn _runtime_source(
+    arguments: impl IntoIterator<Item = std::ffi::OsString>
+) -> nanika_host::ExtensionRuntimeSource {
+    let arguments: Vec<_> = arguments.into_iter().collect();
+    nanika_host::ExtensionRuntimeSource {
+        activation: nanika_extension_package::ExtensionActivation::Startup,
+        live_configuration: false,
+        start: Box::new(move |configuration| {
+            ExtensionRuntime::spawn_with_configuration(
+                "com.example.acp-dummy",
+                ExtensionProtocol::Acp {
+                    protocol_version: 1
+                },
+                dummy_executable(),
+                arguments,
+                ExtensionLimits::default(),
+                configuration
+            )
+        })
+    }
 }

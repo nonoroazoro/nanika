@@ -35,6 +35,56 @@ fn fixture_completes_handshake_and_shutdown() {
 }
 
 #[test]
+fn initialized_process_cannot_silently_ignore_a_new_initial_configuration() {
+    let mut extension = ExtensionProcess::spawn(fixture_path()).unwrap();
+    extension.initialize("initial").unwrap();
+    let configuration = nanika_protocol::ExtensionConfiguration::new(
+        [("value".into(), serde_json::json!(42))].into()
+    );
+    let error = extension
+        .initialize_with_configuration("reinitialize", configuration.clone())
+        .unwrap_err();
+    assert!(error.to_string().contains("already initialized"));
+    extension
+        .apply_configuration("explicit-update", configuration)
+        .unwrap();
+    extension.shutdown().unwrap();
+}
+
+#[test]
+fn factory_registration_delivers_configuration_in_exactly_one_handshake() {
+    let root = std::env::temp_dir().join(format!("nanika-factory-config-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+    let coordinator = ExtensionSearchCoordinator::new();
+    let configuration = nanika_protocol::ExtensionConfiguration::new(
+        [("value".into(), serde_json::json!(42))].into()
+    );
+    coordinator
+        .register_source(
+            "fixture.configuration",
+            _fixture_source([format!("--data-root={}", root.display()).into()]),
+            owner.handle(),
+            Default::default(),
+            configuration.clone()
+        )
+        .unwrap();
+    coordinator
+        .refresh("fixture.configuration", 1)
+        .unwrap()
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap();
+    coordinator.shutdown();
+    assert_eq!(
+        std::fs::read_to_string(root.join("initialize-fixture.configuration.starts")).unwrap(),
+        format!("{configuration:?}\n")
+    );
+    owner.shutdown();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn fixture_acknowledges_configuration_through_the_supervised_protocol() {
     let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
     extension
@@ -105,21 +155,17 @@ fn fixture_completes_a_generation_tagged_invocation() {
 #[test]
 fn extension_invocation_uses_the_common_host_service_boundary() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--request-launch-on-invoke".into()],
-        ExtensionLimits::default()
-    )
-    .expect("fixture should spawn");
+    let extension = _fixture_source(["--request-launch-on-invoke".into()]);
     let services = Arc::new(TestHostServices::new());
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator.set_host_services(services.clone());
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .expect("worker should register");
     coordinator
@@ -160,19 +206,15 @@ fn coordinator_dispatches_refresh_off_the_caller_thread() {
         std::env::temp_dir().join(format!("nanika-extension-refresh-{}", std::process::id()));
     let _ = std::fs::remove_file(&marker);
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--mark-refresh={}", marker.display()).into()],
-        ExtensionLimits::default()
-    )
-    .expect("fixture should spawn");
+    let extension = _fixture_source([format!("--mark-refresh={}", marker.display()).into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .expect("worker should register");
 
@@ -243,19 +285,15 @@ fn queued_refreshes_wait_for_their_own_completion() {
     let blocker = root.join("refresh-fixture.extension-1.block");
     std::fs::write(&blocker, b"wait").unwrap();
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--data-root={}", root.display()).into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source([format!("--data-root={}", root.display()).into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let first = coordinator.refresh("fixture.extension", 9).unwrap();
@@ -308,14 +346,15 @@ fn root_refresh_isolates_failures_and_skips_static_contributors() {
             nanika_extension_package::ExtensionContributions::default()
         )
     ] {
-        let extension = ExtensionProcess::spawn_with(
-            fixture_path(),
-            [argument.into()],
-            ExtensionLimits::default()
-        )
-        .unwrap();
+        let extension = _fixture_source([argument.into()]);
         coordinator
-            .register(id, extension, owner.handle(), contributions)
+            .register_source(
+                id,
+                extension,
+                owner.handle(),
+                contributions,
+                Default::default()
+            )
             .unwrap();
     }
     let result = coordinator.refresh_root_search(1);
@@ -333,14 +372,15 @@ fn root_refresh_isolates_failures_and_skips_static_contributors() {
 fn extension_search_worker_dispatches_off_the_caller_thread() {
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
+    let extension = _fixture_source([]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .expect("worker should register");
     let generation = search
@@ -375,22 +415,15 @@ fn extension_worker_publishes_incremental_snapshots() {
             let _ = published.send(snapshot);
         }
     }));
-    let mut extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--incremental-query".into()],
-        ExtensionLimits::default()
-    )
-    .expect("fixture should spawn");
-    extension
-        .initialize("initialize-incremental-query")
-        .expect("fixture should initialize");
+    let extension = _fixture_source(["--incremental-query".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .expect("worker should register");
     let generation = search.begin_query("").expect("query should enqueue");
@@ -436,22 +469,15 @@ fn coordinator_shutdown_cancels_a_running_action() {
     let _ = std::fs::remove_file(&marker);
     let owner = SearchOwner::spawn(UsageMap::new()).expect("search owner should start");
     let search = owner.handle();
-    let mut extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--hang-invoke={}", marker.display()).into()],
-        ExtensionLimits::default()
-    )
-    .expect("fixture should spawn");
-    extension
-        .initialize("initialize-action-cancellation")
-        .expect("fixture should initialize");
+    let extension = _fixture_source([format!("--hang-invoke={}", marker.display()).into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search,
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .expect("worker should register");
     coordinator
@@ -536,19 +562,15 @@ fn superseded_query_error_is_drained_before_the_current_query() {
     let marker = cancellation_marker("query-cancellation");
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--cancel-query={}", marker.display()).into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source([format!("--cancel-query={}", marker.display()).into()]);
     let coordinator = ExtensionSearchCoordinator::new();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let first = search.begin_query("blocked").unwrap();
@@ -574,22 +596,18 @@ fn superseded_query_error_is_drained_before_the_current_query() {
 fn cancellation_uses_the_actual_terminal_result_and_unique_invocation_ids() {
     let marker = cancellation_marker("invocation-correlation");
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [
-            format!("--cancel-invoke={}", marker.display()).into(),
-            "--complete-on-cancel".into()
-        ],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source([
+        format!("--cancel-invoke={}", marker.display()).into(),
+        "--complete-on-cancel".into()
+    ]);
     let coordinator = ExtensionSearchCoordinator::new();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let first = coordinator
@@ -654,20 +672,16 @@ fn cancellation_uses_the_actual_terminal_result_and_unique_invocation_ids() {
 fn accepted_host_service_result_survives_action_cancellation() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let services = Arc::new(pending_host_service::PendingHostService::default());
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--request-launch-on-invoke".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--request-launch-on-invoke".into()]);
     let coordinator = ExtensionSearchCoordinator::new();
     coordinator.set_host_services(services.clone());
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let invocation = coordinator
@@ -708,19 +722,15 @@ fn accepted_host_service_result_survives_action_cancellation() {
 fn invocation_admission_waits_for_capacity_and_queued_cancellation_does_not_execute() {
     let marker = cancellation_marker("admission");
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--cancel-invoke={}", marker.display()).into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source([format!("--cancel-invoke={}", marker.display()).into()]);
     let coordinator = ExtensionSearchCoordinator::new();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             owner.handle(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let first = coordinator
@@ -816,22 +826,18 @@ fn query_completes_while_refresh_is_waiting_for_its_terminal_acknowledgement() {
     let marker = cancellation_marker("query-during-refresh");
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [
-            "--defer-refresh-until-query".into(),
-            format!("--mark-refresh={}", marker.display()).into()
-        ],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source([
+        "--defer-refresh-until-query".into(),
+        format!("--mark-refresh={}", marker.display()).into()
+    ]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let completion = coordinator.refresh("fixture.extension", 1).unwrap();
@@ -868,19 +874,15 @@ fn query_completes_while_refresh_is_waiting_for_its_terminal_acknowledgement() {
 fn refresh_requeries_the_same_generation_with_an_entry_patch() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--patch-query".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--patch-query".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let generation = search.begin_query("").unwrap();
@@ -930,19 +932,15 @@ fn refresh_requeries_the_same_generation_with_an_entry_patch() {
 fn cancelled_patch_requires_a_new_baseline_in_the_same_generation() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--cancel-patch-once".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--cancel-patch-once".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let generation = search.begin_query("").unwrap();
@@ -980,19 +978,15 @@ fn cumulative_catalog_patches_exceeding_eight_mib_remain_searchable() {
     search.set_notifier(Arc::new(move || {
         let _ = sent.send(());
     }));
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--large-catalog".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--large-catalog".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            fixture_contributions()
+            fixture_contributions(),
+            Default::default()
         )
         .unwrap();
     let generation = search.begin_query("").unwrap();
@@ -1030,12 +1024,7 @@ fn cumulative_catalog_patches_exceeding_eight_mib_remain_searchable() {
 fn manifest_contributions_do_not_replace_an_incremental_catalog() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--patch-query".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--patch-query".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     let mut contributions = fixture_contributions();
     contributions
@@ -1063,11 +1052,12 @@ fn manifest_contributions_do_not_replace_an_incremental_catalog() {
             icon: None
         });
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            contributions
+            contributions,
+            Default::default()
         )
         .unwrap();
     let generation = search.begin_query("").unwrap();
@@ -1117,12 +1107,7 @@ fn manifest_contributions_do_not_replace_an_incremental_catalog() {
 fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--patch-query".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--patch-query".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     let mut contributions = fixture_contributions();
     contributions
@@ -1140,11 +1125,12 @@ fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
             icon: None
         });
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
-            contributions
+            contributions,
+            Default::default()
         )
         .unwrap();
     let generation = search.begin_query("").unwrap();
@@ -1197,15 +1183,10 @@ fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
 fn catalog_extensions_publish_once_and_search_without_query_messages() {
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let search = owner.handle();
-    let extension = ExtensionProcess::spawn_with(
-        fixture_path(),
-        ["--catalog-only".into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let extension = _fixture_source(["--catalog-only".into()]);
     let coordinator = ExtensionSearchCoordinator::default();
     coordinator
-        .register(
+        .register_source(
             "fixture.extension",
             extension,
             search.clone(),
@@ -1214,7 +1195,8 @@ fn catalog_extensions_publish_once_and_search_without_query_messages() {
                     mode: nanika_extension_package::RootSearchMode::Catalog
                 }),
                 ..Default::default()
-            }
+            },
+            Default::default()
         )
         .unwrap();
     for query in ["", "catalog", "entry", ""] {
@@ -1245,12 +1227,7 @@ fn shutdown_interrupts_a_blocked_input_write_and_joins_the_child() {
     if release.exists() {
         std::fs::remove_file(&release).unwrap();
     }
-    let process = ExtensionProcess::spawn_with(
-        fixture_path(),
-        [format!("--block-input={}", root.display()).into()],
-        ExtensionLimits::default()
-    )
-    .unwrap();
+    let process = _fixture_source([format!("--block-input={}", root.display()).into()]);
     let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
     let coordinator = Arc::new(ExtensionSearchCoordinator::new());
     let configuration = nanika_protocol::ExtensionConfiguration::new(
@@ -1261,7 +1238,7 @@ fn shutdown_interrupts_a_blocked_input_write_and_joins_the_child() {
         .into()
     );
     coordinator
-        .register_with_configuration(
+        .register_source(
             "blocked.extension",
             process,
             owner.handle(),
@@ -1310,8 +1287,7 @@ fn manifest_baseline_survives_dynamic_progress_without_reranking() {
         if collision {
             args.push("--manifest-collision".into());
         }
-        let extension =
-            ExtensionProcess::spawn_with(fixture_path(), args, ExtensionLimits::default()).unwrap();
+        let extension = _fixture_source(args);
         let coordinator = ExtensionSearchCoordinator::new();
         let mut contributions = fixture_contributions();
         contributions
@@ -1329,11 +1305,12 @@ fn manifest_baseline_survives_dynamic_progress_without_reranking() {
                 )
             });
         coordinator
-            .register(
+            .register_source(
                 "fixture.extension",
                 extension,
                 search.clone(),
-                contributions
+                contributions,
+                Default::default()
             )
             .unwrap();
         let generation = search
@@ -1388,23 +1365,19 @@ fn root_and_view_termination_preserve_the_same_host_admission_boundary() {
                 Default::default()
             });
             coordinator.set_host_services(service.clone());
-            let process = ExtensionProcess::spawn_with(
-                fixture_path(),
-                [if view {
-                    "--request-launch-on-view"
-                } else {
-                    "--request-launch-on-invoke"
-                }
-                .into()],
-                ExtensionLimits::default()
-            )
-            .unwrap();
+            let process = _fixture_source([if view {
+                "--request-launch-on-view"
+            } else {
+                "--request-launch-on-invoke"
+            }
+            .into()]);
             coordinator
-                .register(
+                .register_source(
                     "fixture.extension",
                     process,
                     owner.handle(),
-                    fixture_contributions()
+                    fixture_contributions(),
+                    Default::default()
                 )
                 .unwrap();
             let instance = coordinator.instance_id("fixture.extension").unwrap();
@@ -1475,5 +1448,19 @@ fn root_and_view_termination_preserve_the_same_host_admission_boundary() {
             assert!(error.contains("terminated"), "{error}");
             owner.shutdown();
         }
+    }
+}
+
+fn _fixture_source(
+    arguments: impl IntoIterator<Item = std::ffi::OsString>
+) -> nanika_host::ExtensionRuntimeSource {
+    let arguments: Vec<_> = arguments.into_iter().collect();
+    nanika_host::ExtensionRuntimeSource {
+        activation: nanika_extension_package::ExtensionActivation::Startup,
+        live_configuration: true,
+        start: Box::new(move |_| {
+            ExtensionProcess::spawn_with(fixture_path(), arguments, ExtensionLimits::default())
+                .map(Into::into)
+        })
     }
 }

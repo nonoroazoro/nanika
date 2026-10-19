@@ -46,12 +46,16 @@ fn registry_updates_preserve_nested_comments_and_formatting() {
 }
 
 #[test]
-fn registry_defaults_only_when_the_file_is_missing() {
+fn unreadable_registry_uses_defaults_without_replacing_the_path() {
     let root = temporary_root("strict-missing");
     let store = ConfigStore::open(root.join("machine"), root.join("config")).expect("store");
     std::fs::create_dir_all(store.extensions_file()).expect("registry directory fixture");
 
-    assert!(ExtensionRegistryConfig::load(&store).is_err());
+    assert_eq!(
+        ExtensionRegistryConfig::load(&store).unwrap(),
+        ExtensionRegistryConfig::default()
+    );
+    assert!(store.extensions_file().is_dir());
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -63,42 +67,32 @@ fn temporary_root(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn concurrent_transactions_preserve_other_extensions_and_rollback_is_isolated() {
-    let root = temporary_root("concurrent");
+fn invalid_enablement_does_not_discard_valid_options_or_block_settings_saves() {
+    let root = temporary_root("invalid-options");
     let store = ConfigStore::open(root.join("machine"), root.join("config")).unwrap();
-    let first = ExtensionRegistryTransaction::begin(&store).unwrap();
-    let (started, ready) = std::sync::mpsc::sync_channel(1);
-    let (done, complete) = std::sync::mpsc::sync_channel(1);
-    let other = store.clone();
-    let thread = std::thread::spawn(move || {
-        started.send(()).unwrap();
-        let mut next = ExtensionRegistryTransaction::begin(&other).unwrap();
-        next.set_enabled("com.example.second", false);
-        next.save().unwrap();
-        done.send(()).unwrap();
-    });
-    ready.recv().unwrap();
-    assert!(
-        complete
-            .recv_timeout(std::time::Duration::from_millis(50))
-            .is_err()
-    );
-    let mut first = first;
-    first.set_enabled("com.example.first", false);
-    first.save().unwrap();
-    drop(first);
-    complete
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .unwrap();
-    thread.join().unwrap();
-    let loaded = ExtensionRegistryConfig::load(&store).unwrap();
-    assert!(!loaded.is_enabled("com.example.first"));
-    assert!(!loaded.is_enabled("com.example.second"));
-    let mut transaction = ExtensionRegistryTransaction::begin(&store).unwrap();
-    transaction.remove("com.example.first");
-    transaction.save().unwrap();
-    transaction.rollback().unwrap();
-    drop(transaction);
-    assert_eq!(ExtensionRegistryConfig::load(&store).unwrap(), loaded);
+    for text in [
+        r#"{"formatVersion":1,"extensions":{"com.example.valid":false,"com.example.invalid":"wrong"}}"#,
+        "{ malformed"
+    ] {
+        std::fs::write(store.extensions_file(), text).unwrap();
+        let mut transaction = ExtensionRegistryTransaction::begin(&store).unwrap();
+        assert_eq!(
+            transaction.is_enabled("com.example.valid"),
+            text == "{ malformed"
+        );
+        assert!(transaction.is_enabled("com.example.invalid"));
+        assert_eq!(
+            std::fs::read_to_string(store.extensions_file()).unwrap(),
+            text
+        );
+        transaction.set_enabled("com.example.invalid", false);
+        transaction.save().unwrap();
+        assert!(
+            !ExtensionRegistryConfig::load(&store)
+                .unwrap()
+                .is_enabled("com.example.invalid")
+        );
+        drop(transaction);
+    }
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -18,22 +18,20 @@ pub struct ExtensionRegistryConfig {
 
 impl ExtensionRegistryConfig {
     pub fn load(store: &ConfigStore) -> Result<Self, String> {
-        let path = store.extensions_file();
-        match std::fs::metadata(&path) {
-            Ok(metadata) if metadata.is_file() => {}
-            Ok(_) => {
-                return Err(format!(
-                    "extension registry path is not a file: {}",
-                    path.display()
-                ));
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Self::default()),
-            Err(error) => return Err(error.to_string())
-        }
-        let config = store
-            .load::<Self>(&path)
+        let options = store
+            .options(store.extensions_file())
             .map_err(|error| error.to_string())?;
-        config.validate()?;
+        let values = options.get("extensions", BTreeMap::<String, serde_json::Value>::new());
+        let mut config = Self::default();
+        for (id, value) in values {
+            if nanika_foundation::is_valid_extension_id(&id)
+                && let Some(enabled) = value.as_bool()
+            {
+                config.extensions.insert(id, enabled);
+            } else {
+                tracing::warn!(%id, "invalid extension enablement; using default");
+            }
+        }
         Ok(config)
     }
 
@@ -41,7 +39,16 @@ impl ExtensionRegistryConfig {
         self.validate()?;
         let path = store.extensions_file();
         let current = match std::fs::metadata(&path) {
-            Ok(metadata) if metadata.is_file() => Some(Self::load(store)?),
+            Ok(metadata) if metadata.is_file() => {
+                let stored = store
+                    .load::<Self>(&path)
+                    .ok()
+                    .filter(|stored| stored.validate().is_ok());
+                if stored.is_none() {
+                    return store.save(&path, self).map_err(|error| error.to_string());
+                }
+                stored
+            }
             Ok(_) => {
                 return Err(format!(
                     "extension registry path is not a file: {}",

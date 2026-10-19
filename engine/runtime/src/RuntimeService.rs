@@ -918,7 +918,7 @@ impl RuntimeService {
             .register_permissions(extension_id, descriptor.permissions.clone());
         let owned_descriptor = descriptor.clone();
         let paths = self.paths.clone();
-        let source = crate::ExtensionRuntimeSource::Factory {
+        let source = crate::ExtensionRuntimeSource {
             activation: if restarting {
                 nanika_extension_package::ExtensionActivation::Startup
             } else {

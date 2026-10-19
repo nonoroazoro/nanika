@@ -13,6 +13,8 @@ use serde::{Serialize, de::DeserializeOwned};
 mod bootstrap_config;
 #[path = "ConfigError.rs"]
 mod config_error;
+#[path = "ConfigOptions.rs"]
+mod config_options;
 #[path = "ConfigStore.rs"]
 mod config_store;
 #[path = "ExtensionConfigurationFile.rs"]
@@ -22,6 +24,7 @@ mod extension_registry_config;
 
 pub use bootstrap_config::*;
 pub use config_error::*;
+pub use config_options::*;
 pub use config_store::*;
 pub use extension_configuration_file::*;
 pub use extension_registry_config::*;
@@ -47,12 +50,12 @@ pub(crate) fn save_jsonc<T: Serialize>(
     }
     let mut text = serde_json::to_string_pretty(value)?;
     text.push('\n');
-    save_text_atomic(path, &text, backup)
+    save_atomic(path, text.as_bytes(), backup)
 }
 
-pub(crate) fn save_text_atomic(
+pub(crate) fn save_atomic(
     path: impl AsRef<Path>,
-    text: &str,
+    bytes: &[u8],
     backup: Option<&Path>
 ) -> Result<(), ConfigError> {
     let path = path.as_ref();
@@ -72,7 +75,7 @@ pub(crate) fn save_text_atomic(
             .create_new(true)
             .write(true)
             .open(&temporary)?;
-        file.write_all(text.as_bytes())?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         if let Some(backup) = backup

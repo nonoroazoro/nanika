@@ -3,7 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use crate::ExtensionOperationReservation;
 
-/// One accepted configuration or lifecycle transaction per installed extension.
+/// One accepted settings or lifecycle operation per installed extension.
 #[derive(Default)]
 pub(crate) struct ExtensionOperationGate {
     _state: Mutex<(bool, HashSet<String>)>,
@@ -25,8 +25,7 @@ impl ExtensionOperationGate {
         }
         if !state.1.insert(extension_id.to_owned()) {
             return Err(
-                "A configuration or lifecycle operation is already pending for this extension."
-                    .into()
+                "A settings or lifecycle operation is already pending for this extension.".into()
             );
         }
         Ok(ExtensionOperationReservation::new(

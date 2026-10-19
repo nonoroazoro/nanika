@@ -66,3 +66,34 @@ fn invalid_preferences_cannot_replace_a_saved_file() {
     assert_eq!(std::fs::read(store.config_file()).unwrap(), before);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn invalid_options_use_defaults_and_only_an_explicit_save_repairs_the_file() {
+    let (root, store) = store("defaults");
+    for text in [
+        r#"{"formatVersion":1,"launcherShortcut":"\n","theme":"dark","hideOnBlur":"wrong"}"#,
+        "{ malformed"
+    ] {
+        std::fs::write(store.config_file(), text).unwrap();
+        let mut preferences = LauncherPreferences::load(&store, "Ctrl+Space").unwrap();
+        assert_eq!(preferences.launcher_shortcut, "Ctrl+Space");
+        assert!(preferences.hide_on_blur);
+        assert_eq!(
+            preferences.theme,
+            if text == "{ malformed" {
+                ThemePreference::System
+            } else {
+                ThemePreference::Dark
+            }
+        );
+        assert_eq!(std::fs::read_to_string(store.config_file()).unwrap(), text);
+        preferences.hide_on_blur = false;
+        preferences.save(&store).unwrap();
+        let saved = store
+            .load::<LauncherPreferences>(store.config_file())
+            .unwrap();
+        assert!(!saved.hide_on_blur);
+        assert_eq!(saved.launcher_shortcut, "Ctrl+Space");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

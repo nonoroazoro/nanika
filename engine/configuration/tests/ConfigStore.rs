@@ -36,12 +36,15 @@ fn comments_are_accepted_at_the_typed_boundary() {
 }
 
 #[test]
-fn malformed_bootstrap_fails_explicitly() {
+fn malformed_bootstrap_uses_defaults_without_rewriting() {
     let root = std::env::temp_dir().join(format!("nanika-config-recovery-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let store = ConfigStore::open(&root, root.join("config")).expect("store should open");
     std::fs::write(store.bootstrap_path(), "{ malformed").expect("corrupt bootstrap");
-    assert!(ConfigStore::open(&root, root.join("config")).is_err());
+    let before = std::fs::read(store.bootstrap_path()).unwrap();
+    let reopened = ConfigStore::open(&root, root.join("config")).unwrap();
+    assert_eq!(reopened.config_root(), root.join("config"));
+    assert_eq!(std::fs::read(store.bootstrap_path()).unwrap(), before);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -65,7 +68,7 @@ fn valid_relocation_is_loaded_from_the_primary_bootstrap() {
 }
 
 #[test]
-fn invalid_bootstrap_fields_fail_explicitly() {
+fn invalid_bootstrap_fields_use_defaults_without_rewriting() {
     let root = std::env::temp_dir().join(format!(
         "nanika-config-invalid-bootstrap-{}",
         std::process::id()
@@ -78,7 +81,10 @@ fn invalid_bootstrap_fields_fail_explicitly() {
     )
     .expect("invalid bootstrap should save");
 
-    assert!(ConfigStore::open(&root, root.join("config")).is_err());
+    let before = std::fs::read(store.bootstrap_path()).unwrap();
+    let reopened = ConfigStore::open(&root, root.join("config")).unwrap();
+    assert_eq!(reopened.config_root(), root.join("config"));
+    assert_eq!(std::fs::read(store.bootstrap_path()).unwrap(), before);
     let _ = std::fs::remove_dir_all(root);
 }
 

@@ -18,7 +18,9 @@ fn fixture(
     let store = ConfigStore::open(root.join("machine"), root.join("configuration")).unwrap();
     let registry = Arc::new(ExtensionConfigurationRegistry::new(store.clone()));
     let contribution: ConfigurationContribution = serde_json::from_value(serde_json::json!({
-        "title": "Fixture", "properties": {
+        "title": "Fixture",
+        "quickMenu": [{"title": "Display", "items": [{"kind": "toggle", "key": "enabled"}]}],
+        "properties": {
             "enabled": {"type": "boolean", "title": "Enabled", "default": false, "persistence": persistence},
             "other": {"type": "boolean", "title": "Other", "default": true, "persistence": "beforeApply"},
             "windows": {"type": "boolean", "title": "Windows", "default": true, "persistence": "beforeApply", "platforms": ["windows"]},

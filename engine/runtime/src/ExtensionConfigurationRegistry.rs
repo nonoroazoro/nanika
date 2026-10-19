@@ -47,28 +47,7 @@ impl ExtensionConfigurationRegistry {
         contribution
             .validate()
             .map_err(|error| format!("invalid configuration schema: {error}"))?;
-        let path = self.store.extension_configuration_file(extension_id);
-        let values = match std::fs::metadata(&path) {
-            Ok(metadata) if metadata.is_file() => {
-                let stored = self
-                    .store
-                    .load::<ExtensionConfigurationFile>(&path)
-                    .map_err(|error| error.to_string())?;
-                stored.validate_format()?;
-                let mut effective = contribution.defaults();
-                effective.extend(stored.values);
-                contribution.validate_values(&effective)?;
-                effective
-            }
-            Ok(_) => {
-                return Err(format!(
-                    "extension configuration path is not a file: {}",
-                    path.display()
-                ));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => contribution.defaults(),
-            Err(error) => return Err(error.to_string())
-        };
+        let values = self._load_values(extension_id, contribution);
         let mut registered = self
             .registered
             .lock()
@@ -147,7 +126,14 @@ impl ExtensionConfigurationRegistry {
         effective.insert(key.to_owned(), value);
         contribution.validate_values(&effective)?;
         let path = self.store.extension_configuration_file(extension_id);
-        if path.is_file() {
+        let stored = self.store.load::<ExtensionConfigurationFile>(&path).ok();
+        if stored.as_ref().is_some_and(|stored| {
+            stored.validate_format().is_ok()
+                && stored
+                    .values
+                    .keys()
+                    .all(|key| contribution.properties.contains_key(key))
+        }) {
             let updates = effective
                 .iter()
                 .map(|(key, value)| (key.clone(), Some(value.clone())))
@@ -295,6 +281,37 @@ impl ExtensionConfigurationRegistry {
         snapshots.sort_by(|left, right| left.extension_id.cmp(&right.extension_id));
         snapshots
     }
+    fn _load_values(
+        &self,
+        extension_id: &str,
+        contribution: &ConfigurationContribution
+    ) -> BTreeMap<String, Value> {
+        let path = self.store.extension_configuration_file(extension_id);
+        let mut values = contribution.defaults();
+        let options = match self.store.options(&path) {
+            Ok(options) => options,
+            Err(error) => {
+                tracing::warn!(%extension_id, %error, "configuration could not be loaded; using defaults");
+                return values;
+            }
+        };
+        let stored = options.get("values", BTreeMap::<String, Value>::new());
+        for (key, value) in stored {
+            match contribution.properties.get(&key) {
+                Some(property) => match property.schema.validate_value(&value) {
+                    Ok(()) => {
+                        values.insert(key, value);
+                    }
+                    Err(error) => {
+                        tracing::warn!(%extension_id, %key, %error, "invalid setting; using its default")
+                    }
+                },
+                None => tracing::warn!(%extension_id, %key, "unknown setting ignored")
+            }
+        }
+        values
+    }
+
     fn _values(current: &RegisteredConfiguration) -> BTreeMap<String, Value> {
         let mut values = current.values.clone();
         if let Some(effective) = &current.effective {
