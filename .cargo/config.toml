@@ -1,0 +1,4 @@
+# Apply the CRT policy to every final binary, including consumers of the desktop
+# library. Tauri's per-package linker arguments do not propagate to those consumers.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

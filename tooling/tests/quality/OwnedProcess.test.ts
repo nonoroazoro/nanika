@@ -62,29 +62,19 @@ test("a crashed Bun owner revokes its command and descendants through pipe EOF",
         process.exit(23);
     `
     );
-    const owner = Bun.spawn(["bun", "owner.ts"], {
-        cwd: directory,
-        stdout: "ignore",
-        stderr: "inherit",
-        windowsHide: true
-    });
+    // The crashed owner is itself an owned workflow. Wait for its supervisor
+    // too: dead command PIDs do not mean Windows has released their cwd.
+    const owner = await OwnedProcess.spawn(runner, ["bun", "owner.ts"], directory, process.env, true);
     try
     {
-        expect(await owner.exited).toBe(23);
+        await owner.exited;
+        expect(owner.exitCode).toBe(23);
         const pids = await Bun.file(join(directory, "pids")).json() as number[];
-        const deadline = performance.now() + 5000;
-        while (pids.some(_alive))
-        {
-            if (performance.now() >= deadline)
-            {
-                throw new Error("Supervisor left descendants after its owner exited");
-            }
-            await Bun.sleep(10);
-        }
+        expect(pids.some(_alive)).toBe(false);
     }
     finally
     {
-        owner.kill();
+        await owner.control("stop");
         await owner.exited;
         await rm(directory, { recursive: true });
     }
@@ -99,7 +89,10 @@ test("managed cleanup is bounded and forced termination is reported as failure",
             "bun",
             "-e",
             `
-            const child = Bun.spawn(["bun", "-e", "setInterval(() => {}, 1000)"], { windowsHide: true });
+            // Leave cleanup to the Rust Job instead of Bun's own Windows child Job.
+            const child = Bun.spawn(["bun", "-e", "setInterval(() => {}, 1000)"], {
+                windowsHide: true, detached: process.platform === "win32"
+            });
             await Bun.write("pid", String(child.pid));
             process.exit(0);
         `

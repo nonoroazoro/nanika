@@ -2,6 +2,7 @@
 import { flushSync, onMount } from "svelte";
 import { SvelteMap } from "svelte/reactivity";
 import Preview from "../../src/components/extensions/TextPreview.svelte";
+import ScrollArea from "../../src/components/ui/ScrollArea.svelte";
 import { fixtures } from "./fixtures";
 import { syntaxScenarios } from "./scenarios";
 import { instrumentWorkers } from "./instrument-workers";
@@ -56,7 +57,7 @@ let content = $state<Extract<DetailContent, { kind: "text"; }>>({
     syntax_highlighting: enabled,
     document: { id: "empty", revision: "1", utf16Length: 0, lineCount: 1, maxLineLength: 0, totalChunks: 1 }
 });
-let viewport = $state<HTMLElement>();
+let viewport = $state<HTMLDivElement | null>(null);
 let viewRevision = $state(1);
 let reportedLanguage: string | null = null;
 let readCount = 0;
@@ -952,24 +953,27 @@ onMount(() =>
 });
 </script>
 
-<div bind:this={viewport} class="viewport">
-    <div class="preview-inset">
-        <Preview
-            scope="benchmark"
-            {content}
-            viewport={viewport ?? null}
-            busy={false}
-            revision={viewRevision}
-            onRead={_read}
-            onLanguageChange={(_document: TextDocument, language: string | null) =>
-            {
-                reportedLanguage = language;
-            }}
-        />
-    </div>
+<div class="viewport-frame">
+    <ScrollArea bind:viewport viewportClass="syntax-viewport">
+        <div class="preview-inset">
+            <Preview
+                scope="benchmark"
+                {content}
+                viewport={viewport ?? null}
+                busy={false}
+                revision={viewRevision}
+                onRead={_read}
+                onLanguageChange={(_document: TextDocument, language: string | null) =>
+                {
+                    reportedLanguage = language;
+                }}
+            />
+        </div>
+    </ScrollArea>
 </div>
 
 <style>
 .preview-inset { padding: 20px; }
-.viewport { width: 560px; max-width: calc(100vw - 48px); height: min(500px, calc(100vh - 48px)); overflow: auto; margin: 24px; background: var(--surface-window); color: var(--text-primary); }
+.viewport-frame { width: fit-content; max-width: calc(100vw - 48px); margin: 24px; }
+:global(.syntax-viewport) { width: 560px; max-width: calc(100vw - 48px); height: min(500px, calc(100vh - 48px)); flex: none; background: var(--surface-window); color: var(--text-primary); }
 </style>

@@ -140,5 +140,5 @@ fn _present(window: &tauri::WebviewWindow) -> Result<(), String> {
     }
     window.unminimize().map_err(|error| error.to_string())?;
     crate::window::show_window(window)?;
-    window.set_focus().map_err(|error| error.to_string())
+    crate::window::focus_window(window)
 }

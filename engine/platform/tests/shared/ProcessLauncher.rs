@@ -125,6 +125,29 @@ fn windows_application_is_explicitly_unsupported() {
 
 #[test]
 fn explicit_shell_launch_uses_the_platform_interpreter() {
+    #[cfg(windows)]
+    if std::env::var_os("NANIKA_SHELL_TEST_WORKFLOW").is_none() {
+        // Cargo's Windows test Job can reject handoff. Exercise the interpreter
+        // inside the same explicit workflow ownership used by the application.
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "explicit_shell_launch_uses_the_platform_interpreter"
+            ])
+            .env("NANIKA_SHELL_TEST_WORKFLOW", "1");
+        nanika_platform::configure_process_command(&mut command);
+        let mut child = command.spawn().unwrap();
+        let tree = nanika_platform::ProcessTree::attach_workflow(&child).unwrap();
+        let status = child.wait().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !tree.is_empty(child.id()).unwrap() {
+            assert!(Instant::now() < deadline, "shell workflow did not drain");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(status.success(), "shell workflow failed: {status}");
+        return;
+    }
     let marker = std::env::temp_dir().join(format!("nanika-launch-{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&marker);
     let command = if cfg!(windows) {

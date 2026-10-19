@@ -7,6 +7,9 @@
     "beforeBuildCommand": "bun run build:frontend",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../frontend/dist",
+    "windows": {
+      "staticVCRuntime": false
+    },
     "removeUnusedCommands": true
   },
   "app": {
@@ -38,6 +41,7 @@
         "title": "Nanika Settings",
         "url": "index.html?surface=settings",
         "create": false,
+        "focus": false,
         "width": 920,
         "height": 680,
         "minWidth": 700,

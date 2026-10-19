@@ -30,6 +30,7 @@
         "@types/node": "24.19.2",
         "@typescript-eslint/eslint-plugin": "8.71.2",
         "@typescript-eslint/parser": "8.71.2",
+        "agent-browser": "0.38.1",
         "dprint": "0.63.0",
         "eslint": "9.39.5",
         "eslint-config-zoro": "9.3.1",

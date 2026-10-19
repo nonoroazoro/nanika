@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use tauri::Manager;
@@ -20,6 +20,14 @@ pub(crate) fn plugin(directory: PathBuf) -> tauri::plugin::TauriPlugin<tauri::Wr
             Ok(())
         })
         .on_event(move |app, event| {
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Focused(focused),
+                ..
+            } = event
+            {
+                eprintln!("Native focus: {label}={focused}");
+            }
             if matches!(event, tauri::RunEvent::Ready) {
                 ready = true;
             }
@@ -64,6 +72,12 @@ fn _record(
     let temporary = directory.join("native-state.tmp");
     std::fs::write(&temporary, serde_json::to_vec(&state)?)?;
     std::fs::rename(temporary, directory.join("native-state.json"))?;
+    // Preserve transitions so a final hidden state cannot erase focus-race evidence.
+    let mut history = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(directory.join("native-state.jsonl"))?;
+    writeln!(history, "{state}")?;
     *previous_windows = Some(windows);
     Ok(())
 }

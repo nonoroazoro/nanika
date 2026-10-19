@@ -16,6 +16,13 @@ if (!["application", "activation", "ime"].includes(scenario))
 {
     throw new Error("Expected application, activation or ime scenario");
 }
+// Some Windows installations start Pinyin in Latin mode. The optional shortcut
+// is an explicit session preference, not an assumption about every user's IME.
+const imeShortcut = process.env.NANIKA_E2E_IME_SHORTCUT;
+if (imeShortcut && (process.platform !== "win32" || imeShortcut !== "ctrl-space"))
+{
+    throw new Error("NANIKA_E2E_IME_SHORTCUT supports ctrl-space on Windows only");
+}
 const cancellation = new AbortController();
 const interrupt = () =>
 {
@@ -64,8 +71,10 @@ const child = await OwnedProcess.spawn(
 let browser: Awaited<ReturnType<typeof remote>> | undefined;
 let clipboard: NativeFixture | undefined;
 let ime: NativeFixture | undefined;
+let imeShortcutActive = false;
 const assertions: string[] = [];
 const failures: unknown[] = [];
+let restoring = false;
 try
 {
     await _wait(async () =>
@@ -137,8 +146,10 @@ try
             window.__nanikaE2eComposition = { active: false, starts: 0, updates: 0, ends: 0, committed: '' };
             for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
                 window.addEventListener(type, event => {
-                    if (!event.isTrusted) return;
                     const state = window.__nanikaE2eComposition;
+                    // WebView2 can report an untrusted compositionend after a native
+                    // IME commit. Only accept it following a trusted native start.
+                    if (!event.isTrusted && (type !== 'compositionend' || !state.active)) return;
                     if (type === 'compositionstart') { state.active = true; state.starts++; }
                     else if (type === 'compositionupdate') state.updates++;
                     else { state.active = false; state.ends++; state.committed = event.data; }
@@ -147,6 +158,16 @@ try
         `);
         ime = new NativeFixture([executable, "ime", String(child.pid)], "input source");
         await ime.expect("selected", cancellation.signal);
+        if (imeShortcut)
+        {
+            await _launcherReady();
+            await search.click();
+            await _key(imeShortcut, async () =>
+            {
+                imeShortcutActive = true;
+                await _launcherReady();
+            });
+        }
         await _key("n", async () =>
         {
             await _wait(
@@ -266,6 +287,9 @@ try
         await (await browser.$("input[aria-label='Search settings']")).waitForExist({ timeout: 10000 });
         await browser.saveScreenshot(join(output, "settings.png"));
         assertions.push("native settings shortcut opens the actual Settings window");
+        const marker = `const nanikaE2e = "${identity}";`;
+        clipboard = new NativeFixture([executable, "clipboard", marker], "clipboard");
+        await clipboard.expect("seeded", cancellation.signal);
         await _key("launcher", async () => _window("launcher", true, true));
         await _launcherReady();
         await search.setValue("Clipboard History");
@@ -276,6 +300,27 @@ try
             await (await driver.$("button[aria-label='Clipboard History menu']")).waitForExist({ timeout: 10000 });
         });
         assertions.push("native Enter opens the selected extension through the real runtime");
+        const filter = await browser.$("input[aria-label='Search clipboard history']");
+        await filter.setValue(marker);
+        await browser.waitUntil(async () =>
+        {
+            const items = await driver.$$("[role=option]");
+            const item = items[0];
+            return items.length === 1 && item !== undefined && (await item.getText()).includes(marker);
+        }, { timeout: 15000 });
+        const openedAt = await browser.execute<number, []>("return performance.timeOrigin");
+        // The first preview previously triggered a delayed document reload in dev.
+        // Keep the real runtime open beyond that delay to cover packaged behavior too.
+        await Bun.sleep(3000);
+        cancellation.signal.throwIfAborted();
+        if (
+            await browser.execute<number, []>("return performance.timeOrigin") !== openedAt
+            || !await filter.isExisting() || await filter.getValue() !== marker
+        )
+        {
+            throw new Error("First Clipboard preview reloaded or returned to the launcher");
+        }
+        assertions.push("first Clipboard preview remains in the same document and extension after three seconds");
         await (await browser.$("button[aria-label='Clipboard History menu']")).click();
         await (await browser.$("[role=menu]")).waitForExist({ timeout: 5000 });
         const menuItems = await browser.$$("[role=menuitem]");
@@ -303,11 +348,11 @@ try
         const configFile = Bun.file(join(state, "config/extensions/com.nanika.application/settings.jsonc"));
         const previousConfig = await configFile.exists() ? await configFile.text() : null;
         await (await directories.$("button")).click();
-        await _wait(async () => (await _state()).windows.settings?.pickerOpen === true, "native folder picker");
+        await _wait(_pickerOpen, "native folder picker");
         await _key("escape", async () =>
         {
             await _wait(
-                async () => (await _state()).windows.settings?.pickerOpen === false,
+                async () => !await _pickerOpen(),
                 "folder picker cancellation"
             );
         });
@@ -320,10 +365,6 @@ try
         assertions.push("native folder picker opens and cancels without changing configuration");
         await _key("launcher", async () => _window("launcher", true, true));
         await _launcherReady();
-        const marker = `Nanika E2E ${identity}`;
-        clipboard = new NativeFixture([executable, "clipboard", marker], "clipboard");
-        await clipboard.expect("seeded", cancellation.signal);
-        const filter = await browser.$("input[aria-label='Search clipboard history']");
         await filter.setValue(marker);
         await browser.waitUntil(async () =>
         {
@@ -366,11 +407,42 @@ catch (error)
 }
 finally
 {
+    // Cancellation stops the scenario, but must not cancel OS-state restoration.
+    restoring = true;
+    if (process.platform === "win32" && child.exitCode === null)
+    {
+        try
+        {
+            // Close only this test process's native dialogs before requesting
+            // shutdown, which otherwise waits behind the modal message loop.
+            await _command("cancel-picker", String(child.pid));
+        }
+        catch (error)
+        {
+            failures.push(error);
+        }
+    }
     if (ime)
     {
         try
         {
-            await ime.close();
+            try
+            {
+                if (imeShortcutActive && imeShortcut)
+                {
+                    if (!(await _state()).windows.launcher?.visible)
+                    {
+                        await _activate();
+                    }
+                    await _launcherReady();
+                    await _key(imeShortcut, async () => _window("launcher", true, true));
+                    imeShortcutActive = false;
+                }
+            }
+            finally
+            {
+                await ime.close();
+            }
             assertions.push("original OS input source restored");
         }
         catch (error)
@@ -466,23 +538,38 @@ function _describeError(error: unknown): string
     return error instanceof Error ? error.stack ?? error.message : String(error);
 }
 
-async function _command(...args: string[]): Promise<void>
+async function _command(...args: string[]): Promise<string>
 {
-    cancellation.signal.throwIfAborted();
+    if (!restoring)
+    {
+        cancellation.signal.throwIfAborted();
+    }
     const process = Bun.spawn([executable, ...args], {
         stdin: "ignore",
-        stdout: "ignore",
+        stdout: "pipe",
         stderr: "pipe",
         windowsHide: true,
-        signal: cancellation.signal,
+        signal: restoring ? undefined : cancellation.signal,
         timeout: 15000
     });
-    const [exitCode, stderr] = await Promise.all([process.exited, new Response(process.stderr).text()]);
+    const [exitCode, stderr, stdout] = await Promise.all([
+        process.exited,
+        new Response(process.stderr).text(),
+        new Response(process.stdout).text()
+    ]);
     await appendFile(join(output, "native-input.log"), `${args.join(" ")}: ${exitCode}\n${stderr}`);
     if (exitCode !== 0)
     {
         throw new Error(`Native command failed (${args[0]}): ${stderr}`);
     }
+    return stdout.trim();
+}
+
+async function _pickerOpen(): Promise<boolean>
+{
+    return process.platform === "win32"
+        ? await _command("picker", String(child.pid)) === "true"
+        : (await _state()).windows.settings?.pickerOpen === true;
 }
 
 async function _state(): Promise<NativeState>
@@ -504,7 +591,10 @@ async function _wait(predicate: () => Promise<boolean>, description: string): Pr
     const deadline = Date.now() + 15000;
     while (true)
     {
-        cancellation.signal.throwIfAborted();
+        if (!restoring)
+        {
+            cancellation.signal.throwIfAborted();
+        }
         if (child.exitCode !== null || child.signalCode !== null)
         {
             throw new Error(`App exited while waiting for ${description}`);
@@ -523,7 +613,10 @@ async function _wait(predicate: () => Promise<boolean>, description: string): Pr
 
 async function _key(key: string, observe: () => Promise<void>): Promise<void>
 {
-    cancellation.signal.throwIfAborted();
+    if (!restoring)
+    {
+        cancellation.signal.throwIfAborted();
+    }
     const sender = Bun.spawn([executable, "key", key], {
         stdin: "pipe",
         stdout: "pipe",

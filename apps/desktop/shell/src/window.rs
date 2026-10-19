@@ -26,6 +26,16 @@ pub(crate) fn show_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     window.show().map_err(|error| error.to_string())
 }
 
+pub(crate) fn focus_window(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window.set_focus().map_err(|error| error.to_string())?;
+    // Focusing the native top-level window does not guarantee keyboard focus
+    // inside a restored WebView2 controller.
+    window
+        .as_ref()
+        .set_focus()
+        .map_err(|error| error.to_string())
+}
+
 fn schedule_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String> {
     let handle = app.clone();
     // Tray, hotkey, and single-instance callbacks have different thread origins.
@@ -56,7 +66,7 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
         ))
         .map_err(|error| error.to_string())?;
     show_window(&window)?;
-    window.set_focus().map_err(|error| error.to_string())?;
+    focus_window(&window)?;
     app.state::<crate::DesktopState>().launcher_opened();
     Ok(())
 }
@@ -89,6 +99,10 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
             .state::<crate::host_settings::HostSettings>()
             .hide_on_blur
             .load(std::sync::atomic::Ordering::Acquire)
+        && crate::adapters::lost_window_focus(window).unwrap_or_else(|error| {
+            tracing::error!(%error, "could not query launcher focus");
+            false
+        })
         && let Err(error) = hide_window(window)
     {
         tracing::error!(%error, "launcher could not hide after losing focus");

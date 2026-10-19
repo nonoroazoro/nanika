@@ -1,7 +1,7 @@
 import "../runtime.ts";
 
 import { mkdir } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -70,7 +70,23 @@ async function _verify(selected: string, dist: string): Promise<void>
             return await content.exists() ? new Response(content) : new Response(null, { status: 404 });
         }
     });
-    const command = ["agent-browser", "--config", config, "--session", session, "--headed", "false"];
+    // Invoke the installed launcher directly: Windows .cmd shims cannot safely
+    // forward URLs and JavaScript containing shell metacharacters.
+    const launcher = fileURLToPath(import.meta.resolve("agent-browser/bin/agent-browser.js"));
+    // The package ships an x64 Windows binary (also used under ARM64 emulation).
+    // Bypass its JS wrapper on Windows, where it explicitly shows console windows.
+    const executable = process.platform === "win32"
+        ? [join(dirname(launcher), "agent-browser-win32-x64.exe")]
+        : ["bun", launcher];
+    const command = [
+        ...executable,
+        "--config",
+        config,
+        "--session",
+        session,
+        "--headed",
+        "false"
+    ];
     const environment = {
         ...Object.fromEntries(
             Object.keys(process.env).filter(key => key.startsWith("AGENT_BROWSER_")).map(key => [key, undefined])

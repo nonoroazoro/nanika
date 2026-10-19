@@ -17,3 +17,6 @@ pub(crate) fn configure_windows(config: &mut tauri::utils::config::Config) {
         }
     }
 }
+pub(crate) fn lost_window_focus(_window: &tauri::Window) -> Result<bool, String> {
+    Ok(true)
+}

@@ -29,6 +29,9 @@ export default defineConfig({
         }
     }],
     clearScreen: false,
+    optimizeDeps: {
+        include: ["vscode-oniguruma", "vscode-textmate"]
+    },
     server: {
         port: 1420,
         strictPort: true,

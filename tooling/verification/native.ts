@@ -1,7 +1,7 @@
 import "../runtime.ts";
 
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildVerificationFrontend } from "./frontend.ts";
@@ -27,7 +27,10 @@ export async function verifyNative(scenario: string, repetitions = 1): Promise<v
     {
         const dist = join(target, "frontend");
         await buildVerificationFrontend(root, dist);
-        const config = JSON.stringify({ build: { frontendDist: dist } });
+        // An absolute Windows path is parsed as a URL with a drive-letter scheme.
+        // Tauri resolves filesystem assets relative to the crate's config directory.
+        const frontendDist = relative(join(root, "apps/desktop/verification"), dist).replaceAll("\\", "/");
+        const config = JSON.stringify({ build: { frontendDist } });
         await run(
             [
                 "cargo",

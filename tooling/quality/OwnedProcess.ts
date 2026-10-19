@@ -31,7 +31,9 @@ export class OwnedProcess
             stdout: "pipe",
             stderr: log ?? "inherit",
             windowsHide: true,
-            detached: process.platform === "darwin"
+            // The supervisor must survive its Bun owner long enough to observe
+            // pipe EOF and finish managed cleanup, including on Windows.
+            detached: true
         });
         this.exited = this._observe();
         // Observation starts at spawn, before callers await readiness or completion.

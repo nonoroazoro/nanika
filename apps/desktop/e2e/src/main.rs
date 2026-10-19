@@ -23,6 +23,11 @@ fn main() -> std::process::ExitCode {
 fn _run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.as_slice() {
+        #[cfg(target_os = "windows")]
+        [command, pid] if command == "picker" || command == "cancel-picker" => {
+            println!("{}", native_dialog::query_process(pid.parse()?, command == "cancel-picker")?);
+            Ok(())
+        },
         [command, pid] if command == "ime" => ime::run(pid.parse()?).map_err(Into::into),
         [command, value] if command == "clipboard" => clipboard::run(value).map_err(Into::into),
         [command, key] if command == "key" => {

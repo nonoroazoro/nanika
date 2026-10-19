@@ -35,6 +35,9 @@ tracing.workspace = true
 [dev-dependencies]
 png.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
+
 [features]
 typescript = ["dep:ts-rs", "nanika-host/typescript", "nanika-config/typescript", "nanika-protocol/typescript", "nanika-search/typescript", "nanika-platform/typescript"]
 default = ["custom-protocol"]

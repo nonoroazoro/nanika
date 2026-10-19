@@ -3,7 +3,7 @@
     "productName": "Nanika Verification",
     "version": "0.1.0",
     "identifier": "app.nanika.verification",
-    "build": { "frontendDist": "assets" },
+    "build": { "frontendDist": "assets", "windows": { "staticVCRuntime": false } },
     "app": {
         "windows": [],
         "security": {
@@ -30,7 +30,7 @@
     },
     "bundle": {
         "active": false,
-        "icon": ["../shell/icons/32x32.png"],
+        "icon": ["../shell/icons/32x32.png", "../shell/icons/icon.ico"],
         "macOS": { "minimumSystemVersion": "13.0" }
     }
 }

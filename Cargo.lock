@@ -2730,6 +2730,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tracing",
  "ts-rs",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

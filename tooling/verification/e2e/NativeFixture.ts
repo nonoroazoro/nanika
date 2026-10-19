@@ -18,7 +18,10 @@ export class NativeFixture
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
-            windowsHide: true
+            windowsHide: true,
+            // Bun's Windows child Job would kill restoration on owner exit.
+            // Detach from that Job; the outer Rust workflow Job still contains us.
+            detached: process.platform === "win32"
         });
         this._lines = createInterface({ input: Readable.from(this._child.stdout) })[Symbol.asyncIterator]();
         this._stderr = new Response(this._child.stderr).text();
