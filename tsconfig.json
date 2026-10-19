@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-        "lib": ["ESNext"],
+        "lib": ["ESNext", "DOM"],
         "types": ["bun"],
         "module": "Preserve",
         "moduleResolution": "Bundler",
@@ -18,6 +18,8 @@
     },
     "include": [
         "tooling/**/*.ts",
+        "apps/desktop/shell/tests/**/*.ts",
+        "apps/desktop/verification/tests/**/*.ts",
         "*.config.ts",
         "apps/desktop/frontend/vite.config.ts"
     ]

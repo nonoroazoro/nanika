@@ -15,7 +15,7 @@ import type { BuildCommand } from "./BuildCommand.ts";
  */
 export async function withBuildTarget(
     root: string,
-    slot: "build" | "check" | "computer-use" | "dev" | "test",
+    slot: "benchmark" | "build" | "check" | "dev" | "test" | "verification",
     execute: (
         target: string,
         run: BuildCommand

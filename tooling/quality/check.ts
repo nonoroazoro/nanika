@@ -48,25 +48,45 @@ await withBuildTarget(root, "check", async (target, run) =>
         RUSTDOCFLAGS: `${process.env.RUSTDOCFLAGS ?? ""} -D warnings`.trim()
     };
     await generateTypes(root, target, run, false);
+    await run(["bun", "tooling/syntax/resources.ts", "check"]);
+    await run(["bunx", "--no-install", "dprint", "check"], root, {
+        DPRINT_CACHE_DIR: join(root, "target/dprint-cache")
+    });
+    await run(["bun", "run", "lint"]);
+    for (const config of ["./tsconfig.json", "./verification/tsconfig.json"])
+    {
+        await run([
+            "bun",
+            "node_modules/svelte-check/bin/svelte-check",
+            "--workspace",
+            "apps/desktop/frontend",
+            "--tsconfig",
+            config,
+            "--fail-on-warnings"
+        ]);
+    }
     for (
-        const script of [
-            "format:check",
-            "lint",
-            "frontend:check",
-            "tooling:check",
-            "frontend:build",
-            "test"
+        const project of [
+            "tsconfig.json",
+            "apps/desktop/frontend/tests/tsconfig.json",
+            "apps/desktop/frontend/verification/tsconfig.json",
+            "apps/desktop/frontend/benchmarks/tsconfig.json"
         ]
     )
     {
-        await run(["bun", "run", script]);
+        await run(["bun", "node_modules/typescript/bin/tsc", "--project", project]);
     }
-    await run(["cargo", "fmt", "--all", "--", "--check"]);
+    await run(["bun", "run", "build:frontend"]);
+    await run(["bun", "run", "test"]);
+    await run(["cargo", "fmt", "--all", "--", "--config", "trailing_comma=Never", "--check"]);
+    // Language servers load the base config without the packaging override.
+    await run(["cargo", "check", "--workspace", "--all-targets", "--locked"], root, { TAURI_CONFIG: "{}" });
     await run(
         ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"],
         root,
         environment
     );
-    await run(["cargo", "test", "--workspace", "--all-targets", "--locked"], root, environment);
+    await run(["cargo", "test", "--workspace", "--lib", "--bins", "--tests", "--locked"], root, environment);
+    await run(["cargo", "test", "--workspace", "--doc", "--locked"], root, environment);
     await run(["cargo", "doc", "--workspace", "--no-deps", "--locked"], root, environment);
 });

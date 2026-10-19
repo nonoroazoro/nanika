@@ -1,26 +1,12 @@
-import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
 const repository = resolve(import.meta.dirname, "../../..");
 
-test.runIf(process.platform === "darwin").each(
-    [
-        {
-            name: "SIGINT waits for descendants and retains output until the next invocation",
-            signal: "SIGINT",
-            inspectionFailure: false
-        },
-        {
-            name: "SIGTERM waits for descendants and retains output until the next invocation",
-            signal: "SIGTERM",
-            inspectionFailure: false
-        },
-        { name: "failed process inspection retains build output", signal: "SIGTERM", inspectionFailure: true }
-    ] as const
-)(
-    "$name",
-    async ({ signal, inspectionFailure }) =>
+test.runIf(process.platform === "darwin").each(["SIGINT", "SIGTERM"] as const)(
+    "%s waits for descendants and retains output until the next invocation",
+    async signal =>
     {
         const fixture = await _fixture();
         let check: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
@@ -50,18 +36,8 @@ test.runIf(process.platform === "darwin").each(
                 setInterval(() => {}, 1000);
             `
             );
-            const environment = { ...process.env };
-            if (inspectionFailure)
-            {
-                const bin = join(fixture, "bin");
-                await mkdir(bin);
-                await Bun.write(join(bin, "lsof"), "#!/bin/sh\nprintf 'inspection denied' >&2\nexit 42\n");
-                await chmod(join(bin, "lsof"), 0o755);
-                environment.PATH = `${bin}:${process.env.PATH}`;
-            }
             check = Bun.spawn(["bun", "tooling/quality/check.ts"], {
                 cwd: fixture,
-                env: environment,
                 stdout: "pipe",
                 stderr: "pipe"
             });
@@ -76,22 +52,13 @@ test.runIf(process.platform === "darwin").each(
             expect(exitCode).not.toBe(0);
             await _waitForFile(join(fixture, "stopped"));
             expect(await Bun.file(join(fixture, "stopped")).text()).toBe("done");
-            if (inspectionFailure)
-            {
-                expect(stderr).toContain("inspection denied");
-                expect((await readdir(join(fixture, "target"))).filter(name => !name.startsWith(".build-lock")))
-                    .toEqual(["cargo", "check-work"]);
-            }
-            else
-            {
-                expect(stderr).toContain(signal);
-                expect((await readdir(join(fixture, "target"))).sort(), stderr).toEqual([
-                    ".build-locks",
-                    "cargo",
-                    "check-work"
-                ]);
-                expect(_running(ready.pid)).toBe(false);
-            }
+            expect(stderr).toContain(signal);
+            expect((await readdir(join(fixture, "target"))).sort(), stderr).toEqual([
+                ".build-locks",
+                "cargo",
+                "check-work"
+            ]);
+            expect(_running(ready.pid)).toBe(false);
             expect(await Bun.file(join(fixture, "later-stage")).exists()).toBe(false);
         }
         finally
@@ -152,6 +119,7 @@ async function _fixture(): Promise<string>
             "bunfig.toml",
             "tooling/runtime.ts",
             "tooling/quality/check.ts",
+            "tooling/quality/OwnedProcess.ts",
             "tooling/quality/process-tree.ts",
             "tooling/build/with-build-target.ts",
             "tooling/build/with-build-lock.ts"
@@ -163,10 +131,7 @@ async function _fixture(): Promise<string>
     await Bun.write(
         join(directory, "package.json"),
         JSON.stringify({
-            packageManager: `bun@${Bun.version}`,
-            scripts: {
-                "format:check": "bun later.ts"
-            }
+            packageManager: `bun@${Bun.version}`
         })
     );
     await Bun.write(
@@ -176,7 +141,7 @@ async function _fixture(): Promise<string>
             return "{}";
         }`
     );
-    await Bun.write(join(directory, "later.ts"), "await Bun.write('later-stage', 'unexpected');");
+    await Bun.write(join(directory, "tooling/syntax/resources.ts"), "await Bun.write('later-stage', 'unexpected');");
     return directory;
 }
 

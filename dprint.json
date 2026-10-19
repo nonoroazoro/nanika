@@ -26,9 +26,17 @@
         "AGENTS.md",
         "*.config.ts",
         "apps/desktop/frontend/**/*.{ts,js,svelte,json,html,css}",
+        "apps/desktop/shell/tests/**/*.ts",
+        "apps/desktop/verification/**/*.{ts,js,json,html}",
         "tooling/**/*.ts"
     ],
-    "excludes": ["**/dist", "**/node_modules", "target/**", "apps/desktop/frontend/src/syntax/grammars/**"],
+    "excludes": [
+        "**/dist",
+        "**/node_modules",
+        "target/**",
+        "apps/desktop/verification/gen/**",
+        "apps/desktop/frontend/src/syntax/grammars/**"
+    ],
     "plugins": [
         "npm:dprint-plugin-markup@0.27.5",
         "npm:@dprint/json@0.25.2",

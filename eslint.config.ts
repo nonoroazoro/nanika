@@ -20,6 +20,7 @@ export default [
     {
         files: ["apps/desktop/frontend/src/**/*.{ts,svelte}"],
         rules: {
+            "no-console": ["error", { allow: ["error"] }],
             "no-restricted-globals": ["error", {
                 name: "Bun",
                 message: "Bun is a build tool, not an application runtime."
@@ -33,7 +34,11 @@ export default [
         }
     },
     {
-        files: ["tooling/**/*.ts", "*.config.ts", "apps/desktop/frontend/vite.config.ts"],
+        files: [
+            "tooling/**/*.ts",
+            "*.config.ts",
+            "apps/desktop/frontend/vite.config.ts"
+        ],
         rules: {
             "no-console": ["error", { allow: ["log"] }]
         }

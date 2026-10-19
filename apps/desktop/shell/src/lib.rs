@@ -122,7 +122,21 @@ const DEFAULT_HOTKEY: &str = "Ctrl+Alt+Space";
 pub fn run() -> Result<(), String> {
     let paths = nanika_storage::NanikaPaths::discover()
         .ok_or_else(|| "Nanika could not resolve its data directories".to_owned())?;
-    let identity = nanika_foundation::PROJECT_IDENTITY.bundle_id;
+    run_with(paths, tauri::Builder::default(), context())
+}
+
+/// Embedded product assets, permissions and window configuration.
+pub fn context() -> tauri::Context<tauri::Wry> {
+    tauri::tauri_build_context!()
+}
+
+/// Runs the product shell with caller-owned storage and native integration.
+pub fn run_with(
+    paths: nanika_storage::NanikaPaths,
+    builder: tauri::Builder<tauri::Wry>,
+    mut context: tauri::Context<tauri::Wry>
+) -> Result<(), String> {
+    let identity = context.config().identifier.as_str();
     let instance = match nanika_platform::acquire_instance(identity, paths.app_data_root())
         .map_err(|error| error.to_string())?
     {
@@ -151,10 +165,9 @@ pub fn run() -> Result<(), String> {
         paths.payload_dir().to_path_buf()
     )?);
 
-    let mut context = tauri::tauri_build_context!();
     adapters::configure_windows(context.config_mut());
 
-    tauri::Builder::default()
+    builder
         .manage(SettingsWindow::default())
         .manage(host_settings)
         .manage(std::sync::Arc::clone(&icon_protocol))

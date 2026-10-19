@@ -1,0 +1,38 @@
+[package]
+name = "nanika-e2e"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "nanika-e2e"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+nanika-desktop = { path = "../shell" }
+nanika-storage = { path = "../../../engine/storage" }
+nanika-platform = { path = "../../../engine/platform" }
+nanika-config = { path = "../../../engine/configuration" }
+serde_json.workspace = true
+clipboard-rs.workspace = true
+tauri.workspace = true
+tauri-plugin-wdio-webdriver = "=1.5.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true, features = ["std"] }
+objc2-core-foundation = { workspace = true, features = ["std", "CFArray", "CFNumber", "CFString"] }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSData"] }
+objc2-app-kit = { workspace = true, features = ["std", "NSWorkspace", "NSRunningApplication", "NSWindow", "NSOpenPanel", "NSPasteboard", "NSPasteboardItem"] }
+objc2-core-graphics = { workspace = true, features = ["std", "CGEvent", "CGEventSource", "CGEventTypes", "CGRemoteOperation"] }
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win.workspace = true
+windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[lints]
+workspace = true

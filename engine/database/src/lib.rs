@@ -43,5 +43,5 @@ fn _objects(connection: &Connection) -> Result<Vec<(String, String, String, Stri
 }
 
 #[cfg(test)]
-#[path = "../tests/database.rs"]
+#[path = "../tests/lib.rs"]
 mod tests;

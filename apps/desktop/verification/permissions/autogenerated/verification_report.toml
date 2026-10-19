@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-verification-report"
+description = "Enables the verification_report command without any pre-configured scope."
+commands.allow = ["verification_report"]
+
+[[permission]]
+identifier = "deny-verification-report"
+description = "Denies the verification_report command without any pre-configured scope."
+commands.deny = ["verification_report"]

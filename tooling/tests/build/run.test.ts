@@ -2,14 +2,10 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
-test.each(["dev", "build", "computer-use"] as const)(
+test.each(["dev", "build"] as const)(
     "%s rebuilds changed Rust source before launch or publication, and stops on compilation failure",
     async mode =>
     {
-        if (mode === "computer-use" && process.platform !== "darwin")
-        {
-            return;
-        }
         const fixture = await _fixture();
         try
         {
@@ -21,42 +17,32 @@ test.each(["dev", "build", "computer-use"] as const)(
                 const result = await _run(fixture, mode);
                 expect(result.exitCode, result.stderr).toBe(0);
                 expect(await Bun.file(join(fixture, "observed")).text()).toBe(version);
-                if (mode !== "dev")
+                if (mode === "build")
                 {
-                    const profile = mode === "build" ? "release" : "debug";
-                    expect(await Bun.file(join(fixture, `target/${profile}/bundle/app`)).text()).toBe(version);
-                    expect(await Bun.file(join(fixture, `target/${profile}/bundle/stale`)).exists()).toBe(false);
-                }
-                if (mode === "computer-use")
-                {
-                    expect(await Bun.file(join(fixture, "launched")).text()).toBe(version);
+                    expect(await Bun.file(join(fixture, "target/release/bundle/app")).text()).toBe(version);
+                    expect(await Bun.file(join(fixture, "target/release/bundle/stale")).exists()).toBe(false);
                 }
             }
             await rm(join(fixture, "observed"));
-            await rm(join(fixture, "launched"), { force: true });
             await Bun.write(join(fixture, "src/main.rs"), "invalid Rust source");
             const failed = await _run(fixture, mode);
             expect(failed.exitCode).not.toBe(0);
             expect(failed.stderr).toContain("failed");
             expect(await Bun.file(join(fixture, "observed")).exists()).toBe(false);
-            expect(await Bun.file(join(fixture, "launched")).exists()).toBe(false);
-            if (mode !== "dev")
+            if (mode === "build")
             {
-                const profile = mode === "build" ? "release" : "debug";
-                expect(await Bun.file(join(fixture, `target/${profile}/bundle/app`)).text()).toBe("new");
+                expect(await Bun.file(join(fixture, "target/release/bundle/app")).text()).toBe("new");
             }
             await Bun.write(join(fixture, "src/main.rs"), 'fn main() { println!("new"); }');
             await Bun.write(join(fixture, "fail-desktop"), "fail");
             const desktopFailure = await _run(fixture, mode);
             expect(desktopFailure.exitCode).not.toBe(0);
             expect(desktopFailure.stderr).toContain("desktop build failed");
-            expect(await Bun.file(join(fixture, "launched")).exists()).toBe(false);
-            if (mode !== "dev")
+            if (mode === "build")
             {
-                const profile = mode === "build" ? "release" : "debug";
-                expect(await Bun.file(join(fixture, `target/${profile}/bundle/app`)).text()).toBe("new");
+                expect(await Bun.file(join(fixture, "target/release/bundle/app")).text()).toBe("new");
             }
-            if (mode !== "build")
+            if (mode === "dev")
             {
                 await Bun.write(join(fixture, "running"), "old instance");
                 expect((await _run(fixture, mode)).stderr).toContain("Stop the running Nanika instance");
@@ -142,13 +128,6 @@ async function _fixture(): Promise<string>
         export async function runDev(root, config, run) {
             await run(["bun", join(root, 'node_modules/@tauri-apps/cli/tauri.js'), 'dev', '--config', config], join(root, 'apps/desktop'));
         }
-    `
-    );
-    await Bun.write(
-        join(fixture, "tooling/development/launch-computer-use-app.ts"),
-        `
-        const version = await Bun.file(new URL('../../target/debug/bundle/app', import.meta.url)).text();
-        await Bun.write(new URL('../../launched', import.meta.url), version);
     `
     );
     await Bun.write(join(fixture, "node_modules/@tauri-apps/cli/tauri.js"), "await import('../../../tauri.ts');");

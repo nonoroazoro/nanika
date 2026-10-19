@@ -15,11 +15,15 @@ export default defineConfig({
                     && Object.keys(output.modules).some(id =>
                     {
                         const path = id.replaceAll("\\", "/");
-                        return path.includes("/src/development/") || path.includes("/tooling/");
+                        return path.includes("/src/development/") || path.includes("/tooling/")
+                            || path.includes("/benchmarks/") || path.includes("/verification/")
+                            || path.includes("/fixtures/");
                     })
                 )
                 {
-                    this.error("Development monitoring and repository tooling must not enter production assets.");
+                    this.error(
+                        "Development monitoring, benchmarks and repository tooling must not enter production assets."
+                    );
                 }
             }
         }

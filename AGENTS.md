@@ -49,8 +49,16 @@ Nanika's product principles and native conventions govern how these skills are a
 ### Validation
 
 - Run checks appropriate to the change and preserve zero-extension, extension-equivalence, failure, security, protocol/storage and concurrency coverage.
-- Exercise entry, exit, repeated input, interruption, scrolling and resizing on both supported platforms. Report untested conditions; native acceptance requires native execution evidence.
+- Rust functional tests use Cargo; TypeScript functional tests use Vitest through Bun. Keep source and test paths corresponding. Ordinary checks and non-UI benchmarks must not launch browsers or WebViews, and `just check` must not run benchmark measurements.
+- Use agent-browser with standard Chromium for comprehensive frontend UI/UX verification: DOM/CSS, layout, screenshots, states and page interactions. Prefer headless execution. Do not require a duplicate Tauri pass of these cases or introduce a separate Chrome for Testing workflow.
+- Use Tauri for representative performance, resource usage and specific native WebView behavior. Reuse product components and the desktop shell, not separate platform-specific WebView hosts.
+- Run final end-to-end acceptance through scripted automation of the real application and backend. Prefer maintained WebDriver implementations over custom drivers. Keep automation plugins and endpoints out of production and performance builds. DOM-generated input does not establish native shortcut, IME or OS focus behavior; report these capabilities separately and explicitly.
+- Exercise relevant entry, exit, repeated input, interruption, scrolling and resizing. Native platform claims require execution on that platform; report the actual environment and untested conditions. Browser evidence does not establish native performance or OS input behavior.
+- Prefer headless where supported. Explain visible-window exceptions. Hidden native windows are not equivalent to browser headless or representative visible rendering.
 - Measure performance changes before and after under comparable workloads, including 60/120 Hz and hidden idle where relevant.
+- Resource measurements are best effort and use public APIs only. Report process coverage and metric definitions explicitly; do not label partial RSS as total App memory or add private APIs for exact attribution.
+- Application E2E activates through the configured OS shortcut and verifies visible, focused restoration. Test the shared Rust activation contract separately; never use it as a shortcut failure fallback. Do not duplicate activation in Ruby or platform-specific scripts. Own test sessions and processes, isolate test data and instance identity, and clean up on failure or interruption. Workflow commands and native E2E use the shared Rust process supervisor; wait for the entire process group or Windows Job, not only its leader. Exclude test controls from production builds.
+- Delete replaced runners, dependencies and compatibility paths. Keep meaningful regression coverage without introducing a generic testing framework.
 - Announce desktop control in advance, allow time for the user to stop input, and announce release afterward.
 
 ### Backlog

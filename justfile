@@ -8,16 +8,6 @@ default:
 dev:
     bun run dev
 
-# Build and launch a fresh macOS app bundle for Computer Use. This mode has no HMR.
-[unix]
-dev-computer-use:
-    bun run dev:computer-use
-
-# Windows Computer Use can bind the live development window directly.
-[windows]
-dev-computer-use:
-    just dev
-
 # Delete Nanika development state, then start from a clean baseline.
 dev-fresh:
     bun tooling/development/reset-state.ts
@@ -29,6 +19,22 @@ activate pid:
 
 check:
     bun run check
+
+# Run a scenario in the platform's real Tauri WebView.
+verify-native scenario="syntax:rendering":
+    bun tooling/verification/native.ts {{scenario}}
+
+# Verify real frontend components in an owned headless Chromium session.
+verify-ui surface="settings":
+    bun tooling/verification/ui.ts {{surface}}
+
+# Drive an isolated real application through WebDriver and native OS input.
+verify-e2e scenario="application":
+    bun tooling/verification/e2e.ts {{scenario}}
+
+# Measure explicitly; ordinary checks only compile benchmark targets.
+bench family *args:
+    bun tooling/benchmarks/run.ts {{family}} {{args}}
 
 # Build the current release bundle using the shared Cargo cache.
 build:

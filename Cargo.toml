@@ -4,6 +4,8 @@ members = [
     "tooling/process",
     "apps/cli",
     "apps/desktop/shell",
+    "apps/desktop/e2e",
+    "apps/desktop/verification",
     "apps/extensions/built-in",
     "apps/extensions/built-in/application",
     "apps/extensions/built-in/calculator",

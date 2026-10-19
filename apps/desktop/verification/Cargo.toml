@@ -1,0 +1,26 @@
+[package]
+name = "nanika-verification"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "nanika-verify"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+serde_json.workspace = true
+serde.workspace = true
+sysinfo.workspace = true
+tauri = { workspace = true, features = ["common-controls-v6", "compression", "custom-protocol", "isolation", "wry"] }
+
+[build-dependencies]
+tauri-build = { workspace = true, features = ["codegen", "isolation"] }
+
+[lints]
+workspace = true

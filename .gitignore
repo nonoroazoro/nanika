@@ -4,4 +4,5 @@ target/
 node_modules/
 apps/desktop/frontend/dist/
 apps/desktop/shell/gen/
+apps/desktop/verification/gen/
 **/*.rs.bk

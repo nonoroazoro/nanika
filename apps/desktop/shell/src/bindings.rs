@@ -5,7 +5,7 @@ mod contracts;
 
 /// Explicit tooling entry point. Ordinary tests never rewrite frontend sources.
 #[test]
-#[ignore = "run through bun run types:update or types:check"]
+#[ignore = "run through bun run types:update or just check"]
 fn export() {
     let output =
         std::env::var_os("NANIKA_TYPES_OUTPUT").expect("tooling must supply an output directory");

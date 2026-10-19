@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-verification-resources"
+description = "Enables the verification_resources command without any pre-configured scope."
+commands.allow = ["verification_resources"]
+
+[[permission]]
+identifier = "deny-verification-resources"
+description = "Denies the verification_resources command without any pre-configured scope."
+commands.deny = ["verification_resources"]
