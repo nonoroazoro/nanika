@@ -70,7 +70,17 @@ test("a crashed Bun owner revokes its command and descendants through pipe EOF",
         await owner.exited;
         expect(owner.exitCode).toBe(23);
         const pids = await Bun.file(join(directory, "pids")).json() as number[];
-        expect(pids.some(_alive)).toBe(false);
+        // On macOS the inner supervisor owns a separate process group, so the
+        // outer workflow can finish before that supervisor handles pipe EOF.
+        const deadline = performance.now() + 5000;
+        while (pids.some(_alive))
+        {
+            if (performance.now() >= deadline)
+            {
+                throw new Error("Supervisor left descendants after its owner exited");
+            }
+            await Bun.sleep(10);
+        }
     }
     finally
     {
