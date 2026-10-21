@@ -686,8 +686,53 @@ async function _measureRendering()
     }
 }
 
+async function _verifyColdInlineChart()
+{
+    const item = byId.get("inline-chart")!;
+    syntaxService.suspend();
+    syntaxService.invalidate("benchmark", item.id);
+    if (viewport)
+    {
+        viewport.scrollTop = 0;
+    }
+    const workers = _workerCounts().created;
+    _show(item);
+    const deadline = performance.now() + 5000;
+    while (
+        (syntaxService.lookup(_identity(item))?.processed ?? 0) < item.text.length
+        || _workerCounts().pending !== 0
+    )
+    {
+        if (performance.now() >= deadline)
+        {
+            throw new Error("Cold inline HTML preview did not finish");
+        }
+        await _pause(5);
+    }
+    const snapshot = syntaxService.lookup(_identity(item))!;
+    const source = _source();
+    const result = {
+        newWorker: _workerCounts().created === workers + 1,
+        sourceExact: source.textContent === item.text,
+        language: reportedLanguage,
+        ranges: snapshot.result.ranges.length / 3,
+        colored: !!source.querySelector("[class^=syntax-token-]"),
+        // The fixture is copied source, never an executable HTML preview.
+        inert: !source.querySelector("script, style, #chart-container")
+    };
+    if (
+        !result.newWorker || !result.sourceExact || result.language !== "HTML" || !result.ranges
+        || !result.colored || !result.inert
+    )
+    {
+        throw new Error(`Cold inline HTML preview failed: ${JSON.stringify(result)}`);
+    }
+    return result;
+}
+
 async function _verifyPresentation()
 {
+    const coldInlineChart = await _verifyColdInlineChart();
     const selectionChecks = verifySelection();
     await _prepareCache();
     for (const item of prepared)
@@ -806,6 +851,7 @@ async function _verifyPresentation()
         );
     }
     return {
+        coldInlineChart,
         correctness,
         selectionChecks,
         firstFrameChecks,

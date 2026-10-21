@@ -58,6 +58,25 @@ afterEach(() =>
 
 describe("SyntaxEngine", () =>
 {
+    it("keeps a bounded mixed HTML line when cold grammar work exceeds a frame budget", async () =>
+    {
+        const text = await readFile(new URL("./fixtures/inline-chart.txt", import.meta.url), "utf8");
+        for (const theme of ["light", "dark"] as const)
+        {
+            // Model a cold scanner taking 75 ms before the next deadline check.
+            // Functional coverage must not depend on the test machine's CPU speed.
+            let checks = 0;
+            vi.mocked(Date.now).mockImplementation(() => (checks++ === 0 ? 0 : 75));
+            const result = await _colorSource(text, null, new AbortController().signal, theme);
+
+            expect(result.language).toBe("html");
+            expect(_colorAt(result.ranges, text.indexOf("html"))).toBe(theme === "dark" ? "#569CD6" : "#800000");
+            expect(_colorAt(result.ranges, text.indexOf("font-family"))).toBeDefined();
+            expect(_colorAt(result.ranges, text.indexOf("var U"))).toBe(theme === "dark" ? "#569CD6" : "#0000FF");
+            expect(_colorAt(result.ranges, text.lastIndexOf("1200"))).toBe(theme === "dark" ? "#B5CEA8" : "#098658");
+        }
+    });
+
     it.each([
         ["THIRD_PARTY_NOTICES.md", "markdown"],
         ["apps/desktop/frontend/src/styles/global.css", "css"]

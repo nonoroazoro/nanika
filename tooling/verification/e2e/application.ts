@@ -287,8 +287,11 @@ try
         await (await browser.$("input[aria-label='Search settings']")).waitForExist({ timeout: 10000 });
         await browser.saveScreenshot(join(output, "settings.png"));
         assertions.push("native settings shortcut opens the actual Settings window");
-        const marker = `const nanikaE2e = "${identity}";`;
-        clipboard = new NativeFixture([executable, "clipboard", marker], "clipboard");
+        const marker = identity;
+        const copiedHtml = (await Bun.file(
+            join(root, "apps/desktop/frontend/tests/syntax/fixtures/inline-chart.txt")
+        ).text()).replace("<title>", `<title>${marker} `);
+        clipboard = new NativeFixture([executable, "clipboard", copiedHtml], "clipboard");
         await clipboard.expect("seeded", cancellation.signal);
         await _key("launcher", async () => _window("launcher", true, true));
         await _launcherReady();
@@ -308,6 +311,16 @@ try
             const item = items[0];
             return items.length === 1 && item !== undefined && (await item.getText()).includes(marker);
         }, { timeout: 15000 });
+        await browser.waitUntil(async () =>
+        {
+            return (await driver.$$(".text-document [class^='syntax-token-']")).length > 0;
+        }, { timeout: 5000 });
+        const preview = await browser.$(".text-document");
+        if (await preview.getProperty("textContent") !== copiedHtml)
+        {
+            throw new Error("First Clipboard HTML preview changed the copied source");
+        }
+        assertions.push("first Clipboard HTML preview highlights from a cold worker without copying again");
         const openedAt = await browser.execute<number, []>("return performance.timeOrigin");
         // The first preview previously triggered a delayed document reload in dev.
         // Keep the real runtime open beyond that delay to cover packaged behavior too.

@@ -1,6 +1,7 @@
 import original from "./fixtures.json";
 import justfile from "../../../../../justfile?raw";
 import svelteComponent from "../../src/components/extensions/TextPreview.svelte?raw";
+import inlineChart from "../../tests/syntax/fixtures/inline-chart.txt?raw";
 
 import type { SyntaxFixture } from "./SyntaxFixture";
 
@@ -9,6 +10,7 @@ import type { SyntaxFixture } from "./SyntaxFixture";
  */
 export const fixtures: SyntaxFixture[] = [
     ...original,
+    { id: "inline-chart", language: "html", text: inlineChart },
     { id: "justfile", language: "just", text: justfile },
     {
         id: "just-4096",
