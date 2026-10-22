@@ -5,12 +5,13 @@ import { onDestroy } from "svelte";
 import ActionSymbol from "../extensions/ActionSymbol.svelte";
 import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import Button from "./Button.svelte";
-import { confirmation, settleConfirmation } from "../../ui/confirmation";
+import { closeConfirmation, confirmation, interruptConfirmation } from "../../ui/confirmation";
 import type { ConfirmationRequest } from "../../types/ConfirmationRequest";
 
 let displayed = $state<ConfirmationRequest | null>(null);
 let confirmButton = $state<HTMLButtonElement>();
 let returnFocus: HTMLElement | null = null;
+let finishExit: (() => void) | null = null;
 const open = $derived($confirmation !== null);
 $effect(() =>
 {
@@ -20,7 +21,53 @@ $effect(() =>
         returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
 });
-onDestroy(() => settleConfirmation(false));
+onDestroy(_interrupt);
+
+function _close(confirmed: boolean): void
+{
+    const complete = closeConfirmation(confirmed);
+    if (!complete)
+    {
+        return;
+    }
+    // Bits releases its focus scope at close start; retain input isolation through the exit.
+    const wasInert = document.body.inert;
+    document.body.inert = true;
+    finishExit = () =>
+    {
+        document.body.inert = wasInert;
+        complete();
+    };
+}
+
+function _finishExit(restoreFocus: boolean): void
+{
+    const complete = finishExit;
+    finishExit = null;
+    complete?.();
+    const target = returnFocus;
+    returnFocus = null;
+    if (restoreFocus && document.hasFocus() && target?.isConnected && !target.closest('[role="menu"]'))
+    {
+        target.focus({ preventScroll: true });
+    }
+}
+
+function _interrupt(): void
+{
+    _finishExit(false);
+    interruptConfirmation();
+}
+
+function _closingKeydown(event: KeyboardEvent): void
+{
+    // Inert blocks element interaction, but window shortcuts still receive keyboard events.
+    if (finishExit)
+    {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+}
 
 function _keydown(event: KeyboardEvent): void
 {
@@ -40,13 +87,13 @@ function _keydown(event: KeyboardEvent): void
 }
 </script>
 
-<svelte:window onblur={() => settleConfirmation(false)} />
+<svelte:window onblur={_interrupt} onkeydowncapture={_closingKeydown} />
 <svelte:document
     onvisibilitychange={() =>
     {
         if (document.visibilityState !== "visible")
         {
-            settleConfirmation(false);
+            _interrupt();
         }
     }}
 />
@@ -57,7 +104,14 @@ function _keydown(event: KeyboardEvent): void
     {
         if (!value)
         {
-            settleConfirmation(false);
+            _close(false);
+        }
+    }}
+    onOpenChangeComplete={value =>
+    {
+        if (!value)
+        {
+            _finishExit(true);
         }
     }}
 >
@@ -71,14 +125,7 @@ function _keydown(event: KeyboardEvent): void
                 event.preventDefault();
                 confirmButton?.focus({ preventScroll: true });
             }}
-            onCloseAutoFocus={event =>
-            {
-                event.preventDefault();
-                if (document.hasFocus() && returnFocus?.isConnected && !returnFocus.closest('[role="menu"]'))
-                {
-                    returnFocus.focus({ preventScroll: true });
-                }
-            }}
+            onCloseAutoFocus={event => event.preventDefault()}
             onkeydown={_keydown}
         >
             <div class="confirmation-content">
@@ -98,12 +145,12 @@ function _keydown(event: KeyboardEvent): void
                 </div>
             </div>
             <div class="confirmation-actions">
-                <Button variant="outline" onclick={() => settleConfirmation(false)}>Cancel</Button>
+                <Button variant="outline" onclick={() => _close(false)}>Cancel</Button>
                 <Button
                     variant={displayed?.destructive ? "danger" : "primary"}
                     focusRing
                     bind:ref={confirmButton}
-                    onclick={() => settleConfirmation(true)}
+                    onclick={() => _close(true)}
                 >{displayed?.label ?? "Confirm"}</Button>
             </div>
         </AlertDialog.Content>

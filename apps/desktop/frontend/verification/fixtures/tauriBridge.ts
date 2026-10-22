@@ -125,7 +125,21 @@ export const tauriBridge: NanikaBridge = {
     {
         if (request.entryId !== "0")
         {
+            const dialog = document.querySelector("[role=alertdialog]");
+            document.documentElement.dataset.confirmationAtInvoke = JSON.stringify({
+                confirmed: request.confirmed,
+                opacity: dialog ? Number(getComputedStyle(dialog).opacity) : 0
+            });
+            document.documentElement.dataset.invocationCount = String(
+                Number(document.documentElement.dataset.invocationCount ?? 0) + 1
+            );
             document.documentElement.dataset.confirmed = "true";
+            snapshot.navigation = {
+                ...snapshot.navigation,
+                revision: snapshot.navigation.revision + 1,
+                dismissCount: snapshot.navigation.dismissCount + 1
+            };
+            _publish();
             return;
         }
         snapshot.navigation = {
@@ -175,7 +189,9 @@ export const tauriBridge: NanikaBridge = {
         return { viewRevision: 1, navigationRevision: snapshot.navigation.revision };
     },
     dismissLauncher: async () =>
-    {},
+    {
+        document.documentElement.dataset.dismissed = "true";
+    },
     openSettings: async extensionId =>
     {
         navigateSettings(extensionId);
