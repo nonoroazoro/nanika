@@ -1,8 +1,11 @@
-use crate::normalize_query;
+use crate::{TextValue, normalize_query};
+
+const MIN_FUZZY_SCORE_PER_CHARACTER: u32 = 12;
 
 /// Prepared query shared by launchers and Settings, without romanization or usage policy.
 pub struct TextQuery {
-    _normalized: String,
+    pub(crate) _value: TextValue,
+    pub(crate) _fuzzy_cutoff: u32,
     pub(crate) _terms: Vec<String>
 }
 
@@ -14,17 +17,20 @@ impl TextQuery {
             .map(str::to_owned)
             .collect();
         Self {
-            _normalized: normalized,
+            _fuzzy_cutoff: u32::try_from(normalized.chars().count())
+                .unwrap_or(u32::MAX)
+                .saturating_mul(MIN_FUZZY_SCORE_PER_CHARACTER),
+            _value: TextValue::new(normalized),
             _terms: terms
         }
     }
 
     pub fn normalized(&self) -> &str {
-        &self._normalized
+        self._value.normalized()
     }
 
     pub fn into_normalized(self) -> String {
-        self._normalized
+        self._value.into_normalized()
     }
 }
 

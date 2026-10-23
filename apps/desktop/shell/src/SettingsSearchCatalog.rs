@@ -1,5 +1,5 @@
 use crate::{ExtensionLifecycle, SettingsSearchEntry, SettingsSearchTarget};
-use nanika_text_search::{TextMatcher, TextQuery, normalize_query};
+use nanika_text_search::{TextMatcher, TextQuery, TextValue, normalize_query};
 
 pub(crate) struct SettingsSearchCatalog {
     entries: Vec<SettingsSearchEntry>
@@ -107,7 +107,7 @@ impl SettingsSearchCatalog {
             target,
             title: title.clone(),
             page_title: breadcrumb.first().copied().unwrap_or(title).clone(),
-            search_values
+            search_values: search_values.into_iter().map(TextValue::new).collect()
         });
     }
 
@@ -123,7 +123,7 @@ impl SettingsSearchCatalog {
             search_values: info
                 .name_search_values
                 .iter()
-                .map(|value| normalize_query(value))
+                .map(|value| TextValue::new(normalize_query(value)))
                 .collect()
         });
         self._extension_entry(
@@ -278,7 +278,7 @@ impl SettingsSearchCatalog {
                 info.resource_scope.clone()
             },
             page_resource_scope: info.resource_scope.clone(),
-            search_values
+            search_values: search_values.into_iter().map(TextValue::new).collect()
         });
     }
 }

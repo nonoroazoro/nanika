@@ -11,6 +11,6 @@ pub(crate) struct CandidateData {
     pub(crate) _action_id: String,
     pub(crate) _actions: Vec<nanika_protocol::Action>,
     pub(crate) _icon: Option<nanika_protocol::IconSource>,
-    pub(crate) _search_values: Vec<String>,
+    pub(crate) _search_values: Vec<nanika_text_search::TextValue>,
     pub(crate) _readings: Vec<nanika_text_search::RomanizedReading>
 }

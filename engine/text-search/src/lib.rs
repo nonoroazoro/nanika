@@ -19,8 +19,14 @@ pub use normalization::normalize_query;
 #[path = "TextQuery.rs"]
 mod text_query;
 pub use text_query::TextQuery;
+#[path = "TextValue.rs"]
+mod text_value;
+pub use text_value::TextValue;
 #[path = "TextMatch.rs"]
 mod text_match;
+#[cfg(test)]
+#[path = "../tests/TextValue.rs"]
+mod text_value_tests;
 pub use text_match::TextMatch;
 #[path = "TextMatcher.rs"]
 mod text_matcher;

@@ -53,7 +53,10 @@ impl Candidate {
                 _actions: actions,
                 _action_id: action_id,
                 _icon: None,
-                _search_values: search_values,
+                _search_values: search_values
+                    .into_iter()
+                    .map(nanika_text_search::TextValue::new)
+                    .collect(),
                 _readings: readings
             })
         }
@@ -77,7 +80,7 @@ impl Candidate {
         self
     }
 
-    pub(crate) fn search_values(&self) -> &[String] {
+    pub(crate) fn search_values(&self) -> &[nanika_text_search::TextValue] {
         &self._data._search_values
     }
 

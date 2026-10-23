@@ -13,5 +13,5 @@ pub(crate) struct SettingsSearchEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) page_resource_scope: Option<nanika_host::ExtensionResourceScope>,
     #[serde(skip)]
-    pub(crate) search_values: Vec<String>
+    pub(crate) search_values: Vec<nanika_text_search::TextValue>
 }

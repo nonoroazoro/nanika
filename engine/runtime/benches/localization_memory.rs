@@ -63,10 +63,54 @@ fn main() {
             drop(engine);
             drop(entries);
             let residual = LIVE.load(Ordering::Relaxed).saturating_sub(before);
+            assert_eq!(residual, 0, "catalog and matcher must release their heap");
             println!(
                 "{}",
                 serde_json::json!({"kind": "released", "mode": mode, "entries": count, "residual_bytes": residual})
             );
         }
     }
+    for count in [1_000, 50_000] {
+        _verify_replacement_release(&bilingual, count);
+    }
+}
+
+fn _verify_replacement_release(resources: &nanika_localization::ResourceSet, count: usize) {
+    let before = LIVE.load(Ordering::Relaxed);
+    {
+        let mut engine = SearchEngine::new();
+        let usage = UsageMap::new();
+        let mut entries = support::candidates(count, Some(resources));
+        // Warm any bounded matcher workspace before checking for retained query data.
+        for (_, query) in support::QUERIES {
+            black_box(engine.query(query, &entries, &usage, 1_000));
+        }
+        let steady = LIVE.load(Ordering::Relaxed);
+        for _ in 0..8 {
+            let retained = engine.query("", &entries, &usage, 1_000);
+            entries = support::candidates(count, Some(resources));
+            // A displayed snapshot owns the previous catalog until its last reference drops.
+            assert_eq!(retained.results.len(), count);
+            let with_snapshot = LIVE.load(Ordering::Relaxed);
+            drop(retained);
+            assert!(LIVE.load(Ordering::Relaxed) < with_snapshot);
+            for (_, query) in support::QUERIES {
+                black_box(engine.query(query, &entries, &usage, 1_000));
+            }
+            assert_eq!(
+                LIVE.load(Ordering::Relaxed),
+                steady,
+                "replacement and repeated queries must not accumulate retained heap"
+            );
+        }
+    }
+    let residual = LIVE.load(Ordering::Relaxed).saturating_sub(before);
+    assert_eq!(
+        residual, 0,
+        "last snapshot and catalog release all owned heap"
+    );
+    println!(
+        "{}",
+        serde_json::json!({"kind": "replacement_release", "entries": count, "cycles": 8, "residual_bytes": residual})
+    );
 }
