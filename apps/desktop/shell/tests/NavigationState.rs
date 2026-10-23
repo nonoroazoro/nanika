@@ -148,11 +148,16 @@ fn completed_view_cleanup_failure_is_preserved() {
             nanika_protocol::NavigationEffect::Push { .. }
         ));
         cleanup_attempted = true;
-        Err("closing retired view failed: extension disconnected".to_owned())
+        Err(nanika_host::OperationError::with_detail(
+            nanika_host::OperationErrorCode::NavigationFailed,
+            "closing retired view failed: extension disconnected"
+        ))
     })
     .unwrap_err();
     assert!(cleanup_attempted);
-    assert!(error.contains("extension disconnected"));
+    assert!(
+        matches!(error, nanika_host::OperationError::Host { code: nanika_host::OperationErrorCode::NavigationFailed, detail: Some(detail) } if detail.contains("extension disconnected"))
+    );
 }
 
 #[test]
@@ -186,7 +191,9 @@ fn navigation_rejects_overflow_without_discarding_existing_routes() {
                 }
             )
             .unwrap_err()
-            .contains("32")
+            == nanika_host::OperationError::new(
+                nanika_host::OperationErrorCode::NavigationDepthReached
+            )
     );
     assert_eq!(navigation.stack.len(), crate::MAX_NAVIGATION_DEPTH);
     assert_eq!(navigation.stack.last().unwrap().route_id, previous);
@@ -253,14 +260,14 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
         1,
         &route,
         2,
-        text_view("stale")
+        Some(text_view("stale"))
     );
     crate::view_invalidation_delivery::apply_completion(
         &mut state,
         2,
         &route,
         2,
-        text_view("wrong owner")
+        Some(text_view("wrong owner"))
     );
     let current = &state.session.as_ref().unwrap().navigation.stack[0];
     assert!(std::sync::Arc::ptr_eq(&original, &current.view));
@@ -271,7 +278,7 @@ fn delayed_invalidation_cannot_cross_session_or_owner_boundaries() {
         2,
         &current,
         2,
-        text_view("fresh")
+        Some(text_view("fresh"))
     );
     assert_eq!(
         state.session.as_ref().unwrap().navigation.stack[0].revision,
@@ -318,10 +325,8 @@ fn queued_action_survives_selection_revision_without_changing_its_target() {
     );
     // The same revision is still stale for an already-open menu.
     assert!(
-        navigation
-            .authorize_input(&action, Some(1))
-            .unwrap_err()
-            .contains("Reopen")
+        navigation.authorize_input(&action, Some(1)).unwrap_err()
+            == nanika_host::OperationError::new(nanika_host::OperationErrorCode::ViewChanged)
     );
     assert_eq!(
         navigation
@@ -359,10 +364,8 @@ fn queued_input_rejects_future_revisions_and_replaced_routes() {
     let mut navigation = _input_navigation();
     let mut request = _input_request(2, ViewEvent::Resumed);
     assert!(
-        navigation
-            .authorize_input(&request, None)
-            .unwrap_err()
-            .contains("ahead")
+        navigation.authorize_input(&request, None).unwrap_err()
+            == nanika_host::OperationError::new(nanika_host::OperationErrorCode::ViewChanged)
     );
     request.revision = 1;
     navigation
@@ -400,10 +403,10 @@ fn _input_navigation() -> crate::NavigationState {
                 revision: 1,
                 view: Box::new(View::List {
                     list: Box::new(nanika_protocol::ListView {
-                        title: "Clipboard".to_owned(),
-                        search_placeholder: "Search".to_owned(),
-                        empty_title: "No items".to_owned(),
-                        empty_description: "Items will appear here when available.".to_owned(),
+                        title: "Clipboard".into(),
+                        search_placeholder: "Search".into(),
+                        empty_title: "No items".into(),
+                        empty_description: "Items will appear here when available.".into(),
                         search_text: String::new(),
                         layout: nanika_protocol::ListLayout::Plain,
                         sections: vec![nanika_protocol::ListSection {
@@ -415,7 +418,7 @@ fn _input_navigation() -> crate::NavigationState {
                                 .into_iter()
                                 .map(|id| nanika_protocol::ListItem {
                                     id: id.to_owned(),
-                                    title: id.to_owned(),
+                                    title: (id.to_owned()).into(),
                                     subtitle: None,
                                     icon: None,
                                     actions: vec![nanika_protocol::Action::primary("copy", "Copy")]
@@ -472,7 +475,7 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
     };
     let action = &mut list.sections[0].items[0].actions[0];
     action.style = ActionStyle::Destructive;
-    action.confirmation_title = Some("Copy now?".to_owned());
+    action.confirmation_title = Some("Copy now?".into());
     let request = |invocation| {
         _input_request(
             1,
@@ -498,7 +501,9 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
         navigation
             .authorize_input(&request(ActionInvocation::Confirmed), None)
             .unwrap_err()
-            .contains("Confirm the action again")
+            == nanika_host::OperationError::new(
+                nanika_host::OperationErrorCode::ConfirmationChanged
+            )
     );
 }
 
@@ -506,7 +511,10 @@ fn action_policy_is_enforced_for_list_and_detail_and_confirmation_expires() {
 fn new_search_clears_action_errors() {
     let mut state = crate::NavigationState::default();
     state.begin().unwrap();
-    state.finish(Err("Permission denied".into()));
+    state.finish(Err(nanika_host::OperationError::with_detail(
+        nanika_host::OperationErrorCode::InvocationFailed,
+        "Permission denied"
+    )));
     let revision = state.snapshot().revision;
     state.clear_error();
     assert!(state.snapshot().error.is_none());
@@ -759,8 +767,11 @@ fn source_revocation_rejects_reads_before_refresh_and_preserves_presentation_aut
 
 fn _extension(id: &str) -> nanika_host::RuntimeExtensionInfo {
     nanika_host::RuntimeExtensionInfo {
+        resource_scope: None,
         id: id.into(),
         name: "Test extension".into(),
+        name_search_values: vec!["Test extension".into()],
+        configuration_search_values: Default::default(),
         enabled: true,
         pending: false,
         state: nanika_host::RuntimeExtensionState::Ready,
@@ -770,4 +781,158 @@ fn _extension(id: &str) -> nanika_host::RuntimeExtensionInfo {
         icon: "icon.png".into(),
         icon_hash: None
     }
+}
+
+#[test]
+fn completed_action_failure_keeps_the_view_and_retained_locales_in_navigation_snapshot() {
+    let mut navigation = _input_navigation();
+    let original = navigation.stack.last().unwrap().clone();
+    let error = nanika_host::OperationError::Extension {
+        error: Box::new(
+            nanika_localization::PreparedError::new(
+                nanika_protocol::ProtocolError::new("external", "Original external explanation")
+                    .with_detail("EACCES: fixture"),
+                None,
+                "macos"
+            )
+            .unwrap()
+        )
+    };
+    navigation.begin().unwrap();
+    navigation.finish(Err(error.clone()));
+    let snapshot = navigation.snapshot();
+    assert!(!snapshot.busy);
+    assert_eq!(snapshot.error, Some(error));
+    let current = navigation.stack.last().unwrap();
+    assert_eq!(current.route_id, original.route_id);
+    assert_eq!(current.revision, original.revision);
+    assert!(std::sync::Arc::ptr_eq(&current.view, &original.view));
+    let serialized = serde_json::to_value(snapshot).unwrap();
+    assert_eq!(
+        serialized["error"]["error"]["messages"]["en"],
+        "Original external explanation"
+    );
+    assert_eq!(
+        serialized["error"]["error"]["error"]["detail"],
+        "EACCES: fixture"
+    );
+    navigation.begin().unwrap();
+    assert!(navigation.snapshot().error.is_none());
+}
+
+#[test]
+fn refresh_failures_retain_the_view_and_never_cross_authority_or_clear_action_failures() {
+    use nanika_host::{OperationError, OperationErrorCode as Code};
+    let mut session = crate::SearchSession::new(7, tauri::ipc::Channel::new(|_| Ok(())));
+    session.navigation = _input_navigation();
+    let route = session.navigation.stack.last().unwrap().clone();
+    let mut state = crate::DesktopRuntime {
+        session: Some(session),
+        ..Default::default()
+    };
+    let error = OperationError::with_detail(Code::ViewOperationFailed, "original refresh detail");
+    for (session_id, mut invalid_route) in [(8, route.clone()), (7, route.clone())] {
+        if session_id == 7 {
+            invalid_route.instance_id += 1;
+        }
+        crate::view_invalidation_delivery::apply_failure(
+            &mut state,
+            session_id,
+            &invalid_route,
+            error.clone()
+        );
+        assert!(
+            state
+                .session
+                .as_ref()
+                .unwrap()
+                .navigation
+                .snapshot()
+                .error
+                .is_none()
+        );
+    }
+    crate::view_invalidation_delivery::apply_failure(&mut state, 7, &route, error.clone());
+    let navigation = &state.session.as_ref().unwrap().navigation;
+    assert_eq!(navigation.snapshot().error, Some(error.clone()));
+    assert!(std::sync::Arc::ptr_eq(
+        &navigation.stack.last().unwrap().view,
+        &route.view
+    ));
+    assert_eq!(navigation.stack.last().unwrap().revision, route.revision);
+    crate::view_invalidation_delivery::apply_completion(
+        &mut state,
+        7,
+        &route,
+        route.revision + 1,
+        Some(text_view("fresh"))
+    );
+    assert!(
+        state
+            .session
+            .as_ref()
+            .unwrap()
+            .navigation
+            .snapshot()
+            .error
+            .is_none()
+    );
+    crate::view_invalidation_delivery::apply_failure(&mut state, 7, &route, error.clone());
+    assert!(
+        state
+            .session
+            .as_ref()
+            .unwrap()
+            .navigation
+            .snapshot()
+            .error
+            .is_none(),
+        "late failure cannot cross view revision"
+    );
+    let route = state
+        .session
+        .as_ref()
+        .unwrap()
+        .navigation
+        .stack
+        .last()
+        .unwrap()
+        .clone();
+    crate::view_invalidation_delivery::apply_failure(&mut state, 7, &route, error);
+    let action = OperationError::new(Code::InvocationUnconfirmed);
+    state
+        .session
+        .as_mut()
+        .unwrap()
+        .navigation
+        .finish(Err(action.clone()));
+    crate::view_invalidation_delivery::apply_completion(
+        &mut state,
+        7,
+        &route,
+        route.revision + 1,
+        Some(text_view("fresh again"))
+    );
+    assert_eq!(
+        state.session.as_ref().unwrap().navigation.snapshot().error,
+        Some(action)
+    );
+    let navigation = &mut state.session.as_mut().unwrap().navigation;
+    let before = navigation.revision;
+    navigation.finish_refresh(route.route_id, Ok(None));
+    assert_eq!(
+        navigation.revision, before,
+        "unchanged refresh cannot create a navigation revision"
+    );
+    state.session.as_mut().unwrap().navigation.begin().unwrap();
+    assert!(
+        state
+            .session
+            .as_ref()
+            .unwrap()
+            .navigation
+            .snapshot()
+            .error
+            .is_none()
+    );
 }

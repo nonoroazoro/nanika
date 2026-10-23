@@ -1,0 +1,2696 @@
+{
+    "recorded_on": "2026-10-23",
+    "environment": {
+        "system": "Darwin",
+        "release": "25.4.0",
+        "machine": "arm64"
+    },
+    "command": "just bench rust --bench localization --bench localization_memory -- --admission-only",
+    "change": "Format validated JSON-safe integer arguments through FluentNumber integer conversion and integer Display instead of floating-point fixed precision. Fluent retains numeric values for plural selection. Resource validation excludes numeric output literals, numeric term arguments and functions. Dynamic arguments are validated before formatting.",
+    "scope": "31 uninstrumented latency samples per mode/size; heap counters use a separate executable. Excludes resource loading, shared bundles, global romanization tables, allocator overhead, process transport, durable storage, native/WebView memory. Query rows measure match counts and heap, not latency.",
+    "before_source_sha256": {
+        "engine/localization/src/LocaleBundle.rs": "8e49cfdc02bbb8464be78f611b59803abde627be3f0fcb7c61624dea9e80f173",
+        "engine/localization/src/ResourceValidator.rs": "b4cac88f0eb62df3b2cc6f2c85bf3ca624ebf62cf8ea34976b33101e848983a4",
+        "engine/extension-protocol/src/MessageArgument.rs": "244dadd3df9bbdba1c517cf2c883660155959e014576f3df5851de7425031db9",
+        "engine/runtime/benches/localization.rs": "c9ca2cf23edb4a27f0e0addce79dffd2ca9e2df5d487591997faf951db416373",
+        "engine/runtime/benches/support/localization.rs": "88232aaf018eca466d2183f8222fdb04db34f3785f96680b2b3a9aeb4714cf68",
+        "engine/localization/tests/fixtures/conformance.json": "24fe2b0e0b913dc6ee6dd1664e639a717b12e651f65abe79c4544f7b82c17c3b"
+    },
+    "after_source_sha256": {
+        "engine/localization/src/LocaleBundle.rs": "ab594b2f440722eacb7c0abffdc555ca9a09e0541e2081602d1971c182669e9d",
+        "engine/localization/src/ResourceValidator.rs": "b4cac88f0eb62df3b2cc6f2c85bf3ca624ebf62cf8ea34976b33101e848983a4",
+        "engine/extension-protocol/src/MessageArgument.rs": "244dadd3df9bbdba1c517cf2c883660155959e014576f3df5851de7425031db9",
+        "engine/runtime/benches/localization.rs": "c9ca2cf23edb4a27f0e0addce79dffd2ca9e2df5d487591997faf951db416373",
+        "engine/runtime/benches/support/localization.rs": "88232aaf018eca466d2183f8222fdb04db34f3785f96680b2b3a9aeb4714cf68",
+        "engine/localization/tests/fixtures/conformance.json": "ec146a84a59387f237c5d4d8197696f61138fcda9db5afff61b55d229d6b01cc"
+    },
+    "before_records": [
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 30.125,
+            "p95_us": 31.124999999999996,
+            "p99_us": 31.916999999999998
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 74.792,
+            "p95_us": 82.41699999999999,
+            "p99_us": 84.917
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 246.49999999999997,
+            "p95_us": 269.125,
+            "p99_us": 292.209
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 344.584,
+            "p95_us": 366.958,
+            "p99_us": 367.75
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 905.125,
+            "p95_us": 964.334,
+            "p99_us": 972.584
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 2506.333,
+            "p95_us": 2728.834,
+            "p99_us": 2778.25
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 1551.3339999999998,
+            "p95_us": 1614.5,
+            "p99_us": 1725.5
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 4585.166,
+            "p95_us": 5633.084,
+            "p99_us": 5817.125
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 16241.417000000001,
+            "p95_us": 17243.917,
+            "p99_us": 17548.834
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 3258.5,
+            "p95_us": 3483.167,
+            "p99_us": 3541.125
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 8481.083,
+            "p95_us": 8863.0,
+            "p99_us": 8902.25
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 27209.958,
+            "p95_us": 27533.792,
+            "p99_us": 28278.542
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 16720.667,
+            "p95_us": 17633.541999999998,
+            "p99_us": 18634.083
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 44289.625,
+            "p95_us": 45468.375,
+            "p99_us": 45922.375
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 141463.45799999998,
+            "p95_us": 149003.875,
+            "p99_us": 150416.5
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 100,
+            "retained_bytes": 64080,
+            "peak_bytes": 64256,
+            "allocations": 1801
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 100,
+            "retained_bytes": 67480,
+            "peak_bytes": 68057,
+            "allocations": 3001
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 100,
+            "retained_bytes": 116880,
+            "peak_bytes": 117384,
+            "allocations": 6601
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 1,
+            "retained_bytes": 119,
+            "peak_bytes": 637,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 1,
+            "retained_bytes": 121,
+            "peak_bytes": 249,
+            "allocations": 7
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 1000,
+            "retained_bytes": 642780,
+            "peak_bytes": 642958,
+            "allocations": 18001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 1000,
+            "retained_bytes": 676780,
+            "peak_bytes": 677379,
+            "allocations": 30901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 1000,
+            "retained_bytes": 1180680,
+            "peak_bytes": 1181197,
+            "allocations": 66901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 28,
+            "retained_bytes": 767,
+            "peak_bytes": 1644,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 28,
+            "retained_bytes": 769,
+            "peak_bytes": 1569,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 5000,
+            "retained_bytes": 3222780,
+            "peak_bytes": 3222960,
+            "allocations": 90001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 5000,
+            "retained_bytes": 3392780,
+            "peak_bytes": 3393377,
+            "allocations": 154901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 5000,
+            "retained_bytes": 5956680,
+            "peak_bytes": 5957328,
+            "allocations": 338901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 383,
+            "retained_bytes": 9287,
+            "peak_bytes": 21684,
+            "allocations": 25
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 383,
+            "retained_bytes": 9289,
+            "peak_bytes": 21609,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 10000,
+            "retained_bytes": 6447780,
+            "peak_bytes": 6447960,
+            "allocations": 180001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 10000,
+            "retained_bytes": 6787780,
+            "peak_bytes": 6788377,
+            "allocations": 309901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 10000,
+            "retained_bytes": 11926680,
+            "peak_bytes": 11927328,
+            "allocations": 678901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 523,
+            "retained_bytes": 12647,
+            "peak_bytes": 37332,
+            "allocations": 26
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 523,
+            "retained_bytes": 12649,
+            "peak_bytes": 37257,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 50000,
+            "retained_bytes": 32327780,
+            "peak_bytes": 32327962,
+            "allocations": 900001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 50000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 50000,
+            "retained_bytes": 34027780,
+            "peak_bytes": 34028375,
+            "allocations": 1549901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 50000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 50000,
+            "retained_bytes": 60166680,
+            "peak_bytes": 60167687,
+            "allocations": 3438901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 5531,
+            "retained_bytes": 132839,
+            "peak_bytes": 329556,
+            "allocations": 29
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 5531,
+            "retained_bytes": 132841,
+            "peak_bytes": 329481,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 50000,
+            "residual_bytes": 0
+        }
+    ],
+    "after_records": [
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 32.292,
+            "p95_us": 33.333,
+            "p99_us": 33.791999999999994
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 63.87499999999999,
+            "p95_us": 68.375,
+            "p99_us": 72.58399999999999
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "",
+            "matches": 100,
+            "samples": 31,
+            "p50_us": 224.417,
+            "p95_us": 232.708,
+            "p99_us": 242.459
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 331.334,
+            "p95_us": 340.0,
+            "p99_us": 401.125
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 682.166,
+            "p95_us": 689.292,
+            "p99_us": 697.375
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "",
+            "matches": 1000,
+            "samples": 31,
+            "p50_us": 2314.5,
+            "p95_us": 2355.834,
+            "p99_us": 2426.833
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 1672.917,
+            "p95_us": 1917.709,
+            "p99_us": 1926.5
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 3409.125,
+            "p95_us": 3504.0840000000003,
+            "p99_us": 3508.959
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "",
+            "matches": 5000,
+            "samples": 31,
+            "p50_us": 11569.75,
+            "p95_us": 12014.583,
+            "p99_us": 12361.667
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 3272.5409999999997,
+            "p95_us": 3397.709,
+            "p99_us": 3696.125
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 6520.2919999999995,
+            "p95_us": 6719.0,
+            "p99_us": 6725.875
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "",
+            "matches": 10000,
+            "samples": 31,
+            "p50_us": 22955.083000000002,
+            "p95_us": 24420.833,
+            "p99_us": 25275.208
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 16503.333,
+            "p95_us": 18647.458,
+            "p99_us": 20042.584
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 33130.75,
+            "p95_us": 34961.75,
+            "p99_us": 35222.708
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "",
+            "matches": 50000,
+            "samples": 31,
+            "p50_us": 117776.708,
+            "p95_us": 126738.79199999999,
+            "p99_us": 127028.625
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 100,
+            "retained_bytes": 64080,
+            "peak_bytes": 64256,
+            "allocations": 1801
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 100,
+            "retained_bytes": 67480,
+            "peak_bytes": 68068,
+            "allocations": 3001
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 100,
+            "retained_bytes": 116880,
+            "peak_bytes": 117384,
+            "allocations": 6601
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "empty",
+            "matches": 100,
+            "retained_bytes": 2480,
+            "peak_bytes": 5552,
+            "allocations": 8
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "english",
+            "matches": 1,
+            "retained_bytes": 118,
+            "peak_bytes": 251,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "chinese",
+            "matches": 1,
+            "retained_bytes": 119,
+            "peak_bytes": 637,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "alias",
+            "matches": 1,
+            "retained_bytes": 114,
+            "peak_bytes": 226,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "pinyin",
+            "matches": 1,
+            "retained_bytes": 121,
+            "peak_bytes": 249,
+            "allocations": 7
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 100,
+            "query": "usage",
+            "matches": 100,
+            "retained_bytes": 2491,
+            "peak_bytes": 5604,
+            "allocations": 14
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 100,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 1000,
+            "retained_bytes": 642780,
+            "peak_bytes": 642958,
+            "allocations": 18001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 1000,
+            "retained_bytes": 676780,
+            "peak_bytes": 677379,
+            "allocations": 30901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 1000,
+            "retained_bytes": 1180680,
+            "peak_bytes": 1181197,
+            "allocations": 66901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "empty",
+            "matches": 1000,
+            "retained_bytes": 24080,
+            "peak_bytes": 48656,
+            "allocations": 11
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "english",
+            "matches": 28,
+            "retained_bytes": 766,
+            "peak_bytes": 1550,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "chinese",
+            "matches": 28,
+            "retained_bytes": 767,
+            "peak_bytes": 1644,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "alias",
+            "matches": 28,
+            "retained_bytes": 762,
+            "peak_bytes": 1546,
+            "allocations": 9
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "pinyin",
+            "matches": 28,
+            "retained_bytes": 769,
+            "peak_bytes": 1569,
+            "allocations": 10
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 1000,
+            "query": "usage",
+            "matches": 1000,
+            "retained_bytes": 24091,
+            "peak_bytes": 48716,
+            "allocations": 18
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 1000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 5000,
+            "retained_bytes": 3222780,
+            "peak_bytes": 3222960,
+            "allocations": 90001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 5000,
+            "retained_bytes": 3392780,
+            "peak_bytes": 3393377,
+            "allocations": 154901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 5000,
+            "retained_bytes": 5956680,
+            "peak_bytes": 5957328,
+            "allocations": 338901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "empty",
+            "matches": 5000,
+            "retained_bytes": 120080,
+            "peak_bytes": 316688,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "english",
+            "matches": 383,
+            "retained_bytes": 9286,
+            "peak_bytes": 21590,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "chinese",
+            "matches": 383,
+            "retained_bytes": 9287,
+            "peak_bytes": 21684,
+            "allocations": 25
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "alias",
+            "matches": 383,
+            "retained_bytes": 9282,
+            "peak_bytes": 21586,
+            "allocations": 13
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "pinyin",
+            "matches": 383,
+            "retained_bytes": 9289,
+            "peak_bytes": 21609,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 5000,
+            "query": "usage",
+            "matches": 5000,
+            "retained_bytes": 120091,
+            "peak_bytes": 316748,
+            "allocations": 21
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 5000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 10000,
+            "retained_bytes": 6447780,
+            "peak_bytes": 6447960,
+            "allocations": 180001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 10000,
+            "retained_bytes": 6787780,
+            "peak_bytes": 6788377,
+            "allocations": 309901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 10000,
+            "retained_bytes": 11926680,
+            "peak_bytes": 11927328,
+            "allocations": 678901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "empty",
+            "matches": 10000,
+            "retained_bytes": 240080,
+            "peak_bytes": 633296,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "english",
+            "matches": 523,
+            "retained_bytes": 12646,
+            "peak_bytes": 37238,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "chinese",
+            "matches": 523,
+            "retained_bytes": 12647,
+            "peak_bytes": 37332,
+            "allocations": 26
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "alias",
+            "matches": 523,
+            "retained_bytes": 12642,
+            "peak_bytes": 37234,
+            "allocations": 14
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "pinyin",
+            "matches": 523,
+            "retained_bytes": 12649,
+            "peak_bytes": 37257,
+            "allocations": 15
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 10000,
+            "query": "usage",
+            "matches": 10000,
+            "retained_bytes": 240091,
+            "peak_bytes": 633356,
+            "allocations": 22
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 10000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "literal",
+            "entries": 50000,
+            "retained_bytes": 32327780,
+            "peak_bytes": 32327962,
+            "allocations": 900001
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "literal",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "literal",
+            "entries": 50000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "english",
+            "entries": 50000,
+            "retained_bytes": 34027780,
+            "peak_bytes": 34028375,
+            "allocations": 1549901
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 0,
+            "retained_bytes": 95,
+            "peak_bytes": 637,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 0,
+            "retained_bytes": 97,
+            "peak_bytes": 129,
+            "allocations": 6
+        },
+        {
+            "kind": "query",
+            "mode": "english",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "english",
+            "entries": 50000,
+            "residual_bytes": 0
+        },
+        {
+            "kind": "admission",
+            "mode": "bilingual",
+            "entries": 50000,
+            "retained_bytes": 60166680,
+            "peak_bytes": 60167687,
+            "allocations": 3438901
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "empty",
+            "matches": 50000,
+            "retained_bytes": 1200080,
+            "peak_bytes": 2772944,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "english",
+            "matches": 5531,
+            "retained_bytes": 132838,
+            "peak_bytes": 329462,
+            "allocations": 21
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "chinese",
+            "matches": 5531,
+            "retained_bytes": 132839,
+            "peak_bytes": 329556,
+            "allocations": 29
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "alias",
+            "matches": 5531,
+            "retained_bytes": 132834,
+            "peak_bytes": 329458,
+            "allocations": 17
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "pinyin",
+            "matches": 5531,
+            "retained_bytes": 132841,
+            "peak_bytes": 329481,
+            "allocations": 18
+        },
+        {
+            "kind": "query",
+            "mode": "bilingual",
+            "entries": 50000,
+            "query": "usage",
+            "matches": 50000,
+            "retained_bytes": 1200091,
+            "peak_bytes": 2773004,
+            "allocations": 24
+        },
+        {
+            "kind": "released",
+            "mode": "bilingual",
+            "entries": 50000,
+            "residual_bytes": 0
+        }
+    ],
+    "latency_comparisons": [
+        {
+            "entries": 100,
+            "mode": "literal",
+            "p95_change_percent": 7.093975903614469
+        },
+        {
+            "entries": 100,
+            "mode": "english",
+            "p95_change_percent": -17.037747066745922
+        },
+        {
+            "entries": 100,
+            "mode": "bilingual",
+            "p95_change_percent": -13.53163028332559
+        },
+        {
+            "entries": 1000,
+            "mode": "literal",
+            "p95_change_percent": -7.346344813302896
+        },
+        {
+            "entries": 1000,
+            "mode": "english",
+            "p95_change_percent": -28.52144588907992
+        },
+        {
+            "entries": 1000,
+            "mode": "bilingual",
+            "p95_change_percent": -13.668841710415514
+        },
+        {
+            "entries": 5000,
+            "mode": "literal",
+            "p95_change_percent": 18.780365438216172
+        },
+        {
+            "entries": 5000,
+            "mode": "english",
+            "p95_change_percent": -37.7945722094682
+        },
+        {
+            "entries": 5000,
+            "mode": "bilingual",
+            "p95_change_percent": -30.32567368539294
+        },
+        {
+            "entries": 10000,
+            "mode": "literal",
+            "p95_change_percent": -2.4534568684188907
+        },
+        {
+            "entries": 10000,
+            "mode": "english",
+            "p95_change_percent": -24.190454699311747
+        },
+        {
+            "entries": 10000,
+            "mode": "bilingual",
+            "p95_change_percent": -11.305958147718997
+        },
+        {
+            "entries": 50000,
+            "mode": "literal",
+            "p95_change_percent": 5.7499281766533406
+        },
+        {
+            "entries": 50000,
+            "mode": "english",
+            "p95_change_percent": -23.107544529576874
+        },
+        {
+            "entries": 50000,
+            "mode": "bilingual",
+            "p95_change_percent": -14.942620116423155
+        }
+    ],
+    "heap_differences": [
+        {
+            "before": {
+                "kind": "admission",
+                "mode": "english",
+                "entries": 100,
+                "retained_bytes": 67480,
+                "peak_bytes": 68057,
+                "allocations": 3001
+            },
+            "after": {
+                "kind": "admission",
+                "mode": "english",
+                "entries": 100,
+                "retained_bytes": 67480,
+                "peak_bytes": 68068,
+                "allocations": 3001
+            }
+        }
+    ],
+    "verification": {
+        "rust_localization_tests_passed": 34,
+        "frontend_bundle_tests_passed": 77,
+        "shared_conformance_cases": 74,
+        "query_match_heap_records_identical": 90,
+        "all_admission_retained_bytes_and_allocations_identical": true,
+        "all_release_records_zero": true,
+        "admission_2x_gate_passed": false,
+        "full_just_check": {
+            "exit_code": 0,
+            "log": "target/i18n-integer-format-check-retry.log",
+            "vitest_passed": 1346,
+            "vitest_existing_skipped": 1,
+            "first_attempt": "target/i18n-integer-format-check.log failed waiting for the initial scan in refresh_retries_failed_icon_preparation_after_cache_access_is_restored. The exact test passed in isolation, then the complete check passed without code, timeout or assertion changes.",
+            "isolated_retry_log": "target/i18n-integer-format-icon-retry.log"
+        }
+    },
+    "excluded_experiment": "Subsequent romanization temporary-vector preallocation was reverted. Current romanization source hash matches the pre-experiment hash; its measurements are not used as evidence for the retained change."
+}

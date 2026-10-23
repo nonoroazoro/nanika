@@ -6,7 +6,7 @@ use crate::{ClipboardConfig, ClipboardDatabase, ClipboardEntry};
 fn baseline_schema_is_the_only_initial_version() {
     let root = std::env::temp_dir().join(format!("nanika-clipboard-schema-{}", std::process::id()));
     let path = root.join("clipboard.db");
-    drop(ClipboardDatabase::open(&path).expect("database"));
+    drop(ClipboardDatabase::open(&path, &root.join("payloads")).expect("database"));
 
     let connection = rusqlite::Connection::open(path).expect("database should reopen");
     let version: u32 = connection
@@ -26,7 +26,9 @@ fn baseline_schema_is_the_only_initial_version() {
         [
             "entry_id",
             "content_kind",
-            "title",
+            "text_preview",
+            "image_width",
+            "image_height",
             "text_payload",
             "files_json",
             "image_path",
@@ -45,7 +47,7 @@ fn baseline_schema_is_the_only_initial_version() {
     let error = connection
         .execute(
             "INSERT INTO clipboard_entries (
-                entry_id, content_kind, title, text_payload, files_json,
+                entry_id, content_kind, text_preview, text_payload, files_json,
                 image_path, byte_size, captured_at
              ) VALUES ('invalid', 'text', 'invalid', 'text', '[]', NULL, 1, 1)",
             []
@@ -61,10 +63,11 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
     let root =
         std::env::temp_dir().join(format!("nanika-clipboard-database-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     let mut entry = ClipboardEntry {
         entry_id: "clipboard.hash".to_owned(),
-        title: "first".to_owned(),
+        image_dimensions: None,
         content: ClipboardContent::Text {
             value: "payload".to_owned()
         },
@@ -72,12 +75,20 @@ fn clipboard_database_initializes_deduplicates_and_loads_content() {
         captured_at: 10
     };
     database.upsert(&entry).expect("first capture");
-    entry.title = "second".to_owned();
+    entry.content = ClipboardContent::Text {
+        value: "second".into()
+    };
+    entry.byte_size = 6;
     entry.captured_at = 20;
     database.upsert(&entry).expect("duplicate capture");
     let loaded = database.load().expect("history");
     assert_eq!(loaded.len(), 1);
-    assert_eq!(loaded[0].title, "second");
+    assert_eq!(
+        loaded[0].content,
+        ClipboardContent::Text {
+            value: "second".into()
+        }
+    );
     assert_eq!(loaded[0].captured_at, 20);
     drop(database);
     std::fs::remove_dir_all(root).expect("test root should be removable");
@@ -88,7 +99,8 @@ fn retention_removes_entries_outside_the_count_limit() {
     let root =
         std::env::temp_dir().join(format!("nanika-clipboard-storage-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     for index in 0..3 {
         database
             .upsert(&text_entry(index, 10_000 + index))
@@ -120,7 +132,8 @@ fn retention_removes_entries_older_than_the_age_limit() {
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     database.upsert(&text_entry(1, DAY)).expect("old capture");
     database
         .upsert(&text_entry(2, 8 * DAY))
@@ -158,11 +171,12 @@ fn retention_removes_entries_older_than_the_age_limit() {
 fn clear_removes_requested_clipboard_history() {
     let root = std::env::temp_dir().join(format!("nanika-clipboard-clear-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     database
         .upsert(&ClipboardEntry {
             entry_id: "clipboard.one".to_owned(),
-            title: "one".to_owned(),
+            image_dimensions: None,
             content: ClipboardContent::Text {
                 value: "one".to_owned()
             },
@@ -181,7 +195,7 @@ fn clear_removes_requested_clipboard_history() {
 fn text_entry(index: u64, captured_at: u64) -> ClipboardEntry {
     ClipboardEntry {
         entry_id: format!("clipboard.{index}"),
-        title: format!("entry {index}"),
+        image_dimensions: None,
         content: ClipboardContent::Text {
             value: format!("entry {index}")
         },
@@ -224,7 +238,8 @@ fn unlimited_retention_and_independent_limits_preserve_the_requested_history() {
     ] {
         let root =
             std::env::temp_dir().join(format!("nanika-clipboard-{name}-{}", std::process::id()));
-        let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+        let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+            .expect("database");
         for (index, captured_at) in [(1, DAY), (2, 2 * DAY), (3, 10 * DAY)] {
             database
                 .upsert(&text_entry(index, captured_at))
@@ -268,11 +283,16 @@ fn clear_preserves_unmatched_entries_and_retained_image_paths() {
         "nanika-clipboard-scoped-clear-{}",
         std::process::id()
     ));
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     let first = text_entry(1, 1);
     let second = text_entry(2, 2);
     let mut image = text_entry(3, 3);
     let image_path = root.join("retained.png");
+    image.image_dimensions = Some(crate::ClipboardImageDimensions {
+        width: 1,
+        height: 1
+    });
     image.content = ClipboardContent::PngFile {
         path: image_path.to_string_lossy().into_owned()
     };
@@ -313,7 +333,7 @@ fn clear_rolls_back_the_entire_scope_on_database_failure() {
         std::process::id()
     ));
     let path = root.join("clipboard.db");
-    let database = ClipboardDatabase::open(&path).expect("database");
+    let database = ClipboardDatabase::open(&path, &root.join("payloads")).expect("database");
     for index in 1..=2 {
         database.upsert(&text_entry(index, index)).expect("capture");
     }
@@ -332,7 +352,8 @@ fn clear_rolls_back_the_entire_scope_on_database_failure() {
 #[test]
 fn image_ownership_delta_tracks_replacement_and_shared_paths() {
     let root = std::env::temp_dir().join(format!("nanika-image-delta-{}", std::process::id()));
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    let database =
+        ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads")).unwrap();
     let config = ClipboardConfig {
         syntax_highlighting: true,
         max_entries: None,
@@ -340,6 +361,10 @@ fn image_ownership_delta_tracks_replacement_and_shared_paths() {
     };
     let image = root.join("image.png");
     let mut first = text_entry(1, 1);
+    first.image_dimensions = Some(crate::ClipboardImageDimensions {
+        width: 1,
+        height: 1
+    });
     first.content = ClipboardContent::PngFile {
         path: image.to_string_lossy().into()
     };

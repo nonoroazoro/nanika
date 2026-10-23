@@ -37,14 +37,14 @@ impl ApplicationEntry {
             .normalized_tokens
             .lines()
             .filter(|alias| *alias != self.normalized_name)
-            .map(str::to_owned)
+            .map(|alias| alias.to_owned().into())
             .collect::<Vec<_>>();
         Candidate {
             kind: CandidateKind::Action,
             entry_id: self.entry_id.clone(),
-            title: self.display_name.clone(),
+            title: self.display_name.clone().into(),
             subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                "Application".to_owned()
+                nanika_protocol::message("candidate-kind", [])
             )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: self.actions(),
@@ -88,21 +88,27 @@ impl ApplicationEntry {
     }
 
     pub fn actions(&self) -> Vec<nanika_protocol::Action> {
-        let mut actions = vec![nanika_protocol::Action::primary(RUN_ACTION_ID, "Open")];
+        let mut actions = vec![nanika_protocol::Action::primary(
+            RUN_ACTION_ID,
+            nanika_protocol::message("action-open", [])
+        )];
         if self.launch_kind != "windows-packaged" {
             let title = match self.launch_kind.as_str() {
-                "windows-shell-link" => "Open shortcut location",
-                "macos-bundle" => "Show in Finder",
-                _ => "Open file location"
+                "windows-shell-link" => "action-reveal-shortcut",
+                "macos-bundle" => "action-reveal-finder",
+                _ => "action-reveal-file"
             };
             actions.push(nanika_protocol::Action {
                 icon: None,
                 id: "application.reveal".to_owned(),
-                title: title.to_owned(),
+                title: nanika_protocol::message(title, []),
                 allow_default_execution: false,
                 style: nanika_protocol::ActionStyle::Secondary,
                 enabled: true,
-                group: Some("location".to_owned()),
+                group: Some(nanika_protocol::PresentationGroup {
+                    id: "location".into(),
+                    title: nanika_protocol::message("group-location", [])
+                }),
                 confirmation_description: None,
                 confirmation_title: None
             });
@@ -110,11 +116,14 @@ impl ApplicationEntry {
                 actions.push(nanika_protocol::Action {
                     icon: None,
                     id: "application.revealTarget".to_owned(),
-                    title: "Open target location".to_owned(),
+                    title: nanika_protocol::message("action-reveal-target", []),
                     allow_default_execution: false,
                     style: nanika_protocol::ActionStyle::Secondary,
                     enabled: true,
-                    group: Some("location".to_owned()),
+                    group: Some(nanika_protocol::PresentationGroup {
+                        id: "location".into(),
+                        title: nanika_protocol::message("group-location", [])
+                    }),
                     confirmation_description: None,
                     confirmation_title: None
                 });

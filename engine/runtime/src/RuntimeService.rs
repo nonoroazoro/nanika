@@ -11,9 +11,10 @@ use nanika_search::{SearchHandle, SearchOwner, SearchSnapshot, UsageKey, UsageMa
 use nanika_storage::{NanikaPaths, SearchStorageWorker};
 
 use crate::{
-    BuiltInExtensionInventory, ExtensionConfigurationRegistry, ExtensionInvocationOutcome,
-    ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler, HostServiceRouter,
-    RuntimeOutputUpdate, RuntimeUpdateBatch, RuntimeViewCompletion
+    BuiltInExtensionInventory, ConfigurationSaveError, ExtensionConfigurationRegistry,
+    ExtensionInvocationOutcome, ExtensionRuntime, ExtensionSearchCoordinator, HostServiceHandler,
+    HostServiceRouter, LifecycleError, LifecycleFailure, OperationError,
+    OperationErrorCode as Code, RuntimeOutputUpdate, RuntimeUpdateBatch, RuntimeViewCompletion
 };
 
 /// UI-independent owner for storage, search, extension processes, and host services.
@@ -29,12 +30,12 @@ pub struct RuntimeService {
     current_query: Mutex<Option<(u64, String)>>,
     configurations: Arc<ExtensionConfigurationRegistry>,
     storage: Option<SearchStorageWorker>,
-    startup_diagnostics: Vec<String>,
+    startup_diagnostics: Vec<crate::RuntimeWarning>,
     _notifier: crate::ExtensionNotifier,
     _recovery_wake: std::sync::mpsc::SyncSender<()>,
     _supervisor: Mutex<Option<std::thread::JoinHandle<()>>>,
     _closing: std::sync::atomic::AtomicBool,
-    _restarted: Mutex<std::collections::HashMap<String, String>>
+    _restarted: Mutex<std::collections::HashMap<String, LifecycleFailure>>
 }
 
 impl RuntimeService {
@@ -42,22 +43,34 @@ impl RuntimeService {
         paths: &NanikaPaths,
         built_in_manifests: &[&str],
         built_in_resources: &Path
-    ) -> Result<Arc<Self>, String> {
-        let inventory = BuiltInExtensionInventory::parse(built_in_manifests)?;
+    ) -> Result<Arc<Self>, OperationError> {
+        let inventory = BuiltInExtensionInventory::parse(built_in_manifests).map_err(|error| {
+            OperationError::with_detail(Code::BuiltInInventoryUnavailable, error)
+        })?;
         let built_in_ids = inventory
             .extensions
             .iter()
             .map(|entry| entry.manifest.id.clone())
             .collect::<Vec<_>>();
         let mut diagnostics = Vec::new();
-        let config_store = ConfigStore::open(paths.app_data_root(), paths.config_root())
-            .map_err(|error| format!("configuration is unavailable: {error}"))?;
-        let registry = ExtensionRegistryConfig::load(&config_store)
-            .map_err(|error| format!("extension registry is unavailable: {error}"))?;
+        let config_store =
+            ConfigStore::open(paths.app_data_root(), paths.config_root()).map_err(|error| {
+                OperationError::with_detail(Code::HostConfigurationUnavailable, error.to_string())
+            })?;
+        let registry = ExtensionRegistryConfig::load(&config_store).map_err(|error| {
+            OperationError::with_detail(Code::ExtensionRegistryUnavailable, error.to_string())
+        })?;
         let (storage_worker, storage_state) = SearchStorageWorker::spawn(paths.host_database())
-            .map_err(|error| format!("host storage is unavailable: {error}"))?;
+            .map_err(|error| {
+                OperationError::with_detail(Code::HostStorageUnavailable, error.to_string())
+            })?;
         let storage = Some(storage_worker);
-        diagnostics.extend(storage_state.extension_errors);
+        diagnostics.extend(storage_state.extension_errors.into_iter().map(|detail| {
+            crate::RuntimeWarning::new(
+                None,
+                OperationError::with_detail(Code::ExtensionStorageUnavailable, detail)
+            )
+        }));
         let usage = storage_state
             .usage
             .into_iter()
@@ -76,53 +89,87 @@ impl RuntimeService {
                 )
             })
             .collect::<UsageMap>();
-        let owner = SearchOwner::spawn(usage).map_err(|error| error.to_string())?;
+        let owner = SearchOwner::spawn(usage).map_err(|error| {
+            OperationError::with_detail(Code::SearchUnavailable, error.to_string())
+        })?;
         let search = owner.handle();
         if let Some(storage) = &storage {
             storage.attach_search(search.clone());
         }
 
         let (router, service_errors) = HostServiceRouter::spawn(paths.app_data_root());
-        diagnostics.extend(service_errors);
+        diagnostics.extend(service_errors.into_iter().map(|detail| {
+            crate::RuntimeWarning::new(
+                None,
+                OperationError::with_detail(Code::HostServicesUnavailable, detail)
+            )
+        }));
         let router = Arc::new(router);
         let extensions = ExtensionSearchCoordinator::new();
         extensions.set_host_services(Arc::clone(&router) as Arc<dyn HostServiceHandler>);
         let configurations = Arc::new(ExtensionConfigurationRegistry::new(config_store.clone()));
 
-        let current_executable = std::env::current_exe().map_err(|error| error.to_string())?;
+        let current_executable = std::env::current_exe().map_err(|error| {
+            OperationError::with_detail(Code::RuntimeStartupFailed, error.to_string())
+        })?;
         let mut installed_extensions = Vec::new();
         for extension in inventory.extensions {
             let manifest = extension.manifest;
             let program = companion_executable(&current_executable, &extension.binary_name);
             if !program.is_file() {
-                diagnostics.push(format!(
-                    "built-in extension executable is missing: {}",
-                    program.display()
+                diagnostics.push(crate::RuntimeWarning::new(
+                    Some(manifest.id.clone()),
+                    OperationError::with_detail(
+                        Code::ExtensionPackageUnavailable,
+                        format!(
+                            "built-in extension executable is missing: {}",
+                            program.display()
+                        )
+                    )
                 ));
                 continue;
             }
+            let resource_root = built_in_resources.join(&manifest.id);
+            let extension_id = manifest.id.clone();
+            let installed =
+                match InstalledExtension::from_manifest(manifest, program, resource_root, true) {
+                    Ok(installed) => installed,
+                    Err(error) => {
+                        diagnostics.push(crate::RuntimeWarning::new(
+                            Some(extension_id),
+                            OperationError::with_detail(
+                                Code::ExtensionPackageUnavailable,
+                                error.to_string()
+                            )
+                        ));
+                        continue;
+                    }
+                };
             if let Some(storage) = &storage {
                 storage
-                    .register_builtin_extension(&manifest.id)
+                    .register_builtin_extension(&installed.extension_id)
                     .and_then(nanika_storage::StorageCommit::wait)
                     .map_err(|error| {
-                        format!(
-                            "extension {} metadata could not be recorded: {error}",
-                            manifest.id
+                        OperationError::with_detail(
+                            Code::HostStorageUnavailable,
+                            format!(
+                                "extension {} metadata could not be recorded: {error}",
+                                installed.extension_id
+                            )
                         )
                     })?;
             }
-            let resource_root = built_in_resources.join(&manifest.id);
-            installed_extensions.push(InstalledExtension::from_manifest(
-                manifest,
-                program,
-                resource_root
-            ));
+            installed_extensions.push(installed);
         }
 
         let (mut external, errors) =
             resolve_installed_extensions(paths, &storage_state.extensions, &built_in_ids);
-        diagnostics.extend(errors.into_iter().map(|error| error.message));
+        diagnostics.extend(errors.into_iter().map(|error| {
+            crate::RuntimeWarning::new(
+                None,
+                OperationError::with_detail(Code::ExtensionPackageUnavailable, error.message)
+            )
+        }));
         installed_extensions.append(&mut external);
         let installed = installed_extensions
             .iter()
@@ -131,10 +178,14 @@ impl RuntimeService {
         let mut extension_info = Vec::new();
         for extension in installed_extensions {
             let enabled = registry.is_enabled(&extension.extension_id);
-            let configuration = configurations.register(
-                &extension.extension_id,
-                extension.contributes.configuration.as_ref()
-            );
+            let configuration = configurations
+                .register(
+                    &extension.extension_id,
+                    extension.contributes.configuration.as_ref()
+                )
+                .map_err(|detail| {
+                    OperationError::with_detail(Code::ExtensionConfigurationUnavailable, detail)
+                });
             // Fingerprint once on the startup worker, independently of extension activation.
             let icon_hash = match nanika_platform::read_png_resource(
                 &extension.resource_root.join(&extension.icon),
@@ -142,17 +193,28 @@ impl RuntimeService {
             ) {
                 Ok(bytes) => Some(nanika_platform::png_resource_hash(&bytes)),
                 Err(error) => {
-                    diagnostics.push(format!(
-                        "extension {} icon is unavailable: {error}",
-                        extension.extension_id
+                    diagnostics.push(crate::RuntimeWarning::new(
+                        Some(extension.extension_id.clone()),
+                        OperationError::with_detail(
+                            Code::ExtensionIconUnavailable,
+                            error.to_string()
+                        )
                     ));
                     None
                 }
             };
             // Installed metadata remains available without a live worker or schema.
             extension_info.push(crate::RuntimeExtensionInfo {
+                resource_scope: extension.localization.as_ref().map(|resources| {
+                    crate::ExtensionResourceScope {
+                        extension_id: extension.extension_id.clone(),
+                        identity: resources.prepared().identity.clone()
+                    }
+                }),
                 id: extension.extension_id.clone(),
                 name: extension.name,
+                name_search_values: extension.name_search_values,
+                configuration_search_values: extension.configuration_search_values,
                 icon: extension.icon,
                 icon_hash,
                 enabled,
@@ -167,9 +229,9 @@ impl RuntimeService {
                 configuration_error: configuration.as_ref().err().cloned()
             });
             if let Err(error) = configuration {
-                diagnostics.push(format!(
-                    "extension {} configuration is unavailable: {error}",
-                    extension.extension_id
+                diagnostics.push(crate::RuntimeWarning::new(
+                    Some(extension.extension_id.clone()),
+                    error
                 ));
             }
         }
@@ -226,10 +288,11 @@ impl RuntimeService {
                     .iter_mut()
                     .find(|item| item.id == info.id)
                     .expect("installed metadata")
-                    .lifecycle_error = Some(error.clone());
-                runtime
-                    .startup_diagnostics
-                    .push(format!("extension {} could not start: {error}", info.id));
+                    .lifecycle_error = Some(error.clone().into());
+                runtime.startup_diagnostics.push(crate::RuntimeWarning::new(
+                    Some(info.id.clone()),
+                    error.error
+                ));
             }
         }
         let runtime = Arc::new(runtime);
@@ -247,7 +310,9 @@ impl RuntimeService {
                     runtime._recover_extensions();
                 }
             })
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                OperationError::with_detail(Code::RuntimeStartupFailed, error.to_string())
+            })?;
         *runtime
             ._supervisor
             .lock()
@@ -282,7 +347,7 @@ impl RuntimeService {
     }
 
     /// Wait for catalog refresh completion from dynamic Root Search extensions.
-    pub fn refresh_root_search(&self, generation: u64) -> Result<(), String> {
+    pub fn refresh_root_search(&self, generation: u64) -> Result<(), Vec<crate::RuntimeWarning>> {
         self.extensions.refresh_root_search(generation)
     }
 
@@ -316,9 +381,12 @@ impl RuntimeService {
         action_id: &str,
         query_context: &str,
         invocation: nanika_protocol::ActionInvocation
-    ) -> Result<std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, String>>, String> {
+    ) -> Result<
+        std::sync::mpsc::Receiver<Result<ExtensionInvocationOutcome, OperationError>>,
+        OperationError
+    > {
         if !self.search.is_current(snapshot.authority()) {
-            return Err("Search changed. Select a current result.".to_owned());
+            return Err(OperationError::new(Code::SearchChanged));
         }
         let candidate = snapshot
             .results
@@ -333,27 +401,25 @@ impl RuntimeService {
                         action.id == action_id && action.allows_invocation(invocation)
                     })
             })
-            .ok_or_else(|| "the selected candidate is no longer available".to_owned())?;
+            .ok_or_else(|| OperationError::new(Code::ActionUnavailable))?;
         let instance_id = *snapshot
             .instances
             .get(extension_id)
-            .ok_or("The result has no live extension authority.")?;
+            .ok_or_else(|| OperationError::new(Code::SearchChanged))?;
         if self.instance_id(extension_id) != Some(instance_id) {
-            return Err("The result belongs to a retired extension instance.".into());
+            return Err(OperationError::new(Code::SearchChanged));
         }
         if !self.search.is_current(snapshot.authority()) {
-            return Err("Search changed. Select a current result.".into());
+            return Err(OperationError::new(Code::SearchChanged));
         }
-        self.extensions
-            .invoke(
-                extension_id,
-                instance_id,
-                snapshot.generation,
-                candidate.entry_id(),
-                action_id,
-                query_context
-            )
-            .map_err(|error| error.to_string())
+        self.extensions.invoke(
+            extension_id,
+            instance_id,
+            snapshot.generation,
+            candidate.entry_id(),
+            action_id,
+            query_context
+        )
     }
 
     /// Admit a declared Settings action against the exact instance shown by Settings.
@@ -363,12 +429,12 @@ impl RuntimeService {
         instance_id: u64,
         action_id: &str,
         invocation: nanika_protocol::ActionInvocation
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         let _operation = self.configurations.operations.reserve(extension_id)?;
         let extension = self
             .installed
             .get(extension_id)
-            .ok_or("Extension is not installed.")?;
+            .ok_or_else(|| OperationError::new(Code::ExtensionUnavailable))?;
         let action = extension
             .contributes
             .configuration
@@ -379,14 +445,14 @@ impl RuntimeService {
                     .iter()
                     .find(|item| item.action.id == action_id)
             })
-            .ok_or("Settings action is not declared by this extension.")?;
+            .ok_or_else(|| OperationError::new(Code::ActionUnavailable))?;
         if invocation == nanika_protocol::ActionInvocation::Default
             || !action.action.allows_invocation(invocation)
         {
-            return Err("Settings action requires explicit confirmation or is disabled.".into());
+            return Err(OperationError::new(Code::ActionUnavailable));
         }
         if self.instance_id(extension_id) != Some(instance_id) {
-            return Err("Settings action belongs to a retired extension instance.".into());
+            return Err(OperationError::new(Code::ActionUnavailable));
         }
         let result = self
             .extensions
@@ -397,16 +463,20 @@ impl RuntimeService {
                 nanika_protocol::SETTINGS_ENTRY_ID,
                 action_id,
                 ""
-            )
-            .map_err(|error| error.to_string())?
+            )?
             .recv()
-            .map_err(|_| "Extension closed without a settings action result.")??;
+            .map_err(|_| {
+                OperationError::with_detail(
+                    Code::InvocationUnconfirmed,
+                    "Extension closed without a settings action result."
+                )
+            })??;
         match result {
             ExtensionInvocationOutcome::Completed {
                 effect: nanika_protocol::NavigationEffect::None,
                 ..
             } => Ok(()),
-            ExtensionInvocationOutcome::Cancelled => Err("Settings action was cancelled.".into()),
+            ExtensionInvocationOutcome::Cancelled => Err(OperationError::new(Code::Cancelled)),
             ExtensionInvocationOutcome::Completed {
                 effect:
                     nanika_protocol::NavigationEffect::Push {
@@ -415,14 +485,22 @@ impl RuntimeService {
                 ..
             } => {
                 // A rejected navigation must not leave an extension-owned view alive.
-                self.close_view(extension_id, instance_id, 0, view_id, revision)?
-                    .recv()
-                    .map_err(
-                        |_| "Extension closed without retiring the rejected settings view."
-                    )??;
-                Err("Settings actions cannot navigate the launcher.".into())
+                self.close_view(extension_id, instance_id, 0, view_id, revision)
+                    .and_then(|receiver| {
+                        receiver.recv().map_err(|_| {
+                            OperationError::with_detail(
+                                Code::ViewOperationUnconfirmed,
+                                "Extension closed without retiring the rejected settings view."
+                            )
+                        })?
+                    })
+                    .map_err(|cleanup| OperationError::Cleanup {
+                        primary: Box::new(OperationError::new(Code::SettingsNavigationUnsupported)),
+                        cleanup: Box::new(cleanup)
+                    })?;
+                Err(OperationError::new(Code::SettingsNavigationUnsupported))
             }
-            _ => Err("Settings actions cannot navigate the launcher.".into())
+            _ => Err(OperationError::new(Code::SettingsNavigationUnsupported))
         }
     }
 
@@ -436,10 +514,10 @@ impl RuntimeService {
         action_id: &str,
         query_context: &str,
         invocation: nanika_protocol::ActionInvocation
-    ) -> Result<crate::RuntimeInvocationCompletion, String> {
+    ) -> Result<crate::RuntimeInvocationCompletion, OperationError> {
         let instance_id = self
             .instance_id(extension_id)
-            .ok_or("The extension is disabled.")?;
+            .ok_or_else(|| OperationError::new(Code::ExtensionUnavailable))?;
         let is_default = snapshot.results.iter().any(|result| {
             let candidate = &result.candidate;
             candidate.extension_id() == extension_id
@@ -456,7 +534,12 @@ impl RuntimeService {
                 invocation
             )?
             .recv()
-            .map_err(|_| "Extension closed without an invocation result.".to_owned())??;
+            .map_err(|_| {
+                OperationError::with_detail(
+                    Code::InvocationUnconfirmed,
+                    "Extension closed without an invocation result."
+                )
+            })??;
         if is_default
             && matches!(outcome, ExtensionInvocationOutcome::Completed { .. })
             && let Err(error) =
@@ -501,7 +584,7 @@ impl RuntimeService {
         result.map_err(|error| format!("could not record completed action: {error}"))
     }
 
-    pub fn startup_diagnostics(&self) -> &[String] {
+    pub fn startup_diagnostics(&self) -> &[crate::RuntimeWarning] {
         &self.startup_diagnostics
     }
 
@@ -553,9 +636,9 @@ impl RuntimeService {
         &self,
         extension_id: &str,
         instance_id: u64
-    ) -> Result<crate::ConfigurationMenu, String> {
+    ) -> Result<crate::ConfigurationMenu, OperationError> {
         if self.instance_id(extension_id) != Some(instance_id) {
-            return Err("Configuration menu belongs to a retired extension instance.".into());
+            return Err(OperationError::new(Code::ConfigurationChanged));
         }
         let Some(configuration) = self
             .extension_configurations()
@@ -597,6 +680,7 @@ impl RuntimeService {
                     })
                     .collect();
                 crate::ConfigurationMenuSection {
+                    id: group.id.clone(),
                     title: group.title.clone(),
                     items
                 }
@@ -614,7 +698,7 @@ impl RuntimeService {
         instance_id: u64,
         action_id: &str,
         invocation: nanika_protocol::ActionInvocation
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         if !self
             .installed
             .get(extension_id)
@@ -627,7 +711,10 @@ impl RuntimeService {
                 )
             })
         {
-            return Err("This action is not exposed in the quick menu.".into());
+            return Err(OperationError::with_detail(
+                Code::ActionUnavailable,
+                "This action is not exposed in the quick menu."
+            ));
         }
         self.invoke_settings_action(extension_id, instance_id, action_id, invocation)
     }
@@ -660,18 +747,28 @@ impl RuntimeService {
         for info in &mut infos {
             if let Some(worker) = self.extensions.worker(&info.id) {
                 info.instance_id = Some(worker.instance.id);
-                if info.enabled && !matches!(info.state, State::Stopping | State::Failed) {
+                // An admitted lifecycle operation owns its phase until it publishes completion.
+                if info.enabled
+                    && !info.pending
+                    && !matches!(info.state, State::Stopping | State::Failed)
+                {
                     let (state, error) = worker.lifecycle();
                     info.state = state;
-                    info.lifecycle_error = error.or_else(|| info.lifecycle_error.take());
+                    info.lifecycle_error = error
+                        .map(LifecycleError::from)
+                        .or_else(|| info.lifecycle_error.take());
                 }
             } else if info.enabled && !info.pending {
                 info.state = State::Failed;
                 if info.lifecycle_error.is_none() {
-                    info.lifecycle_error = info
-                        .configuration_error
-                        .clone()
-                        .or_else(|| Some("The extension could not start.".into()));
+                    info.lifecycle_error = Some(
+                        LifecycleFailure::from(
+                            info.configuration_error
+                                .clone()
+                                .unwrap_or_else(|| OperationError::new(Code::ExtensionUnavailable))
+                        )
+                        .into()
+                    );
                 }
             }
         }
@@ -683,6 +780,43 @@ impl RuntimeService {
             .worker(extension_id)
             .filter(|worker| worker.instance.is_active())
             .map(|worker| worker.instance.id)
+    }
+
+    /// Return retained, validated content only for the admitted package and optional live instance.
+    /// Settings can read installed metadata without activating a disabled extension.
+    /// The desktop caller additionally authorizes the requesting window session.
+    pub fn localization_resources(
+        &self,
+        scope: &crate::ExtensionResourceScope,
+        instance_id: Option<u64>
+    ) -> Result<Arc<nanika_localization::PreparedResources>, OperationError> {
+        scope.validate().map_err(|detail| {
+            OperationError::with_detail(Code::LocalizationScopeInvalid, detail)
+        })?;
+        let resources = self
+            .installed
+            .get(&scope.extension_id)
+            .and_then(|extension| extension.localization.as_ref())
+            .ok_or_else(|| OperationError::new(Code::LocalizationResourcesUnavailable))?
+            .prepared();
+        if resources.identity != scope.identity {
+            return Err(OperationError::new(Code::LocalizationPackageChanged));
+        }
+        match instance_id {
+            Some(instance_id) => self
+                .with_extension_instance(&scope.extension_id, instance_id, || resources)
+                .ok_or_else(|| OperationError::new(Code::LocalizationInstanceRetired)),
+            None => Ok(resources)
+        }
+    }
+
+    /// Bind search presentation to the admitted package rather than a publisher-supplied owner.
+    pub fn localization_scope(&self, extension_id: &str) -> Option<crate::ExtensionResourceScope> {
+        let resources = self.installed.get(extension_id)?.localization.as_ref()?;
+        Some(crate::ExtensionResourceScope {
+            extension_id: extension_id.to_owned(),
+            identity: resources.prepared().identity.clone()
+        })
     }
 
     /// Execute a short publication while its originating instance remains admitted.
@@ -705,9 +839,9 @@ impl RuntimeService {
         self: &Arc<Self>,
         extension_id: &str,
         enabled: bool
-    ) -> Result<std::sync::mpsc::Receiver<Result<(), String>>, String> {
+    ) -> Result<std::sync::mpsc::Receiver<Result<(), LifecycleFailure>>, LifecycleFailure> {
         if !self.installed.contains_key(extension_id) {
-            return Err("Unknown installed extension.".into());
+            return Err(LifecycleFailure::new(Code::ExtensionUnavailable));
         }
         let reservation = self.configurations.operations.reserve(extension_id)?;
         let runtime = Arc::clone(self);
@@ -747,7 +881,7 @@ impl RuntimeService {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner());
                     if let Some(info) = infos.iter_mut().find(|info| info.id == extension_id) {
-                        info.lifecycle_error = Some(error.clone());
+                        info.lifecycle_error = Some(error.clone().into());
                         if info.state == crate::RuntimeExtensionState::Stopping {
                             info.state = crate::RuntimeExtensionState::Failed;
                         }
@@ -757,11 +891,16 @@ impl RuntimeService {
                 runtime.extensions.notify();
                 let _ = complete.send(result);
             })
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                LifecycleFailure::from(OperationError::with_detail(
+                    Code::ExtensionLifecycleFailed,
+                    error.to_string()
+                ))
+            })?;
         Ok(receipt)
     }
 
-    pub fn search_warnings(&self) -> Vec<String> {
+    pub fn search_warnings(&self) -> Vec<crate::RuntimeWarning> {
         let mut warnings = self.startup_diagnostics.clone();
         warnings.extend(self.extensions.warnings());
         warnings
@@ -781,11 +920,15 @@ impl RuntimeService {
         generation: u64,
         view_id: String,
         read: nanika_protocol::TextRead
-    ) -> Result<std::sync::mpsc::Receiver<Result<nanika_protocol::TextChunk, String>>, String> {
-        read.validate()?;
+    ) -> Result<
+        std::sync::mpsc::Receiver<Result<nanika_protocol::TextChunk, crate::OperationError>>,
+        crate::OperationError
+    > {
+        read.validate().map_err(|detail| {
+            crate::OperationError::with_detail(crate::OperationErrorCode::InvalidTextRead, detail)
+        })?;
         self.extensions
             .read_text(extension_id, instance_id, generation, view_id, read)
-            .map_err(|error| error.to_string())
     }
 
     pub fn view_event(
@@ -796,17 +939,18 @@ impl RuntimeService {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent
-    ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
-        self.extensions
-            .view_event(
-                extension_id,
-                instance_id,
-                generation,
-                view_id,
-                revision,
-                event
-            )
-            .map_err(|error| error.to_string())
+    ) -> Result<
+        std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, crate::OperationError>>,
+        OperationError
+    > {
+        self.extensions.view_event(
+            extension_id,
+            instance_id,
+            generation,
+            view_id,
+            revision,
+            event
+        )
     }
 
     pub fn close_view(
@@ -816,10 +960,12 @@ impl RuntimeService {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64
-    ) -> Result<std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, String>>, String> {
+    ) -> Result<
+        std::sync::mpsc::Receiver<Result<RuntimeViewCompletion, crate::OperationError>>,
+        OperationError
+    > {
         self.extensions
             .close_view(extension_id, instance_id, generation, view_id, revision)
-            .map_err(|error| error.to_string())
     }
 
     /// Admit one property operation per extension. The runtime owns its completion,
@@ -831,8 +977,11 @@ impl RuntimeService {
         key: String,
         value: serde_json::Value,
         progress: crate::ConfigurationProgressHandler
-    ) -> Result<crate::ConfigurationSaveReceipt, String> {
-        let operation = self.configurations.prepare(extension_id, key, value)?;
+    ) -> Result<crate::ConfigurationSaveReceipt, ConfigurationSaveError> {
+        let operation = self
+            .configurations
+            .prepare(extension_id, key, value)
+            .map_err(ConfigurationSaveError::rejected)?;
         self._submit_configuration(operation, request_id, progress)
     }
 
@@ -844,13 +993,16 @@ impl RuntimeService {
         key: String,
         value: bool,
         progress: crate::ConfigurationProgressHandler
-    ) -> Result<crate::ConfigurationSaveReceipt, String> {
+    ) -> Result<crate::ConfigurationSaveReceipt, ConfigurationSaveError> {
         // Reserve before checking instance/revision so lifecycle and Settings cannot race admission.
         let operation = self
             .configurations
-            .prepare_menu(extension_id, key, value, revision)?;
+            .prepare_menu(extension_id, key, value, revision)
+            .map_err(ConfigurationSaveError::rejected)?;
         if self.instance_id(extension_id) != Some(instance_id) {
-            return Err("Configuration menu belongs to a retired extension instance.".into());
+            return Err(ConfigurationSaveError::rejected(OperationError::new(
+                Code::ConfigurationChanged
+            )));
         }
         self._submit_configuration(
             operation,
@@ -879,7 +1031,7 @@ impl RuntimeService {
         operation: crate::ConfigurationOperation,
         request_id: impl Into<String>,
         progress: crate::ConfigurationProgressHandler
-    ) -> Result<crate::ConfigurationSaveReceipt, String> {
+    ) -> Result<crate::ConfigurationSaveReceipt, ConfigurationSaveError> {
         let extensions = Arc::clone(&self.extensions);
         let extension_id = operation.extension_id.clone();
         let request_id = request_id.into();
@@ -898,31 +1050,55 @@ impl RuntimeService {
                         applied
                     ) {
                         Ok(true) => application.recv().map_err(|_| {
-                            "Extension closed without a configuration result.".to_owned()
+                            OperationError::with_detail(
+                                Code::ConfigurationUnconfirmed,
+                                "Extension closed without a configuration result."
+                            )
                         })?,
                         Ok(false) => Ok(crate::ConfigurationApplication::Deferred),
-                        Err(error) => Err(error.to_string())
+                        Err(error) => Err(error)
                     }
                 });
                 extensions.notify();
                 let _ = completion.send(outcome);
             })
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                ConfigurationSaveError::rejected(OperationError::with_detail(
+                    Code::ConfigurationSubmissionFailed,
+                    error.to_string()
+                ))
+            })?;
         Ok(crate::ConfigurationSaveReceipt(received))
     }
-    fn _set_extension_enabled(&self, extension_id: &str, enabled: bool) -> Result<(), String> {
+    fn _set_extension_enabled(
+        &self,
+        extension_id: &str,
+        enabled: bool
+    ) -> Result<(), LifecycleFailure> {
         use crate::RuntimeExtensionState as State;
         if enabled && let Some(worker) = self.extensions.worker(extension_id) {
             if worker.instance.is_active() {
                 return Ok(());
             }
-            return Err("The previous extension instance has not stopped.".into());
+            return Err(LifecycleFailure::new(Code::ExtensionStillStopping));
         }
         {
-            let mut transaction =
-                nanika_config::ExtensionRegistryTransaction::begin(&self.config_store)?;
+            let mut transaction = nanika_config::ExtensionRegistryTransaction::begin(
+                &self.config_store
+            )
+            .map_err(|detail| {
+                LifecycleFailure::from(OperationError::with_detail(
+                    Code::ExtensionRegistrySaveFailed,
+                    detail
+                ))
+            })?;
             transaction.set_enabled(extension_id, enabled);
-            transaction.save()?;
+            transaction.save().map_err(|detail| {
+                LifecycleFailure::from(OperationError::with_detail(
+                    Code::ExtensionRegistrySaveFailed,
+                    detail
+                ))
+            })?;
         }
         {
             let mut infos = self
@@ -998,9 +1174,10 @@ impl RuntimeService {
             if !worker.instance.is_active() {
                 continue;
             }
-            let cause = info
-                .lifecycle_error
-                .unwrap_or_else(|| "Extension worker failed.".into());
+            let cause = worker
+                .lifecycle()
+                .1
+                .unwrap_or_else(|| LifecycleFailure::new(Code::ExtensionUnavailable));
             let restarting = !self
                 ._restarted
                 .lock()
@@ -1022,9 +1199,13 @@ impl RuntimeService {
                     State::Stopping
                 };
                 current.lifecycle_error = Some(if restarting {
-                    format!("Extension failed: {cause}. Restarting once.")
+                    LifecycleError::Restarting {
+                        failure: Box::new(cause.clone())
+                    }
                 } else {
-                    format!("Extension failed again: {cause}. Stopping the failed instance.")
+                    LifecycleError::Stopping {
+                        failure: Box::new(cause.clone())
+                    }
                 });
             }
             self.extensions.notify();
@@ -1040,23 +1221,49 @@ impl RuntimeService {
                 worker.retire_after_failure(&cause)
             };
             let stopped = worker.wait_stopped();
-            let cause = worker.lifecycle().1.unwrap_or(cause);
+            // A successful stop may add the drained process tail to the original failure.
+            // A stop failure is a separate cause and must not replace the crash that triggered recovery.
+            let cause = if stopped.is_ok() {
+                worker.lifecycle().1.unwrap_or(cause)
+            } else {
+                cause
+            };
             let previous = self
                 ._restarted
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
                 .insert(info.id.clone(), cause.clone());
-            let result = retired.and(stopped).and_then(|()| {
+            let failures = retired
+                .err()
+                .into_iter()
+                .chain(stopped.err())
+                .collect::<Vec<_>>();
+            let result = if !failures.is_empty() {
+                Err(LifecycleError::RecoveryStopped {
+                    original: Box::new(cause),
+                    failures
+                })
+            } else {
                 self.extensions.remove_stopped(&info.id);
                 if let Some(first) = previous {
-                    return Err(format!("Extension failed again after one automatic restart. First failure: {first}. Restarted instance: {cause}. Automatic restart stopped; disable and enable the extension to try again."));
+                    Err(LifecycleError::RestartLimitReached {
+                        original: Box::new(first),
+                        failure: Box::new(cause)
+                    })
+                } else if self._closing.load(std::sync::atomic::Ordering::Acquire) {
+                    Err(LifecycleError::RecoveryStopped {
+                        original: Box::new(cause),
+                        failures: vec![LifecycleFailure::new(Code::ApplicationShuttingDown)]
+                    })
+                } else {
+                    self._activate_extension(&info.id, true).map_err(|failure| {
+                        LifecycleError::RestartFailed {
+                            original: Box::new(cause),
+                            failure: Box::new(failure)
+                        }
+                    })
                 }
-                if self._closing.load(std::sync::atomic::Ordering::Acquire) {
-                    return Err("Application is shutting down.".into());
-                }
-                self._activate_extension(&info.id, true).map_err(|error|
-                    format!("Automatic restart could not start. Original failure: {cause}. Restart failure: {error}."))
-            });
+            };
             {
                 let mut infos = self
                     .extension_info
@@ -1075,8 +1282,7 @@ impl RuntimeService {
                     }
                     Err(error) => {
                         current.state = State::Failed;
-                        current.lifecycle_error =
-                            Some(format!("Extension recovery stopped: {error}"));
+                        current.lifecycle_error = Some(error);
                     }
                 }
             }
@@ -1086,7 +1292,11 @@ impl RuntimeService {
     }
 
     /// Startup and explicit enable use the same worker-owned activation path.
-    fn _activate_extension(&self, extension_id: &str, restarting: bool) -> Result<(), String> {
+    fn _activate_extension(
+        &self,
+        extension_id: &str,
+        restarting: bool
+    ) -> Result<(), LifecycleFailure> {
         let descriptor = &self.installed[extension_id];
         let needs_configuration = self
             .extension_info
@@ -1101,7 +1311,10 @@ impl RuntimeService {
             // Explicit activation can re-read a configuration the user has corrected.
             let result = self
                 .configurations
-                .register(extension_id, descriptor.contributes.configuration.as_ref());
+                .register(extension_id, descriptor.contributes.configuration.as_ref())
+                .map_err(|detail| {
+                    OperationError::with_detail(Code::ExtensionConfigurationUnavailable, detail)
+                });
             self.extension_info
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
@@ -1117,6 +1330,7 @@ impl RuntimeService {
         let owned_descriptor = descriptor.clone();
         let paths = self.paths.clone();
         let source = crate::ExtensionRuntimeSource {
+            localization: descriptor.localization.clone(),
             activation: if restarting {
                 nanika_extension_package::ExtensionActivation::Startup
             } else {
@@ -1124,13 +1338,14 @@ impl RuntimeService {
             },
             live_configuration: matches!(descriptor.protocol, ExtensionProtocol::Nanika { .. }),
             start: Box::new(move |configuration| {
-                spawn_runtime(
+                let runtime = spawn_runtime(
                     &owned_descriptor.extension_id,
                     owned_descriptor.protocol,
                     &owned_descriptor.program,
                     &paths,
                     configuration
-                )
+                )?;
+                Ok(runtime)
             })
         };
         self.extensions
@@ -1141,7 +1356,7 @@ impl RuntimeService {
                 descriptor.contributes.clone(),
                 configuration
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| LifecycleFailure::from(crate::SupervisorError::Io(error)))?;
         if let Some((generation, query)) = self
             .current_query
             .lock()

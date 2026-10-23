@@ -2,7 +2,20 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.system",
-  "name": "System",
+  "name": {
+    "message": "extension-name"
+  },
+  "localization": {
+    "defaultLocale": "en",
+    "resources": {
+      "en": [
+        "locales/en.ftl"
+      ],
+      "zh-Hans": [
+        "locales/zh-Hans.ftl"
+      ]
+    }
+  },
   "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
@@ -38,170 +51,284 @@
         "command": "lock",
         "action": {
           "id": "command.execute",
-          "title": "Lock Screen",
+          "title": {
+            "message": "action-lock-title"
+          },
           "style": "primary",
           "enabled": true,
           "allow_default_execution": true,
           "group": null,
           "icon": "lock-keyhole"
         },
-        "title": "Lock Screen",
-        "description": "Lock your current session",
-        "category": "System",
+        "title": {
+          "message": "action-lock-title"
+        },
+        "description": {
+          "message": "command-lock-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "lock",
-          "screen",
-          "锁屏"
+          {
+            "message": "keyword-lock"
+          },
+          {
+            "message": "keyword-screen"
+          }
         ]
       },
       {
         "command": "sleep",
         "action": {
           "id": "command.execute",
-          "title": "Sleep",
+          "title": {
+            "message": "action-sleep-title"
+          },
           "style": "primary",
           "enabled": true,
           "allow_default_execution": true,
           "group": null,
           "icon": "moon"
         },
-        "title": "Sleep",
-        "description": "Put the computer to sleep",
-        "category": "System",
+        "title": {
+          "message": "action-sleep-title"
+        },
+        "description": {
+          "message": "command-sleep-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "sleep",
-          "suspend",
-          "睡眠"
+          {
+            "message": "keyword-sleep"
+          },
+          {
+            "message": "keyword-suspend"
+          }
         ]
       },
       {
         "command": "displays",
         "action": {
           "id": "command.execute",
-          "title": "Turn Off Displays",
+          "title": {
+            "message": "action-displays-title"
+          },
           "style": "primary",
           "enabled": true,
           "allow_default_execution": true,
           "group": null,
           "icon": "monitor-off"
         },
-        "title": "Turn Off Displays",
-        "description": "Put connected displays to sleep",
-        "category": "System",
+        "title": {
+          "message": "action-displays-title"
+        },
+        "description": {
+          "message": "command-displays-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "display",
-          "monitor",
-          "screen",
-          "关闭显示器"
+          {
+            "message": "keyword-display"
+          },
+          {
+            "message": "keyword-monitor"
+          },
+          {
+            "message": "keyword-screen"
+          },
+          {
+            "message": "keyword-turn-off-display"
+          }
         ]
       },
       {
         "command": "logout",
         "action": {
           "id": "command.execute",
-          "title": "Log Out",
+          "title": {
+            "message": "action-logout-title"
+          },
           "style": "destructive",
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Log Out?",
-          "confirmation_description": "Your current session will end and open apps will close. Save your work before continuing.",
+          "confirmation_title": {
+            "message": "action-logout-confirmation-title"
+          },
+          "confirmation_description": {
+            "message": "action-logout-confirmation-description"
+          },
           "icon": "log-out"
         },
-        "title": "Log Out",
-        "description": "End your current user session",
-        "category": "System",
+        "title": {
+          "message": "action-logout-title"
+        },
+        "description": {
+          "message": "command-logout-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "logout",
-          "sign out",
-          "注销"
+          {
+            "message": "keyword-logout"
+          },
+          {
+            "message": "keyword-sign-out"
+          }
         ]
       },
       {
         "command": "restart",
         "action": {
           "id": "command.execute",
-          "title": "Restart",
+          "title": {
+            "message": "action-restart-title"
+          },
           "style": "destructive",
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Restart?",
-          "confirmation_description": "Your computer will restart and open apps will close. Save your work before continuing.",
+          "confirmation_title": {
+            "message": "action-restart-confirmation-title"
+          },
+          "confirmation_description": {
+            "message": "action-restart-confirmation-description"
+          },
           "icon": "rotate-cw"
         },
-        "title": "Restart",
-        "description": "Restart this computer",
-        "category": "System",
+        "title": {
+          "message": "action-restart-title"
+        },
+        "description": {
+          "message": "command-restart-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "reboot",
-          "restart",
-          "重启"
+          {
+            "message": "keyword-reboot"
+          },
+          {
+            "message": "keyword-restart"
+          }
         ]
       },
       {
         "command": "shutdown",
         "action": {
           "id": "command.execute",
-          "title": "Shut Down",
+          "title": {
+            "message": "action-shutdown-title"
+          },
           "style": "destructive",
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Shut Down?",
-          "confirmation_description": "Your computer will shut down and open apps will close. Save your work before continuing.",
+          "confirmation_title": {
+            "message": "action-shutdown-confirmation-title"
+          },
+          "confirmation_description": {
+            "message": "action-shutdown-confirmation-description"
+          },
           "icon": "power"
         },
-        "title": "Shut Down",
-        "description": "Shut down this computer",
-        "category": "System",
+        "title": {
+          "message": "action-shutdown-title"
+        },
+        "description": {
+          "message": "command-shutdown-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "shutdown",
-          "power off",
-          "关机"
+          {
+            "message": "keyword-shutdown"
+          },
+          {
+            "message": "keyword-power-off"
+          }
         ]
       },
       {
         "command": "trash.open",
         "action": {
           "id": "command.execute",
-          "title": "Open Trash",
+          "title": {
+            "message": "action-trash-open-title"
+          },
           "style": "primary",
           "enabled": true,
           "allow_default_execution": true,
           "group": null,
           "icon": "folder-open"
         },
-        "title": "Open Trash",
-        "description": "Open deleted items in the system file manager",
-        "category": "System",
+        "title": {
+          "message": "action-trash-open-title"
+        },
+        "description": {
+          "message": "command-trash-open-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "trash",
-          "recycle bin",
-          "回收站"
+          {
+            "message": "keyword-trash"
+          },
+          {
+            "message": "keyword-recycle-bin"
+          }
         ]
       },
       {
         "command": "trash.empty",
         "action": {
           "id": "command.execute",
-          "title": "Empty Trash",
+          "title": {
+            "message": "action-trash-empty-title"
+          },
           "style": "destructive",
           "enabled": true,
           "allow_default_execution": false,
           "group": null,
-          "confirmation_title": "Empty Trash?",
-          "confirmation_description": "All items in the Trash will be permanently deleted. This cannot be undone.",
+          "confirmation_title": {
+            "message": "action-trash-empty-confirmation-title"
+          },
+          "confirmation_description": {
+            "message": "action-trash-empty-confirmation-description"
+          },
           "icon": "trash"
         },
-        "title": "Empty Trash",
-        "description": "Permanently delete all items in Trash or Recycle Bin",
-        "category": "System",
+        "title": {
+          "message": "action-trash-empty-title"
+        },
+        "description": {
+          "message": "command-trash-empty-description"
+        },
+        "category": {
+          "message": "extension-name"
+        },
         "keywords": [
-          "trash",
-          "recycle bin",
-          "delete",
-          "清空回收站"
+          {
+            "message": "keyword-trash"
+          },
+          {
+            "message": "keyword-recycle-bin"
+          },
+          {
+            "message": "keyword-delete"
+          },
+          {
+            "message": "keyword-empty-recycle-bin"
+          }
         ]
       }
     ]

@@ -1,4 +1,9 @@
 <script lang="ts">
+import { operationFailure } from "../localization/operation-errors";
+import type { SettingsError } from "./SettingsError";
+import type { LocalizedText } from "../generated/LocalizedText";
+import type { ExtensionPresentation } from "../localization/ExtensionPresentation";
+import { localization } from "../localization/state.svelte";
 import { onDestroy } from "svelte";
 import { confirmAction } from "../ui/confirmation";
 import { SvelteMap } from "svelte/reactivity";
@@ -6,13 +11,14 @@ import Button from "../components/ui/Button.svelte";
 import type { SettingsAction } from "../generated/SettingsAction";
 import { settingsAnchor } from "./anchor";
 
-const { extensionId, iconUrl, actions, disabled, onInvoke, onError }: {
+const { extensionId, iconUrl, actions, disabled, onInvoke, onError, presentation }: {
+    presentation: ExtensionPresentation;
     extensionId: string;
     iconUrl: string;
     actions: SettingsAction[];
     disabled: boolean;
     onInvoke: (id: string, confirmed: boolean) => Promise<void>;
-    onError: (message: string) => void;
+    onError: (message: SettingsError) => void;
 } = $props();
 let alive = true;
 onDestroy(() =>
@@ -23,13 +29,14 @@ const variants = { primary: "primary", secondary: "outline", destructive: "dange
 let invoking = false;
 const groups = $derived.by(() =>
 {
-    const result = new SvelteMap<string, SettingsAction[]>();
+    const result = new SvelteMap<string, { title: LocalizedText | null; entries: SettingsAction[]; }>();
     for (const item of actions)
     {
-        const group = item.action.group ?? "Actions";
-        const entries = result.get(group) ?? [];
-        entries.push(item);
-        result.set(group, entries);
+        const group = item.action.group;
+        const id = group?.id ?? "$actions";
+        const entry = result.get(id) ?? { title: group?.title ?? null, entries: [] };
+        entry.entries.push(item);
+        result.set(id, entry);
     }
     return [...result.entries()];
 });
@@ -43,12 +50,17 @@ async function _invoke(item: SettingsAction): Promise<void>
     invoking = true;
     try
     {
+        const prepared = presentation;
         const confirmed = item.action.confirmation_title
             ? await confirmAction({
-                title: item.action.confirmation_title,
+                content: () => ({
+                    title: prepared.actions.text(item.action.confirmation_title!, localization.locale),
+                    label: prepared.actions.text(item.action.title, localization.locale),
+                    message: item.action.confirmation_description
+                        ? prepared.actions.text(item.action.confirmation_description, localization.locale)
+                        : prepared.text(item.description, localization.locale)
+                }),
                 destructive: item.action.style === "destructive",
-                label: item.action.title,
-                message: item.action.confirmation_description ?? item.description,
                 icon: item.action.icon ? { kind: "symbol", name: item.action.icon } : { kind: "image", url: iconUrl }
             })
             : false;
@@ -63,7 +75,7 @@ async function _invoke(item: SettingsAction): Promise<void>
     }
     catch (error)
     {
-        onError(String(error));
+        onError(operationFailure(error, "invocationUnconfirmed"));
     }
     finally
     {
@@ -72,18 +84,29 @@ async function _invoke(item: SettingsAction): Promise<void>
 }
 </script>
 
-{#each groups as [group, entries] (group)}
-    <section class="action-group" aria-label={group}>
-        <h2>{group}</h2>
+{#each groups as [id, group] (id)}
+    <section
+        class="action-group"
+        aria-label={group.title
+        ? presentation.actions.text(group.title, localization.locale)
+        : localization.text({ message: "actions-label" })}
+    >
+        <h2>
+            {
+                group.title
+                ? presentation.actions.text(group.title, localization.locale)
+                : localization.text({ message: "actions-label" })
+            }
+        </h2>
         <div class="fields">
-            {#each entries as item (item.action.id)}
+            {#each group.entries as item (item.action.id)}
                 <section
                     class="property scalar settings-search-target"
                     id={settingsAnchor(extensionId, { kind: "action", key: item.action.id })}
                 >
                     <div class="property-copy">
-                        <h3>{item.action.title}</h3>
-                        <p>{item.description}</p>
+                        <h3>{presentation.actions.text(item.action.title, localization.locale)}</h3>
+                        <p>{presentation.text(item.description, localization.locale)}</p>
                     </div>
                     <div class="property-control">
                         <Button
@@ -92,7 +115,11 @@ async function _invoke(item: SettingsAction): Promise<void>
                             disabled={disabled || !item.action.enabled}
                             onclick={() => _invoke(item)}
                         >
-                            {item.buttonLabel ?? item.action.title}
+                            {
+                                item.buttonLabel
+                                ? presentation.text(item.buttonLabel, localization.locale)
+                                : presentation.actions.text(item.action.title, localization.locale)
+                            }
                         </Button>
                     </div>
                 </section>

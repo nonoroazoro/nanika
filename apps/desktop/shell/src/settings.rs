@@ -139,6 +139,7 @@ fn _present(window: &tauri::WebviewWindow) -> Result<(), String> {
         return crate::window::hide_window(&window.as_ref().window());
     }
     window.unminimize().map_err(|error| error.to_string())?;
+    window.state::<crate::DesktopState>().refresh_language();
     crate::window::show_window(window)?;
     crate::window::focus_window(window)
 }

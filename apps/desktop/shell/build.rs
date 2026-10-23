@@ -22,6 +22,8 @@ const COMMANDS: &[&str] = &[
     "publish_query",
     "read_results",
     "read_text",
+    "read_localization_resources",
+    "read_startup_diagnostic",
     "view_event",
     "open_settings",
     "read_settings",

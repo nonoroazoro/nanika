@@ -2,6 +2,8 @@ import { basename, join, resolve } from "node:path";
 
 import inventory from "../../apps/extensions/built-in/inventory.json";
 
+import type { LocalizationResources } from "../../apps/desktop/frontend/src/generated/LocalizationResources";
+
 /**
  * Resolve sidecars from the same distribution inventory embedded by desktop and CLI.
  *
@@ -15,6 +17,7 @@ export async function readBuiltInExtensions(target: string)
         const manifest = Bun.JSONC.parse(await Bun.file(join(directory, "manifest.jsonc")).text()) as {
             icon: string;
             id: string;
+            localization?: LocalizationResources;
             targets: Record<string, { entrypoint: string; }>;
         };
         const cargo = Bun.TOML.parse(await Bun.file(join(directory, "Cargo.toml")).text()) as {

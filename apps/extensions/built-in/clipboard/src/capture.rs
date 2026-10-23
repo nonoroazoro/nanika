@@ -29,7 +29,7 @@ pub(crate) fn capture(
             let hash = stable_hash("files", &encoded);
             return Ok(Some(ClipboardEntry {
                 entry_id: hash,
-                title: file_title(&paths),
+                image_dimensions: None,
                 content: ClipboardContent::Files { paths },
                 byte_size: encoded.len() as u64,
                 captured_at
@@ -48,7 +48,7 @@ pub(crate) fn capture(
             let hash = stable_hash("text", value.as_bytes());
             return Ok(Some(ClipboardEntry {
                 entry_id: hash,
-                title: text_title(&value),
+                image_dimensions: None,
                 byte_size: value.len() as u64,
                 content: ClipboardContent::Text { value },
                 captured_at
@@ -79,7 +79,7 @@ pub(crate) fn capture(
         }
         return Ok(Some(ClipboardEntry {
             entry_id: hash,
-            title: format!("Image {width} x {height}"),
+            image_dimensions: Some(crate::ClipboardImageDimensions { width, height }),
             content: ClipboardContent::PngFile {
                 path: path.to_string_lossy().into_owned()
             },
@@ -109,26 +109,6 @@ pub(crate) fn stable_hash(kind: &str, payload: &[u8]) -> String {
         let _ = write!(encoded, "{byte:02x}");
     }
     encoded
-}
-
-pub(crate) fn text_title(value: &str) -> String {
-    let line = value
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or(value);
-    crate::labels::display_label(line.trim(), 96)
-}
-
-fn file_title(paths: &[String]) -> String {
-    let first = Path::new(&paths[0])
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| paths[0].clone());
-    if paths.len() == 1 {
-        first
-    } else {
-        format!("{first} and {} more", paths.len() - 1)
-    }
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {

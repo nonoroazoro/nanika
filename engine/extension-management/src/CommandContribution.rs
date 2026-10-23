@@ -6,12 +6,12 @@ pub struct CommandContribution {
     pub command: String,
     /// Static commands use the same action contract as runtime search and views.
     pub action: nanika_protocol::Action,
-    pub title: String,
-    pub description: String,
+    pub title: nanika_protocol::LocalizedText,
+    pub description: nanika_protocol::LocalizedText,
     #[serde(default)]
-    pub category: Option<String>,
+    pub category: Option<nanika_protocol::LocalizedText>,
     #[serde(default)]
-    pub keywords: Vec<String>,
+    pub keywords: Vec<nanika_protocol::LocalizedText>,
     #[serde(default)]
     pub icon: Option<String>
 }

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsAction {
     pub action: nanika_protocol::Action,
-    pub description: String,
+    pub description: nanika_protocol::LocalizedText,
     /// Concise button text when the adjacent Settings title already names the operation.
     #[serde(default)]
-    pub button_label: Option<String>
+    pub button_label: Option<nanika_protocol::LocalizedText>
 }

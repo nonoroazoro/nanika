@@ -101,7 +101,7 @@ fn _run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let [scenario, directory] = args.as_slice() else {
         return Err(
-            "Usage: nanika-verify <syntax:rendering|syntax:latency|syntax:lifecycle> <new-output-directory>".into()
+            "Usage: nanika-verify <syntax:rendering|syntax:latency|syntax:lifecycle|localization:switching> <new-output-directory>".into()
         );
     };
     let scenario = scenario
@@ -109,7 +109,10 @@ fn _run() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|value| {
             matches!(
                 *value,
-                "syntax:rendering" | "syntax:latency" | "syntax:lifecycle"
+                "syntax:rendering"
+                    | "syntax:latency"
+                    | "syntax:lifecycle"
+                    | "localization:switching"
             )
         })
         .ok_or("Unknown native scenario")?;
@@ -117,7 +120,12 @@ fn _run() -> Result<(), Box<dyn std::error::Error>> {
     // A new directory ensures the run cannot reuse or overwrite user state.
     std::fs::create_dir(&directory)?;
     let directory = directory.canonicalize()?;
-    let url = format!("index.html?syntax=on&native=1&scenario={scenario}");
+    let surface = if scenario == "localization:switching" {
+        "launcher"
+    } else {
+        "syntax"
+    };
+    let url = format!("index.html?syntax=on&surface={surface}&native=1&scenario={scenario}");
     tauri::Builder::default()
         .manage(Arc::new(Mutex::new(
             resource_monitor::ResourceMonitor::new()

@@ -4,6 +4,7 @@ use nanika_protocol::ExtensionConfiguration;
 
 /// Process ownership is transferred to the worker, including creation and initialization.
 pub struct ExtensionRuntimeSource {
+    pub localization: Option<std::sync::Arc<nanika_localization::ResourceSet>>,
     pub activation: ExtensionActivation,
     pub live_configuration: bool,
     pub start: Box<dyn FnOnce(ExtensionConfiguration) -> std::io::Result<ExtensionRuntime> + Send>

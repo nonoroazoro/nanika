@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::{RootSearchSnapshot, SearchPhase};
+use nanika_host::{OperationError, OperationErrorCode as Code};
 
 /// One WebView lifetime, with at most one unacknowledged Channel message.
 pub(crate) struct SearchSession {
@@ -10,6 +11,7 @@ pub(crate) struct SearchSession {
         std::collections::HashMap<(String, u64), crate::TextInvalidationNotice>,
     pub(crate) view_operation_lock: Arc<Mutex<()>>,
     pub(crate) navigation: crate::NavigationState,
+    pub(crate) delivered_localization_revision: u64,
     pub(crate) delivered_navigation_revision: u64,
     pub(crate) delivered_route: Option<(u64, u64)>,
     pub(crate) id: u64,
@@ -25,8 +27,8 @@ pub(crate) struct SearchSession {
     pub(crate) in_flight: Option<(u64, Instant)>,
     pub(crate) delivered: Option<Arc<nanika_search::SearchSnapshot>>,
     pub(crate) phase: Option<SearchPhase>,
-    pub(crate) error: Option<String>,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) error: Option<nanika_host::OperationError>,
+    pub(crate) warnings: Vec<nanika_host::RuntimeWarning>,
     pub(crate) transport_error: Option<String>
 }
 
@@ -38,6 +40,7 @@ impl SearchSession {
             view_operation_lock: Arc::new(Mutex::new(())),
             navigation: crate::NavigationState::default(),
             delivered_navigation_revision: 0,
+            delivered_localization_revision: 0,
             delivered_route: None,
             id,
             request_id: 0,
@@ -61,14 +64,17 @@ impl SearchSession {
     pub(crate) fn configuration_menu_route(
         &self,
         request: &crate::ConfigurationMenuRequest
-    ) -> Result<&crate::ExtensionViewSnapshot, String> {
+    ) -> Result<&crate::ExtensionViewSnapshot, OperationError> {
         self.authorize(request.session_id)?;
         if self.navigation.busy {
-            return Err("An extension operation is still pending.".into());
+            return Err(OperationError::new(Code::OperationPending));
         }
-        let route = self.navigation.authorize_route(request.route_id)?;
+        let route = self
+            .navigation
+            .authorize_route(request.route_id)
+            .map_err(|_| OperationError::new(Code::ViewChanged))?;
         if route.instance_id != request.instance_id {
-            return Err("The menu belongs to a retired extension instance.".into());
+            return Err(OperationError::new(Code::ViewChanged));
         }
         Ok(route)
     }
@@ -77,10 +83,10 @@ impl SearchSession {
     pub(crate) fn menu_actions(
         &self,
         request: &crate::ContextMenuRequest
-    ) -> Result<Vec<nanika_protocol::Action>, String> {
+    ) -> Result<Vec<nanika_protocol::Action>, OperationError> {
         self.authorize(request.session_id)?;
         if self.navigation.busy {
-            return Err("An action is still running.".to_owned());
+            return Err(OperationError::new(Code::OperationPending));
         }
         let (actions, primary_action_id) = match &request.target {
             crate::MenuTarget::Search {
@@ -91,7 +97,7 @@ impl SearchSession {
             } => {
                 self.authorize_result(*request_id, *result_revision)?;
                 if !self.navigation.stack.is_empty() {
-                    return Err("Search changed. Reopen the menu.".to_owned());
+                    return Err(OperationError::new(Code::SearchChanged));
                 }
                 let candidate = &self
                     .delivered
@@ -102,7 +108,7 @@ impl SearchSession {
                                 && result.candidate.entry_id() == entry_id
                         })
                     })
-                    .ok_or("The result is no longer available.")?
+                    .ok_or_else(|| OperationError::new(Code::SearchChanged))?
                     .candidate;
                 let primary = candidate.actions().iter().find(|action| {
                     action.id == candidate.action_id()
@@ -118,18 +124,21 @@ impl SearchSession {
                 revision,
                 item_id
             } => {
-                let route = self.navigation.authorize_route(*route_id)?;
+                let route = self
+                    .navigation
+                    .authorize_route(*route_id)
+                    .map_err(|_| OperationError::new(Code::ViewChanged))?;
                 if route.revision != *revision {
-                    return Err("The view changed. Reopen the menu.".to_owned());
+                    return Err(OperationError::new(Code::ViewChanged));
                 }
                 let actions = match (&*route.view, item_id) {
                     (nanika_protocol::View::List { list }, Some(id)) => list
                         .item(id)
-                        .ok_or("The item is no longer available.")?
+                        .ok_or_else(|| OperationError::new(Code::ViewChanged))?
                         .actions
                         .as_slice(),
                     (nanika_protocol::View::Detail { detail }, None) => detail.actions.as_slice(),
-                    _ => return Err("The menu target is unavailable.".to_owned())
+                    _ => return Err(OperationError::new(Code::ActionUnavailable))
                 };
                 let primary = actions.iter().find(|action| {
                     action.style == nanika_protocol::ActionStyle::Primary
@@ -138,7 +147,8 @@ impl SearchSession {
                 (actions, primary.map(|action| action.id.as_str()))
             }
         };
-        nanika_protocol::validate_actions(actions)?;
+        nanika_protocol::validate_actions(actions)
+            .map_err(|detail| OperationError::with_detail(Code::ExtensionProtocol, detail))?;
         // Keyboard and row activation own the primary action; menus expose additional actions.
         Ok(actions
             .iter()
@@ -150,14 +160,14 @@ impl SearchSession {
     pub(crate) fn request_range(
         &mut self,
         request: crate::ReadResultsRequest
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         self.authorize(request.session_id)?;
         if request.count == 0
             || request.range_id == 0
             || request.range_id > 9_007_199_254_740_991
             || request.offset.checked_add(request.count).is_none()
         {
-            return Err("Invalid result range.".to_owned());
+            return Err(OperationError::new(Code::InvalidResultRange));
         }
         // Scroll requests can arrive out of order or after their ranking was replaced.
         if request.request_id != self.request_id
@@ -175,19 +185,22 @@ impl SearchSession {
         &self,
         request_id: u64,
         result_revision: u64
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         if request_id != self.request_id || result_revision != self.result_revision {
-            return Err("Search changed. Select a current result.".to_owned());
+            return Err(OperationError::new(Code::SearchChanged));
         }
         Ok(())
     }
 
-    pub(crate) fn authorize(&self, session_id: u64) -> Result<(), String> {
+    pub(crate) fn authorize(&self, session_id: u64) -> Result<(), OperationError> {
         if self.id != session_id {
-            return Err("The window session has expired. Reload the window.".to_owned());
+            return Err(OperationError::new(Code::SessionUnavailable));
         }
         if let Some(error) = &self.transport_error {
-            return Err(error.clone());
+            return Err(OperationError::with_detail(
+                Code::SessionUnavailable,
+                error.clone()
+            ));
         }
         Ok(())
     }

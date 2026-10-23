@@ -11,11 +11,12 @@ import { uiActivity } from "../../ui/activity";
 
 const motionKey = createAttachmentKey();
 
-const { value, label, options, disabled = false, onChange }: {
+const { value, label, options, disabled = false, pending = false, onChange }: {
     value: string;
     label: string;
     options: { value: string; label: string; disabled?: boolean; }[];
     disabled?: boolean;
+    pending?: boolean;
     onChange: (value: string) => void;
 } = $props();
 const contentId = $props.id();
@@ -33,12 +34,14 @@ onMount(() =>
 </script>
 
 <Select.Root type="single" {value} {disabled} items={options} onValueChange={onChange} bind:open loop>
+    <!-- Pending writes disable choices, preserving the focused trigger during a locale update. -->
     <!-- Focus stays on the trigger while Bits highlights options via aria-activedescendant. -->
     <Select.Trigger
         {...{ [motionKey]: buttonMotion }}
         class="control-button select-trigger"
         role="combobox"
         aria-label={label}
+        aria-busy={pending || undefined}
         aria-controls={open ? contentId : undefined}
     >
         <span>{selected?.label ?? value}</span>
@@ -68,7 +71,7 @@ onMount(() =>
                                     class="popup-item"
                                     value={option.value}
                                     label={option.label}
-                                    disabled={option.disabled}
+                                    disabled={option.disabled || pending}
                                 >
                                     <span>{option.label}</span>
                                     {#if option.value === value}

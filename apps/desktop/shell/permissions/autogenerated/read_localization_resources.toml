@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-localization-resources"
+description = "Enables the read_localization_resources command without any pre-configured scope."
+commands.allow = ["read_localization_resources"]
+
+[[permission]]
+identifier = "deny-read-localization-resources"
+description = "Denies the read_localization_resources command without any pre-configured scope."
+commands.deny = ["read_localization_resources"]

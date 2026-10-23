@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
 import { styleMotion } from "../components/motion/style";
 import { untrack } from "svelte";
 
@@ -7,14 +8,6 @@ import type { ExtensionSettings } from "../generated/ExtensionSettings";
 const dotMotion = styleMotion({ properties: ["background-color"], scope: "[role=status]" });
 
 const { lifecycleState }: { lifecycleState: ExtensionSettings["state"]; } = $props();
-const labels = {
-    disabled: "Disabled",
-    dormant: "Ready on demand",
-    starting: "Starting…",
-    ready: "Running",
-    stopping: "Stopping…",
-    failed: "Unavailable"
-} satisfies Record<ExtensionSettings["state"], string>;
 let settled = $state(untrack(() => lifecycleState));
 let showPending = $state(false);
 const pending = $derived(lifecycleState === "starting" || lifecycleState === "stopping");
@@ -41,7 +34,7 @@ $effect(() =>
 
 <p role="status" aria-atomic="true" data-state={displayed}>
     <span {@attach dotMotion} class="dot" aria-hidden="true"></span>
-    <span>{labels[displayed]}</span>
+    <span>{localization.text({ message: "extension-state", args: { state: displayed } })}</span>
 </p>
 
 <style>

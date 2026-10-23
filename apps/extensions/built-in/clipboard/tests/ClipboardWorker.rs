@@ -1,5 +1,5 @@
 use super::clear_entries;
-use crate::{ClipboardDatabase, ClipboardEntry};
+use crate::{ClipboardDatabase, ClipboardEntry, ClipboardImageDimensions};
 use crate::{ClipboardStore, ClipboardViewState};
 use nanika_protocol::ClipboardContent;
 
@@ -11,7 +11,7 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
     ));
     let payloads = root.join("payloads");
     std::fs::create_dir_all(&payloads).expect("payload root");
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &payloads).expect("database");
     let paths = [
         payloads.join(format!("{}.png", "a".repeat(64))),
         payloads.join(format!("{}.png", "b".repeat(64)))
@@ -21,7 +21,10 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
         database
             .upsert(&ClipboardEntry {
                 entry_id: path.file_stem().unwrap().to_str().unwrap().into(),
-                title: "Image".to_owned(),
+                image_dimensions: Some(ClipboardImageDimensions {
+                    width: 1,
+                    height: 1
+                }),
                 content: ClipboardContent::PngFile {
                     path: path.to_string_lossy().into_owned()
                 },
@@ -31,7 +34,7 @@ fn scoped_clear_preserves_other_payloads_and_publishes_committed_state() {
             .expect("capture");
     }
     drop(database);
-    let mut store = ClipboardStore::open(root.join("clipboard.db")).unwrap();
+    let mut store = ClipboardStore::open(root.join("clipboard.db"), &payloads).unwrap();
     let mut payload_owner = crate::ClipboardPayloads::new(payloads.clone());
     clear_entries(&mut store, &mut payload_owner, &["a".repeat(64)], &|_| {})
         .expect("clear first image");
@@ -95,7 +98,7 @@ fn failed_capture_does_not_block_later_capture_or_poison_shutdown() {
             }
             Ok(Some(ClipboardEntry {
                 entry_id: "next-copy".into(),
-                title: "Next copy".into(),
+                image_dimensions: None,
                 content: ClipboardContent::Text {
                     value: "Next copy".into()
                 },
@@ -116,7 +119,7 @@ fn failed_capture_does_not_block_later_capture_or_poison_shutdown() {
         .expect("shutdown drains captures without promoting a capture error");
     assert_eq!(invalidations.load(Ordering::SeqCst), 1);
     assert_eq!(
-        ClipboardDatabase::open(root.join("clipboard.db"))
+        ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
             .unwrap()
             .load()
             .unwrap()
@@ -169,7 +172,7 @@ fn capture_publishes_committed_state_when_payload_cleanup_fails() {
         |_| {
             Ok(Some(ClipboardEntry {
                 entry_id: "committed".into(),
-                title: "saved".into(),
+                image_dimensions: None,
                 content: ClipboardContent::Text {
                     value: "saved".into()
                 },
@@ -187,7 +190,7 @@ fn capture_publishes_committed_state_when_payload_cleanup_fails() {
     worker.shutdown().unwrap();
     assert_eq!(changes.load(Ordering::SeqCst), 1);
     assert_eq!(
-        ClipboardDatabase::open(root.join("clipboard.db"))
+        ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
             .unwrap()
             .load()
             .unwrap()[0]
@@ -210,12 +213,15 @@ fn retention_and_clear_notify_after_commit_even_when_payload_cleanup_fails() {
     ));
     std::fs::create_dir_all(&root).unwrap();
     let path = root.join("clipboard.db");
-    let database = ClipboardDatabase::open(&path).unwrap();
+    let database = ClipboardDatabase::open(&path, &root.join("payloads")).unwrap();
     for index in 0..3 {
         database
             .upsert(&ClipboardEntry {
                 entry_id: format!("{index:064x}"),
-                title: "Saved".into(),
+                image_dimensions: Some(ClipboardImageDimensions {
+                    width: 1,
+                    height: 1
+                }),
                 content: ClipboardContent::PngFile {
                     path: root
                         .join("payloads")
@@ -242,7 +248,11 @@ fn retention_and_clear_notify_after_commit_even_when_payload_cleanup_fails() {
             max_age_days: None
         },
         Arc::new(move |_| {
-            let observer = ClipboardDatabase::open(&observer_path).unwrap();
+            let observer = ClipboardDatabase::open(
+                &observer_path,
+                &observer_path.parent().unwrap().join("payloads")
+            )
+            .unwrap();
             let count = observer.matching_ids("", "all").unwrap().len();
             assert!(count <= 1, "notification follows the durable commit");
             changed.fetch_add(1, Ordering::SeqCst);
@@ -301,7 +311,7 @@ fn copy_leases_survive_capture_retention_until_the_final_reader_finishes() {
         |_| {
             Ok(Some(ClipboardEntry {
                 entry_id: "new-text".into(),
-                title: "Text".into(),
+                image_dimensions: None,
                 content: ClipboardContent::Text {
                     value: "Text".into()
                 },
@@ -429,10 +439,14 @@ fn stored_image_paths_cannot_expand_payload_deletion_authority() {
     let (root, image, mut entry) = seed_copy_image("external-path");
     let external = root.join(image.file_name().unwrap());
     std::fs::copy(&image, &external).unwrap();
+    entry.image_dimensions = Some(ClipboardImageDimensions {
+        width: 1,
+        height: 1
+    });
     entry.content = ClipboardContent::PngFile {
         path: external.to_string_lossy().into_owned()
     };
-    ClipboardDatabase::open(root.join("clipboard.db"))
+    ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
         .unwrap()
         .upsert(&entry)
         .unwrap();
@@ -477,14 +491,17 @@ fn seed_copy_image(label: &str) -> (std::path::PathBuf, std::path::PathBuf, Clip
     std::fs::write(&image, bytes).unwrap();
     let entry = ClipboardEntry {
         entry_id: id,
-        title: "Image".into(),
+        image_dimensions: Some({
+            let (width, height) = nanika_platform::png_resource_dimensions(bytes).unwrap();
+            ClipboardImageDimensions { width, height }
+        }),
         content: ClipboardContent::PngFile {
             path: image.to_string_lossy().into_owned()
         },
         byte_size: bytes.len() as u64,
         captured_at: 1
     };
-    ClipboardDatabase::open(root.join("clipboard.db"))
+    ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
         .unwrap()
         .upsert(&entry)
         .unwrap();
@@ -515,11 +532,12 @@ fn presentation_configuration_does_not_trigger_retention() {
     )
     .unwrap();
     // Model a row that has aged out while the owner was idle, after startup retention ran.
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    let database =
+        ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads")).unwrap();
     database
         .upsert(&ClipboardEntry {
             entry_id: "text".into(),
-            title: "Text".into(),
+            image_dimensions: None,
             content: ClipboardContent::Text {
                 value: "# Heading".into()
             },
@@ -564,11 +582,12 @@ fn settings_clear_removes_all_history_even_while_the_view_is_filtered() {
     use crate::{ClipboardConfig, ClipboardWorker};
     use std::sync::Arc;
     let (root, image, _) = seed_copy_image("settings-clear");
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).unwrap();
+    let database =
+        ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads")).unwrap();
     database
         .upsert(&ClipboardEntry {
             entry_id: "text".into(),
-            title: "Text".into(),
+            image_dimensions: None,
             content: ClipboardContent::Text {
                 value: "Visible text".into()
             },

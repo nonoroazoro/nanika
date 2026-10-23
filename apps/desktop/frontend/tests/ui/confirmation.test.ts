@@ -16,10 +16,14 @@ afterEach(() =>
 
 test("concurrent requests cannot replace the reviewed operation", async () =>
 {
-    const first = confirmAction({ title: "Clear history?", label: "Clear", message: "Cannot be undone." });
+    const first = confirmAction({
+        content: () => ({ title: "Clear history?", label: "Clear", message: "Cannot be undone." })
+    });
     expect(confirmationPending()).toBe(true);
-    expect(await confirmAction({ title: "Shut down?", label: "Shut down", message: "" })).toBe(false);
-    expect(get(confirmation)?.title).toBe("Clear history?");
+    expect(await confirmAction({ content: () => ({ title: "Shut down?", label: "Shut down", message: "" }) })).toBe(
+        false
+    );
+    expect(get(confirmation)?.content().title).toBe("Clear history?");
     closeConfirmation(true)?.();
     interruptConfirmation();
     expect(await first).toBe(true);
@@ -29,11 +33,11 @@ test("concurrent requests cannot replace the reviewed operation", async () =>
 
 test("cancellation releases the slot and never confirms a later request", async () =>
 {
-    const first = confirmAction({ title: "Clear?", label: "Clear", message: "" });
+    const first = confirmAction({ content: () => ({ title: "Clear?", label: "Clear", message: "" }) });
     closeConfirmation(false)?.();
     expect(await first).toBe(false);
-    const second = confirmAction({ title: "Reset?", label: "Reset", message: "" });
-    expect(get(confirmation)?.title).toBe("Reset?");
+    const second = confirmAction({ content: () => ({ title: "Reset?", label: "Reset", message: "" }) });
+    expect(get(confirmation)?.content().title).toBe("Reset?");
     closeConfirmation(false)?.();
     expect(await second).toBe(false);
 });
@@ -41,7 +45,7 @@ test("cancellation releases the slot and never confirms a later request", async 
 test.each([true, false])("decision %s stays pending and immutable until the exit completes", async decision =>
 {
     let completed = false;
-    const first = confirmAction({ title: "Clear?", label: "Clear", message: "" }).then(value =>
+    const first = confirmAction({ content: () => ({ title: "Clear?", label: "Clear", message: "" }) }).then(value =>
     {
         completed = true;
         return value;
@@ -52,7 +56,7 @@ test.each([true, false])("decision %s stays pending and immutable until the exit
     expect(confirmationPending()).toBe(true);
     expect(closeConfirmation(!decision)).toBeNull();
     expect(closeConfirmation(decision)).toBeNull();
-    expect(await confirmAction({ title: "Reset?", label: "Reset", message: "" })).toBe(false);
+    expect(await confirmAction({ content: () => ({ title: "Reset?", label: "Reset", message: "" }) })).toBe(false);
     expect(completed).toBe(false);
     finishExit?.();
     finishExit?.();
@@ -62,21 +66,21 @@ test.each([true, false])("decision %s stays pending and immutable until the exit
 
 test.each([true, false])("interruption preserves decision %s without affecting a replacement request", async decision =>
 {
-    const first = confirmAction({ title: "Clear?", label: "Clear", message: "" });
+    const first = confirmAction({ content: () => ({ title: "Clear?", label: "Clear", message: "" }) });
     const finishExit = closeConfirmation(decision);
     interruptConfirmation();
     expect(await first).toBe(decision);
-    const second = confirmAction({ title: "Reset?", label: "Reset", message: "" });
+    const second = confirmAction({ content: () => ({ title: "Reset?", label: "Reset", message: "" }) });
     finishExit?.();
     expect(confirmationPending()).toBe(true);
-    expect(get(confirmation)?.title).toBe("Reset?");
+    expect(get(confirmation)?.content().title).toBe("Reset?");
     interruptConfirmation();
     expect(await second).toBe(false);
 });
 
 test("interrupting an unanswered modal cancels it and releases the slot", async () =>
 {
-    const pending = confirmAction({ title: "Clear?", label: "Clear", message: "" });
+    const pending = confirmAction({ content: () => ({ title: "Clear?", label: "Clear", message: "" }) });
     interruptConfirmation();
     expect(await pending).toBe(false);
     expect(confirmationPending()).toBe(false);

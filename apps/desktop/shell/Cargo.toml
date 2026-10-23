@@ -17,6 +17,7 @@ tauri-build = { workspace = true, features = ["codegen", "isolation"] }
 nanika-builtin-inventory = { path = "../../extensions/built-in" }
 ts-rs = { workspace = true, optional = true }
 async-channel.workspace = true
+nanika-localization = { path = "../../../engine/localization" }
 nanika-foundation = { path = "../../../engine/foundation" }
 nanika-config = { path = "../../../engine/configuration" }
 nanika-platform = { path = "../../../engine/platform" }
@@ -39,7 +40,8 @@ png.workspace = true
 windows-sys = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
 
 [features]
-typescript = ["dep:ts-rs", "nanika-host/typescript", "nanika-config/typescript", "nanika-protocol/typescript", "nanika-search/typescript", "nanika-platform/typescript"]
+e2e = []
+typescript = ["nanika-localization/typescript", "dep:ts-rs", "nanika-host/typescript", "nanika-config/typescript", "nanika-protocol/typescript", "nanika-search/typescript", "nanika-platform/typescript"]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 

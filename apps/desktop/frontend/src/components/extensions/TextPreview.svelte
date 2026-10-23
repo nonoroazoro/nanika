@@ -1,4 +1,6 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
+import { operationErrorText, operationFailure } from "../../localization/operation-errors";
 import { onMount, untrack } from "svelte";
 import { MediaQuery } from "svelte/reactivity";
 import LoadMoreBoundary from "../ui/LoadMoreBoundary.svelte";
@@ -18,6 +20,7 @@ import type { TextChunk } from "../../generated/TextChunk";
 import type { SyntaxIdentity } from "../../syntax/SyntaxIdentity";
 import type { SyntaxProgress } from "../../syntax/SyntaxProgress";
 import type { ViewportLayout } from "../../syntax/ViewportLayout";
+import type { OperationError } from "../../generated/OperationError";
 
 const { content, scope, viewport, busy, revision, onRead, onLanguageChange, title = null }: {
     content: Extract<DetailContent, { kind: "text"; }>;
@@ -32,7 +35,10 @@ const { content, scope, viewport, busy, revision, onRead, onLanguageChange, titl
 let element = $state<HTMLDivElement>();
 let model = $state.raw<TextDocumentModel | null>(null);
 let rendered = $state(0);
-let failure = $state(false);
+let failure = $state.raw<OperationError | null>(null);
+const failureText = $derived(
+    failure ? operationErrorText(failure, localization.locale, value => localization.text(value)) : null
+);
 let revoked = $state<{ key: string; revision: number; } | null>(null);
 let surface: TextSurface | null = null;
 let decoration: ViewportTokens | null = null;
@@ -73,7 +79,7 @@ onMount(() =>
             revoked = { key, revision };
             model?.dispose();
             model = null;
-            failure = true;
+            failure = { kind: "host", code: "textSourceChanged" };
             ready = null;
             stream?.dispose();
             decoration?.dispose();
@@ -115,7 +121,7 @@ $effect(() =>
         surface.append(content.value);
         restoredLayout = ready && context ? restoreViewportLayout(surface, ready.result.ranges, context) : null;
         rendered = 1;
-        failure = false;
+        failure = null;
         return () =>
         {
             model?.dispose();
@@ -217,11 +223,15 @@ async function _read(index: number): Promise<number | null>
             rendered++;
             decoration?.paint();
         }
-        failure = false;
+        failure = null;
         return revision;
     }
-    catch
+    catch (error)
     {
+        if (current === model && $uiActivity.visible)
+        {
+            failure = operationFailure(error, "textReadFailed");
+        }
         return null;
     }
 }
@@ -258,7 +268,7 @@ function _copy(event: ClipboardEvent): void
         class="text-document"
         data-syntax-theme={enabled ? identity.theme : undefined}
         role="textbox"
-        aria-label="Detail content"
+        aria-label={localization.text({ message: "view-text-content" })}
         aria-readonly="true"
         aria-multiline="true"
         tabindex="0"
@@ -279,7 +289,7 @@ function _copy(event: ClipboardEvent): void
         cursor={model && rendered < content.document.totalChunks ? String(rendered) : null}
         onLoad={index => _read(Number(index))}
     />
-    {#if failure}<p role="status">Text preview could not be fully loaded.</p>{/if}
+    {#if failureText}<p role="status">{failureText}</p>{/if}
 </div>
 
 <style>
@@ -288,5 +298,5 @@ h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); font-weight: 600; 
 /* Monospace needs a slightly smaller optical size than UI labels. Keep it fixed
    for plain, cold and cached text; decoration changes foreground color only. */
 .text-document { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); font: inherit; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 0.875rem; line-height: 1.45; -webkit-user-select: text; user-select: text; }
-p { color: var(--text-secondary); font-size: var(--font-meta); }
+p { color: var(--text-secondary); font-size: var(--font-meta); white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

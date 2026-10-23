@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { orderedViewEvents } from "../../src/bridge/orderedViewEvents.ts";
+import { operationFailure } from "../../src/localization/operation-errors.ts";
 
 import type { ContextMenuRequest } from "../../src/generated/ContextMenuRequest.ts";
 import type { ViewEventReceipt } from "../../src/generated/ViewEventReceipt.ts";
@@ -133,7 +134,14 @@ test("overflow rejects only the new request and preserves all accepted action ba
         })));
     await assert.rejects(
         queue.event(_request({ kind: "actionInvoked", invocation: "default", item_id: "two", action_id: "copy" })),
-        /pending/
+        error =>
+        {
+            assert.deepEqual(operationFailure(error, "viewOperationUnconfirmed"), {
+                kind: "host",
+                code: "operationPending"
+            });
+            return true;
+        }
     );
     first.resolve(undefined);
     await Promise.all(accepted);

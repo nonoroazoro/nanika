@@ -216,6 +216,34 @@ fn ranking_tie_breaker_is_stable() {
 }
 
 #[test]
+fn matching_endpoint_owners_do_not_hide_a_different_owner_between_them() {
+    let entries = ["extension-z", "extension-a", "extension-z"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, owner)| {
+            Candidate::new(
+                CandidateKind::Action,
+                owner,
+                format!("entry-{index}"),
+                "Shared title",
+                "open",
+                vec![nanika_protocol::Action::primary("open", "Open")],
+                Vec::new()
+            )
+        })
+        .collect::<Vec<_>>();
+    for query in ["", "shared"] {
+        let snapshot = SearchEngine::new().query(query, &entries, &UsageMap::new(), 0);
+        let ids = snapshot
+            .results
+            .iter()
+            .map(|row| row.candidate.entry_id())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["entry-1", "entry-0", "entry-2"]);
+    }
+}
+
+#[test]
 fn complete_catalog_remains_browsable_and_searchable() {
     let entries = (0..2_000)
         .map(|index| {
@@ -232,9 +260,59 @@ fn complete_catalog_remains_browsable_and_searchable() {
         assert_eq!(snapshot.results.len(), entries.len());
         assert_eq!(
             snapshot.results.last().unwrap().candidate.entry_id(),
-            "entry-1999"
+            "entry-999"
         );
     }
     let snapshot = engine.query("Application 1999", &entries, &UsageMap::new(), 0);
     assert_eq!(snapshot.results[0].candidate.entry_id(), "entry-1999");
+}
+
+#[test]
+fn tied_results_use_semantic_identity_across_display_languages_and_publication_orders() {
+    let make = |extension: &str, entry: &str, title: &str, action: &str| {
+        Candidate::new(
+            CandidateKind::Action,
+            extension,
+            entry,
+            title,
+            action,
+            vec![nanika_protocol::Action::primary(action, "Open")],
+            vec!["shared".into()]
+        )
+    };
+    let english = vec![
+        make("extension-b", "entry-a", "Alpha", "open"),
+        make("extension-a", "entry-b", "Beta", "open"),
+        make("extension-a", "entry-a", "Zulu", "reveal"),
+        make("extension-a", "entry-a", "Gamma", "open"),
+    ];
+    let chinese = vec![
+        make("extension-a", "entry-a", "打开", "open"),
+        make("extension-a", "entry-a", "显示", "reveal"),
+        make("extension-a", "entry-b", "测试", "open"),
+        make("extension-b", "entry-a", "应用", "open"),
+    ];
+    let expected = vec![
+        ("extension-a", "entry-a", "open"),
+        ("extension-a", "entry-a", "reveal"),
+        ("extension-a", "entry-b", "open"),
+        ("extension-b", "entry-a", "open"),
+    ];
+    for entries in [&english, &chinese] {
+        for query in ["", "shared"] {
+            let snapshot = SearchEngine::new().query(query, entries, &UsageMap::new(), 0);
+            let actual = snapshot
+                .results
+                .iter()
+                .map(|row| {
+                    (
+                        row.candidate.extension_id(),
+                        row.candidate.entry_id(),
+                        row.candidate.action_id()
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+    }
 }

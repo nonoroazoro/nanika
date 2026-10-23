@@ -12,13 +12,7 @@ pub(crate) type ConfigurationCompletion = Box<dyn FnOnce(Result<(), SupervisorEr
 /// One in-flight configuration reply, dispatched independently of search responses.
 #[derive(Default)]
 pub(crate) struct ConfigurationReply {
-    pending: Mutex<
-        Option<(
-            String,
-            crate::ConfigurationProgressHandler,
-            ConfigurationCompletion
-        )>
-    >,
+    pending: Mutex<Option<crate::PendingConfiguration>>,
     closed: AtomicBool
 }
 
@@ -27,6 +21,7 @@ impl ConfigurationReply {
         &self,
         id: String,
         progress: crate::ConfigurationProgressHandler,
+        resources: Option<std::sync::Arc<nanika_localization::ResourceSet>>,
         completion: ConfigurationCompletion
     ) -> bool {
         let mut pending = self
@@ -45,7 +40,12 @@ impl ConfigurationReply {
             )));
             return false;
         }
-        *pending = Some((id, progress, completion));
+        *pending = Some(crate::PendingConfiguration {
+            id,
+            progress,
+            resources,
+            completion
+        });
         true
     }
 
@@ -56,8 +56,8 @@ impl ConfigurationReply {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
-        if let Some((_, _, completion)) = pending {
-            completion(Err(error));
+        if let Some(pending) = pending {
+            (pending.completion)(Err(error));
         }
     }
 
@@ -69,7 +69,7 @@ impl ConfigurationReply {
             .pending
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let Some((id, progress_handler, _)) = pending.as_ref() else {
+        let Some(current) = pending.as_ref() else {
             return matches!(frame, Ok(Some(Message::ConfigurationProgress { .. })));
         };
         if let Ok(Some(Message::ConfigurationProgress {
@@ -77,31 +77,34 @@ impl ConfigurationReply {
             progress
         })) = frame
         {
-            if request_id != id {
+            if request_id != &current.id {
                 return true;
             }
-            // Reject invalid progress but retain the lock until terminal acknowledgement.
-            if let Err(error) = progress.validate() {
-                tracing::warn!(%error, "invalid configuration progress");
+            // Reject invalid progress but retain the accepted task until terminal acknowledgement.
+            if let Err(error) = nanika_localization::validate_progress_presentation(
+                progress,
+                current.resources.as_deref()
+            ) {
+                tracing::warn!(request_id, %error, "invalid configuration progress");
                 return true;
             }
-            let handler = std::sync::Arc::clone(progress_handler);
+            let handler = std::sync::Arc::clone(&current.progress);
             drop(pending);
             handler(progress.clone());
             return true;
         }
         let (result, consumed) = match frame {
-            Ok(Some(Message::ConfigurationApplied { request_id })) if request_id == id => {
+            Ok(Some(Message::ConfigurationApplied { request_id })) if request_id == &current.id => {
                 (Ok(()), true)
             }
             Ok(Some(Message::Error {
                 request_id: Some(request_id),
-                code,
-                message
-            })) if request_id == id => (
-                Err(SupervisorError::UnexpectedMessage(format!(
-                    "configuration failed: {code}: {message}"
-                ))),
+                error
+            })) if request_id == &current.id => (
+                Err(crate::prepare_extension_error(
+                    error.clone(),
+                    current.resources.as_deref()
+                )),
                 true
             ),
             Ok(None) => (Err(SupervisorError::ChannelClosed), false),
@@ -113,9 +116,16 @@ impl ConfigurationReply {
             ),
             _ => return false
         };
-        let (_, _, completion) = pending.take().expect("pending configuration reply");
+        let completion = pending
+            .take()
+            .expect("pending configuration reply")
+            .completion;
         drop(pending);
         completion(result);
         consumed
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/ConfigurationReply.rs"]
+mod tests;

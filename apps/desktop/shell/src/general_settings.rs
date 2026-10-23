@@ -6,17 +6,17 @@ pub(crate) fn sections() -> Vec<GeneralSettingsSection> {
     vec![
         GeneralSettingsSection {
             key: "launcher",
-            title: "Launcher",
+            title: nanika_protocol::message("settings-launcher", []),
             fields: vec![
                 GeneralSettingsField {
                     key: GeneralSettingsFieldKey::LauncherShortcut,
-                    title: "Open launcher",
+                    title: nanika_protocol::message("settings-open-launcher", []),
                     description: None,
                     keywords: "shortcut hotkey keyboard"
                 },
                 GeneralSettingsField {
                     key: GeneralSettingsFieldKey::HideOnBlur,
-                    title: "Hide when focus is lost",
+                    title: nanika_protocol::message("settings-hide-on-blur", []),
                     description: None,
                     keywords: "dismiss blur"
                 },
@@ -24,21 +24,32 @@ pub(crate) fn sections() -> Vec<GeneralSettingsSection> {
         },
         GeneralSettingsSection {
             key: "appearance",
-            title: "Appearance",
-            fields: vec![GeneralSettingsField {
-                key: GeneralSettingsFieldKey::Theme,
-                title: "Theme",
-                description: None,
-                keywords: "system light dark mode"
-            }]
+            title: nanika_protocol::message("settings-appearance", []),
+            fields: vec![
+                GeneralSettingsField {
+                    key: GeneralSettingsFieldKey::Theme,
+                    title: nanika_protocol::message("settings-theme", []),
+                    description: None,
+                    keywords: "system light dark mode"
+                },
+                GeneralSettingsField {
+                    key: GeneralSettingsFieldKey::Language,
+                    title: nanika_protocol::message("settings-language", []),
+                    description: None,
+                    keywords: "language locale English Chinese 简体中文 语言"
+                },
+            ]
         },
         GeneralSettingsSection {
             key: "startup",
-            title: "Startup",
+            title: nanika_protocol::message("settings-startup", []),
             fields: vec![GeneralSettingsField {
                 key: GeneralSettingsFieldKey::LaunchAtLogin,
-                title: "Launch at login",
-                description: Some("Launch Nanika automatically when you sign in."),
+                title: nanika_protocol::message("settings-launch-at-login", []),
+                description: Some(nanika_protocol::message(
+                    "settings-launch-at-login-description",
+                    []
+                )),
                 keywords: "startup boot automatic"
             }]
         },

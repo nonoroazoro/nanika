@@ -16,6 +16,10 @@ pub(super) fn write(output: &Path, config: &Config) {
     navigation.current = Some(None);
     _sample(&navigation, config, &mut samples);
     navigation.current = Some(Some(crate::ExtensionViewSnapshot {
+        resource_scope: Some(nanika_host::ExtensionResourceScope {
+            extension_id: "test.extension".into(),
+            identity: "a".repeat(64)
+        }),
         extension_name: "Test extension".into(),
         extension_icon_url: "icon.png".into(),
         route_id: 1,
@@ -45,6 +49,7 @@ pub(super) fn write(output: &Path, config: &Config) {
     }));
     _sample(&navigation, config, &mut samples);
     let mut search = crate::RootSearchSnapshot {
+        localization: Some(Default::default()),
         text_invalidations: Vec::new(),
         navigation,
         session_id: 9_007_199_254_740_991,
@@ -63,6 +68,39 @@ pub(super) fn write(output: &Path, config: &Config) {
     _sample(&search, config, &mut samples);
     search.results = Some(Vec::new());
     _sample(&search, config, &mut samples);
+    for error in [
+        nanika_host::ConfigurationSaveError::rejected(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::OperationPending
+        )),
+        nanika_host::ConfigurationSaveError::unconfirmed(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::ConfigurationUnconfirmed
+        )),
+        nanika_host::ConfigurationSaveError::SaveFailed {
+            detail: "disk full".into()
+        },
+        nanika_host::ConfigurationSaveError::AppliedButNotSaved {
+            detail: "disk full".into()
+        },
+        nanika_host::ConfigurationSaveError::Unavailable,
+        nanika_host::ConfigurationSaveError::UnconfirmedNotSaved {
+            cause: Box::new(nanika_host::OperationError::new(
+                nanika_host::OperationErrorCode::ConfigurationUnconfirmed
+            ))
+        },
+        nanika_host::ConfigurationSaveError::SavedButNotApplied {
+            cause: Box::new(nanika_host::OperationError::with_detail(
+                nanika_host::OperationErrorCode::ExtensionIo,
+                "permission denied"
+            ))
+        }
+    ] {
+        _sample(&error, config, &mut samples);
+        let command = crate::SettingsOperationError::Configuration(error.clone());
+        assert_eq!(
+            serde_json::to_value(command).unwrap(),
+            serde_json::to_value(error).unwrap()
+        );
+    }
     for delivery_id in [None, Some(1)] {
         _sample(
             &crate::SettingsEvent::Application {
@@ -70,6 +108,7 @@ pub(super) fn write(output: &Path, config: &Config) {
                 update: crate::SettingsApplicationUpdate {
                     request_id: 1,
                     extension_id: "test.extension".into(),
+                    resource_scope: None,
                     key: "enabled".into(),
                     result: crate::SettingsSaveResult::Completed {
                         outcome: nanika_host::ConfigurationSaveOutcome {
@@ -111,6 +150,26 @@ pub(super) fn write(output: &Path, config: &Config) {
     }
     // These negative cases ensure the checker is actually using precise wire types.
     samples.push_str(concat!(
+        "type HostMessage = import('./generated/LocalizedMessage').LocalizedMessage;\n",
+        "({message: 'settings-title'}) satisfies HostMessage;\n",
+        "({message: 'settings-search-count', args: {count: 2}}) satisfies HostMessage;\n",
+        "({message: 'settings-shortcut-modifiers'}) satisfies HostMessage;\n",
+        "// @ts-expect-error IDs come from admitted FTL, not a handwritten registry.\n",
+        "({message: 'unknown-message'}) satisfies HostMessage;\n",
+        "// @ts-expect-error A required argument object cannot be omitted.\n",
+        "({message: 'settings-search-count'}) satisfies HostMessage;\n",
+        "// @ts-expect-error Required arguments cannot be omitted.\n",
+        "({message: 'settings-search-count', args: {}}) satisfies HostMessage;\n",
+        "// @ts-expect-error Arguments are strings or numbers, never arbitrary objects.\n",
+        "({message: 'settings-search-count', args: {count: {value: 2}}}) satisfies HostMessage;\n",
+        "// @ts-expect-error A parameterless message does not accept arguments.\n",
+        "({message: 'settings-title', args: {count: 2}}) satisfies HostMessage;\n",
+        "// @ts-expect-error Argument names come from this message's complete contract.\n",
+        "({message: 'settings-search-count', args: {count: 2, extra: 1}}) satisfies HostMessage;\n",
+        "// @ts-expect-error The caller cannot supply platform.\n",
+        "({message: 'settings-shortcut-modifiers', args: {platform: 'windows'}}) satisfies HostMessage;\n",
+        "declare const hostMessage: HostMessage;\n",
+        "hostMessage satisfies import('./generated/LocalizedText').LocalizedText;\n",
         "// @ts-expect-error An omitted result list is not a nullable list.\n",
         "(null) satisfies import('./generated/RootSearchSnapshot').RootSearchSnapshot['results'];\n",
         "// @ts-expect-error Required nullable fields cannot be omitted.\n",

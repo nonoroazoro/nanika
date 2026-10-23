@@ -74,7 +74,7 @@ fn large_snapshot_round_trips_without_losing_the_following_frame() {
             .map(|index| nanika_protocol::Candidate {
                 kind: nanika_protocol::CandidateKind::Action,
                 entry_id: format!("entry-{index}"),
-                title: "x".repeat(1500),
+                title: "x".repeat(1500).into(),
                 subtitle: None,
                 action_id: "open".into(),
                 actions: vec![nanika_protocol::Action::primary("open", "Open")],
@@ -114,8 +114,7 @@ fn unfulfilled_lengths_are_rejected_without_reserving_the_declared_payload() {
 fn fragmented_messages_preserve_frame_boundaries() {
     let message = Message::Error {
         request_id: None,
-        code: "fixture".into(),
-        message: "caf\u{e9}".into()
+        error: nanika_protocol::ProtocolError::new("fixture", "caf\u{e9}")
     };
     let mut bytes = Vec::new();
     write_frame(&mut bytes, &message).unwrap();
@@ -169,8 +168,10 @@ fn oversized_headers_are_rejected_before_reading_payload() {
 fn oversized_writes_leave_the_transport_unchanged() {
     let message = Message::Error {
         request_id: None,
-        code: "oversized".into(),
-        message: "x".repeat(nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES)
+        error: nanika_protocol::ProtocolError::new(
+            "oversized",
+            "x".repeat(nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES)
+        )
     };
     let mut output = Vec::new();
     assert!(write_frame(&mut output, &message).is_err());

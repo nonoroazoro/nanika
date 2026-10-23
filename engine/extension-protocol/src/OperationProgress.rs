@@ -5,15 +5,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationProgress {
-    pub label: String,
+    pub label: crate::LocalizedText,
     pub completed: u32,
     pub total: Option<u32>
 }
 
 impl OperationProgress {
     pub fn validate(&self) -> Result<(), String> {
-        if self.label.trim().is_empty() || self.label.len() > 128 {
-            return Err("progress label must contain 1 to 128 bytes".to_owned());
+        match &self.label {
+            crate::LocalizedText::Literal(label) => {
+                if label.trim().is_empty()
+                    || label.len() > 128
+                    || label.chars().any(|character| {
+                        character.is_control() && !matches!(character, '\n' | '\r' | '\t')
+                    })
+                {
+                    return Err("progress label must contain 1 to 128 bytes".to_owned());
+                }
+            }
+            crate::LocalizedText::Message(reference) => reference.validate()?
         }
         match self.total {
             Some(total) if total == 0 || self.completed > total => {

@@ -66,26 +66,26 @@ fn visible_entry_preparation_is_a_requestless_bounded_hint() {
 fn pushed_views_are_bounded_host_rendered_documents() {
     let view = View::List {
         list: Box::new(ListView {
-            title: "Clipboard History".to_owned(),
-            search_placeholder: "Filter entries".to_owned(),
-            empty_title: "No items".to_owned(),
-            empty_description: "Items will appear here when available.".to_owned(),
+            title: "Clipboard History".into(),
+            search_placeholder: "Filter entries".into(),
+            empty_title: "No items".into(),
+            empty_description: "Items will appear here when available.".into(),
             search_text: String::new(),
             layout: ListLayout::Split,
             sections: vec![ListSection {
                 id: "recent".to_owned(),
-                title: Some("Recent".to_owned()),
+                title: Some("Recent".into()),
                 offset: 0,
                 total: 1,
                 items: vec![ListItem {
                     id: "entry-1".to_owned(),
-                    title: "Example".to_owned(),
-                    subtitle: Some("Text".to_owned()),
+                    title: "Example".into(),
+                    subtitle: Some("Text".into()),
                     icon: Some(ViewItemIcon::Text),
                     actions: vec![Action {
                         icon: None,
                         id: "paste".to_owned(),
-                        title: "Paste".to_owned(),
+                        title: "Paste".into(),
                         confirmation_description: None,
                         confirmation_title: None,
                         allow_default_execution: true,
@@ -98,7 +98,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
             collection_id: "test.collection".into(),
             selection: None,
             detail: Some(DetailView {
-                title: Some("Example".to_owned()),
+                title: Some("Example".into()),
                 content: DetailContent::Text {
                     document: nanika_protocol::TextDocumentIndex::new(
                         "test.text".into(),
@@ -173,9 +173,9 @@ fn view_action_confirmation_titles_are_validated() {
             actions: vec![Action {
                 icon: None,
                 id: "example.clear".to_owned(),
-                title: "Clear".to_owned(),
+                title: "Clear".into(),
                 confirmation_description: None,
-                confirmation_title: Some(" ".to_owned()),
+                confirmation_title: Some(" ".into()),
                 allow_default_execution: false,
                 style: ActionStyle::Destructive,
                 enabled: true,
@@ -187,7 +187,7 @@ fn view_action_confirmation_titles_are_validated() {
     assert_eq!(
         view.validate()
             .expect_err("blank confirmation title must fail"),
-        "view action confirmation title is invalid"
+        "action confirmation title is invalid"
     );
 }
 
@@ -211,9 +211,9 @@ fn view_action_confirmation_is_independent_of_visual_style() {
             actions: vec![Action {
                 icon: None,
                 id: "example.open".to_owned(),
-                title: "Open".to_owned(),
+                title: "Open".into(),
                 confirmation_description: None,
-                confirmation_title: Some("Open now".to_owned()),
+                confirmation_title: Some("Open now".into()),
                 allow_default_execution: false,
                 style: ActionStyle::Primary,
                 enabled: true,
@@ -236,7 +236,7 @@ fn detail_resource_images_use_relative_png_paths() {
                 source: ImageSource {
                     path: resource_path
                 },
-                alternative_text: "Image".to_owned()
+                alternative_text: "Image".into()
             },
             metadata: Vec::new(),
             actions: Vec::new()
@@ -252,7 +252,7 @@ fn detail_resource_images_use_relative_png_paths() {
                 source: ImageSource {
                     path: "../outside.png".to_owned()
                 },
-                alternative_text: "Image".to_owned()
+                alternative_text: "Image".into()
             },
             metadata: Vec::new(),
             actions: Vec::new()
@@ -267,7 +267,7 @@ fn detail_resource_images_use_relative_png_paths() {
                 source: ImageSource {
                     path: "preview.png".to_owned()
                 },
-                alternative_text: "Image".to_owned()
+                alternative_text: "Image".into()
             },
             metadata: Vec::new(),
             actions: Vec::new()
@@ -281,7 +281,7 @@ fn delivered_windows_are_bounded_independently_of_collection_size() {
     let items = (0..501)
         .map(|index| ListItem {
             id: format!("entry-{index}"),
-            title: "Entry".to_owned(),
+            title: "Entry".into(),
             subtitle: None,
             icon: None,
             actions: Vec::new()
@@ -289,10 +289,10 @@ fn delivered_windows_are_bounded_independently_of_collection_size() {
         .collect();
     let mut view = View::List {
         list: Box::new(ListView {
-            title: "Large".to_owned(),
-            search_placeholder: String::new(),
-            empty_title: "No items".to_owned(),
-            empty_description: "Items will appear here when available.".to_owned(),
+            title: "Large".into(),
+            search_placeholder: String::new().into(),
+            empty_title: "No items".into(),
+            empty_description: "Items will appear here when available.".into(),
             search_text: String::new(),
             layout: ListLayout::Plain,
             sections: vec![ListSection {
@@ -325,10 +325,10 @@ fn delivered_windows_are_bounded_independently_of_collection_size() {
 fn list_detail_actions_must_belong_to_the_selected_item() {
     let view = View::List {
         list: Box::new(ListView {
-            title: "Examples".to_owned(),
-            search_placeholder: String::new(),
-            empty_title: "No items".to_owned(),
-            empty_description: "Items will appear here when available.".to_owned(),
+            title: "Examples".into(),
+            search_placeholder: String::new().into(),
+            empty_title: "No items".into(),
+            empty_description: "Items will appear here when available.".into(),
             search_text: String::new(),
             layout: ListLayout::Split,
             sections: vec![ListSection {
@@ -338,7 +338,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 total: 1,
                 items: vec![ListItem {
                     id: "entry-1".to_owned(),
-                    title: "Example".to_owned(),
+                    title: "Example".into(),
                     subtitle: None,
                     icon: None,
                     actions: Vec::new()
@@ -363,7 +363,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 actions: vec![Action {
                     icon: None,
                     id: "example.open".to_owned(),
-                    title: "Open".to_owned(),
+                    title: "Open".into(),
                     confirmation_description: None,
                     confirmation_title: None,
                     allow_default_execution: true,
@@ -475,10 +475,10 @@ fn native_view_icons_are_opaque_and_validated() {
     assert!(view.validate().is_err());
     let view = View::List {
         list: Box::new(ListView {
-            title: "Files".to_owned(),
-            search_placeholder: String::new(),
-            empty_title: "No items".to_owned(),
-            empty_description: "Items will appear here when available.".to_owned(),
+            title: "Files".into(),
+            search_placeholder: String::new().into(),
+            empty_title: "No items".into(),
+            empty_description: "Items will appear here when available.".into(),
             search_text: String::new(),
             layout: ListLayout::Plain,
             sections: vec![ListSection {
@@ -488,7 +488,7 @@ fn native_view_icons_are_opaque_and_validated() {
                 total: 1,
                 items: vec![ListItem {
                     id: "one".to_owned(),
-                    title: "example.pkg".to_owned(),
+                    title: "example.pkg".into(),
                     subtitle: None,
                     icon: Some(ViewItemIcon::Native(invalid)),
                     actions: Vec::new()
@@ -527,7 +527,7 @@ fn configuration_progress_requires_real_bounded_work_units() {
             total: None
         },
         OperationProgress {
-            label: "x".repeat(129),
+            label: "x".repeat(129).into(),
             completed: 0,
             total: None
         },
@@ -590,9 +590,9 @@ fn repeated_section_identities_are_rejected_before_rendering() {
     let view = View::List {
         list: Box::new(ListView {
             title: "Sections".into(),
-            search_placeholder: String::new(),
-            empty_title: "No items".to_owned(),
-            empty_description: "Items will appear here when available.".to_owned(),
+            search_placeholder: String::new().into(),
+            empty_title: "No items".into(),
+            empty_description: "Items will appear here when available.".into(),
             search_text: String::new(),
             layout: ListLayout::Plain,
             sections: vec![
@@ -741,10 +741,10 @@ fn list_empty_copy_is_bounded_before_rendering() {
     let mut view = View::List {
         list: Box::new(ListView {
             title: "History".into(),
-            search_placeholder: String::new(),
+            search_placeholder: String::new().into(),
             search_text: String::new(),
             empty_title: "No entries".into(),
-            empty_description: String::new(),
+            empty_description: String::new().into(),
             layout: ListLayout::Plain,
             sections: Vec::new(),
             collection_id: "test.collection".into(),
@@ -767,8 +767,8 @@ fn list_empty_copy_is_bounded_before_rendering() {
         let View::List { list } = &mut view else {
             unreachable!()
         };
-        list.empty_title = title;
-        list.empty_description = description;
+        list.empty_title = title.into();
+        list.empty_description = description.into();
         assert_eq!(view.validate().is_ok(), valid);
     }
 }
@@ -781,7 +781,7 @@ fn content_reads_require_matching_identity_and_complete_requested_window() {
             search_placeholder: "Search".into(),
             search_text: String::new(),
             empty_title: "Empty".into(),
-            empty_description: String::new(),
+            empty_description: String::new().into(),
             layout: ListLayout::Plain,
             collection_id: "collection".into(),
             selection: None,
@@ -795,7 +795,7 @@ fn content_reads_require_matching_identity_and_complete_requested_window() {
                 items: (10..20)
                     .map(|i| ListItem {
                         id: i.to_string(),
-                        title: i.to_string(),
+                        title: i.to_string().into(),
                         subtitle: None,
                         icon: None,
                         actions: vec![]
@@ -839,4 +839,75 @@ fn content_reads_require_matching_identity_and_complete_requested_window() {
     chunk.index = 1;
     chunk.revision = "old".into();
     assert!(chunk.validate_for(&read).is_err());
+}
+
+#[test]
+fn action_groups_are_consistent_across_delivered_rows_and_offscreen_selection() {
+    let mut action = Action::primary("run", nanika_protocol::message("run", []));
+    action.group = Some(nanika_protocol::PresentationGroup {
+        id: "operations".into(),
+        title: nanika_protocol::message("operations", [])
+    });
+    let first = ListItem {
+        id: "first".into(),
+        title: "First".into(),
+        subtitle: None,
+        icon: None,
+        actions: vec![action]
+    };
+    let mut second = first.clone();
+    second.id = "second".into();
+    let mut list = ListView {
+        title: "Collection".into(),
+        search_placeholder: "Search".into(),
+        search_text: String::new(),
+        empty_title: "Empty".into(),
+        empty_description: String::new().into(),
+        layout: ListLayout::Plain,
+        collection_id: "collection".into(),
+        selection: None,
+        detail: None,
+        filter: None,
+        sections: vec![ListSection {
+            id: "all".into(),
+            title: None,
+            offset: 0,
+            total: 2,
+            items: vec![first]
+        }]
+    };
+    for offscreen in [false, true] {
+        for conflicting in [false, true] {
+            second.actions[0].group.as_mut().unwrap().title = if conflicting {
+                "Different title".into()
+            } else {
+                nanika_protocol::message("operations", [])
+            };
+            list.sections[0].items.truncate(1);
+            list.selection = None;
+            if offscreen {
+                list.selection = Some(nanika_protocol::ListSelection {
+                    index: 1,
+                    item: second.clone()
+                });
+            } else {
+                list.sections[0].items.push(second.clone());
+            }
+            let view = View::List {
+                list: Box::new(list.clone())
+            };
+            if conflicting {
+                assert!(view.validate().unwrap_err().contains("conflicting"));
+            } else {
+                view.validate().unwrap();
+                let mut count = 0;
+                view.visit_actions(&mut |actions| {
+                    count += actions.len();
+                    Ok(())
+                })
+                .unwrap();
+                assert_eq!(count, 2);
+            }
+        }
+    }
 }

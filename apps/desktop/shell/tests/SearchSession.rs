@@ -83,8 +83,8 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
                     list: Box::new(ListView {
                         title: "Test".into(),
                         search_placeholder: "Search".into(),
-                        empty_title: "No items".to_owned(),
-                        empty_description: "Items will appear here when available.".to_owned(),
+                        empty_title: "No items".into(),
+                        empty_description: "Items will appear here when available.".into(),
                         search_text: String::new(),
                         layout: ListLayout::Split,
                         sections: vec![ListSection {
@@ -112,6 +112,7 @@ fn list_and_detail_menus_exclude_the_same_action_as_enter_and_row_activation() {
         for (view, item_id) in views {
             let mut session = _session();
             session.navigation.stack.push(ExtensionViewSnapshot {
+                resource_scope: None,
                 route_id: 1,
                 extension_id: "test.extension".into(),
                 extension_name: "Test extension".into(),
@@ -182,13 +183,28 @@ fn menus_reject_stale_sessions_rankings_and_busy_navigation() {
         _extra("inspect", "Inspect"),
     ]);
     request.session_id = 2;
-    assert!(session.menu_actions(&request).is_err());
+    assert_eq!(
+        session.menu_actions(&request).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::SessionUnavailable
+        ))
+    );
     request.session_id = 1;
     session.result_revision += 1;
-    assert!(session.menu_actions(&request).is_err());
+    assert_eq!(
+        session.menu_actions(&request).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::SearchChanged
+        ))
+    );
     session.result_revision -= 1;
     session.navigation.busy = true;
-    assert!(session.menu_actions(&request).is_err());
+    assert_eq!(
+        session.menu_actions(&request).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::OperationPending
+        ))
+    );
 }
 
 fn _extra(id: &str, title: &str) -> Action {

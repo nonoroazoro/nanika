@@ -1,4 +1,6 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
+import { validationErrorText } from "./validation-presentation";
 import Input from "../components/ui/Input.svelte";
 import { integerError } from "./integerValue";
 import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
@@ -13,7 +15,7 @@ const { schema, value, label, id, onChange }: {
 } = $props();
 let input = $state<HTMLInputElement>();
 const error = $derived(integerError(schema, value));
-$effect(() => input?.setCustomValidity(error ?? ""));
+$effect(() => input?.setCustomValidity(validationErrorText(error, message => localization.text(message))));
 </script>
 
 <Input
@@ -31,7 +33,9 @@ $effect(() => input?.setCustomValidity(error ?? ""));
     oninput={event =>
     {
         const raw = event.currentTarget.value;
-        event.currentTarget.setCustomValidity(integerError(schema, raw) ?? "");
+        event.currentTarget.setCustomValidity(
+            validationErrorText(integerError(schema, raw), message => localization.text(message))
+        );
         onChange(raw);
     }}
 />

@@ -67,11 +67,15 @@ fn update_visibility(app: &tauri::AppHandle, toggle: bool) -> Result<(), String>
         .map_err(|error| error.to_string())?;
     show_window(&window)?;
     focus_window(&window)?;
+    app.state::<crate::DesktopState>().refresh_language();
     app.state::<crate::DesktopState>().launcher_opened();
     Ok(())
 }
 
 pub(crate) fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
+    if matches!(event, WindowEvent::Focused(true)) {
+        window.state::<crate::DesktopState>().refresh_language();
+    }
     if window.label() == "settings" && matches!(event, WindowEvent::Focused(false)) {
         window
             .state::<crate::host_settings::HostSettings>()

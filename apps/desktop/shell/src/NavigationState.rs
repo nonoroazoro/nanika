@@ -1,3 +1,4 @@
+use nanika_host::{OperationError, OperationErrorCode as Code};
 use nanika_protocol::{NavigationEffect, View, ViewEvent};
 
 use crate::{ExtensionViewSnapshot, NavigationSnapshot};
@@ -9,9 +10,10 @@ pub(crate) struct NavigationState {
     pub(crate) stack: Vec<ExtensionViewSnapshot>,
     pub(crate) revision: u64,
     pub(crate) busy: bool,
-    error: Option<String>,
+    error: Option<nanika_host::OperationError>,
     dismiss_count: u64,
     next_route_id: u64,
+    _refresh_error: Option<(u64, OperationError)>,
     _revoked_text: std::collections::HashMap<u64, u64>
 }
 
@@ -21,13 +23,24 @@ impl NavigationState {
             revision: self.revision,
             current: Some(self.stack.last().cloned()),
             busy: self.busy,
-            error: self.error.clone(),
+            error: self.error.clone().or_else(|| {
+                self._refresh_error
+                    .as_ref()
+                    .filter(|(route_id, _)| {
+                        self.stack
+                            .last()
+                            .is_some_and(|route| route.route_id == *route_id)
+                    })
+                    .map(|(_, error)| error.clone())
+            }),
             dismiss_count: self.dismiss_count
         }
     }
 
     pub(crate) fn clear_error(&mut self) {
-        if self.error.take().is_some() {
+        let operation = self.error.take();
+        let refresh = self._refresh_error.take();
+        if operation.is_some() || refresh.is_some() {
             self.revision += 1;
         }
     }
@@ -38,6 +51,7 @@ impl NavigationState {
         }
         self.busy = true;
         self.error = None;
+        self._refresh_error = None;
         self.revision += 1;
         Ok(())
     }
@@ -122,13 +136,15 @@ impl NavigationState {
         &self,
         request: &crate::ViewEventRequest,
         menu_revision: Option<u64>
-    ) -> Result<&ExtensionViewSnapshot, String> {
-        let route = self.authorize_route(request.route_id)?;
+    ) -> Result<&ExtensionViewSnapshot, OperationError> {
+        let route = self
+            .authorize_route(request.route_id)
+            .map_err(|detail| OperationError::with_detail(Code::ViewChanged, detail))?;
         if menu_revision.is_some_and(|revision| revision != route.revision) {
-            return Err("The view changed. Reopen the menu.".to_owned());
+            return Err(OperationError::new(Code::ViewChanged));
         }
         if request.revision > route.revision {
-            return Err("The extension view revision is ahead of the current state.".to_owned());
+            return Err(OperationError::new(Code::ViewChanged));
         }
         if let crate::ViewOperation::Event { event } = &request.operation {
             // Confirmation applies to what the user reviewed, never a newer snapshot.
@@ -140,17 +156,54 @@ impl NavigationState {
                 }
             ) && request.revision != route.revision
             {
-                return Err("The view changed. Confirm the action again.".to_owned());
+                return Err(OperationError::new(Code::ConfirmationChanged));
             }
             authorize_view_event(&route.view, event)?;
         }
         Ok(route)
     }
 
-    pub(crate) fn finish(&mut self, result: Result<(), String>) {
+    pub(crate) fn finish(&mut self, result: Result<(), nanika_host::OperationError>) {
         self.busy = false;
         self.error = result.err();
         self.revision += 1;
+    }
+
+    /// Background refresh failures belong to the current route. A later refresh
+    /// may clear its own failure, but must preserve a separate action failure.
+    pub(crate) fn finish_refresh(
+        &mut self,
+        route_id: u64,
+        result: Result<Option<(u64, View)>, OperationError>
+    ) {
+        let Some(current) = self
+            .stack
+            .last_mut()
+            .filter(|route| route.route_id == route_id)
+        else {
+            return;
+        };
+        let changed = match result {
+            Ok(view) => {
+                let recovered = self._refresh_error.take().is_some();
+                if let Some((revision, view)) = view {
+                    current.view = std::sync::Arc::new(view);
+                    current.revision = revision;
+                    true
+                } else {
+                    recovered
+                }
+            }
+            Err(error) => {
+                let next = Some((route_id, error));
+                let changed = self._refresh_error != next;
+                self._refresh_error = next;
+                changed
+            }
+        };
+        if changed {
+            self.revision = self.revision.saturating_add(1);
+        }
     }
 
     pub(crate) fn apply(
@@ -159,9 +212,11 @@ impl NavigationState {
         instance_id: u64,
         generation: u64,
         effect: NavigationEffect
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         let extension_id = extension.id.as_str();
-        effect.validate()?;
+        effect
+            .validate()
+            .map_err(|detail| OperationError::with_detail(Code::ExtensionProtocol, detail))?;
         match effect {
             NavigationEffect::None => {}
             NavigationEffect::Dismiss => {
@@ -176,22 +231,24 @@ impl NavigationState {
                 view
             } => {
                 if self.stack.len() >= MAX_NAVIGATION_DEPTH {
-                    return Err(format!(
-                        "Navigation is limited to {MAX_NAVIGATION_DEPTH} views. Go back before opening another view."
-                    ));
+                    return Err(OperationError::new(Code::NavigationDepthReached));
                 }
                 if self
                     .stack
                     .iter()
                     .any(|route| route.extension_id == extension_id && route.view_id == view_id)
                 {
-                    return Err("The extension tried to reopen an active view id.".to_owned());
+                    return Err(OperationError::with_detail(
+                        Code::ExtensionProtocol,
+                        "The extension tried to reopen an active view id."
+                    ));
                 }
                 self.next_route_id += 1;
                 self.stack.push(ExtensionViewSnapshot {
                     route_id: self.next_route_id,
                     extension_id: extension_id.to_owned(),
                     extension_name: extension.name.clone(),
+                    resource_scope: extension.resource_scope.clone(),
                     extension_icon_url: crate::resource_protocol::url(&format!(
                         "{}/package/{}{}",
                         extension.id,
@@ -214,7 +271,7 @@ impl NavigationState {
     }
 }
 
-pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(), String> {
+pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(), OperationError> {
     let valid = match (view, event) {
         (_, ViewEvent::Resumed) => true,
         (
@@ -288,7 +345,7 @@ pub(crate) fn authorize_view_event(view: &View, event: &ViewEvent) -> Result<(),
     if valid {
         Ok(())
     } else {
-        Err("The requested interaction is not available in this view.".to_owned())
+        Err(OperationError::new(Code::ViewInteractionUnavailable))
     }
 }
 

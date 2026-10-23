@@ -1,6 +1,23 @@
 use crate::{
     RomanizedMatch, RomanizedReading, find_romanized_match, romanized_query, romanized_readings
 };
+use pinyin::ToPinyin;
+
+#[test]
+fn phrase_dictionary_cannot_match_across_non_romanizable_characters() {
+    assert!(crate::han_readings::READINGS.iter().all(|(word, _)| {
+        word.chars()
+            .all(|character| character.to_pinyin().is_some())
+    }));
+    assert_eq!(
+        romanized_readings("音乐📁Sync 42"),
+        [form("yinyuesync42", "yys4")]
+    );
+    assert_eq!(
+        romanized_readings("重A庆 42"),
+        [form("zhongaqing42", "zaq4")]
+    );
+}
 
 fn form(full: &str, initials: &str) -> RomanizedReading {
     RomanizedReading {
@@ -46,6 +63,10 @@ fn ordinary_names_and_mixed_scripts_keep_useful_spellings() {
     assert_eq!(romanized_query("音yue"), [form("yinyue", "yy")]);
     assert_eq!(romanized_query("t步"), [form("tbu", "tb")]);
     assert!(romanized_query("tongbu").is_empty());
+    assert_eq!(
+        romanized_readings("音\u{2068}乐\u{2069}"),
+        [form("yinyue", "yy")]
+    );
 }
 
 #[test]

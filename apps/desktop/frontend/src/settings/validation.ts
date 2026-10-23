@@ -2,6 +2,7 @@ import { integerError, integerLimitDraft, normalizeSetting } from "./integerValu
 import { stringError } from "./stringValue";
 
 import type { SettingsEditResult } from "./SettingsEditResult";
+import type { SettingsValidationError } from "./SettingsValidationError";
 import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 
@@ -12,14 +13,14 @@ import type { JsonValue } from "../generated/serde_json/JsonValue";
 export function settingsError(
     properties: Record<string, ConfigurationSchema>,
     values: Record<string, JsonValue>
-): string | null
+): SettingsValidationError | null
 {
     for (const [key, schema] of Object.entries(properties))
     {
         const error = _valueError(schema, values[key]);
         if (error)
         {
-            return `${key}: ${error}`;
+            return { ...error, path: [key, ...error.path] };
         }
     }
     return null;
@@ -38,18 +39,18 @@ export function prepareSetting(
     const schema = Object.hasOwn(properties, key) ? properties[key] : undefined;
     if (!schema)
     {
-        return { error: "Unknown setting." };
+        return { error: { code: "unknownSetting", path: [key] } };
     }
     const error = _valueError(schema, draft);
-    return error ? { error: `${key}: ${error}` } : { value: normalizeSetting(schema, draft) };
+    return error ? { error: { ...error, path: [key, ...error.path] } } : { value: normalizeSetting(schema, draft) };
 }
 
-function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
+function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined): SettingsValidationError | null
 {
     if (schema.type === "integerLimit")
     {
         const limit = integerLimitDraft(value);
-        return limit ? integerError(schema, limit.value) : "Choose a finite or unlimited integer limit.";
+        return limit ? integerError(schema, limit.value) : { code: "integerLimit", path: [] };
     }
     if (schema.type === "integer")
     {
@@ -57,28 +58,28 @@ function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined):
     }
     if (schema.type === "string")
     {
-        return typeof value === "string" ? stringError(schema, value) : "Enter text.";
+        return typeof value === "string" ? stringError(schema, value) : { code: "textRequired", path: [] };
     }
     if (schema.type === "boolean")
     {
-        return typeof value === "boolean" ? null : "Choose on or off.";
+        return typeof value === "boolean" ? null : { code: "booleanRequired", path: [] };
     }
     if (schema.type === "array")
     {
         if (!Array.isArray(value) || !schema.items)
         {
-            return "Enter a list.";
+            return { code: "arrayRequired", path: [] };
         }
         if (value.length > (schema.maxItems ?? 0))
         {
-            return `Enter at most ${schema.maxItems ?? 0} entries.`;
+            return { code: "arrayLength", constraint: schema.maxItems ?? 0, path: [] };
         }
         for (const [index, item] of value.entries())
         {
             const error = _valueError(schema.items, item);
             if (error)
             {
-                return `Entry ${index + 1}: ${error}`;
+                return { ...error, path: [index, ...error.path] };
             }
         }
     }
@@ -86,7 +87,7 @@ function _valueError(schema: ConfigurationSchema, value: JsonValue | undefined):
     {
         if (!value || typeof value !== "object" || Array.isArray(value))
         {
-            return "Enter an object.";
+            return { code: "objectRequired", path: [] };
         }
         const included = Object.fromEntries(
             Object.entries(schema.properties).filter(([key]) =>

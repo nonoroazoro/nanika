@@ -14,6 +14,7 @@ nanika-config = { path = "../../../../engine/configuration" }
 criterion.workspace = true
 nanika-extension-package = { path = "../../../../engine/extension-management" }
 nanika-host = { path = "../../../../engine/runtime" }
+nanika-localization = { path = "../../../../engine/localization" }
 nanika-platform = { path = "../../../../engine/platform" }
 nanika-search = { path = "../../../../engine/search" }
 nanika-storage = { path = "../../../../engine/storage" }

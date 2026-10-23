@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationMenuSection {
-    pub title: String,
+    pub id: String,
+    pub title: nanika_protocol::LocalizedText,
     pub items: Vec<crate::ConfigurationMenuControl>
 }

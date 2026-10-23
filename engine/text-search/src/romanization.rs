@@ -69,6 +69,7 @@ pub fn romanized_readings(value: &str) -> Vec<RomanizedReading> {
     {
         return Vec::new();
     }
+    let value = crate::normalization::_without_isolates(value);
     let boundaries = value
         .char_indices()
         .map(|(offset, _)| offset)
@@ -84,7 +85,18 @@ pub fn romanized_readings(value: &str) -> Vec<RomanizedReading> {
             .expect("character boundary has one character");
         if let Some(reading) = character.to_pinyin() {
             let mut phrase = None;
-            for end in (index + 2..=(index + 10).min(boundaries.len() - 1)).rev() {
+            // Dictionary words contain only romanizable Han characters. Names often
+            // end in numbers or Latin text, which cannot extend a phrase match.
+            let mut phrase_end = index + 1;
+            while phrase_end < (index + 10).min(boundaries.len() - 1)
+                && value[boundaries[phrase_end]..]
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.to_pinyin().is_some())
+            {
+                phrase_end += 1;
+            }
+            for end in (index + 2..=phrase_end).rev() {
                 let word = &value[boundaries[index]..boundaries[end]];
                 let offset = READINGS.partition_point(|(key, _)| *key < word);
                 if READINGS.get(offset).is_some_and(|(key, _)| *key == word) {

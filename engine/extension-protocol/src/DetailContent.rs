@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::LocalizedText;
+
 use crate::ImageSource;
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -17,6 +19,6 @@ pub enum DetailContent {
     },
     Image {
         source: ImageSource,
-        alternative_text: String
+        alternative_text: LocalizedText
     }
 }

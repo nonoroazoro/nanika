@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 ts-rs = { workspace = true, optional = true }
 nanika-platform = { path = "../platform" }
+nanika-localization = { path = "../localization" }
 jsonc-parser.workspace = true
 nanika-foundation = { path = "../foundation" }
 serde.workspace = true
@@ -20,4 +21,4 @@ tracing.workspace = true
 workspace = true
 
 [features]
-typescript = ["dep:ts-rs"]
+typescript = ["dep:ts-rs", "nanika-localization/typescript"]

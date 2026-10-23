@@ -10,6 +10,8 @@ pub struct LauncherPreferences {
     pub format_version: u32,
     pub launcher_shortcut: String,
     pub theme: ThemePreference,
+    #[serde(default)]
+    pub language: nanika_localization::LanguagePreference,
     pub hide_on_blur: bool
 }
 
@@ -42,6 +44,7 @@ impl LauncherPreferences {
                 }
             ),
             theme: options.get("theme", ThemePreference::System),
+            language: options.get("language", nanika_localization::LanguagePreference::System),
             hide_on_blur: options.get("hideOnBlur", true)
         })
     }
@@ -77,6 +80,7 @@ impl LauncherPreferences {
                         serde_json::json!(self.launcher_shortcut)
                     ),
                     ("theme".to_owned(), serde_json::json!(self.theme)),
+                    ("language".to_owned(), serde_json::json!(self.language)),
                     (
                         "hideOnBlur".to_owned(),
                         serde_json::json!(self.hide_on_blur)

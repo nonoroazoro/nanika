@@ -18,3 +18,13 @@ pub const MAX_DETAIL_TEXT_CHUNKS: usize = 64;
 
 /// A delivery bound, never a limit on searchable or retained items.
 pub const MAX_VIEW_ITEMS: usize = 500;
+
+/// Shared Fluent input bounds, enforced before consulting resource contracts.
+pub const MAX_MESSAGE_ID_BYTES: usize = 128;
+pub const MAX_MESSAGE_ARGUMENTS: usize = 16;
+pub const MAX_MESSAGE_ARGUMENT_BYTES: usize = 2_048;
+pub const MAX_MESSAGE_INTEGER: i64 = 9_007_199_254_740_991;
+
+/// Error presentation and raw diagnostics have separate admission budgets.
+pub const MAX_ERROR_MESSAGE_CHARS: usize = 2_048;
+pub const MAX_ERROR_DETAIL_BYTES: usize = 16 * 1_024;

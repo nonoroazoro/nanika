@@ -8,23 +8,30 @@ pub struct Candidate {
 }
 
 impl Candidate {
+    /// Retain original presentation independently of prepared, locale-neutral search inputs.
+    /// Literal titles join the index directly; references require their admitted translations.
     pub fn new(
         kind: CandidateKind,
         extension_id: impl Into<String>,
         entry_id: impl Into<String>,
-        title: impl Into<String>,
+        title: impl Into<nanika_protocol::LocalizedText>,
         action_id: impl Into<String>,
         actions: Vec<nanika_protocol::Action>,
-        aliases: Vec<String>
+        mut search_text: Vec<String>
     ) -> Self {
         let title = title.into();
         let action_id = action_id.into();
-        let mut search_values: Vec<String> = std::iter::once(title.as_str())
-            .chain(aliases.iter().map(String::as_str))
-            .map(normalize_query)
+        if let nanika_protocol::LocalizedText::Literal(value) = &title
+            && !search_text.contains(value)
+        {
+            search_text.insert(0, value.clone());
+        }
+        let mut search_values: Vec<String> = search_text
+            .iter()
+            .map(|value| normalize_query(value))
             .collect();
         let mut readings = Vec::new();
-        for value in std::iter::once(title.as_str()).chain(aliases.iter().map(String::as_str)) {
+        for value in &search_text {
             for reading in nanika_text_search::romanized_readings(value) {
                 for spelling in [&reading.full, &reading.initials] {
                     if !search_values.contains(spelling) {
@@ -45,7 +52,6 @@ impl Candidate {
                 _subtitle: None,
                 _actions: actions,
                 _action_id: action_id,
-                _aliases: aliases,
                 _icon: None,
                 _search_values: search_values,
                 _readings: readings
@@ -83,7 +89,7 @@ impl Candidate {
         &self._data._entry_id
     }
 
-    pub fn title(&self) -> &str {
+    pub fn title(&self) -> &nanika_protocol::LocalizedText {
         &self._data._title
     }
 
@@ -97,10 +103,6 @@ impl Candidate {
 
     pub fn actions(&self) -> &[nanika_protocol::Action] {
         &self._data._actions
-    }
-
-    pub fn aliases(&self) -> &[String] {
-        &self._data._aliases
     }
 
     pub fn icon(&self) -> Option<&nanika_protocol::IconSource> {
@@ -123,6 +125,7 @@ impl Candidate {
                 a.id == b.id
                     && a.title == b.title
                     && a.confirmation_title == b.confirmation_title
+                    && a.confirmation_description == b.confirmation_description
                     && a.style == b.style
                     && a.enabled == b.enabled
                     && a.allow_default_execution == b.allow_default_execution

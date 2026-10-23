@@ -96,3 +96,11 @@ pub(crate) use clipboard_preview::ClipboardPreview;
 #[path = "ClipboardWindow.rs"]
 mod clipboard_window;
 pub(crate) use clipboard_window::ClipboardWindow;
+
+#[path = "ClipboardSummary.rs"]
+mod clipboard_summary;
+mod migration;
+pub(crate) use clipboard_summary::ClipboardSummary;
+#[path = "ClipboardImageDimensions.rs"]
+mod clipboard_image_dimensions;
+pub use clipboard_image_dimensions::ClipboardImageDimensions;

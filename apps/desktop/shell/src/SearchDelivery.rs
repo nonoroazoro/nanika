@@ -50,6 +50,19 @@ pub(crate) fn run_delivery_with_preparation(
                 .disconnect(channel.id());
             tracing::error!(%error, "settings lifecycle delivery failed");
         }
+        let localized = settings
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .next_localization();
+        if let Some((channel, event)) = localized
+            && let Err(error) = channel.send(event)
+        {
+            settings
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .disconnect(channel.id());
+            tracing::error!(%error, "settings localization delivery failed");
+        }
         let mut state = shared.lock().unwrap_or_else(|error| error.into_inner());
         let active = state
             .runtime
@@ -100,7 +113,8 @@ pub(crate) fn run_delivery_with_preparation(
         let DesktopRuntime {
             runtime,
             session,
-            startup_error
+            startup_error,
+            localization
         } = &mut *state;
         let Some(session) = session else {
             continue;
@@ -122,9 +136,7 @@ pub(crate) fn run_delivery_with_preparation(
         } else {
             SearchPhase::Searching
         };
-        let error = startup_error
-            .as_ref()
-            .map(|_| "Nanika could not start. Open diagnostics for details.".to_owned());
+        let error = startup_error.as_ref().map(|failure| failure.error.clone());
         let warnings = runtime
             .as_ref()
             .map_or_else(Vec::new, |runtime| runtime.search_warnings());
@@ -137,6 +149,7 @@ pub(crate) fn run_delivery_with_preparation(
                 _ => false
             };
         if unchanged
+            && session.delivered_localization_revision == localization.revision
             && session.text_invalidations.is_empty()
             && session.delivered_range == Some(session.result_range)
             && session.delivered_navigation_revision == session.navigation.revision
@@ -182,6 +195,8 @@ pub(crate) fn run_delivery_with_preparation(
                 .collect(),
             navigation,
             session_id: session.id,
+            localization: (session.delivered_localization_revision != localization.revision)
+                .then_some(*localization),
             request_id: session.request_id,
             revision: session.revision,
             query: session.query.clone(),
@@ -207,6 +222,7 @@ pub(crate) fn run_delivery_with_preparation(
         session.delivered = latest.clone();
         session.delivered_range = Some(session.result_range);
         session.delivered_navigation_revision = session.navigation.revision;
+        session.delivered_localization_revision = localization.revision;
         session.delivered_route = route;
         let session_id = session.id;
         let revision = session.revision;
@@ -231,12 +247,21 @@ pub(crate) fn run_delivery_with_preparation(
                 snapshot.results[offset..end]
                     .iter()
                     .map(|ranked| {
-                        crate::SearchResult::from_candidate(
+                        let mut result = crate::SearchResult::from_candidate(
                             &ranked.candidate,
                             runtime.as_ref().and_then(|runtime| {
                                 runtime.extension_icon(ranked.candidate.extension_id())
                             })
-                        )
+                        );
+                        result.instance_id = snapshot
+                            .instances
+                            .get(ranked.candidate.extension_id())
+                            .copied()
+                            .unwrap_or(0);
+                        result.resource_scope = runtime.as_ref().and_then(|runtime| {
+                            runtime.localization_scope(ranked.candidate.extension_id())
+                        });
+                        result
                     })
                     .collect()
             }));

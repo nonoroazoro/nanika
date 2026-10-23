@@ -1,0 +1,103 @@
+{
+    "phase": "before application integration",
+    "revision": "afd24252848a9ee6e02693fb5baf7d5ef8ca7541",
+    "platform": "macOS-26.4.1-arm64-arm-64bit",
+    "architecture": "arm64",
+    "command": "cargo bench -p nanika-search --target-dir target/i18n-cargo --bench memory --bench ranking -- --save-baseline i18n-before",
+    "reason_for_isolated_target": "An existing just dev process held the shared build output lock. No running application was stopped.",
+    "scope": "Rust search benchmarks only. Heap counters track live requested allocation bytes, excluding allocator overhead, native processes and WebView. Criterion confidence intervals are not individual query p50/p95/p99.",
+    "latency": [
+        {
+            "workload": "catalog/empty/100",
+            "criterion_confidence_interval": "2.5258 \u00b5s 2.5438 \u00b5s 2.5695 \u00b5s"
+        },
+        {
+            "workload": "catalog/fuzzy/100",
+            "criterion_confidence_interval": "2.6349 \u00b5s 2.7705 \u00b5s 3.0366 \u00b5s"
+        },
+        {
+            "workload": "catalog/empty/1000",
+            "criterion_confidence_interval": "36.835 \u00b5s 37.825 \u00b5s 39.134 \u00b5s"
+        },
+        {
+            "workload": "catalog/fuzzy/1000",
+            "criterion_confidence_interval": "27.104 \u00b5s 27.238 \u00b5s 27.389 \u00b5s"
+        },
+        {
+            "workload": "catalog/empty/5000",
+            "criterion_confidence_interval": "236.32 \u00b5s 248.15 \u00b5s 259.34 \u00b5s"
+        },
+        {
+            "workload": "catalog/fuzzy/5000",
+            "criterion_confidence_interval": "160.12 \u00b5s 160.72 \u00b5s 161.72 \u00b5s"
+        },
+        {
+            "workload": "catalog/empty/10000",
+            "criterion_confidence_interval": "481.98 \u00b5s 486.52 \u00b5s 495.15 \u00b5s"
+        },
+        {
+            "workload": "catalog/fuzzy/10000",
+            "criterion_confidence_interval": "301.63 \u00b5s 308.06 \u00b5s 313.84 \u00b5s"
+        },
+        {
+            "workload": "catalog/empty/50000",
+            "criterion_confidence_interval": "3.7327 ms 3.9771 ms 4.3275 ms"
+        },
+        {
+            "workload": "catalog/fuzzy/50000",
+            "criterion_confidence_interval": "2.0721 ms 2.1231 ms 2.1938 ms"
+        },
+        {
+            "workload": "rank_1000_candidates",
+            "criterion_confidence_interval": "60.484 \u00b5s 60.893 \u00b5s 61.401 \u00b5s"
+        },
+        {
+            "workload": "rank_1000_candidates_with_usage",
+            "criterion_confidence_interval": "61.059 \u00b5s 61.570 \u00b5s 62.141 \u00b5s"
+        },
+        {
+            "workload": "rank_20000_candidates",
+            "criterion_confidence_interval": "1.0610 ms 1.0749 ms 1.0926 ms"
+        }
+    ],
+    "memory": [
+        {
+            "entries": 100,
+            "index_bytes": 51090,
+            "retained_ranking_bytes": 2480,
+            "peak_query_bytes": 5552
+        },
+        {
+            "entries": 1000,
+            "index_bytes": 511890,
+            "retained_ranking_bytes": 24080,
+            "peak_query_bytes": 48656
+        },
+        {
+            "entries": 5000,
+            "index_bytes": 2563890,
+            "retained_ranking_bytes": 120080,
+            "peak_query_bytes": 316688
+        },
+        {
+            "entries": 10000,
+            "index_bytes": 5128890,
+            "retained_ranking_bytes": 240080,
+            "peak_query_bytes": 633296
+        },
+        {
+            "entries": 50000,
+            "index_bytes": 25688890,
+            "retained_ranking_bytes": 1200080,
+            "peak_query_bytes": 2772944
+        }
+    ],
+    "remaining_baselines": [
+        "individual query latency percentiles and allocation counts",
+        "catalog admission",
+        "native startup and visible rendering",
+        "hidden idle",
+        "60/120 Hz input and frame pacing"
+    ],
+    "captured_at": "2026-10-22T13:18:49.235944+00:00"
+}

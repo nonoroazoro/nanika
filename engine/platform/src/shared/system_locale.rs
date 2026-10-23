@@ -1,4 +1,6 @@
-/// Return the operating system's preferred locale as a BCP 47 language tag.
-pub fn system_locale() -> String {
-    sys_locale::get_locale().unwrap_or_else(|| "en-US".to_owned())
+/// Read preferred UI languages in OS order. The platform API represents failed reads
+/// with an empty iterator, so preserve that distinction from a valid unsupported list.
+pub fn preferred_ui_languages() -> Option<Vec<String>> {
+    let languages: Vec<_> = sys_locale::get_locales().collect();
+    (!languages.is_empty()).then_some(languages)
 }

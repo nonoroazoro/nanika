@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
 import { isCompositionKey } from "../../ui/keyboard";
 import { AlertDialog } from "bits-ui";
 import { onDestroy } from "svelte";
@@ -7,8 +8,15 @@ import ExtensionIcon from "../extensions/ExtensionIcon.svelte";
 import Button from "./Button.svelte";
 import { closeConfirmation, confirmation, interruptConfirmation } from "../../ui/confirmation";
 import type { ConfirmationRequest } from "../../types/ConfirmationRequest";
+import type { ConfirmationContent } from "../../types/ConfirmationContent";
 
-let displayed = $state<ConfirmationRequest | null>(null);
+let displayed = $state<
+    (ConfirmationContent & Pick<ConfirmationRequest, "icon" | "destructive"> & {
+        cancelLabel: string;
+        fallbackLabel: string;
+    }) | null
+>(null);
+let activeRequest: ConfirmationRequest | null = null;
 let confirmButton = $state<HTMLButtonElement>();
 let returnFocus: HTMLElement | null = null;
 let finishExit: (() => void) | null = null;
@@ -17,8 +25,23 @@ $effect(() =>
 {
     if ($confirmation)
     {
-        displayed = $confirmation;
-        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        if (activeRequest !== $confirmation)
+        {
+            activeRequest = $confirmation;
+            returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }
+        // A decision clears the request; its captured presentation remains through exit.
+        displayed = {
+            ...$confirmation.content(),
+            icon: $confirmation.icon,
+            destructive: $confirmation.destructive,
+            cancelLabel: localization.text({ message: "action-cancel" }),
+            fallbackLabel: localization.text({ message: "action-confirm" })
+        };
+    }
+    else
+    {
+        activeRequest = null;
     }
 });
 onDestroy(_interrupt);
@@ -145,13 +168,13 @@ function _keydown(event: KeyboardEvent): void
                 </div>
             </div>
             <div class="confirmation-actions">
-                <Button variant="outline" onclick={() => _close(false)}>Cancel</Button>
+                <Button variant="outline" onclick={() => _close(false)}>{displayed?.cancelLabel ?? ""}</Button>
                 <Button
                     variant={displayed?.destructive ? "danger" : "primary"}
                     focusRing
                     bind:ref={confirmButton}
                     onclick={() => _close(true)}
-                >{displayed?.label ?? "Confirm"}</Button>
+                >{displayed?.label ?? displayed?.fallbackLabel ?? ""}</Button>
             </div>
         </AlertDialog.Content>
     </AlertDialog.Portal>

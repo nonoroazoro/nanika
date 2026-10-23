@@ -1,14 +1,20 @@
 import type { ConfigurationMenu } from "../generated/ConfigurationMenu";
 import type { ConfigurationMenuOperation } from "../generated/ConfigurationMenuOperation";
+import type { LocalizedText } from "../generated/LocalizedText";
 import type { ContextMenuSection } from "../types/ContextMenuSection";
 
 /**
  * Project host-authorized configuration shortcuts into the shared menu renderer.
  */
-export function configurationMenuSections(menu: ConfigurationMenu, pending: boolean): ContextMenuSection[]
+export function configurationMenuSections(
+    menu: ConfigurationMenu,
+    pending: boolean,
+    text: (value: LocalizedText) => string
+): ContextMenuSection[]
 {
     return menu.groups.map(group => ({
-        title: group.title,
+        id: group.id,
+        title: text(group.title),
         items: group.items.map(item =>
         {
             if (item.kind === "action")
@@ -17,7 +23,7 @@ export function configurationMenuSections(menu: ConfigurationMenu, pending: bool
             }
             return {
                 id: `toggle:${item.key}`,
-                title: item.title,
+                title: text(item.title),
                 checked: item.checked,
                 enabled: !pending,
                 allow_default_execution: false,

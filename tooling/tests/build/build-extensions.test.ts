@@ -31,7 +31,7 @@ test("concurrent builds stage independent copies and repeated builds preserve un
             ) as { bundle: { externalBin: string[]; resources: Record<string, string>; }; };
             expect(configuration.bundle.externalBin.length).toBeGreaterThan(0);
             const resources = Object.entries(configuration.bundle.resources);
-            const icons = resources.filter(([, path]) => path.startsWith("extensions/"));
+            const icons = resources.filter(([, path]) => path.startsWith("extensions/") && path.endsWith(".png"));
             expect(icons).toHaveLength(configuration.bundle.externalBin.length);
             for (const [source, destination] of icons)
             {
@@ -39,6 +39,16 @@ test("concurrent builds stage independent copies and repeated builds preserve un
                 expect(new Uint8Array(await Bun.file(source).arrayBuffer()).slice(0, 8)).toEqual(
                     new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
                 );
+            }
+            const translations = resources.filter(([, path]) =>
+            {
+                return path.startsWith("extensions/") && path.endsWith(".ftl");
+            });
+            expect(translations).toHaveLength(configuration.bundle.externalBin.length * 2);
+            for (const [source, destination] of translations)
+            {
+                expect(destination).toMatch(/^extensions\/com\.nanika\.[a-z]+\/locales\/(en|zh-Hans)\.ftl$/);
+                expect(await Bun.file(source).text()).toContain("extension-name = ");
             }
             for (const binary of configuration.bundle.externalBin)
             {

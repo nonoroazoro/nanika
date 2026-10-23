@@ -4,11 +4,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub struct TrackingAllocator;
 pub static LIVE: AtomicUsize = AtomicUsize::new(0);
 pub static PEAK: AtomicUsize = AtomicUsize::new(0);
+pub static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let pointer = unsafe { System.alloc(layout) };
         if !pointer.is_null() {
+            ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
             let bytes = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
             PEAK.fetch_max(bytes, Ordering::Relaxed);
         }

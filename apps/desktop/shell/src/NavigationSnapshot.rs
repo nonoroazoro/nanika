@@ -12,6 +12,6 @@ pub(crate) struct NavigationSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) current: Option<Option<ExtensionViewSnapshot>>,
     pub(crate) busy: bool,
-    pub(crate) error: Option<String>,
+    pub(crate) error: Option<nanika_host::OperationError>,
     pub(crate) dismiss_count: u64
 }

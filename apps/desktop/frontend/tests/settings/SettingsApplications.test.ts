@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
+import { configurationFailure } from "../../src/settings/error-presentation";
 import { SettingsApplications } from "../../src/settings/SettingsApplications.ts";
 
 import type { SettingsApplicationUpdate } from "../../src/generated/SettingsApplicationUpdate";
@@ -52,8 +53,13 @@ test("terminal transport failure rejects the waiter", async () =>
 {
     const tracker = new SettingsApplications();
     const completion = tracker.completion(_update(3, { status: "running", progress: null }));
-    tracker.record(_update(3, { status: "failed", error: "Disconnected" }));
-    await assert.rejects(completion, /Disconnected/);
+    const failure = configurationFailure(new Error("Disconnected"));
+    tracker.record(_update(3, { status: "failed", error: failure }));
+    await assert.rejects(completion, error =>
+    {
+        assert.deepEqual(configurationFailure(error), failure);
+        return true;
+    });
 });
 
 test("late initial acknowledgement cannot erase early progress", () =>

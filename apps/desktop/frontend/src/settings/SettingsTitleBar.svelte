@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
 import { createAttachmentKey } from "svelte/attachments";
 import { styleMotion } from "../components/motion/style";
 import Button from "../components/ui/Button.svelte";
@@ -41,13 +42,13 @@ function _drag(event: MouseEvent): void
         onmousedown={_drag}
         ondblclick={() => onAction({ kind: "toggleMaximize" })}
     >
-        <span>Settings</span>
+        <span>{localization.text({ message: "settings-title" })}</span>
     </div>
-    <div class="window-controls" role="group" aria-label="Window controls">
+    <div class="window-controls" role="group" aria-label={localization.text({ message: "window-controls" })}>
         <Button
             feedback={false}
             {...{ [motionKey]: captionFeedback }}
-            aria-label="Minimize"
+            aria-label={localization.text({ message: "window-minimize" })}
             onclick={() => onAction({ kind: "minimize" })}
         >
             <span class="caption-fill" aria-hidden="true" {@attach captionFill}></span>
@@ -56,7 +57,7 @@ function _drag(event: MouseEvent): void
         <Button
             feedback={false}
             {...{ [motionKey]: captionFeedback }}
-            aria-label={maximized ? "Restore" : "Maximize"}
+            aria-label={localization.text({ message: maximized ? "window-restore" : "window-maximize" })}
             onclick={() => onAction({ kind: "toggleMaximize" })}
         >
             <span class="caption-fill" aria-hidden="true" {@attach captionFill}></span>
@@ -68,7 +69,7 @@ function _drag(event: MouseEvent): void
             feedback={false}
             {...{ [motionKey]: captionFeedback }}
             class="close-window"
-            aria-label="Close Settings"
+            aria-label={localization.text({ message: "window-close-settings" })}
             onclick={() => onAction({ kind: "close" })}
         >
             <span class="caption-fill" aria-hidden="true" {@attach captionFill}></span>

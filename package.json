@@ -15,6 +15,7 @@
         "check": "bun tooling/quality/check.ts"
     },
     "dependencies": {
+        "@fluent/bundle": "0.19.1",
         "@tauri-apps/api": "2.12.3",
         "animejs": "4.5.0",
         "bits-ui": "2.19.5",

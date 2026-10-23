@@ -1,4 +1,6 @@
 import type { ConfigurationProperty } from "../generated/ConfigurationProperty";
+import type { LocalizedText } from "../generated/LocalizedText";
+import type { PresentationGroup } from "../generated/PresentationGroup";
 
 /**
  * Order the declarative Settings fields without depending on JSON object insertion order.
@@ -13,24 +15,28 @@ export function orderedProperties(
 }
 
 /**
- * Group ordered fields by their declared title, retaining first appearance order.
+ * Group ordered fields by stable identity, retaining first appearance order.
  * @param properties The platform-filtered contribution properties.
  * @param title The contribution's default group title.
  */
 export function propertyGroups(
     properties: Record<string, ConfigurationProperty>,
-    title: string
-): Array<[string, Array<[string, ConfigurationProperty]>]>
+    title: LocalizedText
+): Array<[PresentationGroup, Array<[string, ConfigurationProperty]>]>
 {
-    const groups = new Map<string, Array<[string, ConfigurationProperty]>>();
+    const groups = new Map<string, [PresentationGroup, Array<[string, ConfigurationProperty]>]>();
     for (const entry of orderedProperties(properties))
     {
-        const group = entry[1].group ?? title;
-        const entries = groups.get(group) ?? [];
-        entries.push(entry);
-        groups.set(group, entries);
+        const group = entry[1].group ?? { id: "$configuration", title };
+        let existing = groups.get(group.id);
+        if (!existing)
+        {
+            existing = [group, []];
+            groups.set(group.id, existing);
+        }
+        existing[1].push(entry);
     }
-    return [...groups];
+    return [...groups.values()];
 }
 
 function _compareProperties(

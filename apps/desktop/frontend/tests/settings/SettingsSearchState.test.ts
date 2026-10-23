@@ -103,7 +103,7 @@ test("current errors are visible, stale errors are ignored, and retries are expl
     });
     state.update("theme");
     await setImmediate();
-    assert.match(state.error ?? "", /Search failed/);
+    assert.deepEqual(state.error, { kind: "host", code: "settingsSearchFailed", detail: "Search failed" });
     assert.equal(calls, 1);
     state.refresh();
     assert.equal(calls, 2);

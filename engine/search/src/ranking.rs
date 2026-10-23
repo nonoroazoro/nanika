@@ -66,7 +66,21 @@ pub(crate) fn rank<'a>(
     if cancelled() {
         return None;
     }
-    scored.sort_unstable_by(compare_scored);
+    // A single extension commonly supplies most of a catalog. Prove its shared
+    // owner once instead of comparing the same owner string for every sort pair.
+    let shared_owner = scored.first().is_none_or(|first| {
+        let owner = first.0.extension_id();
+        // Grouped mixed catalogs usually differ at their ends, avoiding the extra scan.
+        scored
+            .last()
+            .is_some_and(|last| last.0.extension_id() == owner)
+            && scored.iter().all(|row| row.0.extension_id() == owner)
+    });
+    if shared_owner {
+        scored.sort_unstable_by(compare_scored::<true>);
+    } else {
+        scored.sort_unstable_by(compare_scored::<false>);
+    }
     if cancelled() {
         return None;
     }
@@ -91,7 +105,7 @@ pub(crate) fn rank<'a>(
     })
 }
 
-fn compare_scored(
+fn compare_scored<const SHARED_OWNER: bool>(
     left: &(&Candidate, u8, u32, u32),
     right: &(&Candidate, u8, u32, u32)
 ) -> Ordering {
@@ -100,8 +114,13 @@ fn compare_scored(
         .cmp(&left.1)
         .then_with(|| right.3.cmp(&left.3))
         .then_with(|| right.2.cmp(&left.2))
-        .then_with(|| left.0.title().cmp(right.0.title()))
-        .then_with(|| left.0.extension_id().cmp(right.0.extension_id()))
+        .then_with(|| {
+            if SHARED_OWNER {
+                Ordering::Equal
+            } else {
+                left.0.extension_id().cmp(right.0.extension_id())
+            }
+        })
         .then_with(|| left.0.entry_id().cmp(right.0.entry_id()))
         .then_with(|| left.0.action_id().cmp(right.0.action_id()))
 }

@@ -136,7 +136,6 @@ pub enum Message {
     },
     Error {
         request_id: Option<String>,
-        code: String,
-        message: String
+        error: crate::ProtocolError
     }
 }

@@ -7,9 +7,10 @@ import { prepareSetting } from "../../src/settings/validation.ts";
 
 import type { ConfigurationSchema } from "../../src/generated/ConfigurationSchema";
 import type { JsonValue } from "../../src/generated/serde_json/JsonValue";
-import type { SettingsWriteResult } from "../../src/generated/SettingsWriteResult.ts";
+import type { SettingsError } from "../../src/settings/SettingsError";
+import type { SettingsResult } from "../../src/settings/SettingsResult";
 
-function _result<T>(values: T): SettingsWriteResult<T>
+function _result<T>(values: T): SettingsResult<T>
 {
     return { values, saved: values, effective: values, error: null };
 }
@@ -60,20 +61,25 @@ test("terminal backend facts determine saved and effective state independently",
                 values: { enabled: true },
                 saved: { enabled: true },
                 effective: null,
-                error: "Saved, application failed"
+                error: { code: "savedButNotApplied", cause: { kind: "host", code: "invocationFailed" } }
             },
-            { values: { enabled: false }, saved: { enabled: false }, effective: null, error: "Application rejected" },
+            {
+                values: { enabled: false },
+                saved: { enabled: false },
+                effective: null,
+                error: { code: "rejected", cause: { kind: "host", code: "operationPending" } }
+            },
             {
                 values: { enabled: true },
                 saved: { enabled: false },
                 effective: { enabled: true },
-                error: "Applied, persistence failed"
+                error: { code: "appliedButNotSaved", detail: "Original persistence diagnostic" }
             }
-        ]
+        ] satisfies Array<SettingsResult<{ enabled: boolean; }>>
     )
     {
-        const gate = _gate<SettingsWriteResult<{ enabled: boolean; }>>();
-        const notifications: string[] = [];
+        const gate = _gate<SettingsResult<{ enabled: boolean; }>>();
+        const notifications: SettingsError[] = [];
         const state = new SettingsState(_result({ enabled: false }), async () => gate.promise, undefined, error =>
         {
             notifications.push(error);
@@ -99,7 +105,7 @@ test("invalid edits never submit or retry on navigation", async () =>
     {
         writes++;
         return _result({ limit: 1 });
-    }, (_key, value) => (value === 0 ? { error: "Enter 1 or more." } : { value }));
+    }, (_key, value) => (value === 0 ? { error: { code: "integerMinimum", constraint: 1, path: [] } } : { value }));
     await state.change("limit", 0);
     state.commitEdits();
     await Promise.resolve();
@@ -110,7 +116,7 @@ test("invalid edits never submit or retry on navigation", async () =>
 
 test("reopened operation blocks repeated activation and serializes later edits", async () =>
 {
-    const gate = _gate<SettingsWriteResult<{ enabled: boolean; title: string; }>>();
+    const gate = _gate<SettingsResult<{ enabled: boolean; title: string; }>>();
     const writes: unknown[] = [];
     const state = new SettingsState(_result({ enabled: false, title: "Before" }), async ({ key, value }) =>
     {
@@ -136,7 +142,11 @@ test("transport failure clears pending, reports uncertainty, and leaves later ed
     await state.change("enabled", true);
     assert.equal(state.phase.get("enabled"), undefined);
     assert.equal(state.effective, null);
-    assert.match(state.errors.get("enabled") ?? "", /Disconnected/);
+    assert.deepEqual(state.errors.get("enabled"), {
+        kind: "host",
+        code: "invocationUnconfirmed",
+        detail: "Disconnected"
+    });
 });
 
 test("afterApply storage failure can be reversed to the saved value", async () =>
@@ -146,7 +156,12 @@ test("afterApply storage failure can be reversed to the saved value", async () =
     {
         writes++;
         return writes === 1
-            ? { values: { enabled: true }, saved: { enabled: false }, effective: { enabled: true }, error: "Disk full" }
+            ? {
+                values: { enabled: true },
+                saved: { enabled: false },
+                effective: { enabled: true },
+                error: { code: "appliedButNotSaved", detail: "Disk full" }
+            }
             : _result({ enabled });
     });
     await state.change("enabled", true);
@@ -161,7 +176,7 @@ test("an explicit unchanged edit retries failed application, but navigation does
     const state = new SettingsState(_result({ enabled: false }), async ({ value: enabled }) =>
     {
         writes++;
-        return { ..._result({ enabled }), error: writes === 1 ? "Application failed" : null };
+        return { ..._result({ enabled }), error: writes === 1 ? { kind: "host", code: "invocationFailed" } : null };
     });
     await state.change("enabled", true);
     state.commitEdits();
@@ -175,11 +190,16 @@ test("an explicit unchanged edit retries failed application, but navigation does
 
 test("unrelated completion preserves invalid drafts without retrying their validation", async () =>
 {
-    const notifications: string[] = [];
+    const notifications: SettingsError[] = [];
     const state = new SettingsState(
         _result({ limit: 10, enabled: false }),
         async () => _result({ limit: 10, enabled: true }),
-        (key, value) => (key === "limit" && value === 0 ? { error: "Minimum is 1" } : { value }),
+        (
+            key,
+            value
+        ) => (key === "limit" && value === 0
+            ? { error: { code: "integerMinimum", constraint: 1, path: [] } }
+            : { value }),
         error =>
         {
             notifications.push(error);
@@ -191,7 +211,7 @@ test("unrelated completion preserves invalid drafts without retrying their valid
     await state.commit("limit");
     assert.equal(state.values.limit, 0);
     assert.equal(state.saved.limit, 10);
-    assert.deepEqual(notifications, ["Minimum is 1"]);
+    assert.deepEqual(notifications, [{ code: "integerMinimum", constraint: 1, path: [] }]);
 });
 
 test("schema-valid prototype names remain editable and field-local", async () =>
@@ -214,7 +234,7 @@ test("schema-valid prototype names remain editable and field-local", async () =>
 
 test("external refresh preserves newer edits and serializes their write", async () =>
 {
-    const gate = _gate<SettingsWriteResult<{ enabled: boolean; }>>();
+    const gate = _gate<SettingsResult<{ enabled: boolean; }>>();
     const writes: boolean[] = [];
     const state = new SettingsState(_result({ enabled: false }), async ({ value: enabled }) =>
     {
@@ -329,7 +349,10 @@ test("canonical equality does not suppress an explicit retry after failed applic
     const state = new SettingsState<Record<string, JsonValue>>(_result({ limit: 50 }), async ({ value }) =>
     {
         writes++;
-        return { ..._result({ limit: value }), error: writes === 1 ? "Application failed" : null };
+        return {
+            ..._result({ limit: value }),
+            error: writes === 1 ? { kind: "host", code: "invocationFailed" } : null
+        };
     }, (key, value) => prepareSetting({ limit: integer }, key, value));
     await state.change("limit", "51");
     state.commitEdits();
@@ -342,12 +365,12 @@ test("canonical equality does not suppress an explicit retry after failed applic
 
 test("lifecycle observations follow accepted writes and preserve uncommitted drafts", async () =>
 {
-    const gate = _gate<SettingsWriteResult<{ enabled: boolean; title: string; }>>();
+    const gate = _gate<SettingsResult<{ enabled: boolean; title: string; }>>();
     const initial = { enabled: false, title: "Saved" };
     const state = new SettingsState(_result(initial), async () => gate.promise);
     const writing = state.change("enabled", true);
     state.edit("title", "Draft");
-    let latest = { ..._result(initial), effective: null } as SettingsWriteResult<typeof initial>;
+    let latest = { ..._result(initial), effective: null } as SettingsResult<typeof initial>;
     state.observe(() => latest);
     latest = { ..._result({ enabled: true, title: "Saved" }), effective: null };
     state.observe(() => latest);

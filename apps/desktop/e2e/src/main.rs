@@ -64,6 +64,14 @@ fn _launch(
     // Refuse existing state instead of risking another session's data.
     std::fs::create_dir(&directory)?;
     let directory = directory.canonicalize()?;
+    let languages = nanika_platform::preferred_ui_languages();
+    std::fs::write(
+        directory.join("system-language.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "languages": languages,
+            "locale": nanika_localization::LanguagePreference::System.resolve(languages.as_deref(), None)
+        }))?
+    )?;
     let paths = nanika_storage::NanikaPaths::from_roots(
         directory.join("data"),
         directory.join("cache"),
@@ -72,6 +80,7 @@ fn _launch(
     let store = nanika_config::ConfigStore::open(paths.app_data_root(), paths.config_root())?;
     let mut preferences = nanika_config::LauncherPreferences::load(&store, "Ctrl+Alt+Shift+F12")?;
     preferences.launcher_shortcut = "Ctrl+Alt+Shift+F12".into();
+    preferences.language = nanika_localization::LanguagePreference::English;
     preferences.save(&store)?;
     let mut context = nanika_desktop::context();
     context.config_mut().identifier = identity.to_owned();

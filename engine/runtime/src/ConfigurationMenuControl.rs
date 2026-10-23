@@ -4,7 +4,7 @@
 pub enum ConfigurationMenuControl {
     Toggle {
         key: String,
-        title: String,
+        title: nanika_protocol::LocalizedText,
         checked: bool
     },
     Action {

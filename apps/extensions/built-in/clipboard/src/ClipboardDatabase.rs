@@ -6,20 +6,22 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{ClipboardChange, ClipboardConfig, ClipboardEntry, EncodedClipboardContent};
 
-const SCHEMA: &str = "
+pub(crate) const SCHEMA: &str = "
 CREATE TABLE clipboard_entries (
     entry_id TEXT PRIMARY KEY CHECK (entry_id <> ''),
     content_kind TEXT NOT NULL,
-    title TEXT NOT NULL CHECK (title <> ''),
+    text_preview TEXT,
+    image_width INTEGER,
+    image_height INTEGER,
     text_payload TEXT,
     files_json TEXT,
     image_path TEXT,
     byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
     captured_at INTEGER NOT NULL CHECK (captured_at >= 0),
     CHECK (
-        (content_kind = 'text' AND text_payload IS NOT NULL AND files_json IS NULL AND image_path IS NULL)
-        OR (content_kind = 'files' AND text_payload IS NULL AND files_json IS NOT NULL AND image_path IS NULL)
-        OR (content_kind = 'image' AND text_payload IS NULL AND files_json IS NULL AND image_path IS NOT NULL)
+        (content_kind = 'text' AND text_preview IS NOT NULL AND image_width IS NULL AND image_height IS NULL AND text_payload IS NOT NULL AND files_json IS NULL AND image_path IS NULL)
+        OR (content_kind = 'files' AND text_preview IS NULL AND image_width IS NULL AND image_height IS NULL AND text_payload IS NULL AND files_json IS NOT NULL AND image_path IS NULL)
+        OR (content_kind = 'image' AND text_preview IS NULL AND image_width IS NOT NULL AND image_height IS NOT NULL AND image_width BETWEEN 1 AND 8192 AND image_height BETWEEN 1 AND 8192 AND image_width * image_height <= 16777216 AND text_payload IS NULL AND files_json IS NULL AND image_path IS NOT NULL)
     )
 ) STRICT;
 CREATE INDEX clipboard_entries_ordering
@@ -34,8 +36,8 @@ pub struct ClipboardDatabase {
 }
 
 impl ClipboardDatabase {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
-        let connection = nanika_database::open(path, SCHEMA).map_err(|error| error.to_string())?;
+    pub fn open(path: impl AsRef<Path>, payload_root: &Path) -> Result<Self, String> {
+        let connection = crate::migration::open(path.as_ref(), payload_root)?;
         Ok(Self { connection })
     }
 
@@ -130,11 +132,10 @@ impl ClipboardDatabase {
                 .collect::<Result<_, _>>()
                 .map_err(|e| e.to_string());
         }
-        let mut statement = self.connection.prepare("SELECT entry_id, title, text_payload, files_json, content_kind, image_path, captured_at FROM clipboard_entries WHERE (?1 IS NULL OR content_kind = ?1) ORDER BY captured_at DESC, entry_id").map_err(|e| e.to_string())?;
+        let mut statement = self.connection.prepare("SELECT entry_id, image_width, text_payload, files_json, content_kind, image_path, captured_at, image_height FROM clipboard_entries WHERE (?1 IS NULL OR content_kind = ?1) ORDER BY captured_at DESC, entry_id").map_err(|e| e.to_string())?;
         let mut rows = statement.query([kind]).map_err(|e| e.to_string())?;
         let mut ids = Vec::new();
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let title: String = row.get(1).map_err(|e| e.to_string())?;
             let content = decode_content(
                 row.get_ref(4)
                     .and_then(|value| Ok(value.as_str()?))
@@ -143,7 +144,11 @@ impl ClipboardDatabase {
                 row.get(3).map_err(|e| e.to_string())?,
                 row.get(5).map_err(|e| e.to_string())?
             )?;
-            if crate::query::matches(query, &title, &content) {
+            if crate::query::matches(
+                query,
+                &content,
+                _dimensions(row, 1, 7).map_err(|e| e.to_string())?
+            ) {
                 ids.push(crate::ClipboardQueryEntry {
                     entry_id: row.get(0).map_err(|e| e.to_string())?,
                     captured_at: row.get(6).map_err(|e| e.to_string())?
@@ -154,16 +159,32 @@ impl ClipboardDatabase {
     }
 
     pub(crate) fn items(&self, ids: &[String]) -> Result<Vec<crate::ClipboardItem>, String> {
-        let mut statement = self.connection.prepare("SELECT entry_id, title, content_kind, json_extract(files_json, '$[0]') FROM clipboard_entries WHERE entry_id = ?1").map_err(|e| e.to_string())?;
+        let mut statement = self.connection.prepare("SELECT entry_id, text_preview, content_kind, json_extract(files_json, '$[0]'), json_array_length(files_json), image_width, image_height FROM clipboard_entries WHERE entry_id = ?1").map_err(|e| e.to_string())?;
         ids.iter()
             .map(|id| {
                 statement
                     .query_row([id], |row| {
+                        let kind: String = row.get(2)?;
+                        let first_path: Option<String> = row.get(3)?;
+                        let summary = match kind.as_str() {
+                            "text" => crate::ClipboardSummary::Text {
+                                preview: row.get(1)?
+                            },
+                            "files" => crate::ClipboardSummary::Files {
+                                first_path: first_path
+                                    .clone()
+                                    .ok_or(rusqlite::Error::InvalidQuery)?,
+                                count: row.get(4)?
+                            },
+                            "image" => crate::ClipboardSummary::Image {
+                                dimensions: _dimensions(row, 5, 6)?
+                                    .ok_or(rusqlite::Error::InvalidQuery)?
+                            },
+                            _ => return Err(rusqlite::Error::InvalidQuery)
+                        };
                         Ok(crate::ClipboardItem {
                             entry_id: row.get(0)?,
-                            title: row.get(1)?,
-                            kind: row.get(2)?,
-                            first_path: row.get(3)?
+                            summary
                         })
                     })
                     .map_err(|e| e.to_string())
@@ -172,12 +193,12 @@ impl ClipboardDatabase {
     }
 
     pub fn entry(&self, id: &str) -> Result<ClipboardEntry, String> {
-        let (entry_id, kind, title, text, files, image, size, captured) = self.connection.query_row(
-            "SELECT entry_id, content_kind, title, text_payload, files_json, image_path, byte_size, captured_at FROM clipboard_entries WHERE entry_id = ?1", [id], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,Option<String>>(3)?,row.get::<_,Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,i64>(6)?,row.get::<_,i64>(7)?))
+        let (entry_id, kind, dimensions, text, files, image, size, captured) = self.connection.query_row(
+            "SELECT entry_id, content_kind, image_width, text_payload, files_json, image_path, byte_size, captured_at, image_height FROM clipboard_entries WHERE entry_id = ?1", [id], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,_dimensions(row, 2, 8)?,row.get::<_,Option<String>>(3)?,row.get::<_,Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,i64>(6)?,row.get::<_,i64>(7)?))
         ).map_err(|e| e.to_string())?;
         Ok(ClipboardEntry {
             entry_id,
-            title,
+            image_dimensions: dimensions,
             content: decode_content(&kind, text, files, image)?,
             byte_size: u64::try_from(size).map_err(|e| e.to_string())?,
             captured_at: u64::try_from(captured).map_err(|e| e.to_string())?
@@ -228,16 +249,19 @@ impl ClipboardDatabase {
 }
 
 fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), String> {
+    entry.summary()?;
     let encoded = encode_content(&entry.content)?;
     connection
         .execute(
             "INSERT INTO clipboard_entries (
-                    entry_id, content_kind, title, text_payload, files_json,
-                    image_path, byte_size, captured_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    entry_id, content_kind, text_preview, text_payload, files_json,
+                    image_path, byte_size, captured_at, image_width, image_height
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(entry_id) DO UPDATE SET
                     content_kind = excluded.content_kind,
-                    title = excluded.title,
+                    text_preview = excluded.text_preview,
+                    image_width = excluded.image_width,
+                    image_height = excluded.image_height,
                     text_payload = excluded.text_payload,
                     files_json = excluded.files_json,
                     image_path = excluded.image_path,
@@ -246,12 +270,14 @@ fn write_entry(connection: &Connection, entry: &ClipboardEntry) -> Result<(), St
             params![
                 entry.entry_id,
                 encoded.kind,
-                entry.title,
+                encoded.text.as_deref().map(crate::labels::text_preview),
                 encoded.text,
                 encoded.files,
                 encoded.image,
                 integer(entry.byte_size),
                 integer(entry.captured_at),
+                entry.image_dimensions.map(|d| d.width),
+                entry.image_dimensions.map(|d| d.height),
             ]
         )
         .map(|_| ())
@@ -388,4 +414,19 @@ fn _image_ownership(
         ownership.insert(path, retained);
     }
     Ok(ownership)
+}
+
+fn _dimensions(
+    row: &rusqlite::Row<'_>,
+    width: usize,
+    height: usize
+) -> rusqlite::Result<Option<crate::ClipboardImageDimensions>> {
+    match (
+        row.get::<_, Option<u32>>(width)?,
+        row.get::<_, Option<u32>>(height)?
+    ) {
+        (Some(width), Some(height)) => Ok(Some(crate::ClipboardImageDimensions { width, height })),
+        (None, None) => Ok(None),
+        _ => Err(rusqlite::Error::InvalidQuery)
+    }
 }

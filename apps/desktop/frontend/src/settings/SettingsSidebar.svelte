@@ -1,4 +1,6 @@
 <script lang="ts">
+import { operationErrorText } from "../localization/operation-errors";
+import { localization } from "../localization/state.svelte";
 import { isCompositionKey } from "../ui/keyboard";
 import { Tooltip } from "bits-ui";
 import TruncatedButton from "../components/ui/TruncatedButton.svelte";
@@ -14,28 +16,35 @@ import ScrollArea from "../components/ui/ScrollArea.svelte";
 import SelectionHighlight from "../components/motion/SelectionHighlight.svelte";
 import ExtensionIcon from "../components/extensions/ExtensionIcon.svelte";
 import type { ExtensionSettings } from "../generated/ExtensionSettings";
+import type { LocalizedText } from "../generated/LocalizedText";
+import type { ExtensionResourceScope } from "../generated/ExtensionResourceScope";
 import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 import type { SettingsSearchTarget } from "../generated/SettingsSearchTarget";
 import type { SettingsSearchState } from "./SettingsSearchState.svelte";
 import { settingsAnchor } from "./anchor";
 import { groupSearchResults } from "./groupSearchResults";
 
-let { extensions, selection, revealed, search, input = $bindable(), searchShortcut, onNavigate, onQuery }: {
-    extensions: ExtensionSettings[];
-    selection: string;
-    revealed: string | null;
-    search: SettingsSearchState;
-    input?: HTMLInputElement;
-    searchShortcut: string;
-    onNavigate: (page: string, target: SettingsSearchTarget) => void;
-    onQuery: (query: string) => void;
-} = $props();
+let { extensions, selection, revealed, search, input = $bindable(), searchShortcut, onNavigate, onQuery, text, ready }:
+    {
+        extensions: ExtensionSettings[];
+        ready: boolean;
+        text: (value: LocalizedText, scope?: ExtensionResourceScope) => string;
+        selection: string;
+        revealed: string | null;
+        search: SettingsSearchState;
+        input?: HTMLInputElement;
+        searchShortcut: string;
+        onNavigate: (page: string, target: SettingsSearchTarget) => void;
+        onQuery: (query: string) => void;
+    } = $props();
 const shortcutMotion = styleMotion({ properties: ["opacity"], scope: ".search-field" });
 let composing = false;
 let navigation = $state<HTMLElement | null>(null);
 let selectedButton = $state<HTMLElement | null>(null);
 // Keep navigation until the first completed search, just as later queries retain their results.
-const showingResults = $derived(search.query.trim().length > 0 && (search.hasCompletedSearch || search.error !== null));
+const showingResults = $derived(
+    ready && search.query.trim().length > 0 && (search.hasCompletedSearch || search.error !== null)
+);
 const groups = $derived(groupSearchResults(search.results));
 
 // Resolve the selected DOM destination after the keyed navigation has been rendered.
@@ -59,9 +68,9 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
         bind:ref={input}
         variant="embedded"
         value={search.query}
-        aria-label="Search settings"
+        aria-label={localization.text({ message: "settings-search" })}
         aria-keyshortcuts={searchShortcut}
-        placeholder="Search"
+        placeholder={localization.text({ message: "settings-search-placeholder" })}
         autocomplete="off"
         spellcheck={false}
         oninput={event =>
@@ -95,7 +104,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
         </span>
         {#if search.query}
             <DismissButton
-                label="Clear search"
+                label={localization.text({ message: "settings-search-clear" })}
                 onmousedown={event => event.preventDefault()}
                 onclick={() =>
                 {
@@ -110,25 +119,32 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
     <ScrollArea>
         <nav
             bind:this={navigation}
-            aria-label={showingResults ? "Settings search results" : "Settings sections"}
+            aria-label={localization.text({ message: showingResults ? "settings-search-results" : "settings-sections" })}
             aria-busy={search.busy}
         >
             {#if showingResults}
                 {#if search.error}
-                    <p class="search-message" role="alert">{search.error}</p>
-                    <Button onclick={() => search.refresh()}>Try again</Button>
+                    <p class="search-message" role="alert">
+                        {operationErrorText(search.error, localization.locale, value => localization.text(value))}
+                    </p>
+                    <Button onclick={() => search.refresh()}>{localization.text({ message: "action-retry" })}</Button>
                 {:else if search.results.length === 0}
-                    <EmptyState title="No settings found" description="Try a different search.">
+                    <EmptyState
+                        title={localization.text({ message: "settings-search-empty" })}
+                        description={localization.text({ message: "search-empty-description" })}
+                    >
                         {#snippet icon()}<SearchIcon size={48} strokeWidth={1.5} />{/snippet}
                     </EmptyState>
                 {:else}
-                    <span class="sr-only" role="status">{search.results.length} results</span>
+                    <span class="sr-only" role="status">{
+                        localization.text({ message: "settings-search-count", args: { count: search.results.length } })
+                    }</span>
                     {#each groups as group (group.pageId)}
-                        <section class="result-group" aria-label={group.title}>
+                        <section class="result-group" aria-label={text(group.title, group.resourceScope)}>
                             <h2>
                                 <TruncatedButton
                                     pressFeedback={false}
-                                    label={group.title}
+                                    label={text(group.title, group.resourceScope)}
                                     class={{ active: revealed === settingsAnchor(group.pageId, { kind: "page" }) }}
                                     aria-disabled={search.busy || undefined}
                                     onclick={() =>
@@ -145,7 +161,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                             {#each group.entries as entry (settingsAnchor(entry.pageId, entry.target))}
                                 <TruncatedButton
                                     pressFeedback={false}
-                                    label={entry.title}
+                                    label={text(entry.title, entry.titleResourceScope)}
                                     class={["result-field", { active: _resultSelected(entry) }]}
                                     aria-current={_resultSelected(entry) ? "location" : undefined}
                                     aria-disabled={search.busy || undefined}
@@ -168,13 +184,13 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                     aria-current={selection === "general" ? "page" : undefined}
                     onclick={() => onNavigate("general", { kind: "page" })}
                 >
-                    {@render pageIcon("general")}General
+                    {@render pageIcon("general")}{localization.text({ message: "settings-general" })}
                 </Button>
-                <h2 class="nav-heading">Extensions</h2>
+                <h2 class="nav-heading">{localization.text({ message: "settings-extensions" })}</h2>
                 {#each extensions as extension (extension.id)}
                     <TruncatedButton
                         pressFeedback={false}
-                        label={extension.name}
+                        label={text(extension.name, extension.resourceScope)}
                         class={{ active: selection === extension.id }}
                         aria-current={selection === extension.id ? "page" : undefined}
                         onclick={() => onNavigate(extension.id, { kind: "page" })}
@@ -189,7 +205,7 @@ function _resultSelected(entry: SettingsSearchEntry): boolean
                         aria-current={selection === "about" ? "page" : undefined}
                         onclick={() => onNavigate("about", { kind: "page" })}
                     >
-                        {@render pageIcon("about")}About
+                        {@render pageIcon("about")}{localization.text({ message: "settings-about" })}
                     </Button>
                 </div>
             {/if}
@@ -231,6 +247,6 @@ nav :global(button:hover:not(:disabled, [aria-disabled="true"])), nav :global(bu
 .result-group + .result-group { margin-top: var(--space-3); }
 .result-group h2 { margin: 0; font: inherit; }
 .result-group :global(.result-field) { padding-left: calc(10px + var(--settings-nav-icon-size) + var(--space-2)); }
-.search-message { padding: 0 10px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.search-message { white-space: pre-wrap; padding: 0 10px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 </style>

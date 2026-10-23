@@ -1,5 +1,25 @@
 //! UI-independent host runtime and extension supervision boundaries.
 
+#[path = "OperationError.rs"]
+mod operation_error;
+pub use operation_error::OperationError;
+#[path = "OperationErrorCode.rs"]
+mod operation_error_code;
+pub use operation_error_code::OperationErrorCode;
+#[path = "RuntimeWarning.rs"]
+mod runtime_warning;
+pub use runtime_warning::RuntimeWarning;
+#[path = "LifecycleFailure.rs"]
+mod lifecycle_failure;
+pub use lifecycle_failure::{LifecycleFailure, MAX_LIFECYCLE_DIAGNOSTIC_BYTES};
+#[path = "LifecycleError.rs"]
+mod lifecycle_error;
+pub use lifecycle_error::LifecycleError;
+
+#[path = "ExtensionResourceScope.rs"]
+mod extension_resource_scope;
+pub use extension_resource_scope::ExtensionResourceScope;
+
 #[path = "AcpConnectionContext.rs"]
 mod acp_connection_context;
 #[path = "AcpExtensionCommand.rs"]
@@ -19,8 +39,11 @@ mod extension_text_read;
 mod text_read_reply;
 pub(crate) use extension_text_read::ExtensionTextRead;
 pub(crate) use text_read_reply::{TextReadCompletion, TextReadReply};
+#[path = "ConfigurationSaveError.rs"]
+mod configuration_save_error;
 #[path = "ConfigurationSaveOutcome.rs"]
 mod configuration_save_outcome;
+pub use configuration_save_error::ConfigurationSaveError;
 #[path = "ConfigurationSaveReceipt.rs"]
 mod configuration_save_receipt;
 pub(crate) use configuration_reply::{ConfigurationCompletion, ConfigurationReply};
@@ -148,34 +171,27 @@ pub use supervisor_error::*;
 
 pub use nanika_foundation::{DiagnosticCategory, DiagnosticCode};
 
-/// Publish one protocol snapshot into the shared search owner.
-pub fn publish_extension_snapshot(
-    search: &nanika_search::SearchContributor,
-    generation: u64,
-    entries: Vec<nanika_protocol::Candidate>,
-    complete: bool
-) -> Result<(), nanika_search::SearchQueueError> {
-    let extension_id = search.extension_id();
-    tracing::debug!(
-        extension_id,
-        generation,
-        candidates = entries.len(),
-        "extension search snapshot received"
-    );
-    search.publish_extension_snapshot(
-        generation,
-        search_candidates(extension_id, entries),
-        complete
-    )
-}
-
+/// Prepare the full publication before modifying the search owner.
 pub(crate) fn search_candidates(
     extension_id: &str,
-    entries: Vec<nanika_protocol::Candidate>
-) -> Vec<nanika_search::Candidate> {
-    entries
-        .into_iter()
-        .map(|entry| {
+    entries: Vec<nanika_protocol::Candidate>,
+    resources: Option<&nanika_localization::ResourceSet>
+) -> Result<Vec<nanika_search::Candidate>, String> {
+    let mut prepared = Vec::with_capacity(entries.len());
+    let mut bytes = 0usize;
+    for entry in entries {
+        let search_text = nanika_localization::candidate_search_text(
+            &entry,
+            resources,
+            nanika_platform::target_platform().as_str()
+        )?;
+        for value in &search_text {
+            bytes = bytes
+                .checked_add(value.len())
+                .filter(|bytes| *bytes <= nanika_protocol::MAX_EXTENSION_MESSAGE_BYTES)
+                .ok_or("prepared search publication exceeds its text budget")?;
+        }
+        prepared.push(
             nanika_search::Candidate::new(
                 match entry.kind {
                     nanika_protocol::CandidateKind::Action => nanika_search::CandidateKind::Action,
@@ -186,12 +202,13 @@ pub(crate) fn search_candidates(
                 entry.title,
                 entry.action_id,
                 entry.actions,
-                entry.aliases
+                search_text
             )
             .with_subtitle(entry.subtitle)
             .with_icon(entry.icon.filter(nanika_protocol::IconSource::is_valid))
-        })
-        .collect()
+        );
+    }
+    Ok(prepared)
 }
 
 #[cfg(test)]
@@ -297,3 +314,13 @@ pub use configuration_menu_section::ConfigurationMenuSection;
 #[path = "ConfigurationMenuControl.rs"]
 mod configuration_menu_control;
 pub use configuration_menu_control::ConfigurationMenuControl;
+
+#[path = "PendingConfiguration.rs"]
+mod pending_configuration;
+use pending_configuration::PendingConfiguration;
+#[path = "PendingRefresh.rs"]
+mod pending_refresh;
+use pending_refresh::PendingRefresh;
+#[path = "PendingTextRead.rs"]
+mod pending_text_read;
+use pending_text_read::PendingTextRead;

@@ -27,6 +27,25 @@ fn every_built_in_uses_the_ordinary_manifest_contract() {
     assert!(calculator.manifest.contributes.commands.is_empty());
     assert!(calculator.manifest.contributes.views.is_empty());
     assert!(calculator.manifest.contributes.root_search.is_some());
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/extensions/built-in");
+    let directories: Vec<String> =
+        serde_json::from_slice(&std::fs::read(root.join("inventory.json")).unwrap()).unwrap();
+    for (extension, directory) in inventory.extensions.into_iter().zip(directories) {
+        let installed = nanika_extension_package::InstalledExtension::from_manifest(
+            extension.manifest,
+            "unused".into(),
+            root.join(directory),
+            true
+        )
+        .unwrap();
+        assert!(matches!(
+            installed.name,
+            nanika_protocol::LocalizedText::Message(_)
+        ));
+        assert!(installed.localization.is_some());
+        assert_eq!(installed.name_search_values.len(), 2);
+    }
 }
 
 #[test]

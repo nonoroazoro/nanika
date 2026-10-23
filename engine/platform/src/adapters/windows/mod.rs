@@ -64,3 +64,7 @@ mod clipboard_owner;
 use clipboard_owner::ClipboardOwner;
 
 mod application_identity;
+
+#[path = "LanguageChangeObserver.rs"]
+mod language_change_observer;
+pub use language_change_observer::LanguageChangeObserver;

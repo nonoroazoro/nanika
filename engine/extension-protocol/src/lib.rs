@@ -2,6 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+#[path = "ProtocolError.rs"]
+mod protocol_error;
+pub use protocol_error::ProtocolError;
+
 #[path = "Action.rs"]
 mod action;
 #[path = "ActionIcon.rs"]
@@ -106,6 +110,12 @@ pub use frame_error::*;
 pub use framing::*;
 pub use host_service_request::*;
 pub use host_service_response::*;
+#[path = "HostServiceFailure.rs"]
+mod host_service_failure;
+pub use host_service_failure::HostServiceFailure;
+#[path = "HostServiceFailureKind.rs"]
+mod host_service_failure_kind;
+pub use host_service_failure_kind::HostServiceFailureKind;
 pub use icon_reference::*;
 pub use icon_source::*;
 pub use image_source::*;
@@ -152,3 +162,24 @@ pub use text_invalidation::TextInvalidation;
 
 /// Reserved Invoke entry for manifest-declared Settings actions.
 pub const SETTINGS_ENTRY_ID: &str = "nanika.settings";
+
+#[path = "LocalizedText.rs"]
+mod localized_text;
+pub use localized_text::*;
+#[path = "MessageReference.rs"]
+mod message_reference;
+pub use message_reference::*;
+#[path = "MessageArgument.rs"]
+mod message_argument;
+pub use message_argument::*;
+#[path = "MessageArguments.rs"]
+mod message_arguments;
+pub use message_arguments::*;
+
+#[path = "PresentationGroup.rs"]
+mod presentation_group;
+pub use presentation_group::PresentationGroup;
+
+#[path = "ViewMetadataValue.rs"]
+mod view_metadata_value;
+pub use view_metadata_value::ViewMetadataValue;

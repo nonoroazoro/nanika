@@ -19,7 +19,7 @@ fn fixture(
     let registry = Arc::new(ExtensionConfigurationRegistry::new(store.clone()));
     let contribution: ConfigurationContribution = serde_json::from_value(serde_json::json!({
         "title": "Fixture",
-        "quickMenu": [{"title": "Display", "items": [{"kind": "toggle", "key": "enabled"}]}],
+        "quickMenu": [{"id": "display", "title": "Display", "items": [{"kind": "toggle", "key": "enabled"}]}],
         "properties": {
             "enabled": {"type": "boolean", "title": "Enabled", "default": false, "persistence": persistence},
             "other": {"type": "boolean", "title": "Other", "default": true, "persistence": "beforeApply"},
@@ -35,7 +35,20 @@ fn fixture(
 
 #[test]
 fn persistence_order_and_application_failure_preserve_the_right_facts() {
+    let cause = crate::OperationError::with_detail(
+        crate::OperationErrorCode::ExtensionIo,
+        "device rejected request"
+    );
     for policy in ["beforeApply", "afterApply"] {
+        let failure = if policy == "beforeApply" {
+            crate::ConfigurationSaveError::SavedButNotApplied {
+                cause: Box::new(cause.clone())
+            }
+        } else {
+            crate::ConfigurationSaveError::UnconfirmedNotSaved {
+                cause: Box::new(cause.clone())
+            }
+        };
         for success in [true, false] {
             let (registry, store, root) = fixture(&format!("{policy}-{success}"), policy);
             let outcome = registry
@@ -53,11 +66,11 @@ fn persistence_order_and_application_failure_preserve_the_right_facts() {
                     if success {
                         Ok(ConfigurationApplication::Applied)
                     } else {
-                        Err("device rejected request".into())
+                        Err(cause.clone())
                     }
                 });
             assert_eq!(outcome.saved["enabled"], success || policy == "beforeApply");
-            assert_eq!(outcome.error.is_some(), !success);
+            assert_eq!(outcome.error, (!success).then_some(failure.clone()));
             assert_eq!(outcome.effective.is_some(), success);
             assert_eq!(outcome.values["other"], true);
             if success {
@@ -97,10 +110,7 @@ fn application_success_then_storage_failure_does_not_invent_rollback() {
     assert_eq!(outcome.values["enabled"], true);
     assert_eq!(outcome.effective.unwrap()["enabled"], true);
     assert!(
-        outcome
-            .error
-            .unwrap()
-            .contains("took effect but could not be saved")
+        matches!(outcome.error, Some(crate::ConfigurationSaveError::AppliedButNotSaved { detail }) if !detail.is_empty())
     );
     // Editing an unrelated field starts from confirmed actual state, not a stale file.
     let next = registry
@@ -119,7 +129,9 @@ fn persistence_failure_before_application_never_starts_the_task() {
         .prepare("test.extension", "enabled".into(), true.into())
         .unwrap()
         .run(|_, _| panic!("must not apply"));
-    assert!(outcome.error.is_some());
+    assert!(
+        matches!(outcome.error, Some(crate::ConfigurationSaveError::SaveFailed { detail }) if !detail.is_empty())
+    );
     assert_eq!(outcome.saved["enabled"], false);
     assert!(
         registry
@@ -142,10 +154,22 @@ fn admission_is_bounded_and_property_validation_preserves_hidden_values() {
         (hidden, false.into()),
         ("enabled", "invalid".into())
     ] {
+        let error = registry
+            .prepare("test.extension", key.into(), value)
+            .err()
+            .unwrap();
+        let code = if key == "enabled" {
+            crate::OperationErrorCode::InvalidConfiguration
+        } else {
+            crate::OperationErrorCode::ConfigurationPropertyUnavailable
+        };
         assert!(
-            registry
-                .prepare("test.extension", key.into(), value)
-                .is_err()
+            matches!(error, crate::OperationError::Host { code: actual, .. } if actual == code)
+        );
+        assert!(
+            !store
+                .extension_configuration_file("test.extension")
+                .exists()
         );
     }
     let operation = registry
@@ -190,7 +214,10 @@ fn apply_first_cannot_save_a_deferred_operation() {
         .prepare("test.extension", "enabled".into(), true.into())
         .unwrap()
         .run(|_, _| Ok(ConfigurationApplication::Deferred));
-    assert!(outcome.error.is_some());
+    assert_eq!(
+        outcome.error,
+        Some(crate::ConfigurationSaveError::Unavailable)
+    );
     assert_eq!(outcome.saved["enabled"], false);
     assert!(
         !store
@@ -235,7 +262,11 @@ fn menu_changes_share_settings_admission_and_reject_stale_values_and_unexposed_k
     let outcome = registry
         .prepare_menu("test.extension", "enabled".into(), false, outcome.revision)
         .unwrap()
-        .run(|_, _| Err("Application failed".into()));
+        .run(|_, _| {
+            Err(crate::OperationError::new(
+                crate::OperationErrorCode::ExtensionIo
+            ))
+        });
     assert!(outcome.error.is_some());
     assert_eq!(
         outcome.saved["enabled"], true,

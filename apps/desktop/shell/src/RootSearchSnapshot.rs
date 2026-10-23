@@ -9,6 +9,9 @@ pub(crate) struct RootSearchSnapshot {
     pub(crate) text_invalidations: Vec<crate::TextInvalidationNotice>,
     pub(crate) navigation: crate::NavigationSnapshot,
     pub(crate) session_id: u64,
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) localization: Option<nanika_localization::LocalizationSnapshot>,
     pub(crate) request_id: u64,
     pub(crate) revision: u64,
     pub(crate) query: String,
@@ -19,7 +22,7 @@ pub(crate) struct RootSearchSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) results: Option<Vec<SearchResult>>,
     pub(crate) phase: SearchPhase,
-    pub(crate) error: Option<String>,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) error: Option<nanika_host::OperationError>,
+    pub(crate) warnings: Vec<nanika_host::RuntimeWarning>,
     pub(crate) pending_extensions: Vec<String>
 }

@@ -54,6 +54,18 @@ export async function buildExtensions(
     const resources: Record<string, string> = { ...tauriConfig.bundle.resources };
     for (const { directory, manifest } of extensions)
     {
+        for (const paths of Object.values(manifest.localization?.resources ?? {}))
+        {
+            for (const path of paths)
+            {
+                const source = join(directory, path);
+                if (!(await stat(source)).isFile())
+                {
+                    throw new Error(`Extension localization resource is not a file: ${source}`);
+                }
+                resources[source] = `extensions/${manifest.id}/${path}`;
+            }
+        }
         for await (const path of new Bun.Glob("assets/**/*.png").scan(directory))
         {
             resources[join(directory, path)] = `extensions/${manifest.id}/${path.replaceAll("\\", "/")}`;

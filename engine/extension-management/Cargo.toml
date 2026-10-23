@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 ts-rs = { workspace = true, optional = true }
 nanika-protocol = { path = "../extension-protocol" }
+nanika-localization = { path = "../localization" }
 nanika-platform = { path = "../platform" }
 jsonc-parser.workspace = true
 nanika-config = { path = "../configuration" }

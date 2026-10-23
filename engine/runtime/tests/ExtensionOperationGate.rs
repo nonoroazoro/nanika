@@ -9,7 +9,13 @@ fn releasing_admission_wakes_recovery_even_without_an_operation_result() {
         let _ = sent.try_send(());
     }));
     let reservation = gate.reserve("extension").unwrap();
-    assert!(gate.reserve("extension").is_err());
+    assert!(matches!(
+        gate.reserve("extension").err().unwrap(),
+        crate::OperationError::Host {
+            code: crate::OperationErrorCode::OperationPending,
+            ..
+        }
+    ));
     assert!(received.try_recv().is_err());
     drop(reservation);
     received
@@ -17,7 +23,13 @@ fn releasing_admission_wakes_recovery_even_without_an_operation_result() {
         .unwrap();
     let reservation = gate.reserve("extension").unwrap();
     gate.close();
-    assert!(gate.reserve("other").is_err());
+    assert!(matches!(
+        gate.reserve("other").err().unwrap(),
+        crate::OperationError::Host {
+            code: crate::OperationErrorCode::ApplicationShuttingDown,
+            ..
+        }
+    ));
     drop(reservation);
     received
         .recv_timeout(std::time::Duration::from_secs(1))

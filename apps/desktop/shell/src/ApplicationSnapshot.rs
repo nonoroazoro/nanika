@@ -6,7 +6,7 @@ use serde::Serialize;
 pub(crate) struct ApplicationSnapshot {
     pub(crate) session_id: u64,
     pub(crate) version: &'static str,
-    pub(crate) locale: String,
+    pub(crate) localization: nanika_localization::LocalizationSnapshot,
     pub(crate) platform: nanika_platform::TargetPlatform,
     pub(crate) max_query_chars: usize,
     pub(crate) resource_origin: String

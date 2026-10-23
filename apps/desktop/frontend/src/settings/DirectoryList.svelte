@@ -1,4 +1,8 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
+import type { OperationError } from "../generated/OperationError";
+import { operationErrorText, operationFailure } from "../localization/operation-errors";
+
 import PlusIcon from "../components/icons/PlusIcon.svelte";
 import FolderIcon from "../components/icons/FolderIcon.svelte";
 import CircleMinusIcon from "../components/icons/CircleMinusIcon.svelte";
@@ -16,7 +20,8 @@ const { paths, maximum, label, titleId, description, onPick, onChange }: {
     onChange: (paths: string[]) => void;
 } = $props();
 let picking = false;
-let error = $state<string | null>(null);
+let error = $state<OperationError | null>(null);
+const pathId = $props.id();
 let active = true;
 onDestroy(() =>
 {
@@ -45,7 +50,7 @@ async function add(): Promise<void>
         if (active)
         {
             console.error("Folder could not be added", cause);
-            error = "Folder could not be added. Try again.";
+            error = operationFailure(cause, "directoryPickerFailed");
         }
     }
     finally
@@ -74,18 +79,19 @@ async function add(): Promise<void>
             }}
         >
             <PlusIcon size={16} strokeWidth={1.6} />
-            Add folder
+            {localization.text({ message: "settings-folder-add" })}
         </Button>
     </div>
     {#if paths.length > 0}<ScrollArea style="max-height: 320px; flex: none;"><div class="directory-items">
                 {#each paths as path, index (index)}
                     <div class="directory">
                         <FolderIcon size={18} strokeWidth={1.6} />
-                        <span class="path" title={path}>{path}</span>
+                        <span class="path" id={`${pathId}-${index}`} title={path}>{path}</span>
                         <Button
                             class="remove-folder"
-                            aria-label={`Remove folder ${path}`}
-                            title="Remove folder"
+                            aria-label={localization.text({ message: "settings-folder-remove" })}
+                            aria-describedby={`${pathId}-${index}`}
+                            title={localization.text({ message: "settings-folder-remove" })}
                             onclick={() => onChange(paths.filter((_, position) => position !== index))}
                         >
                             <CircleMinusIcon size={18} strokeWidth={1.6} />
@@ -94,7 +100,9 @@ async function add(): Promise<void>
                 {/each}
             </div></ScrollArea>{/if}
 
-    {#if error}<p role="alert">{error}</p>{/if}
+    {#if error}<p role="alert">
+            {operationErrorText(error, localization.locale, value => localization.text(value))}
+        </p>{/if}
 </div>
 
 <style>
@@ -111,5 +119,5 @@ h2 { margin: 0; font-size: var(--settings-label-size); line-height: var(--settin
 .directories :global(.remove-folder) { width: 32px; height: 32px; padding: 7px; border-radius: var(--control-radius); color: var(--text-danger); }
 .directories :global(.remove-folder:hover:not(:disabled)) { background: var(--surface-danger-hover); color: var(--text-danger); }
 .directories :global(.remove-folder:focus-visible) { background: var(--surface-danger-hover); }
-p[role="alert"] { color: var(--text-danger); margin: 0; overflow-wrap: anywhere; }
+p[role="alert"] { color: var(--text-danger); margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 </style>

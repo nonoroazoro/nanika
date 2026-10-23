@@ -128,8 +128,8 @@ fn root_confirmation_is_exposed_only_for_the_enabled_primary_action() {
         let result = SearchResult::from_candidate(&candidate, None);
         assert!(!result.allow_default_execution);
         assert_eq!(
-            result.confirmation_title.as_deref(),
-            enabled.then_some("Confirm Shut Down")
+            result.confirmation_title,
+            enabled.then_some("Confirm Shut Down".into())
         );
     }
 }
@@ -158,13 +158,10 @@ fn results_preserve_confirmation_style_and_consequences() {
         );
         let result = SearchResult::from_candidate(&candidate, None);
         assert_eq!(result.action_style, style);
+        assert_eq!(result.confirmation_title, Some("Run this action?".into()));
         assert_eq!(
-            result.confirmation_title.as_deref(),
-            Some("Run this action?")
-        );
-        assert_eq!(
-            result.confirmation_description.as_deref(),
-            Some("The selected operation will be executed.")
+            result.confirmation_description,
+            Some("The selected operation will be executed.".into())
         );
         assert!(!result.allow_default_execution);
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
 import { listPrefetchDistance } from "../../ui/list-loading";
 import { uiActivity } from "../../ui/activity";
 import Button from "./Button.svelte";
@@ -114,7 +115,7 @@ function _position(root: HTMLElement, target: HTMLElement): number
                 void _load(viewport, boundary, scope, cursor);
             }
         }}
-    >{failed ? "Try again" : "Load more text"}</Button>
+    >{localization.text({ message: failed ? "action-retry" : "view-text-load-more" })}</Button>
 {/if}
 
 <style>

@@ -14,7 +14,9 @@ impl Drop for ExtensionWorkerLifetime {
             let (lock, changed) = &*self.state;
             let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
             if state.stop_result.is_none() {
-                let error = "Extension worker exited without a stop result.".to_owned();
+                let error = crate::LifecycleFailure::new(
+                    crate::OperationErrorCode::ExtensionStopUnconfirmed
+                );
                 state.lifecycle = crate::RuntimeExtensionState::Failed;
                 state.lifecycle_error = Some(error.clone());
                 state.stop_result = Some(Err(error));
@@ -31,24 +33,31 @@ impl Drop for ExtensionWorkerLifetime {
             pending
         };
         for refresh in refreshes {
-            let _ = refresh
-                .completion
-                .send(Err("extension worker closed before refreshing".to_owned()));
+            let _ = refresh.completion.send(Err(crate::OperationError::new(
+                crate::OperationErrorCode::RefreshUnconfirmed
+            )));
         }
         for invocation in invocations {
-            let _ = invocation.response.send(Err(
-                "extension worker closed before executing the action".to_owned()
-            ));
+            let _ = invocation
+                .response
+                .send(Err(crate::OperationError::with_detail(
+                    crate::OperationErrorCode::ExtensionUnavailable,
+                    "extension worker closed before executing the action"
+                )));
         }
         for request in view_events {
-            let _ = request.completion.send(Err(
-                "extension worker closed before handling the view request".to_owned()
-            ));
+            let _ = request
+                .completion
+                .send(Err(crate::OperationError::with_detail(
+                    crate::OperationErrorCode::ExtensionUnavailable,
+                    "extension worker closed before handling the view request"
+                )));
         }
         for update in configurations {
-            update.complete(Err(
-                "extension worker closed before applying the configuration".to_owned()
-            ));
+            update.complete(Err(crate::OperationError::with_detail(
+                crate::OperationErrorCode::ExtensionUnavailable,
+                "extension worker closed before applying the configuration"
+            )));
         }
         let notify = self
             .notifier

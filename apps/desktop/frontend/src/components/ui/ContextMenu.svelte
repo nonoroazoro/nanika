@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
 import { createAttachmentKey } from "svelte/attachments";
 import { menuMotion } from "./popup-motion";
 import { ContextMenu as Menu } from "bits-ui";
@@ -11,22 +12,25 @@ import ShortcutKeys from "./ShortcutKeys.svelte";
 
 import type { Snippet } from "svelte";
 import type { Action } from "../../generated/Action";
+import type { LocalizedText } from "../../generated/LocalizedText";
 
 const motionKey = createAttachmentKey();
 
-const { actions, sections, position, anchor, open, heading, footer, shortcuts = {}, onClose, onClosed, onInvoke }: {
-    actions: Action[];
-    sections?: ContextMenuSection[];
-    position: [number, number] | null;
-    anchor?: HTMLElement;
-    open: boolean;
-    heading?: string;
-    footer?: Snippet;
-    shortcuts?: Record<string, string[]>;
-    onClose: () => void;
-    onClosed: () => void;
-    onInvoke: (id: string) => void;
-} = $props();
+const { actions, sections, position, anchor, open, heading, footer, shortcuts = {}, text, onClose, onClosed, onInvoke }:
+    {
+        text: (value: LocalizedText) => string;
+        actions: Action[];
+        sections?: ContextMenuSection[];
+        position: [number, number] | null;
+        anchor?: HTMLElement;
+        open: boolean;
+        heading?: string;
+        footer?: Snippet;
+        shortcuts?: Record<string, string[]>;
+        onClose: () => void;
+        onClosed: () => void;
+        onInvoke: (id: string) => void;
+    } = $props();
 let outsideTarget: Element | null = null;
 let returnFocus: HTMLElement | null = null;
 const reference = $derived(
@@ -48,7 +52,7 @@ const displayedSections = $derived.by(() =>
     {
         const previous = ordered[index - 1];
         if (
-            !previous || action.group !== previous.group
+            !previous || action.group?.id !== previous.group?.id
             || (action.style === "destructive") !== (previous.style === "destructive")
         )
         {
@@ -108,7 +112,7 @@ function _keydown(event: KeyboardEvent): void
                     {...{ [motionKey]: menuMotion }}
                     id="context-menu"
                     class="popup-surface context-menu"
-                    aria-label={heading ?? "Actions"}
+                    aria-label={heading ?? localization.text({ message: "actions-label" })}
                     customAnchor={reference}
                     data-attached={anchor ? "" : undefined}
                     side={anchor ? "top" : "bottom"}
@@ -160,7 +164,7 @@ function _keydown(event: KeyboardEvent): void
                             {#if heading && !(anchor && footer)}<Menu.GroupHeading class="popup-heading">{
                                     heading
                                 }</Menu.GroupHeading>{/if}
-                            {#each displayedSections as section, sectionIndex (section.items[0]?.id ?? sectionIndex)}
+                            {#each displayedSections as section, sectionIndex (section.id ? `group:${section.id}` : `item:${section.items[0]?.id ?? sectionIndex}`)}
                                 {#if sectionIndex > 0}<Menu.Separator class="popup-separator" />{/if}
                                 <Menu.Group>
                                     {#if section.title}<Menu.GroupHeading class="popup-heading">{
@@ -176,7 +180,7 @@ function _keydown(event: KeyboardEvent): void
                                                 closeOnSelect={false}
                                                 onSelect={() => _activate(action)}
                                             >
-                                                <span>{action.title}</span>
+                                                <span>{text(action.title)}</span>
                                                 {#if action.checked}<CheckIcon size={16} />{/if}
                                             </Menu.CheckboxItem>
                                         {:else}
@@ -187,7 +191,7 @@ function _keydown(event: KeyboardEvent): void
                                                 closeOnSelect={false}
                                                 onSelect={() => _activate(action)}
                                             >
-                                                <span>{action.title}</span>
+                                                <span>{text(action.title)}</span>
                                                 {#if keys}<ShortcutKeys {keys} />{/if}
                                             </Menu.Item>
                                         {/if}

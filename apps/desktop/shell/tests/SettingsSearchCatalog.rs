@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 fn general_render_definitions_are_all_searchable_without_extensions() {
     for section in crate::general_settings::sections() {
         for field in section.fields {
-            let results = SettingsSearchCatalog::new(&[]).search(field.title);
+            let results = SettingsSearchCatalog::new(&[]).search(&_text(&field.title));
             assert_eq!(results[0].page_id, "general");
-            assert_eq!(results[0].page_title, "General");
+            assert_eq!(_text(&results[0].page_title), "General");
             assert_eq!(
                 results[0].target,
                 SettingsSearchTarget::Field {
@@ -17,7 +17,7 @@ fn general_render_definitions_are_all_searchable_without_extensions() {
         }
     }
     assert_eq!(
-        SettingsSearchCatalog::new(&[]).search("dark")[0].title,
+        _text(&SettingsSearchCatalog::new(&[]).search("dark")[0].title),
         "Theme"
     );
     assert!(SettingsSearchCatalog::new(&[]).search("  / -- ").is_empty());
@@ -55,9 +55,9 @@ fn matching_uses_all_terms_across_title_and_breadcrumb_with_page_order() {
     let results =
         SettingsSearchCatalog::new(std::slice::from_ref(&extension)).search("applications folder");
     assert_eq!(results.len(), 2);
-    assert_eq!(results[0].title, "Folders");
-    assert_eq!(results[0].page_title, "Applications");
-    assert_eq!(results[1].title, "Other folders");
+    assert_eq!(_text(&results[0].title), "Folders");
+    assert_eq!(_text(&results[0].page_title), "Applications");
+    assert_eq!(_text(&results[1].title), "Other folders");
     let results =
         SettingsSearchCatalog::new(std::slice::from_ref(&extension)).search("APPLICATIONS");
     assert_eq!(results[0].target, SettingsSearchTarget::Page);
@@ -88,8 +88,11 @@ fn platform_filtering_and_configuration_failures_match_visible_rows() {
         .for_platform(nanika_platform::TargetPlatform::Windows);
     let results = SettingsSearchCatalog::new(std::slice::from_ref(&extension)).search("folders");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].title, "Other folders");
-    extension.info.configuration_error = Some("Invalid configuration".into());
+    assert_eq!(_text(&results[0].title), "Other folders");
+    extension.info.configuration_error = Some(nanika_host::OperationError::with_detail(
+        nanika_host::OperationErrorCode::ExtensionConfigurationUnavailable,
+        "Invalid configuration"
+    ));
     assert!(
         SettingsSearchCatalog::new(std::slice::from_ref(&extension))
             .search("folders")
@@ -138,6 +141,7 @@ fn renamed_labels_keep_destinations_and_no_search_metadata_leaks_over_ipc() {
 fn settings_and_app_list_share_matching_except_romanized_aliases() {
     let mut extension = _extension();
     extension.info.name = "Calculator".into();
+    extension.info.name_search_values = vec!["Calculator".into()];
     extension.configuration = None;
     for query in ["calculator", "CAL", "clc", "calc-ulator", "unrelated"] {
         let candidate = nanika_search::Candidate::new(
@@ -162,6 +166,7 @@ fn settings_and_app_list_share_matching_except_romanized_aliases() {
         assert_eq!(settings_match, app_match, "{query}");
     }
     extension.info.name = "音乐".into();
+    extension.info.name_search_values = vec!["音乐".into()];
     assert!(
         SettingsSearchCatalog::new(std::slice::from_ref(&extension))
             .search("音乐")
@@ -189,24 +194,41 @@ fn descriptions_do_not_admit_unrelated_fuzzy_matches() {
         .description = Some("Search these folders in addition to your system applications.".into());
     let results = SettingsSearchCatalog::new(&[extension]).search("them");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].title, "Theme");
+    assert_eq!(_text(&results[0].title), "Theme");
     assert_eq!(results[0].page_id, "general");
     assert_eq!(
-        SettingsSearchCatalog::new(&[]).search("dark")[0].title,
+        _text(&SettingsSearchCatalog::new(&[]).search("dark")[0].title),
         "Theme"
     );
 }
 
 #[test]
 fn about_and_version_queries_reveal_the_host_page_without_extensions() {
-    for query in ["about", "version", "nanika"] {
+    for query in ["about", "关于", "version", "nanika"] {
         let results = SettingsSearchCatalog::new(&[]).search(query);
         // Other fuzzy matches may precede About in navigation order.
         let about = results
             .iter()
             .find(|entry| entry.page_id == "about")
             .unwrap();
-        assert_eq!(about.title, "About");
+        assert_eq!(_text(&about.title), "About");
+        assert_eq!(about.title, nanika_protocol::message("settings-about", []));
+        assert_eq!(about.page_title, about.title);
+        assert!(about.title_resource_scope.is_none());
+        assert!(about.page_resource_scope.is_none());
+        assert_eq!(
+            crate::host_resources::resources()
+                .unwrap()
+                .format(
+                    nanika_localization::SupportedLocale::SimplifiedChinese,
+                    &about.title,
+                    "windows",
+                    512,
+                    false
+                )
+                .unwrap(),
+            "关于"
+        );
         assert_eq!(about.target, SettingsSearchTarget::Page);
     }
 }
@@ -221,8 +243,11 @@ fn _extension() -> ExtensionLifecycle {
     })).unwrap();
     ExtensionLifecycle {
         info: nanika_host::RuntimeExtensionInfo {
+            resource_scope: None,
             id: "test.applications".into(),
             name: "Applications".into(),
+            name_search_values: vec!["Applications".into()],
+            configuration_search_values: Default::default(),
             enabled: false,
             pending: false,
             state: nanika_host::RuntimeExtensionState::Disabled,
@@ -258,7 +283,7 @@ fn declared_settings_actions_are_searchable_by_their_group_and_title() {
                 "description": "Reset test data.",
                 "action": { "id": "reset", "title": "Reset data", "style": "destructive",
                     "enabled": true, "allow_default_execution": false,
-                    "confirmation_title": "Reset now?", "group": "Danger zone" }
+                    "confirmation_title": "Reset now?", "group": {"id":"danger-zone","title":"Danger zone"} }
             }))
             .unwrap()
         );
@@ -287,7 +312,7 @@ fn matches_keep_visual_field_order_even_when_later_titles_match_better() {
     assert_eq!(
         results
             .iter()
-            .map(|entry| entry.title.as_str())
+            .map(|entry| _text(&entry.title))
             .collect::<Vec<_>>(),
         vec!["Extra folders", "Folders"]
     );
@@ -305,11 +330,13 @@ fn extension_matches_follow_fields_then_actions_in_rendered_group_order() {
         .unwrap()
         .order = 0;
     for (id, group) in [
-        ("first", Some("Danger zone")),
+        ("first", Some(("danger-zone", "Danger zone"))),
         ("second", None),
-        ("third", Some("Danger zone")),
-        ("fourth", Some("Actions"))
+        ("third", Some(("danger-zone", "Danger zone"))),
+        ("fourth", Some(("explicit-actions", "Actions"))),
+        ("fifth", None)
     ] {
+        let group = group.map(|(id, title)| serde_json::json!({"id": id, "title": title}));
         configuration.contribution.actions.push(
             serde_json::from_value(serde_json::json!({
                 "description": "Test operation.",
@@ -344,6 +371,9 @@ fn extension_matches_follow_fields_then_actions_in_rendered_group_order() {
                 key: "second".into()
             },
             SettingsSearchTarget::Action {
+                key: "fifth".into()
+            },
+            SettingsSearchTarget::Action {
                 key: "fourth".into()
             }
         ]
@@ -370,5 +400,110 @@ fn general_matches_follow_section_and_field_order() {
             .map(|entry| entry.target)
             .collect::<Vec<_>>(),
         expected
+    );
+}
+
+fn _text(text: &nanika_protocol::LocalizedText) -> String {
+    crate::host_resources::resources()
+        .unwrap()
+        .format(
+            nanika_localization::SupportedLocale::English,
+            text,
+            "macos",
+            512,
+            false
+        )
+        .unwrap()
+}
+
+#[test]
+fn bilingual_names_keep_scoped_sources_and_identical_search_order() {
+    let mut extension = _extension();
+    extension.info.name = nanika_protocol::message("extension-name", []);
+    extension.info.name_search_values = vec!["Applications".into(), "应用程序".into()];
+    let scope = nanika_host::ExtensionResourceScope {
+        extension_id: extension.info.id.clone(),
+        identity: "a".repeat(64)
+    };
+    extension.info.resource_scope = Some(scope.clone());
+    let catalog = SettingsSearchCatalog::new(&[extension]);
+    let english = catalog.search("applications");
+    let chinese = catalog.search("应用程序");
+    assert_eq!(
+        serde_json::to_value(&english).unwrap(),
+        serde_json::to_value(&chinese).unwrap()
+    );
+    assert_eq!(
+        english[0].title,
+        nanika_protocol::message("extension-name", [])
+    );
+    assert_eq!(english[0].title_resource_scope, Some(scope.clone()));
+    assert_eq!(english[0].page_resource_scope, Some(scope.clone()));
+    assert_eq!(english[1].title_resource_scope, None);
+    assert_eq!(english[1].page_resource_scope, Some(scope));
+    assert!(
+        serde_json::to_value(&english)
+            .unwrap()
+            .to_string()
+            .find("nameSearchValues")
+            .is_none()
+    );
+}
+
+#[test]
+fn localized_configuration_fields_use_prepared_aliases_and_explicit_package_scope() {
+    let mut extension = _extension();
+    extension.info.name_search_values.push("应用程序".into());
+    extension.info.resource_scope = Some(nanika_host::ExtensionResourceScope {
+        extension_id: extension.info.id.clone(),
+        identity: "b".repeat(64)
+    });
+    let property = extension
+        .configuration
+        .as_mut()
+        .unwrap()
+        .contribution
+        .properties
+        .get_mut("folders")
+        .unwrap();
+    property.title = nanika_protocol::message("folders-title", []);
+    property.group = Some(nanika_protocol::PresentationGroup {
+        id: "locations".into(),
+        title: nanika_protocol::message("locations-title", [])
+    });
+    extension.info.configuration_search_values.insert(
+        "field:folders".into(),
+        vec![
+            "Folders".into(),
+            "Search locations".into(),
+            "文件夹".into(),
+            "搜索位置".into(),
+        ]
+    );
+    assert!(
+        serde_json::to_value(&extension.info)
+            .unwrap()
+            .get("configurationSearchValues")
+            .is_none()
+    );
+    let catalog = SettingsSearchCatalog::new(&[extension]);
+    let chinese = catalog.search("应用程序 文件夹");
+    let english = catalog.search("applications locations");
+    assert_eq!(
+        serde_json::to_value(&english).unwrap(),
+        serde_json::to_value(&chinese).unwrap()
+    );
+    assert_eq!(chinese.len(), 1);
+    assert_eq!(
+        chinese[0].title,
+        nanika_protocol::message("folders-title", [])
+    );
+    assert_eq!(
+        chinese[0]
+            .title_resource_scope
+            .as_ref()
+            .unwrap()
+            .extension_id,
+        "test.applications"
     );
 }

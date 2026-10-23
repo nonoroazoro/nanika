@@ -9,8 +9,8 @@ use nanika_search::SearchHandle;
 use crate::{
     ExtensionInvocation, ExtensionInvocationOutcome, ExtensionInvocationOutput, ExtensionNotifier,
     ExtensionSearchWorker, ExtensionSearchWorkerContext, ExtensionViewRequest,
-    ExtensionViewRequestKind, HostServiceHandler, RuntimeViewCompletion, RuntimeViewInvalidation,
-    SupervisorError
+    ExtensionViewRequestKind, HostServiceHandler, OperationError, RuntimeViewCompletion,
+    RuntimeViewInvalidation
 };
 
 /// Dynamic collection of instance-bound workers queried by one host generation.
@@ -160,17 +160,13 @@ impl ExtensionSearchCoordinator {
         &self,
         extension_id: &str,
         generation: u64
-    ) -> Result<Receiver<Result<(), String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<(), crate::OperationError>>, OperationError> {
         let worker = self
             ._workers()
             .iter()
             .find(|worker| worker.extension_id() == extension_id)
             .cloned()
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         self._refresh_worker(&worker, generation)
     }
 
@@ -178,7 +174,7 @@ impl ExtensionSearchCoordinator {
         &self,
         worker: &ExtensionSearchWorker,
         generation: u64
-    ) -> Result<Receiver<Result<(), String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<(), crate::OperationError>>, OperationError> {
         let (completion, receiver) = mpsc::sync_channel(1);
         worker.refresh(crate::ExtensionRefresh {
             request_id: self.next_refresh_id.fetch_add(1, Ordering::Relaxed),
@@ -190,7 +186,7 @@ impl ExtensionSearchCoordinator {
 
     /// Refresh every dynamic Root Search contributor and retain every completion.
     /// The caller must run outside the UI thread because admission and completion wait.
-    pub fn refresh_root_search(&self, generation: u64) -> Result<(), String> {
+    pub fn refresh_root_search(&self, generation: u64) -> Result<(), Vec<crate::RuntimeWarning>> {
         let mut pending = Vec::new();
         let mut errors = Vec::new();
         for worker in self
@@ -201,21 +197,23 @@ impl ExtensionSearchCoordinator {
             let id = worker.extension_id().to_owned();
             match self._refresh_worker(worker, generation) {
                 Ok(completion) => pending.push((id, completion)),
-                Err(error) => errors.push(format!("{id}: {error}"))
+                Err(error) => errors.push(crate::RuntimeWarning::new(Some(id), error))
             }
         }
         for (id, completion) in pending {
-            let result = completion
-                .recv()
-                .unwrap_or_else(|_| Err("Extension closed without a refresh result.".to_owned()));
+            let result = completion.recv().unwrap_or_else(|_| {
+                Err(crate::OperationError::new(
+                    crate::OperationErrorCode::RefreshUnconfirmed
+                ))
+            });
             if let Err(error) = result {
-                errors.push(format!("{id}: {error}"));
+                errors.push(crate::RuntimeWarning::new(Some(id), error));
             }
         }
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("\n"))
+            Err(errors)
         }
     }
 
@@ -225,12 +223,15 @@ impl ExtensionSearchCoordinator {
             .find_map(|worker| worker.last_error())
     }
 
-    pub(crate) fn warnings(&self) -> Vec<String> {
+    pub(crate) fn warnings(&self) -> Vec<crate::RuntimeWarning> {
         self._workers()
             .iter()
             .filter_map(|worker| {
                 worker.last_error().map(|diagnostic| {
-                    format!("{}: {}", worker.extension_id(), diagnostic.user_message())
+                    crate::RuntimeWarning::new(
+                        Some(worker.extension_id().to_owned()),
+                        diagnostic.operation_error(crate::OperationErrorCode::ExtensionUnavailable)
+                    )
                 })
             })
             .collect()
@@ -244,7 +245,8 @@ impl ExtensionSearchCoordinator {
         entry_id: impl Into<String>,
         action_id: impl Into<String>,
         query_context: impl Into<String>
-    ) -> Result<Receiver<Result<ExtensionInvocationOutcome, String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<ExtensionInvocationOutcome, crate::OperationError>>, OperationError>
+    {
         let worker = self
             ._workers()
             .iter()
@@ -252,11 +254,7 @@ impl ExtensionSearchCoordinator {
                 worker.extension_id() == extension_id && worker.instance.id == instance_id
             })
             .cloned()
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         let invocation_id = self.next_invocation_id.fetch_add(1, Ordering::Relaxed);
         let (response, completion) = mpsc::sync_channel(1);
         let invocation = ExtensionInvocation {
@@ -275,17 +273,13 @@ impl ExtensionSearchCoordinator {
         &self,
         extension_id: &str,
         invocation_id: u64
-    ) -> Result<(), SupervisorError> {
+    ) -> Result<(), OperationError> {
         let worker = self
             ._workers()
             .iter()
             .find(|worker| worker.extension_id() == extension_id)
             .cloned()
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         worker.cancel_invocation(invocation_id);
         Ok(())
     }
@@ -297,7 +291,8 @@ impl ExtensionSearchCoordinator {
         generation: u64,
         view_id: String,
         read: nanika_protocol::TextRead
-    ) -> Result<Receiver<Result<nanika_protocol::TextChunk, String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<nanika_protocol::TextChunk, crate::OperationError>>, OperationError>
+    {
         let worker = self
             ._workers()
             .iter()
@@ -305,7 +300,7 @@ impl ExtensionSearchCoordinator {
                 worker.extension_id() == extension_id && worker.instance.id == instance_id
             })
             .cloned()
-            .ok_or(SupervisorError::ChannelClosed)?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         let (completion, receiver) = mpsc::channel();
         worker.read_text(crate::ExtensionTextRead {
             request_id: self.next_view_request_id.fetch_add(1, Ordering::Relaxed),
@@ -325,7 +320,8 @@ impl ExtensionSearchCoordinator {
         view_id: impl Into<String>,
         revision: u64,
         event: nanika_protocol::ViewEvent
-    ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<RuntimeViewCompletion, crate::OperationError>>, OperationError>
+    {
         let worker = self
             ._workers()
             .iter()
@@ -333,11 +329,7 @@ impl ExtensionSearchCoordinator {
                 worker.extension_id() == extension_id && worker.instance.id == instance_id
             })
             .cloned()
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
         let (completion, receiver) = mpsc::channel();
         worker.view_event(ExtensionViewRequest {
@@ -358,7 +350,8 @@ impl ExtensionSearchCoordinator {
         generation: u64,
         view_id: impl Into<String>,
         revision: u64
-    ) -> Result<Receiver<Result<RuntimeViewCompletion, String>>, SupervisorError> {
+    ) -> Result<Receiver<Result<RuntimeViewCompletion, crate::OperationError>>, OperationError>
+    {
         let worker = self
             ._workers()
             .iter()
@@ -366,11 +359,7 @@ impl ExtensionSearchCoordinator {
                 worker.extension_id() == extension_id && worker.instance.id == instance_id
             })
             .cloned()
-            .ok_or_else(|| {
-                SupervisorError::UnexpectedMessage(format!(
-                    "extension search worker does not exist: {extension_id}"
-                ))
-            })?;
+            .ok_or_else(|| OperationError::new(crate::OperationErrorCode::ExtensionUnavailable))?;
         let request_id = self.next_view_request_id.fetch_add(1, Ordering::Relaxed);
         let (completion, receiver) = mpsc::channel();
         worker.view_event(ExtensionViewRequest {
@@ -399,8 +388,10 @@ impl ExtensionSearchCoordinator {
         configuration: nanika_protocol::ExtensionConfiguration,
         require_live: bool,
         progress: crate::ConfigurationProgressHandler,
-        completion: mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>
-    ) -> Result<bool, SupervisorError> {
+        completion: mpsc::SyncSender<
+            Result<crate::ConfigurationApplication, crate::OperationError>
+        >
+    ) -> Result<bool, OperationError> {
         let Some(worker) = self
             ._workers()
             .iter()

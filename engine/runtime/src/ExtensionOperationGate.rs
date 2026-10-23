@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Condvar, Mutex};
 
-use crate::ExtensionOperationReservation;
+use crate::{ExtensionOperationReservation, OperationError, OperationErrorCode as Code};
 
 /// One accepted settings or lifecycle operation per installed extension.
 #[derive(Default)]
@@ -15,18 +15,16 @@ impl ExtensionOperationGate {
     pub(crate) fn reserve(
         self: &Arc<Self>,
         extension_id: &str
-    ) -> Result<ExtensionOperationReservation, String> {
+    ) -> Result<ExtensionOperationReservation, OperationError> {
         let mut state = self
             ._state
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if state.0 {
-            return Err("Extension operations are shutting down.".into());
+            return Err(OperationError::new(Code::ApplicationShuttingDown));
         }
         if !state.1.insert(extension_id.to_owned()) {
-            return Err(
-                "A settings or lifecycle operation is already pending for this extension.".into()
-            );
+            return Err(OperationError::new(Code::OperationPending));
         }
         Ok(ExtensionOperationReservation::new(
             Arc::clone(self),

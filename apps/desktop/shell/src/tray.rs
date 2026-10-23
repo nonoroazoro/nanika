@@ -1,10 +1,25 @@
+use tauri::Manager;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-pub(crate) fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Nanika", true, None::<&str>)?;
+pub(crate) fn install(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let localization = app
+        .state::<crate::host_settings::HostSettings>()
+        .snapshot()
+        .localization;
+    let resources = crate::host_resources::resources()?;
+    let label = |id| {
+        resources.format(
+            localization.locale,
+            &nanika_protocol::message(id, []),
+            nanika_platform::target_platform().as_str(),
+            128,
+            false
+        )
+    };
+    let open = MenuItem::with_id(app, "open", label("tray-open")?, true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", label("tray-quit")?, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &separator, &quit])?;
 
     TrayIconBuilder::with_id("nanika")
@@ -33,6 +48,7 @@ pub(crate) fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    app.manage(crate::NativeLocalization::new(open, quit));
     Ok(())
 }
 

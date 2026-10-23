@@ -3,8 +3,8 @@
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GeneralSettingsField {
     pub(crate) key: crate::GeneralSettingsFieldKey,
-    pub(crate) title: &'static str,
-    pub(crate) description: Option<&'static str>,
+    pub(crate) title: nanika_protocol::LocalizedText,
+    pub(crate) description: Option<nanika_protocol::LocalizedText>,
     #[serde(skip)]
     pub(crate) keywords: &'static str
 }

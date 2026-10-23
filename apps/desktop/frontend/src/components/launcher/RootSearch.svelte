@@ -1,4 +1,7 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
+import { operationErrorText } from "../../localization/operation-errors";
+import type { RootPresentation } from "../../types/RootPresentation";
 import { isCompositionKey } from "../../ui/keyboard";
 import SearchIcon from "../icons/SearchIcon.svelte";
 import EmptyState from "../ui/EmptyState.svelte";
@@ -17,6 +20,7 @@ import ResultRow from "./ResultRow.svelte";
 
 interface Props
 {
+    presentations: ReadonlyMap<string, RootPresentation>;
     platform: TargetPlatform | null;
     searchState: RootSearchState;
     hasCompletedSearch: boolean;
@@ -32,6 +36,7 @@ interface Props
 }
 
 const {
+    presentations,
     platform,
     searchState,
     hasCompletedSearch,
@@ -55,7 +60,13 @@ let rowHeight = $state(52);
 let lastRange = "";
 const snapshot = $derived(searchState.snapshot);
 const results = $derived(snapshot.results);
-const warning = $derived(snapshot.warnings.join("\n"));
+const warning = $derived(
+    snapshot.warnings.map(failure =>
+    {
+        const text = operationErrorText(failure.error, localization.locale, value => localization.text(value));
+        return failure.extensionId ? `${failure.extensionId}: ${text}` : text;
+    }).join("\n\n")
+);
 const activeIndex = $derived(searchState.selectedIndex);
 const activeResult = $derived(searchState.selectedResult);
 const activeId = $derived(activeResult ? `result-${activeIndex + 1}` : undefined);
@@ -244,11 +255,21 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
     searchState.select(snapshot.resultOffset + results.indexOf(result));
     void onContextMenu(result, [event.clientX, event.clientY]);
 }
+
+function _handleVisibilityChange(): void
+{
+    // WebKit can restore a focused hidden window without another window focus event.
+    if (document.visibilityState === "visible" && document.hasFocus())
+    {
+        handleWindowFocus();
+    }
+}
 </script>
 
 <svelte:window onfocus={handleWindowFocus} onkeydown={handleWindowKeydown} />
+<svelte:document onvisibilitychange={_handleVisibilityChange} />
 
-<main class="launcher" aria-label="Nanika launcher">
+<main class="launcher" aria-label={localization.text({ message: "launcher-label" })}>
     <div class="collection-header">
         <span class="search-icon"><SearchIcon size={16} /></span>
         <Input
@@ -256,7 +277,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             bind:ref={input}
             bind:value={query}
             role="combobox"
-            aria-label="Search for apps and commands"
+            aria-label={localization.text({ message: "launcher-search" })}
             aria-autocomplete="list"
             aria-invalid={inputError !== null}
             aria-describedby={inputError ? "query-error" : undefined}
@@ -265,7 +286,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
             aria-activedescendant={activeId}
             autocomplete="off"
             spellcheck="false"
-            placeholder="Search for apps and commands"
+            placeholder={localization.text({ message: "launcher-search" })}
             oninput={(event =>
             {
                 selectOnNextFocus = false;
@@ -278,7 +299,7 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
     <!-- Keep keyboard navigation and typing in the combobox across the whole results surface. -->
     <section
         class="results"
-        aria-label="Results"
+        aria-label={localization.text({ message: "launcher-results" })}
         aria-busy={busy && !inputError}
         onmousedowncapture={event =>
         {
@@ -311,6 +332,8 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                     </li>
                     {#each results as result, index (RootSearchState.identity(result))}
                         <ResultRow
+                            query={snapshot.query}
+                            presentation={presentations.get(result.extensionId)!.presentation}
                             {platform}
                             {result}
                             position={snapshot.resultOffset + index + 1}
@@ -338,10 +361,13 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
                 </ul>
             </ScrollArea>
         {:else if snapshot.pendingExtensions.length > 0}
-            <div class="empty" role="status"><span>Searching extensions…</span></div>
+            <div class="empty" role="status"><span>{localization.text({ message: "launcher-searching" })}</span></div>
         {:else if hasCompletedSearch}
             <div class="empty">
-                <EmptyState title="No results" description="Try a different search.">
+                <EmptyState
+                    title={localization.text({ message: "launcher-empty" })}
+                    description={localization.text({ message: "search-empty-description" })}
+                >
                     {#snippet icon()}<SearchIcon size={48} strokeWidth={1.5} />{/snippet}
                 </EmptyState>
             </div>
@@ -351,15 +377,16 @@ function _openContextMenu(result: SearchResult, event: MouseEvent): void
         trailingEntries={snapshot.pendingExtensions.length
         ? [{
             id: "pending-search",
-            title: `Searching ${snapshot.pendingExtensions.length} extension${
-                snapshot.pendingExtensions.length === 1 ? "" : "s"
-            }…`,
+            title: localization.text({
+                message: "launcher-searching-count",
+                args: { count: snapshot.pendingExtensions.length }
+            }),
             interactive: false
         }]
         : []}
         leadingEntries={[{
             id: "app-menu",
-            title: "Nanika menu",
+            title: localization.text({ message: "launcher-menu" }),
             icon: "app",
             iconOnly: true,
             menu: { controls: "context-menu", expanded: appMenuOpen }
@@ -418,6 +445,12 @@ ul {
 }
 
 .warning {
+  max-height: 25vh;
+  flex-shrink: 0;
+  overflow: auto;
+  overflow-anchor: none;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
   padding: var(--space-2) var(--space-3);
   color: var(--text-secondary);
   font-size: var(--font-meta);

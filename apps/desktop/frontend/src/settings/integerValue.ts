@@ -1,25 +1,26 @@
+import type { SettingsValidationError } from "./SettingsValidationError";
 import type { ConfigurationSchema } from "../generated/ConfigurationSchema";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 
-export function integerError(schema: ConfigurationSchema, value: JsonValue | undefined): string | null
+export function integerError(schema: ConfigurationSchema, value: JsonValue | undefined): SettingsValidationError | null
 {
     const text = typeof value === "number" || typeof value === "string" ? String(value) : "";
     const number = Number(text);
     if (!/^-?\d+$/.test(text) || !Number.isSafeInteger(number))
     {
-        return "Enter a whole number.";
+        return { code: "wholeNumber", path: [] };
     }
     if (schema.minimum !== null && schema.minimum !== undefined && number < schema.minimum)
     {
-        return `Enter ${schema.minimum} or more.`;
+        return { code: "integerMinimum", constraint: schema.minimum, path: [] };
     }
     if (schema.maximum !== null && schema.maximum !== undefined && number > schema.maximum)
     {
-        return `Enter ${schema.maximum} or less.`;
+        return { code: "integerMaximum", constraint: schema.maximum, path: [] };
     }
     if (number % (schema.multipleOf ?? 1) !== 0)
     {
-        return `Enter a multiple of ${schema.multipleOf}.`;
+        return { code: "integerMultiple", constraint: schema.multipleOf ?? 1, path: [] };
     }
     return null;
 }

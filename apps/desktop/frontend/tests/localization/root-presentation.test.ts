@@ -1,0 +1,69 @@
+import { expect, test, vi } from "vitest";
+
+import { ResourceCache } from "../../src/localization/ResourceCache";
+import { prepareRootPresentation } from "../../src/localization/root-presentation";
+
+import type { LocalizationResourceRequest } from "../../src/generated/LocalizationResourceRequest";
+import type { SearchResult } from "../../src/generated/SearchResult";
+
+test("mounted owners survive cache eviction while changed instance or session authority requires a read", async () =>
+{
+    const read = vi.fn(async (request: Extract<LocalizationResourceRequest, { surface: "launcher"; }>) => ({
+        identity: request.scope.identity,
+        defaultLocale: "en" as const,
+        locales: {
+            en: { sources: ["label = Run"], contracts: { label: { arguments: [] } } },
+            "zh-Hans": { sources: ["label = 运行"], contracts: { label: { arguments: [] } } }
+        }
+    }));
+    const cache = new ResourceCache(read);
+    const session = { sessionId: 1, platform: "macos" as const };
+    const results = Array.from({ length: 12 }, (_, index) => _result(`example.owner${index}`));
+    const first = await prepareRootPresentation(results, session, new Map(), cache);
+    expect(read).toHaveBeenCalledTimes(12);
+    const second = await prepareRootPresentation(
+        results.map(result => ({ ...result, entryId: "another" })),
+        session,
+        first,
+        cache
+    );
+    expect(read).toHaveBeenCalledTimes(12);
+    for (const [id, value] of second)
+    {
+        expect(value.presentation.resources).toBe(first.get(id)?.presentation.resources);
+        expect(value.presentation.text({ message: "label" }, "zh-Hans")).toBe("运行");
+    }
+    const nextInstance = _result("example.owner0", 2);
+    const third = await prepareRootPresentation([nextInstance], session, second, cache);
+    expect(read).toHaveBeenCalledTimes(13);
+    await prepareRootPresentation([nextInstance], { ...session, sessionId: 2 }, third, cache);
+    expect(read).toHaveBeenCalledTimes(14);
+    const foreign = { ...nextInstance, resourceScope: { extensionId: "foreign.owner", identity: "a".repeat(64) } };
+    await expect(prepareRootPresentation([foreign], session, third, cache)).rejects.toThrow("owner");
+    await expect(
+        prepareRootPresentation([{ ...nextInstance, actionTitle: { message: "missing" } }], session, third, cache)
+    )
+        .rejects.toThrow();
+    expect(third.get(nextInstance.extensionId)?.presentation.text(nextInstance.actionTitle, "en")).toBe("Run");
+});
+
+function _result(id: string, instanceId = 1): SearchResult
+{
+    return {
+        extensionId: id,
+        instanceId,
+        resourceScope: { extensionId: id, identity: "a".repeat(64) },
+        entryId: "entry",
+        actionId: "run",
+        actionTitle: { message: "label" },
+        actionStyle: "destructive",
+        allowDefaultExecution: false,
+        confirmationTitle: { message: "label" },
+        confirmationDescription: null,
+        title: { message: "label" },
+        subtitle: { kind: "label", text: { message: "label" } },
+        icon: null,
+        kind: "Extension",
+        entryType: "action"
+    };
+}

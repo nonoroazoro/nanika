@@ -3,15 +3,16 @@ use std::sync::{
     atomic::{AtomicBool, Ordering}
 };
 
+use crate::SupervisorError;
 use nanika_protocol::{FrameError, Message, TextChunk, TextRead};
 
-pub(crate) type TextReadCompletion = Box<dyn FnOnce(Result<TextChunk, String>) + Send>;
+pub(crate) type TextReadCompletion = Box<dyn FnOnce(Result<TextChunk, SupervisorError>) + Send>;
 
 /// A replaceable read slot. Background document responses never occupy the
 /// query/view receiver, including late responses to superseded reads.
 #[derive(Default)]
 pub(crate) struct TextReadReply {
-    _pending: Mutex<Option<(String, u64, TextRead, TextReadCompletion)>>,
+    _pending: Mutex<Option<crate::PendingTextRead>>,
     _closed: AtomicBool
 }
 
@@ -21,6 +22,7 @@ impl TextReadReply {
         id: String,
         generation: u64,
         read: TextRead,
+        resources: Option<std::sync::Arc<nanika_localization::ResourceSet>>,
         completion: TextReadCompletion
     ) -> bool {
         let mut pending = self
@@ -29,26 +31,32 @@ impl TextReadReply {
             .unwrap_or_else(|error| error.into_inner());
         if self._closed.load(Ordering::Acquire) {
             drop(pending);
-            completion(Err("Text source connection is closed.".to_owned()));
+            completion(Err(SupervisorError::ChannelClosed));
             return false;
         }
-        let previous = pending.replace((id, generation, read, completion));
+        let previous = pending.replace(crate::PendingTextRead {
+            id,
+            generation,
+            read,
+            resources,
+            completion
+        });
         drop(pending);
-        if let Some((_, _, _, completion)) = previous {
-            completion(Err("Text read was superseded.".to_owned()));
+        if let Some(previous) = previous {
+            (previous.completion)(Err(SupervisorError::Cancelled("superseded text read")));
         }
         true
     }
 
-    pub(crate) fn fail(&self, message: String) {
+    pub(crate) fn fail(&self, error: SupervisorError) {
         self._closed.store(true, Ordering::Release);
         let pending = self
             ._pending
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
-        if let Some((_, _, _, completion)) = pending {
-            completion(Err(message));
+        if let Some(pending) = pending {
+            (pending.completion)(Err(error));
         }
     }
 
@@ -60,7 +68,7 @@ impl TextReadReply {
             ._pending
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let Some((id, generation, read, _)) = pending.as_ref() else {
+        let Some(current) = pending.as_ref() else {
             return _is_text_reply(frame);
         };
         let (result, consumed) = match frame {
@@ -68,29 +76,40 @@ impl TextReadReply {
                 request_id,
                 generation: actual,
                 chunk
-            })) if id == request_id => {
-                let result = if generation != actual {
-                    Err("Text read generation does not match.".to_owned())
+            })) if &current.id == request_id => {
+                let result = if &current.generation != actual {
+                    Err(SupervisorError::UnexpectedMessage(
+                        "Text read generation does not match.".to_owned()
+                    ))
                 } else {
-                    chunk.validate_for(read).map(|()| chunk.clone())
+                    chunk
+                        .validate_for(&current.read)
+                        .map(|()| chunk.clone())
+                        .map_err(SupervisorError::UnexpectedMessage)
                 };
                 (result, true)
             }
-            Ok(Some(Message::Error {
-                request_id: Some(request_id),
-                code,
-                message
-            })) if id == request_id => (Err(format!("Text read failed: {code}: {message}")), true),
-            Ok(Some(Message::Error {
-                request_id: None,
-                code,
-                message
-            })) => (Err(format!("Text read failed: {code}: {message}")), false),
-            Ok(None) => (Err("Extension closed during text read.".to_owned()), false),
-            Err(error) => (Err(format!("Text read transport failed: {error}")), false),
+            Ok(Some(Message::Error { request_id, error }))
+                if request_id.as_ref().is_none_or(|id| id == &current.id) =>
+            {
+                (
+                    Err(crate::prepare_extension_error(
+                        error.clone(),
+                        current.resources.as_deref()
+                    )),
+                    request_id.is_some()
+                )
+            }
+            Ok(None) => (Err(SupervisorError::ChannelClosed), false),
+            Err(error) => (
+                Err(SupervisorError::UnexpectedMessage(format!(
+                    "Text read transport failed: {error}"
+                ))),
+                false
+            ),
             _ => return _is_text_reply(frame)
         };
-        let (_, _, _, completion) = pending.take().expect("pending text read");
+        let completion = pending.take().expect("pending text read").completion;
         drop(pending);
         completion(result);
         consumed

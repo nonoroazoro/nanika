@@ -15,6 +15,9 @@ function _result(id: string): SearchResult
         actionStyle: "primary",
         allowDefaultExecution: true,
         confirmationTitle: null,
+        instanceId: 1,
+        resourceScope: null,
+        actionTitle: "Open",
         confirmationDescription: null,
         title: id,
         subtitle: null,
@@ -29,6 +32,7 @@ function _snapshot(ids: string[], update: Partial<RootSearchSnapshot> = {}): Roo
     return {
         navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
         sessionId: 1,
+        localization: { preference: "system", locale: "en", revision: 1 },
         requestId: 1,
         revision: 1,
         query: "",

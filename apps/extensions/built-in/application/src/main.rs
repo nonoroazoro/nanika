@@ -35,19 +35,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 configuration
             }) if protocol == PROTOCOL_NAME => (request_id, configuration),
             Some(Message::Initialize { request_id, .. }) => {
-                write_error(
+                _write_error(
                     &mut output,
                     Some(request_id),
                     "unsupported_protocol",
+                    "error-unsupported-protocol",
                     "the requested extension protocol is unsupported"
                 )?;
                 return Ok(());
             }
             Some(message) => {
-                write_error(
+                _write_error(
                     &mut output,
                     request_id(&message),
                     "not_initialized",
+                    "error-not-initialized",
                     "initialize must be the first request"
                 )?;
                 return Ok(());
@@ -58,10 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let initial_config = match ApplicationConfig::from_configuration(&initial_configuration) {
         Ok(config) => config,
         Err(error) => {
-            write_error(
+            _write_error(
                 &mut output,
                 Some(initialize_request_id),
                 "invalid_configuration",
+                "error-invalid-configuration",
                 &error.to_string()
             )?;
             return Ok(());
@@ -101,9 +104,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(batch) => {
                         write_frame(&mut output, &Message::CatalogBatch { request_id, batch })?
                     }
-                    Err(error) => {
-                        write_error(&mut output, Some(request_id), "catalog_failed", &error)?
-                    }
+                    Err(error) => _write_error(
+                        &mut output,
+                        Some(request_id),
+                        "catalog_failed",
+                        "error-read-catalog",
+                        &error
+                    )?
                 },
                 Message::CatalogApplied { transaction } => {
                     if catalog
@@ -131,7 +138,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .worker
                         .refresh(Some(request_id.clone()), latest_generation)
                     {
-                        write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
+                        _write_error(
+                            &mut output,
+                            Some(request_id),
+                            "refresh_failed",
+                            "error-refresh-catalog",
+                            &message
+                        )?;
                     } else {
                         refresh_requests.insert(request_id, (generation, latest_generation));
                     }
@@ -183,9 +196,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             );
                         }
-                        Err(message) => {
-                            write_error(&mut output, Some(request_id), "unknown_action", &message)?
-                        }
+                        Err(message) => _write_error(
+                            &mut output,
+                            Some(request_id),
+                            "unknown_action",
+                            "error-action-unavailable",
+                            &message
+                        )?
                     }
                 }
                 Message::ConfigurationChanged {
@@ -215,19 +232,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Err(message) => {
                                 *config.write().unwrap_or_else(|error| error.into_inner()) =
                                     previous;
-                                write_error(
+                                _write_error(
                                     &mut output,
                                     Some(request_id),
                                     "configuration_apply_failed",
+                                    "error-apply-configuration",
                                     &message
                                 )?;
                             }
                         }
                     }
-                    Err(error) => write_error(
+                    Err(error) => _write_error(
                         &mut output,
                         Some(request_id),
                         "invalid_configuration",
+                        "error-invalid-configuration",
                         &error.to_string()
                     )?
                 },
@@ -235,43 +254,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     request_id,
                     parent_request_id,
                     generation: response_generation,
-                    response: HostServiceResponse::Launched | HostServiceResponse::PathRevealed
+                    response
                 } => {
-                    if let Some(pending) = pending_invocations.remove(&request_id) {
-                        if parent_request_id == pending.request_id
-                            && response_generation == pending.generation
-                        {
-                            write_frame(
-                                &mut output,
-                                &Message::Result {
-                                    request_id: pending.request_id,
-                                    generation: pending.generation,
-                                    effect: nanika_protocol::NavigationEffect::Dismiss
-                                }
-                            )?;
-                        } else {
-                            write_error(
-                                &mut output,
-                                Some(pending.request_id),
-                                "invalid_host_response",
-                                "host response does not match the pending application invocation"
-                            )?;
+                    let Some(pending) = pending_invocations.remove(&request_id) else {
+                        continue;
+                    };
+                    if parent_request_id != pending.request_id
+                        || response_generation != pending.generation
+                        || !matches!(
+                            response,
+                            HostServiceResponse::Launched
+                                | HostServiceResponse::PathRevealed
+                                | HostServiceResponse::Failed { .. }
+                        )
+                    {
+                        _write_error(
+                            &mut output,
+                            Some(pending.request_id),
+                            "invalid_host_response",
+                            "error-invalid-host-response",
+                            "host response does not match the pending application invocation"
+                        )?;
+                        continue;
+                    }
+                    let reply = match response {
+                        HostServiceResponse::Failed { failure } => Message::Error {
+                            request_id: Some(pending.request_id),
+                            error: failure.into_error("error-host-service")
+                        },
+                        _ => Message::Result {
+                            request_id: pending.request_id,
+                            generation: pending.generation,
+                            effect: nanika_protocol::NavigationEffect::Dismiss
                         }
-                    }
+                    };
+                    write_frame(&mut output, &reply)?;
                 }
-                Message::Error {
-                    request_id: Some(service_request_id),
-                    code,
-                    message
-                } if pending_invocations.contains_key(&service_request_id) => {
-                    if let Some(pending) = pending_invocations.remove(&service_request_id) {
-                        write_error(&mut output, Some(pending.request_id), &code, &message)?;
-                    }
-                }
-                message => write_error(
+                message => _write_error(
                     &mut output,
                     request_id(&message),
                     "unsupported_message",
+                    "error-unsupported-message",
                     "the application extension received an unsupported message"
                 )?
             },
@@ -322,18 +345,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("guarded configuration request must exist");
                 if pending.generation != response_generation {
                     *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
-                    write_error(
+                    _write_error(
                         &mut output,
                         Some(request_id),
                         "configuration_apply_failed",
+                        "error-apply-configuration",
                         "application scan returned the wrong configuration generation"
                     )?;
                 } else if report.cancelled {
                     *config.write().unwrap_or_else(|error| error.into_inner()) = pending.previous;
-                    write_error(
+                    _write_error(
                         &mut output,
                         Some(request_id),
                         "configuration_apply_failed",
+                        "error-apply-configuration",
                         "application scan was cancelled before configuration was applied"
                     )?;
                 } else {
@@ -355,10 +380,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 };
                 if response_generation != expected_scan {
-                    write_error(
+                    _write_error(
                         &mut output,
                         Some(request_id),
                         "refresh_failed",
+                        "error-refresh-catalog",
                         "application scan returned the wrong generation"
                     )?;
                     continue;
@@ -388,15 +414,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(pending) = configuration_requests.remove(&request_id) {
                         *config.write().unwrap_or_else(|error| error.into_inner()) =
                             pending.previous;
-                        write_error(
+                        _write_error(
                             &mut output,
                             Some(request_id),
                             "configuration_apply_failed",
+                            "error-apply-configuration",
                             &message
                         )?;
                     } else {
                         refresh_requests.remove(&request_id);
-                        write_error(&mut output, Some(request_id), "refresh_failed", &message)?;
+                        _write_error(
+                            &mut output,
+                            Some(request_id),
+                            "refresh_failed",
+                            "error-refresh-catalog",
+                            &message
+                        )?;
                     }
                 }
                 return Err(std::io::Error::other(format!(
@@ -411,10 +444,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 if let Some(request_id) = request_id {
                     refresh_requests.remove(&request_id);
-                    write_error(
+                    _write_error(
                         &mut output,
                         Some(request_id),
                         "refresh_cancelled",
+                        "error-refresh-cancelled",
                         "application scan was cancelled"
                     )?;
                 } else {
@@ -422,10 +456,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Launcher opens during startup share its scan and receive their own acknowledgement.
                     for (request_id, (generation, _)) in refresh_requests.drain() {
                         if report.cancelled {
-                            write_error(
+                            _write_error(
                                 &mut output,
                                 Some(request_id),
                                 "refresh_cancelled",
+                                "error-refresh-cancelled",
                                 "application scan was cancelled"
                             )?;
                         } else {
@@ -482,20 +517,16 @@ fn spawn_protocol_reader(
         })
 }
 
-fn write_error(
+fn _write_error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str
+    reference: &str,
+    detail: &str
 ) -> Result<(), nanika_protocol::FrameError> {
-    write_frame(
-        output,
-        &Message::Error {
-            request_id,
-            code: code.to_owned(),
-            message: message.to_owned()
-        }
-    )
+    let error = nanika_protocol::ProtocolError::new(code, nanika_protocol::message(reference, []))
+        .with_detail(detail);
+    write_frame(output, &Message::Error { request_id, error })
 }
 
 fn request_id(message: &Message) -> Option<String> {

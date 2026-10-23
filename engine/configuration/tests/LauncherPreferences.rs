@@ -14,14 +14,23 @@ fn host_preferences_work_without_any_extension_and_survive_reopen() {
     let (root, store) = store("zero-extensions");
     let mut preferences = LauncherPreferences::load(&store, "Ctrl+Alt+Space").unwrap();
     assert_eq!(preferences.theme, ThemePreference::System);
+    assert_eq!(
+        preferences.language,
+        nanika_localization::LanguagePreference::System
+    );
     assert!(preferences.hide_on_blur);
     preferences.launcher_shortcut = "Ctrl+Alt+KeyK".to_owned();
     preferences.theme = ThemePreference::Dark;
+    preferences.language = nanika_localization::LanguagePreference::SimplifiedChinese;
     preferences.hide_on_blur = false;
     preferences.save(&store).unwrap();
     let loaded = LauncherPreferences::load(&store, "Ctrl+Space").unwrap();
     assert_eq!(loaded.launcher_shortcut, preferences.launcher_shortcut);
     assert_eq!(loaded.theme, ThemePreference::Dark);
+    assert_eq!(
+        loaded.language,
+        nanika_localization::LanguagePreference::SimplifiedChinese
+    );
     assert!(!loaded.hide_on_blur);
     assert!(!store.extensions_file().exists());
     std::fs::remove_dir_all(root).unwrap();
@@ -41,6 +50,7 @@ fn host_saves_preserve_comments_and_do_not_touch_extension_configuration() {
     std::fs::write(store.config_file(), "{\n// User theme preference\n\"formatVersion\":1,\"launcherShortcut\":\"Ctrl+Space\",\"theme\":\"system\",\"hideOnBlur\":true\n}\n").unwrap();
     let mut preferences = LauncherPreferences::load(&store, "Ctrl+Space").unwrap();
     preferences.theme = ThemePreference::Light;
+    preferences.language = nanika_localization::LanguagePreference::English;
     preferences.save(&store).unwrap();
     assert!(
         std::fs::read_to_string(store.config_file())
@@ -48,6 +58,15 @@ fn host_saves_preserve_comments_and_do_not_touch_extension_configuration() {
             .contains("// User theme preference")
     );
     assert_eq!(std::fs::read(extension).unwrap(), original_extension);
+    let saved = store
+        .load::<LauncherPreferences>(store.config_file())
+        .unwrap();
+    assert_eq!(
+        saved.language,
+        nanika_localization::LanguagePreference::English
+    );
+    assert_eq!(saved.theme, ThemePreference::Light);
+    assert_eq!(saved.launcher_shortcut, "Ctrl+Space");
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -71,13 +90,17 @@ fn invalid_preferences_cannot_replace_a_saved_file() {
 fn invalid_options_use_defaults_and_only_an_explicit_save_repairs_the_file() {
     let (root, store) = store("defaults");
     for text in [
-        r#"{"formatVersion":1,"launcherShortcut":"\n","theme":"dark","hideOnBlur":"wrong"}"#,
+        r#"{"formatVersion":1,"launcherShortcut":"\n","theme":"dark","hideOnBlur":"wrong","language":"es"}"#,
         "{ malformed"
     ] {
         std::fs::write(store.config_file(), text).unwrap();
         let mut preferences = LauncherPreferences::load(&store, "Ctrl+Space").unwrap();
         assert_eq!(preferences.launcher_shortcut, "Ctrl+Space");
         assert!(preferences.hide_on_blur);
+        assert_eq!(
+            preferences.language,
+            nanika_localization::LanguagePreference::System
+        );
         assert_eq!(
             preferences.theme,
             if text == "{ malformed" {

@@ -62,3 +62,7 @@ pub fn target_triple() -> &'static str {
 pub(crate) mod file_icon;
 
 pub(crate) mod clipboard;
+
+#[path = "LanguageChangeObserver.rs"]
+mod language_change_observer;
+pub use language_change_observer::LanguageChangeObserver;

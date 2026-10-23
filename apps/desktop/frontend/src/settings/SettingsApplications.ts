@@ -1,3 +1,5 @@
+import { configurationFailure } from "./error-presentation";
+
 import type { ConfigurationSaveOutcome } from "../generated/ConfigurationSaveOutcome";
 import type { SettingsApplicationUpdate } from "../generated/SettingsApplicationUpdate";
 
@@ -68,6 +70,11 @@ export class SettingsApplications
         {
             return terminal.result;
         }
-        throw new Error(terminal?.result.status === "failed" ? terminal.result.error : "Missing settings result.");
+        throw Object.assign(
+            new Error("Configuration completion failed."),
+            configurationFailure(
+                terminal?.result.status === "failed" ? terminal.result.error : "Missing settings result."
+            )
+        );
     }
 }

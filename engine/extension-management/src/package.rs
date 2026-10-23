@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use jsonc_parser::{ParseOptions, parse_to_serde_value};
@@ -80,7 +80,7 @@ fn apply_package(
     let mut stage = StagingDirectory::create(stage_path)?;
     extract_package(staged_package.path(), stage.path())?;
 
-    let manifest = load_manifest(stage.path().join("manifest.jsonc"))?;
+    let manifest = load_extension_manifest(stage.path().join("manifest.jsonc"))?;
     reject_external_builtin_identity(&manifest, built_in_ids)?;
     let target = nanika_platform::target_triple();
     let entrypoint = target_entrypoint(&manifest, target)?;
@@ -91,6 +91,12 @@ fn apply_package(
             entrypoint.display()
         )));
     }
+    let mut installed = InstalledExtension::from_manifest(
+        manifest.clone(),
+        staged_program.clone(),
+        stage.path().to_path_buf(),
+        false
+    )?;
     nanika_platform::make_executable(&staged_program)?;
     fs::write(stage.path().join(".package.sha256"), format!("{digest}\n"))?;
 
@@ -185,11 +191,9 @@ fn apply_package(
         PackageTransaction::clear(&extension_root)?;
     }
 
-    Ok(InstalledExtension::from_manifest(
-        manifest,
-        version_root.join(entrypoint),
-        version_root
-    ))
+    installed.program = version_root.join(entrypoint);
+    installed.resource_root = version_root;
+    Ok(installed)
 }
 
 /// Persist enablement for any installed extension. The registry is the sole authority.
@@ -359,7 +363,7 @@ fn resolve_installed_extension(
     let canonical_root = fs::canonicalize(&extensions_root)?;
     let canonical_install = fs::canonicalize(install_path)?;
     validate_managed_path(&canonical_root, &canonical_install)?;
-    let manifest = load_manifest(canonical_install.join("manifest.jsonc"))?;
+    let manifest = load_extension_manifest(canonical_install.join("manifest.jsonc"))?;
     reject_external_builtin_identity(&manifest, built_in_ids)?;
     if manifest.id != installed.extension_id
         || installed.version.as_deref() != Some(manifest.version.as_str())
@@ -378,11 +382,7 @@ fn resolve_installed_extension(
     }
     let program = fs::canonicalize(program)?;
     validate_managed_path(&canonical_install, &program)?;
-    Ok(InstalledExtension::from_manifest(
-        manifest,
-        program,
-        canonical_install
-    ))
+    InstalledExtension::from_manifest(manifest, program, canonical_install, false)
 }
 
 fn validate_package_operation(
@@ -558,14 +558,21 @@ fn ensure_package_directories(
     Ok(())
 }
 
-fn load_manifest(path: PathBuf) -> Result<ExtensionManifest, ExtensionPackageError> {
-    let metadata = fs::metadata(&path)?;
+/// Read a bounded manifest for package admission or authoring tools.
+pub fn load_extension_manifest(
+    path: impl AsRef<Path>
+) -> Result<ExtensionManifest, ExtensionPackageError> {
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
     if metadata.len() == 0 || metadata.len() > MAX_MANIFEST_BYTES {
         return Err(ExtensionPackageError::Manifest(
             "manifest size is invalid".to_owned()
         ));
     }
-    let text = fs::read_to_string(path)?;
+    let mut text = String::new();
+    // Bound the read itself: the file can grow after its metadata was checked.
+    file.take(MAX_MANIFEST_BYTES + 1)
+        .read_to_string(&mut text)?;
     parse_extension_manifest(&text)
 }
 
@@ -600,14 +607,26 @@ pub fn validate_extension_manifest(
             "invalid extension id".to_owned()
         ));
     }
-    if manifest.name.trim().is_empty()
-        || manifest.name.len() > 128
-        || manifest.name.chars().any(char::is_control)
-    {
-        return Err(ExtensionPackageError::Manifest(
-            "extension name must contain 1 to 128 UTF-8 bytes without control characters"
-                .to_owned()
-        ));
+    if let Some(localization) = &manifest.localization {
+        localization.validate().map_err(|error| {
+            ExtensionPackageError::Manifest(format!("{}: localization: {error}", manifest.id))
+        })?;
+    }
+    match &manifest.name {
+        nanika_protocol::LocalizedText::Literal(name) => {
+            crate::extension_manifest::_validate_name(name)?
+        }
+        nanika_protocol::LocalizedText::Message(reference) => {
+            reference
+                .validate()
+                .map_err(ExtensionPackageError::Manifest)?;
+            if manifest.localization.is_none() {
+                return Err(ExtensionPackageError::Manifest(format!(
+                    "{}: name requires localization resources",
+                    manifest.id
+                )));
+            }
+        }
     }
     _validate_icon_path(&manifest.icon)?;
     let _ = Version::parse(&manifest.version)
@@ -858,16 +877,24 @@ fn validate_view_contributions(views: &[ViewContribution]) -> Result<(), Extensi
 fn validate_contribution_text(
     contribution: &str,
     field: &str,
-    value: &str,
+    value: &nanika_protocol::LocalizedText,
     maximum_chars: usize
 ) -> Result<(), ExtensionPackageError> {
-    let count = value.chars().count();
-    if value.trim().is_empty() || count > maximum_chars || value.chars().any(char::is_control) {
-        return Err(ExtensionPackageError::Manifest(format!(
-            "extension {contribution} {field} is invalid"
-        )));
+    let error = |detail| {
+        ExtensionPackageError::Manifest(format!("extension {contribution} {field}: {detail}"))
+    };
+    match value {
+        nanika_protocol::LocalizedText::Literal(value) => {
+            if value.trim().is_empty()
+                || value.chars().count() > maximum_chars
+                || value.chars().any(char::is_control)
+            {
+                return Err(error("invalid text".to_owned()));
+            }
+            Ok(())
+        }
+        nanika_protocol::LocalizedText::Message(reference) => reference.validate().map_err(error)
     }
-    Ok(())
 }
 
 fn is_valid_contribution_id(value: &str) -> bool {

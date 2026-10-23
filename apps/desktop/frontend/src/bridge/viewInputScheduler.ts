@@ -1,5 +1,6 @@
 import { MAX_VIEW_SEARCH_CHARS } from "../generated/limits";
 
+import type { LocalizedMessage } from "../generated/LocalizedMessage";
 import type { ViewEventReceipt } from "../generated/ViewEventReceipt.ts";
 import type { NavigationSnapshot } from "../types/NavigationSnapshot.ts";
 import type { ViewInteraction } from "../types/ViewInteraction.ts";
@@ -22,7 +23,7 @@ export function viewInputScheduler()
     let query: Extract<ViewInteraction, { kind: "searchChanged"; }> | null = null;
     let draft: string | null = null;
     let resumeRequested = false;
-    let inputError: string | null = null;
+    let inputError: LocalizedMessage | null = null;
 
     return {
         get busy(): boolean
@@ -45,7 +46,7 @@ export function viewInputScheduler()
             // A newer queued intent (including invalid input) outlives that submission.
             return draft ?? authoritative;
         },
-        get inputError(): string | null
+        get inputError(): LocalizedMessage | null
         {
             return inputError;
         },
@@ -71,7 +72,7 @@ export function viewInputScheduler()
             draft = text;
             // Match the Rust protocol's Unicode scalar count, not grapheme count.
             inputError = Array.from(text).length > MAX_VIEW_SEARCH_CHARS
-                ? `View search supports up to ${MAX_VIEW_SEARCH_CHARS} characters. Edit the input to continue.`
+                ? { message: "search-input-too-long", args: { maximum: MAX_VIEW_SEARCH_CHARS } }
                 : null;
         },
         resume(): void

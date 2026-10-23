@@ -33,7 +33,10 @@ fn one_unacknowledged_message_coalesces_updates_and_surfaces_startup_failure() {
     assert!(first.contains("\"sessionId\":1"));
     {
         let mut state = shared.lock().unwrap();
-        state.startup_error = Some("internal startup failure".to_owned());
+        state.fail_startup(nanika_host::OperationError::with_detail(
+            nanika_host::OperationErrorCode::HostStorageUnavailable,
+            "internal startup failure"
+        ));
     }
     wakes.send(SearchDelivery::Wake).unwrap();
     assert!(received.recv_timeout(Duration::from_millis(50)).is_err());
@@ -43,6 +46,7 @@ fn one_unacknowledged_message_coalesces_updates_and_surfaces_startup_failure() {
     assert!(next.contains("\"phase\":\"error\""));
     assert!(next.contains("\"revision\":2"));
     assert!(!next.contains("internal startup failure"));
+    assert!(next.contains("\"code\":\"hostStorageUnavailable\""));
     assert!(!next.contains("\"results\""));
     assert!(!next.contains("\"current\""));
     wakes.send(SearchDelivery::Shutdown).unwrap();
@@ -94,11 +98,14 @@ fn channel_callback_can_acknowledge_without_the_shared_state_lock() {
 fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
     let results = (0..2000)
         .map(|index| crate::SearchResult {
+            instance_id: 0,
+            resource_scope: None,
             allow_default_execution: true,
             extension_id: "test.extension".to_owned(),
             entry_id: format!("entry-{index}"),
             action_id: "open".to_owned(),
-            title: format!("Application {index}"),
+            action_title: "Open".into(),
+            title: format!("Application {index}").into(),
             subtitle: None,
             icon: None,
             confirmation_description: None,
@@ -110,6 +117,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         })
         .collect();
     let route = crate::ExtensionViewSnapshot {
+        resource_scope: None,
         instance_id: 1,
         route_id: 1,
         extension_id: "test.extension".to_owned(),
@@ -138,6 +146,7 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         })
     };
     let mut update = crate::RootSearchSnapshot {
+        localization: Default::default(),
         text_invalidations: Vec::new(),
         pending_extensions: Vec::new(),
         navigation: crate::NavigationSnapshot {
@@ -325,6 +334,44 @@ fn preparation_completion_and_navigation_wakes_do_not_reschedule_preparation() {
         preparations.recv_timeout(Duration::from_secs(1)).unwrap(),
         first
     );
+    let (generation, request_id, delivered) = {
+        let mut state = shared.lock().unwrap();
+        state.localization = state
+            .localization
+            .updated(
+                nanika_localization::LanguagePreference::SimplifiedChinese,
+                None
+            )
+            .unwrap();
+        let session = state.session.as_mut().unwrap();
+        session.in_flight = None;
+        (
+            session.generation,
+            session.request_id,
+            session.delivered.clone().unwrap()
+        )
+    };
+    wakes.send(SearchDelivery::Wake).unwrap();
+    let localized: serde_json::Value =
+        serde_json::from_str(&received.recv_timeout(Duration::from_secs(1)).unwrap()).unwrap();
+    assert_eq!(localized["localization"]["locale"], "zh-Hans");
+    assert_eq!(localized["resultRevision"], result_revision);
+    assert!(localized.get("results").is_none());
+    assert!(
+        preparations.try_recv().is_err(),
+        "localization must not schedule icon or catalog work"
+    );
+    {
+        let state = shared.lock().unwrap();
+        let session = state.session.as_ref().unwrap();
+        assert_eq!(session.generation, generation);
+        assert!(
+            session
+                .authorize_result(request_id, result_revision)
+                .is_ok()
+        );
+        assert!(Arc::ptr_eq(session.delivered.as_ref().unwrap(), &delivered));
+    }
     // Historical usage failures must not poison a new query or recreate the fatal UI.
     runtime
         .record_execution("missing.extension", "entry", "open", "query")
@@ -393,13 +440,26 @@ fn result_ranges_reject_stale_queries_rankings_sessions_and_reordered_scrolls() 
     session.request_range(request(3, 3, 5, 3, 0, 20)).unwrap();
     session.request_range(request(3, 4, 4, 4, 0, 20)).unwrap();
     assert_eq!(session.result_range, (49_980, 20));
-    assert!(session.request_range(request(2, 4, 5, 5, 0, 20)).is_err());
-    assert!(
+    assert_eq!(
+        session.request_range(request(2, 4, 5, 5, 0, 20)).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::SessionUnavailable
+        ))
+    );
+    assert_eq!(
         session
             .request_range(request(3, 4, 5, 6, usize::MAX, 20))
-            .is_err()
+            .err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::InvalidResultRange
+        ))
     );
-    assert!(session.request_range(request(3, 4, 5, 7, 0, 0)).is_err());
+    assert_eq!(
+        session.request_range(request(3, 4, 5, 7, 0, 0)).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::InvalidResultRange
+        ))
+    );
     session
         .request_range(request(3, 4, 5, 8, 0, 100_000))
         .unwrap();

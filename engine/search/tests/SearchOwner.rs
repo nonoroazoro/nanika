@@ -289,13 +289,13 @@ fn patches_change_only_their_entries_and_cannot_revive_a_retired_catalog() {
         snapshot
             .results
             .iter()
-            .any(|entry| entry.candidate.title() == "Updated")
+            .any(|entry| entry.candidate.title() == &"Updated".into())
     );
     assert!(
         snapshot
             .results
             .iter()
-            .any(|entry| entry.candidate.title() == "Keep")
+            .any(|entry| entry.candidate.title() == &"Keep".into())
     );
     assert!(
         snapshot
@@ -356,7 +356,7 @@ fn catalog_commits_are_independent_of_queries_and_share_unchanged_metadata() {
         if let Some(snapshot) = handle.latest_snapshot().filter(|s| {
             s.results
                 .iter()
-                .any(|row| row.candidate.title() == "Updated")
+                .any(|row| row.candidate.title() == &"Updated".into())
         }) {
             break snapshot;
         }
@@ -375,12 +375,12 @@ fn catalog_commits_are_independent_of_queries_and_share_unchanged_metadata() {
         .find(|row| row.candidate.entry_id() == "keep")
         .unwrap()
         .candidate;
-    assert!(std::ptr::eq(old.title().as_ptr(), new.title().as_ptr()));
+    assert!(std::ptr::eq(old.title(), new.title()));
     assert!(
         before
             .results
             .iter()
-            .any(|row| row.candidate.title() == "New")
+            .any(|row| row.candidate.title() == &"New".into())
     );
     source_catalog.retire().unwrap();
     assert!(
@@ -666,13 +666,25 @@ fn reviewed_metadata_and_order_revoke_authority_while_score_only_changes_do_not(
     confirmed.allow_default_execution = false;
     confirmed.style = nanika_protocol::ActionStyle::Destructive;
     confirmed.confirmation_title = Some("Confirm".into());
+    let mut changed_consequences = confirmed.clone();
+    changed_consequences.confirmation_description = Some(nanika_protocol::message(
+        "consequences",
+        [("count".into(), nanika_protocol::MessageArgument::Integer(1))]
+    ));
+    let mut changed_arguments = changed_consequences.clone();
+    changed_arguments.confirmation_description = Some(nanika_protocol::message(
+        "consequences",
+        [("count".into(), nanika_protocol::MessageArgument::Integer(2))]
+    ));
     for changed in [
         candidate("b", "Needle renamed", action.clone()),
         candidate("b", "Needle renamed", action.clone()).with_subtitle(Some(
             nanika_protocol::CandidateSubtitle::Description("Changed path".into())
         )),
         candidate("b", "Needle renamed", disabled),
-        candidate("b", "Needle renamed", confirmed)
+        candidate("b", "Needle renamed", confirmed),
+        candidate("b", "Needle renamed", changed_consequences),
+        candidate("b", "Needle renamed", changed_arguments)
     ] {
         let reviewed = handle.latest_snapshot().unwrap();
         source.commit_catalog(false, vec![changed], vec![]).unwrap();

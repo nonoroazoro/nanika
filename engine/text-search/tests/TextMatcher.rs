@@ -6,6 +6,18 @@ fn normalization_collapses_punctuation_case_and_whitespace() {
 }
 
 #[test]
+fn isolation_controls_do_not_split_a_visible_search_token() {
+    let displayed = "shortcut\u{2068}42\u{2069}";
+    assert_eq!(normalize_query(displayed), "shortcut42");
+    assert_eq!(normalize_query("\u{2066}A\u{2069}\u{2067}B\u{2069}"), "ab");
+    let matched = TextMatcher::new()
+        .score(&TextQuery::new("shortcut42"), &[normalize_query(displayed)])
+        .unwrap();
+    assert_eq!(matched.tier, 3);
+    assert_eq!(displayed, "shortcut\u{2068}42\u{2069}");
+}
+
+#[test]
 fn exact_prefix_word_prefix_and_fuzzy_share_the_app_list_tiers() {
     let mut matcher = TextMatcher::new();
     for (query, title, tier) in [

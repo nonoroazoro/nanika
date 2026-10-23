@@ -49,6 +49,23 @@ fn calculator_process_contributes_and_copies_through_the_host() {
     write_frame(
         &mut input,
         &Message::Invoke {
+            request_id: "unavailable".into(),
+            generation: 1,
+            entry_id: "missing-result".into(),
+            action_id: entry.action_id.clone()
+        }
+    )
+    .unwrap();
+    assert!(
+        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), error })
+        if id == "unavailable" && error.code == "unknown_action"
+            && error.message == nanika_protocol::message("error-unknown-action", [])
+            && error.detail.is_none())
+    );
+
+    write_frame(
+        &mut input,
+        &Message::Invoke {
             request_id: "invoke".to_owned(),
             generation: 1,
             entry_id: entry.entry_id,
@@ -69,6 +86,27 @@ fn calculator_process_contributes_and_copies_through_the_host() {
         panic!("calculator should request a clipboard write");
     };
     assert_eq!(value, "42");
+    // A stale failure must not settle the accepted clipboard write.
+    for (parent, response_generation) in [
+        ("other-parent", generation),
+        (parent_request_id.as_str(), generation + 1)
+    ] {
+        write_frame(
+            &mut input,
+            &Message::HostResponse {
+                request_id: request_id.clone(),
+                parent_request_id: parent.into(),
+                generation: response_generation,
+                response: HostServiceResponse::Failed {
+                    failure: nanika_protocol::HostServiceFailure::new(
+                        nanika_protocol::HostServiceFailureKind::Failed,
+                        "stale failure"
+                    )
+                }
+            }
+        )
+        .unwrap();
+    }
     write_frame(
         &mut input,
         &Message::HostResponse {
@@ -154,14 +192,14 @@ fn explicit_cancellation_interrupts_evaluation_and_allows_the_next_query() {
         let cancelled = receiver
             .recv_timeout(Duration::from_secs(5))
             .map_err(|error| error.to_string())?;
-        if !matches!(cancelled, Message::Error { request_id: Some(id), code, .. } if id == "slow" && code == "cancelled")
+        if !matches!(cancelled, Message::Error { request_id: Some(id), error, .. } if id == "slow" && error.code == "cancelled" && error.message == nanika_protocol::message("error-cancelled", []) && error.detail.is_none())
         {
             return Err("old query must report explicit cancellation".to_owned());
         }
         let latest = receiver
             .recv_timeout(Duration::from_secs(5))
             .map_err(|error| error.to_string())?;
-        if !matches!(latest, Message::Snapshot { request_id, entries, complete: true, .. } if request_id == "latest" && entries.len() == 1 && entries[0].title == "= 2")
+        if !matches!(latest, Message::Snapshot { request_id, entries, complete: true, .. } if request_id == "latest" && entries.len() == 1 && entries[0].title == "= 2".into())
         {
             return Err("latest query must complete after cancellation".to_owned());
         }

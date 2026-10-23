@@ -9,7 +9,8 @@ fn persistence(criterion: &mut Criterion) {
         std::env::temp_dir().join(format!("nanika-clipboard-benchmark-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("benchmark root");
-    let database = ClipboardDatabase::open(root.join("clipboard.db")).expect("database");
+    let database = ClipboardDatabase::open(root.join("clipboard.db"), &root.join("payloads"))
+        .expect("database");
     for index in 0..500 {
         database
             .upsert(&entry(index, index as u64))
@@ -32,7 +33,11 @@ fn persistence(criterion: &mut Criterion) {
         });
     });
     for count in [500, 5000] {
-        let history = ClipboardDatabase::open(root.join(format!("capture-{count}.db"))).unwrap();
+        let history = ClipboardDatabase::open(
+            root.join(format!("capture-{count}.db")),
+            &root.join("payloads")
+        )
+        .unwrap();
         for index in 0..count {
             let mut item = entry(index, index as u64);
             item.content = ClipboardContent::Text {
@@ -42,7 +47,11 @@ fn persistence(criterion: &mut Criterion) {
             history.upsert(&item).unwrap();
         }
         drop(history);
-        let mut store = ClipboardStore::open(root.join(format!("capture-{count}.db"))).unwrap();
+        let mut store = ClipboardStore::open(
+            root.join(format!("capture-{count}.db")),
+            &root.join("payloads")
+        )
+        .unwrap();
         let mut query = ClipboardViewState::new();
         query.query = "xxx".into();
         let current = store.present(query, None).unwrap();
@@ -75,7 +84,7 @@ fn entry(index: usize, captured_at: u64) -> ClipboardEntry {
     let value = format!("Clipboard benchmark payload {index}");
     ClipboardEntry {
         entry_id: format!("clipboard.{index}"),
-        title: value.clone(),
+        image_dimensions: None,
         byte_size: value.len() as u64,
         content: ClipboardContent::Text { value },
         captured_at

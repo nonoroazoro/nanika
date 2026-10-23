@@ -89,6 +89,13 @@ export class TextDocumentModel
             {
                 this._append(chunk);
             }
+        }, error =>
+        {
+            // Retired reads have no authority to replace a current presentation with an error.
+            if (!this._disposed && epoch === this._epoch)
+            {
+                throw error;
+            }
         }).finally(() =>
         {
             if (epoch === this._epoch)

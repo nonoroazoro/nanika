@@ -1,8 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import { hostSettingsFailure } from "../settings/host-settings-errors";
+
 import type { ExtensionLifecycle } from "../generated/ExtensionLifecycle";
 import type { HostSettingsChange } from "../generated/HostSettingsChange";
 import type { LauncherPreferences } from "../generated/LauncherPreferences";
+import type { LocalizationResourceRequest } from "../generated/LocalizationResourceRequest";
+import type { LocalizationSnapshot } from "../generated/LocalizationSnapshot";
+import type { PreparedResources } from "../generated/PreparedResources";
 import type { SaveSettingsRequest } from "../generated/SaveSettingsRequest";
 import type { SettingsActionRequest } from "../generated/SettingsActionRequest";
 import type { SettingsApplicationUpdate } from "../generated/SettingsApplicationUpdate";
@@ -19,13 +24,17 @@ let updates: Channel<SettingsEvent> | undefined;
 let onShortcut: (() => void) | undefined;
 
 export const settingsBridge = {
+    readResources: async (
+        request: Extract<LocalizationResourceRequest, { surface: "settings"; }>
+    ): Promise<PreparedResources> => invoke("read_localization_resources", { request }),
     read: async (
-        onUpdate: (update: SettingsApplicationUpdate) => void,
+        onUpdate: (update: SettingsApplicationUpdate) => Promise<void> | void,
         onClose: () => void,
         onWindowState: (maximized: boolean) => void,
         onError: (error: unknown) => void,
-        onLifecycle: (revision: number, extensions: ExtensionLifecycle[]) => void,
-        onNavigate: (navigation: SettingsNavigation) => void
+        onLifecycle: (revision: number, extensions: ExtensionLifecycle[]) => Promise<void> | void,
+        onNavigate: (navigation: SettingsNavigation) => void,
+        onLocalization: (sessionId: number, snapshot: LocalizationSnapshot) => void
     ): Promise<SettingsSnapshot> =>
     {
         const subscribe = updates === undefined;
@@ -48,13 +57,31 @@ export const settingsBridge = {
             {
                 onNavigate(event.navigation);
             }
+            else if (event.type === "localization")
+            {
+                onLocalization(event.sessionId, event.localization);
+            }
             else if (event.type === "lifecycle")
             {
-                onLifecycle(event.revision, event.extensions);
+                void Promise.resolve(onLifecycle(event.revision, event.extensions)).then(async () =>
+                {
+                    if (event.deliveryId !== undefined)
+                    {
+                        await invoke("acknowledge_settings_delivery", { deliveryId: event.deliveryId });
+                    }
+                }).catch(onError);
+                return;
             }
             else
             {
-                onUpdate(event.update);
+                void Promise.resolve(onUpdate(event.update)).then(async () =>
+                {
+                    if (event.deliveryId !== undefined)
+                    {
+                        await invoke("acknowledge_settings_delivery", { deliveryId: event.deliveryId });
+                    }
+                }).catch(onError);
+                return;
             }
             if ("deliveryId" in event && event.deliveryId !== undefined)
             {
@@ -78,7 +105,17 @@ export const settingsBridge = {
     ready: async (): Promise<boolean> => invoke("settings_ready"),
     windowAction: async (action: SettingsWindowAction): Promise<void> => invoke("settings_window_action", { action }),
     saveHost: async (request: HostSettingsChange): Promise<SettingsWriteResult<LauncherPreferences>> =>
-        invoke("save_host_settings", { request }),
+    {
+        try
+        {
+            const result = await invoke<SettingsWriteResult<LauncherPreferences>>("save_host_settings", { request });
+            return { ...result, error: result.error ? hostSettingsFailure(result.error) : null };
+        }
+        catch (error)
+        {
+            throw Object.assign(new Error("Host preference completion unavailable."), hostSettingsFailure(error));
+        }
+    },
     recordShortcut: async (recording: boolean): Promise<boolean> => invoke("set_shortcut_recording", { recording }),
     listenShortcut: (handler: () => void): () => void =>
     {

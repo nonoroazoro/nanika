@@ -6,9 +6,13 @@ use std::sync::mpsc::Receiver;
 pub struct ConfigurationSaveReceipt(pub(crate) Receiver<ConfigurationSaveOutcome>);
 
 impl ConfigurationSaveReceipt {
-    pub fn wait(self) -> Result<ConfigurationSaveOutcome, String> {
-        self.0
-            .recv()
-            .map_err(|_| "Configuration operation ended without a result.".to_owned())
+    pub fn wait(self) -> Result<ConfigurationSaveOutcome, crate::OperationError> {
+        self.0.recv().map_err(|_| {
+            crate::OperationError::new(crate::OperationErrorCode::ConfigurationUnconfirmed)
+        })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/ConfigurationSaveReceipt.rs"]
+mod tests;

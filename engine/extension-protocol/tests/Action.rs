@@ -30,7 +30,7 @@ fn execution_policy_is_independent_of_visual_style() {
 fn confirmation_requires_acknowledgement_and_disallows_default_execution() {
     let mut action = Action::primary("clear", "Clear");
     action.style = ActionStyle::Destructive;
-    action.confirmation_title = Some("Clear now?".to_owned());
+    action.confirmation_title = Some("Clear now?".into());
     assert!(validate_actions(&[action.clone()]).is_err());
     assert!(!action.allows_invocation(ActionInvocation::Default));
     action.allow_default_execution = false;
@@ -80,4 +80,39 @@ fn semantic_icons_are_closed_data_not_paths_or_markup() {
         value["icon"] = serde_json::json!(invalid);
         assert!(serde_json::from_value::<Action>(value.clone()).is_err());
     }
+}
+
+#[test]
+fn localized_actions_keep_policy_and_reject_conflicting_group_definitions() {
+    use nanika_protocol::{PresentationGroup, message};
+    let mut first = Action::primary("first", message("run", []));
+    first.group = Some(PresentationGroup {
+        id: "operations".into(),
+        title: message("group", [])
+    });
+    let mut second = first.clone();
+    second.id = "second".into();
+    validate_actions(&[first.clone(), second.clone()]).unwrap();
+    second.group.as_mut().unwrap().title = "Different title".into();
+    assert!(
+        validate_actions(&[first.clone(), second.clone()])
+            .unwrap_err()
+            .contains("conflicting")
+    );
+    second.group.as_mut().unwrap().id = "another".into();
+    validate_actions(&[first.clone(), second]).unwrap();
+    let mut encoded = serde_json::to_value(&first).unwrap();
+    assert_eq!(
+        serde_json::from_value::<Action>(encoded.clone()).unwrap(),
+        first
+    );
+    encoded["group"] = serde_json::json!("legacy label");
+    assert!(serde_json::from_value::<Action>(encoded).is_err());
+    first.confirmation_title = Some(message("confirm", []));
+    assert!(validate_actions(&[first.clone()]).is_err());
+    first.allow_default_execution = false;
+    validate_actions(&[first.clone()]).unwrap();
+    assert!(!first.allows_invocation(ActionInvocation::Default));
+    assert!(!first.allows_invocation(ActionInvocation::Explicit));
+    assert!(first.allows_invocation(ActionInvocation::Confirmed));
 }

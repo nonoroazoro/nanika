@@ -18,10 +18,10 @@ pub struct ClipboardStore {
 }
 
 impl ClipboardStore {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn open(path: impl AsRef<Path>, payload_root: &Path) -> Result<Self, String> {
         Ok(Self {
             _syntax_highlighting: true,
-            _database: ClipboardDatabase::open(path)?,
+            _database: ClipboardDatabase::open(path, payload_root)?,
             _query: None,
             _query_revision: 0,
             _window: None,
@@ -193,8 +193,8 @@ impl ClipboardStore {
         let selected = self._preview.as_deref();
         let mut paths = HashMap::new();
         for item in items {
-            if let Some(path) = &item.first_path {
-                paths.insert(item.entry_id.clone(), vec![path.clone()]);
+            if let crate::ClipboardSummary::Files { first_path, .. } = &item.summary {
+                paths.insert(item.entry_id.clone(), vec![first_path.clone()]);
             }
         }
         if let Some(ClipboardEntry {

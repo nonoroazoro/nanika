@@ -24,19 +24,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             configuration
         }) if protocol == PROTOCOL_NAME => (request_id, configuration),
         Some(Message::Initialize { request_id, .. }) => {
-            send_error(
+            _send_error(
                 &output,
                 Some(request_id),
                 "unsupported_protocol",
+                "error-unsupported-protocol",
                 "the requested extension protocol is unsupported"
             )?;
             return Ok(());
         }
         Some(message) => {
-            send_error(
+            _send_error(
                 &output,
                 request_id(&message),
                 "not_initialized",
+                "error-not-initialized",
                 "initialize must be the first request"
             )?;
             return Ok(());
@@ -46,10 +48,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = match ClipboardConfig::from_configuration(&configuration) {
         Ok(config) => config,
         Err(message) => {
-            send_error(
+            _send_error(
                 &output,
                 Some(initialize_request_id),
                 "invalid_configuration",
+                "error-invalid-configuration",
                 &message
             )?;
             return Ok(());
@@ -122,10 +125,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             effect: NavigationEffect::None
                         }
                     )?,
-                    Err(error) => send_error(
+                    Err(error) => _send_error(
                         &output,
                         Some(request_id),
                         "clipboard_history_clear_failed",
+                        "error-clear-history",
                         &error
                     )?
                 }
@@ -137,10 +141,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 action_id
             } => {
                 if entry_id != VIEW_ID || action_id != nanika_protocol::VIEW_OPEN_ACTION_ID {
-                    send_error(
+                    _send_error(
                         &output,
                         Some(request_id),
                         "unknown_action",
+                        "error-action-unavailable",
                         "clipboard view or action does not exist"
                     )?;
                     continue;
@@ -148,13 +153,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut presentation = match worker.present(ClipboardViewState::new(), None) {
                     Ok(presentation) => presentation,
                     Err(error) => {
-                        send_error(&output, Some(request_id), "view_failed", &error)?;
+                        _send_error(
+                            &output,
+                            Some(request_id),
+                            "view_failed",
+                            "error-open-history",
+                            &error
+                        )?;
                         continue;
                     }
                 };
                 presentation.decorate_icons(&|path| icon_worker.resolution(path));
                 if let Err(message) = presentation.view.validate() {
-                    send_error(&output, Some(request_id), "view_failed", &message)?;
+                    _send_error(
+                        &output,
+                        Some(request_id),
+                        "view_failed",
+                        "error-open-history",
+                        &message
+                    )?;
                     continue;
                 }
                 send_frame(
@@ -204,14 +221,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         chunk
                     }
                 )?,
-                Err(error) => send_error(&output, Some(request_id), "text_read_failed", &error)?
+                Err(error) => send_frame(
+                    &output,
+                    &Message::Error {
+                        request_id: Some(request_id),
+                        error: nanika_protocol::ProtocolError::new(
+                            "text_read_failed",
+                            nanika_protocol::message("error-text-read", [])
+                        )
+                        .with_detail(error)
+                    }
+                )?
             },
             Message::ViewClose {
                 request_id,
                 view_id
             } if view_id == VIEW_ID => {
                 if let Err(message) = worker.close_view() {
-                    send_error(&output, Some(request_id), "view_close_failed", &message)?;
+                    _send_error(
+                        &output,
+                        Some(request_id),
+                        "view_close_failed",
+                        "error-close-history",
+                        &message
+                    )?;
                     continue;
                 }
                 view_state = None;
@@ -242,17 +275,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|config| worker.apply_configuration(config))
             {
                 Ok(()) => send_frame(&output, &Message::ConfigurationApplied { request_id })?,
-                Err(message) => send_error(
+                Err(message) => _send_error(
                     &output,
                     Some(request_id),
                     "configuration_apply_failed",
+                    "error-apply-configuration",
                     &message
                 )?
             },
-            message => send_error(
+            message => _send_error(
                 &output,
                 request_id(&message),
                 "unsupported_message",
+                "error-unsupported-message",
                 "the clipboard extension received an unsupported message"
             )?
         }
@@ -286,18 +321,20 @@ fn handle_view_event(
     event: ViewEvent
 ) -> Result<(), nanika_protocol::FrameError> {
     let Some(current) = view_state.as_ref() else {
-        return send_error(
+        return _send_error(
             output,
             Some(request_id),
             "unknown_view",
+            "error-history-changed",
             "clipboard view is not open"
         );
     };
     if current.state.revision != revision {
-        return send_error(
+        return _send_error(
             output,
             Some(request_id),
             "stale_view",
+            "error-history-changed",
             "clipboard view revision is stale"
         );
     }
@@ -321,7 +358,13 @@ fn handle_view_event(
             match current.select_index(&collection_id, index) {
                 Ok(selected) => *state = selected,
                 Err(message) => {
-                    return send_error(output, Some(request_id), "invalid_selection", &message);
+                    return _send_error(
+                        output,
+                        Some(request_id),
+                        "invalid_selection",
+                        "error-history-interaction",
+                        &message
+                    );
                 }
             }
             expected_collection_revision = Some(current.collection_revision);
@@ -348,7 +391,13 @@ fn handle_view_event(
                 offset,
                 count
             ) {
-                return send_error(output, Some(request_id), "invalid_view_range", &message);
+                return _send_error(
+                    output,
+                    Some(request_id),
+                    "invalid_view_range",
+                    "error-history-interaction",
+                    &message
+                );
             }
             expected_collection_revision = Some(current.collection_revision);
         }
@@ -361,7 +410,13 @@ fn handle_view_event(
             {
                 Ok(content) => content,
                 Err(message) => {
-                    return send_error(output, Some(request_id), "unknown_action", &message);
+                    return _send_error(
+                        output,
+                        Some(request_id),
+                        "unknown_action",
+                        "error-action-unavailable",
+                        &message
+                    );
                 }
             };
             monitor.begin_internal_write();
@@ -382,10 +437,11 @@ fn handle_view_event(
             };
             if let Some(revision) = copied {
                 if let Err(message) = monitor.complete_internal_write(revision) {
-                    return send_error(
+                    return _send_error(
                         output,
                         Some(request_id),
                         "clipboard_monitor_failed",
+                        "error-copied-monitor-failed",
                         &message
                     );
                 }
@@ -408,31 +464,47 @@ fn handle_view_event(
             return Ok(());
         }
         _ => {
-            return send_error(
+            return _send_error(
                 output,
                 Some(request_id),
                 "invalid_view_event",
+                "error-history-interaction",
                 "clipboard view event is invalid"
             );
         }
     }
     let Some(next_revision) = state.revision.checked_add(1) else {
-        return send_error(
+        return _send_error(
             output,
             Some(request_id),
             "view_revision_exhausted",
+            "error-history-changed",
             "Reopen the view before continuing."
         );
     };
     state.revision = next_revision;
     let mut presentation = match worker.present(proposed, expected_collection_revision) {
         Ok(presentation) => presentation,
-        Err(message) => return send_error(output, Some(request_id), "view_failed", &message)
+        Err(message) => {
+            return _send_error(
+                output,
+                Some(request_id),
+                "view_update_failed",
+                "error-update-history",
+                &message
+            );
+        }
     };
     presentation.decorate_icons(&|path| icon_worker.resolution(path));
     // Only a fully validated proposal that was sent becomes the protocol's current revision.
     if let Err(message) = presentation.view.validate() {
-        return send_error(output, Some(request_id), "view_failed", &message);
+        return _send_error(
+            output,
+            Some(request_id),
+            "view_update_failed",
+            "error-update-history",
+            &message
+        );
     }
     send_frame(
         output,
@@ -473,20 +545,34 @@ fn write_clipboard(
                 request_id: response_id,
                 parent_request_id,
                 generation: response_generation,
-                response: HostServiceResponse::ClipboardWritten { revision }
+                response
             }) if response_id == service_request_id
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return Ok(Some(revision));
+                match response {
+                    HostServiceResponse::ClipboardWritten { revision } => {
+                        return Ok(Some(revision));
+                    }
+                    HostServiceResponse::Failed { failure } => {
+                        send_frame(
+                            output,
+                            &Message::Error {
+                                request_id: Some(request_id.to_owned()),
+                                error: failure.into_error("error-host-service")
+                            }
+                        )?;
+                        return Ok(None);
+                    }
+                    _ => continue
+                }
             }
-            Some(Message::Error {
-                request_id: Some(response_id),
-                code,
-                message
-            }) if response_id == service_request_id => {
-                send_error(output, Some(request_id.to_owned()), &code, &message)?;
-                return Ok(None);
+            Some(Message::Error { .. }) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Unexpected host error outside a service response."
+                )
+                .into());
             }
             Some(_) => {}
             None => return Ok(None)
@@ -494,20 +580,16 @@ fn write_clipboard(
     }
 }
 
-fn send_error(
+fn _send_error(
     output: &SharedOutput,
     request_id: Option<String>,
     code: &str,
-    message: &str
+    reference: &str,
+    detail: &str
 ) -> Result<(), nanika_protocol::FrameError> {
-    send_frame(
-        output,
-        &Message::Error {
-            request_id,
-            code: code.to_owned(),
-            message: message.to_owned()
-        }
-    )
+    let error = nanika_protocol::ProtocolError::new(code, nanika_protocol::message(reference, []))
+        .with_detail(detail);
+    send_frame(output, &Message::Error { request_id, error })
 }
 
 fn send_frame(output: &SharedOutput, message: &Message) -> Result<(), nanika_protocol::FrameError> {

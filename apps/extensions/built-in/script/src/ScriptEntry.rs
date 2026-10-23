@@ -32,14 +32,14 @@ impl ScriptEntry {
         Candidate {
             kind: CandidateKind::Action,
             entry_id: self.id.clone(),
-            title: self.title.clone(),
+            title: self.title.clone().into(),
             subtitle: Some(nanika_protocol::CandidateSubtitle::Description(
-                self.path.to_string_lossy().into_owned()
+                self.path.to_string_lossy().into_owned().into()
             )),
             action_id: RUN_ACTION_ID.to_owned(),
             actions: vec![nanika_protocol::Action::primary(
                 RUN_ACTION_ID.to_owned(),
-                "Run"
+                nanika_protocol::message("action-run", [])
             )],
             aliases: Vec::new(),
             icon: None

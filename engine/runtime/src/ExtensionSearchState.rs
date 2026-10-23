@@ -10,10 +10,10 @@ use crate::{
 #[derive(Debug, Default)]
 pub(crate) struct ExtensionSearchState {
     pub(crate) lifecycle: crate::RuntimeExtensionState,
-    pub(crate) lifecycle_error: Option<String>,
+    pub(crate) lifecycle_error: Option<crate::LifecycleFailure>,
     pub(crate) closed: bool,
     pub(crate) finished: bool,
-    pub(crate) stop_result: Option<Result<(), String>>,
+    pub(crate) stop_result: Option<Result<(), crate::LifecycleFailure>>,
     pub(crate) latest_query: Option<ExtensionSearchQuery>,
     pub(crate) query: Option<ExtensionSearchQuery>,
     pub(crate) catalog_pending: bool,

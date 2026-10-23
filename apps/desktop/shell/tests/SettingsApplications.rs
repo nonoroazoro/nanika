@@ -4,11 +4,12 @@ use std::sync::{Arc, Mutex};
 fn _update(extension: &str, request_id: u64, completed: u32) -> SettingsApplicationUpdate {
     SettingsApplicationUpdate {
         extension_id: extension.to_owned(),
+        resource_scope: None,
         key: "enabled".to_owned(),
         request_id,
         result: SettingsSaveResult::Running {
             progress: Some(nanika_protocol::OperationProgress {
-                label: "Applying".to_owned(),
+                label: "Applying".into(),
                 completed,
                 total: Some(100_000)
             })
@@ -29,7 +30,7 @@ fn _receipt(event: &SettingsEvent) -> u64 {
 #[test]
 fn slow_consumer_has_one_in_flight_message_and_receives_only_latest_progress() {
     let mut state = SettingsApplications::default();
-    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.subscribe(1, tauri::ipc::Channel::new(|_| Ok(())));
     let (_, first) = state.record(_update("test.extension", 1, 0)).unwrap();
     for completed in 1..=100_000 {
         assert!(
@@ -57,12 +58,14 @@ fn slow_consumer_has_one_in_flight_message_and_receives_only_latest_progress() {
 #[test]
 fn terminal_bypasses_progress_receipt_and_removes_obsolete_pending_progress() {
     let mut state = SettingsApplications::default();
-    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.subscribe(1, tauri::ipc::Channel::new(|_| Ok(())));
     let (_, first) = state.record(_update("test.extension", 1, 0)).unwrap();
     assert!(state.record(_update("test.extension", 1, 1)).is_none());
     let mut terminal = _update("test.extension", 1, 2);
     terminal.result = SettingsSaveResult::Failed {
-        error: "Rejected".to_owned()
+        error: nanika_host::ConfigurationSaveError::unconfirmed(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::ConfigurationUnconfirmed
+        ))
     };
     let (_, event) = state.record(terminal).unwrap();
     assert!(matches!(
@@ -86,7 +89,7 @@ fn terminal_bypasses_progress_receipt_and_removes_obsolete_pending_progress() {
 #[test]
 fn progress_is_fair_between_extensions_and_bounded_across_operations() {
     let mut state = SettingsApplications::default();
-    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.subscribe(1, tauri::ipc::Channel::new(|_| Ok(())));
     let (_, first) = state.record(_update("a.extension", 1, 0)).unwrap();
     assert!(state.record(_update("b.extension", 2, 0)).is_none());
     assert!(state.record(_update("a.extension", 3, 1)).is_none());
@@ -106,10 +109,10 @@ fn progress_is_fair_between_extensions_and_bounded_across_operations() {
 fn old_session_receipts_and_failures_cannot_release_or_disconnect_a_new_session() {
     let mut state = SettingsApplications::default();
     let old = tauri::ipc::Channel::new(|_| Ok(()));
-    state.subscribe(old.clone());
+    state.subscribe(1, old.clone());
     let (_, first) = state.record(_update("test.extension", 1, 0)).unwrap();
     let new = tauri::ipc::Channel::new(|_| Ok(()));
-    state.subscribe(new.clone());
+    state.subscribe(1, new.clone());
     let (_, second) = state.record(_update("test.extension", 1, 1)).unwrap();
     assert_ne!(_receipt(&first), _receipt(&second));
     assert!(state.record(_update("test.extension", 1, 2)).is_none());
@@ -138,7 +141,7 @@ fn late_submission_cannot_erase_progress_and_transport_can_acknowledge_without_l
         assert!(state.acknowledge(id).is_none());
         Ok(())
     });
-    shared.lock().unwrap().subscribe(channel);
+    shared.lock().unwrap().subscribe(1, channel);
     let delivery = shared
         .lock()
         .unwrap()
@@ -160,7 +163,7 @@ fn late_submission_cannot_erase_progress_and_transport_can_acknowledge_without_l
 #[test]
 fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
     let mut state = SettingsApplications::default();
-    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.subscribe(1, tauri::ipc::Channel::new(|_| Ok(())));
     state.lifecycle_revision = 1;
     let (
         _,
@@ -188,7 +191,7 @@ fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
     };
     assert_eq!(revision, 100_000);
     assert!(state.acknowledge(first).is_none());
-    state.subscribe(tauri::ipc::Channel::new(|_| Ok(())));
+    state.subscribe(1, tauri::ipc::Channel::new(|_| Ok(())));
     let (
         _,
         SettingsEvent::Lifecycle {
@@ -202,5 +205,69 @@ fn lifecycle_delivery_is_bounded_and_receipts_are_session_bound() {
     state.lifecycle_revision += 1;
     assert!(state.acknowledge(second).is_none());
     assert!(state.next_lifecycle().is_none());
+    assert!(state.acknowledge(current).is_some());
+}
+
+#[test]
+fn localization_coalesces_and_old_sessions_cannot_release_current_delivery() {
+    use nanika_localization::LanguagePreference;
+    let mut state = crate::SettingsApplications::default();
+    state.subscribe(10, tauri::ipc::Channel::new(|_| Ok(())));
+    let (
+        _,
+        SettingsEvent::Localization {
+            delivery_id: first,
+            session_id,
+            ..
+        }
+    ) = state.next_localization().unwrap()
+    else {
+        panic!("localization event");
+    };
+    assert_eq!(session_id, 10);
+    for preference in [
+        LanguagePreference::SimplifiedChinese,
+        LanguagePreference::English,
+        LanguagePreference::SimplifiedChinese
+    ] {
+        state.localization = state.localization.updated(preference, None).unwrap();
+        assert!(state.next_localization().is_none());
+    }
+    let (
+        _,
+        SettingsEvent::Localization {
+            delivery_id: second,
+            localization,
+            ..
+        }
+    ) = state.acknowledge(first).unwrap()
+    else {
+        panic!("coalesced localization");
+    };
+    assert_eq!(localization, state.localization);
+    assert_eq!(
+        localization.preference,
+        LanguagePreference::SimplifiedChinese
+    );
+    state.subscribe(11, tauri::ipc::Channel::new(|_| Ok(())));
+    let (
+        _,
+        SettingsEvent::Localization {
+            delivery_id: current,
+            session_id,
+            ..
+        }
+    ) = state.next_localization().unwrap()
+    else {
+        panic!("new session localization");
+    };
+    assert_eq!(session_id, 11);
+    assert_ne!(current, second);
+    assert!(state.acknowledge(second).is_none());
+    assert!(state.next_localization().is_none());
+    state.localization = state
+        .localization
+        .updated(LanguagePreference::English, None)
+        .unwrap();
     assert!(state.acknowledge(current).is_some());
 }

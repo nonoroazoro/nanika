@@ -1,4 +1,6 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
+import { validationErrorText } from "./validation-presentation";
 import { tick } from "svelte";
 import InfinityIcon from "../components/icons/InfinityIcon.svelte";
 import Button from "../components/ui/Button.svelte";
@@ -20,7 +22,7 @@ let control = $state<HTMLDivElement>();
 const limit = $derived(integerLimitDraft(value));
 const unlimited = $derived(limit?.unlimited ?? false);
 const error = $derived(integerError(schema, limit?.value));
-$effect(() => input?.setCustomValidity(error ?? ""));
+$effect(() => input?.setCustomValidity(validationErrorText(error, message => localization.text(message))));
 
 async function _finite(): Promise<void>
 {
@@ -92,24 +94,26 @@ function _unlimited(): void
             oninput={event =>
             {
                 const raw = event.currentTarget.value;
-                event.currentTarget.setCustomValidity(integerError(schema, raw) ?? "");
+                event.currentTarget.setCustomValidity(
+                    validationErrorText(integerError(schema, raw), message => localization.text(message))
+                );
                 onChange({ unlimited: false, value: raw });
             }}
         />
         {#if unlimited}
             <Button
                 class="finite-toggle"
-                aria-label={`${label}: Use limit ${limit?.value ?? ""}`}
-                title="Use a numeric limit"
+                aria-label={localization.text({ message: "settings-limit-finite-label", args: { label, value: limit?.value ?? "" } })}
+                title={localization.text({ message: "settings-limit-finite-title" })}
                 onclick={_finite}
             />
         {/if}
     </div>
     <Button
         class="infinity-toggle"
-        aria-label={`${label}: Unlimited`}
+        aria-label={localization.text({ message: "settings-limit-unlimited-label", args: { label } })}
         aria-pressed={unlimited}
-        title="Unlimited"
+        title={localization.text({ message: "settings-limit-unlimited-title" })}
         onclick={_unlimited}
     ><InfinityIcon size={18} strokeWidth={1.7} /></Button>
 </div>

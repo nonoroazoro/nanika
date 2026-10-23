@@ -7,11 +7,14 @@ pub(crate) struct ExtensionConfigurationUpdate {
     pub(crate) require_live: bool,
     pub(crate) progress: crate::ConfigurationProgressHandler,
     pub(crate) completion:
-        std::sync::mpsc::SyncSender<Result<crate::ConfigurationApplication, String>>
+        std::sync::mpsc::SyncSender<Result<crate::ConfigurationApplication, crate::OperationError>>
 }
 
 impl ExtensionConfigurationUpdate {
-    pub(crate) fn complete(self, result: Result<crate::ConfigurationApplication, String>) {
+    pub(crate) fn complete(
+        self,
+        result: Result<crate::ConfigurationApplication, crate::OperationError>
+    ) {
         let _ = self.completion.send(result);
     }
 }

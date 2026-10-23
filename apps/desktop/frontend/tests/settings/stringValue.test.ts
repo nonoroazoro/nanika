@@ -15,6 +15,6 @@ test("string length follows the UTF-8 byte contract", () =>
         required: []
     });
     assert.equal(stringError(schema, "hello"), null);
-    assert.equal(stringError(schema, "你好"), "Enter at most 5 UTF-8 bytes.");
+    assert.deepEqual(stringError(schema, "你好"), { code: "textBytes", constraint: 5, path: [] });
     assert.equal(stringError({ ...schema, maxLength: 6 }, "你好"), null);
 });

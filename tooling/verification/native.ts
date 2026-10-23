@@ -16,11 +16,11 @@ import { withBuildTarget } from "../build/with-build-target.ts";
 export async function verifyNative(scenario: string, repetitions = 1): Promise<void>
 {
     if (
-        !["syntax:rendering", "syntax:latency", "syntax:lifecycle"].includes(scenario)
+        !["syntax:rendering", "syntax:latency", "syntax:lifecycle", "localization:switching"].includes(scenario)
         || !Number.isInteger(repetitions) || repetitions < 1 || repetitions > 10
     )
     {
-        throw new Error("Expected syntax:rendering, syntax:latency or syntax:lifecycle and 1 to 10 repetitions");
+        throw new Error("Expected a supported syntax or localization scenario and 1 to 10 repetitions");
     }
     const root = fileURLToPath(new URL("../..", import.meta.url));
     await withBuildTarget(root, "verification", async (target, run) =>

@@ -115,10 +115,19 @@ try
     await search.waitForExist({ timeout: 15000 });
     await browser.execute(`
         window.__nanikaE2eInput = [];
-        for (const type of ['keydown', 'keyup', 'focus', 'blur', 'compositionstart', 'compositionupdate', 'compositionend']) {
+        window.__nanikaE2eErrors = [];
+        const originalError = console.error;
+        console.error = (...values) => {
+            window.__nanikaE2eErrors.push(values.map(value => value instanceof Error ? String(value) + '\\n' + value.stack : String(value)).join(' '));
+            window.__nanikaE2eErrors = window.__nanikaE2eErrors.slice(-32);
+            originalError.apply(console, values);
+        };
+        for (const type of ['keydown', 'keyup', 'focus', 'blur', 'visibilitychange', 'compositionstart', 'compositionupdate', 'compositionend']) {
             window.addEventListener(type, event => {
                 window.__nanikaE2eInput.push({ type, key: event.key, code: event.code, keyCode: event.keyCode,
                     trusted: event.isTrusted, repeat: event.repeat, composing: event.isComposing,
+                    meta: event.metaKey, control: event.ctrlKey, alt: event.altKey, shift: event.shiftKey,
+                    visible: document.visibilityState, focused: document.hasFocus(),
                     data: event.data, time: performance.now() });
                 window.__nanikaE2eInput = window.__nanikaE2eInput.slice(-32);
             }, true);
@@ -139,9 +148,14 @@ try
     if (scenario === "ime")
     {
         await _activate();
-        await search.setValue("Clipboard History");
+        await _key("settings", async () => _window("settings", true, true));
+        await browser.switchToWindow("settings");
+        await (await browser.$('[role=combobox][aria-label="Language"]')).waitForExist({ timeout: 10000 });
+        await _activate();
+        const imeSearch = await browser.$(".launcher input[role=combobox]");
+        await imeSearch.setValue("Clipboard History");
         await (await browser.$("[role=option] .title[title='Clipboard History']")).waitForExist({ timeout: 15000 });
-        await search.click();
+        await imeSearch.click();
         await browser.execute(`
             window.__nanikaE2eComposition = { active: false, starts: 0, updates: 0, ends: 0, committed: '' };
             for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
@@ -161,7 +175,7 @@ try
         if (imeShortcut)
         {
             await _launcherReady();
-            await search.click();
+            await imeSearch.click();
             await _key(imeShortcut, async () =>
             {
                 imeShortcutActive = true;
@@ -182,6 +196,7 @@ try
                 "native IME composition update"
             );
         });
+        await _switchImeLanguage("zh-Hans");
         await _key("enter", async () =>
         {
             await _wait(
@@ -192,14 +207,14 @@ try
         await _window("launcher", true, true);
         const committed = await driver.execute<string, []>("return window.__nanikaE2eComposition.committed");
         if (
-            typeof committed !== "string" || !committed || !await search.isExisting()
-            || !(await search.getValue()).includes(committed)
+            typeof committed !== "string" || !committed || !await imeSearch.isExisting()
+            || !(await imeSearch.getValue()).includes(committed)
         )
         {
             throw new Error("IME Enter submitted a launcher action or discarded the composed text");
         }
         assertions.push("trusted native IME composition commits with Enter without invoking a launcher action");
-        await search.setValue("Clipboard History");
+        await imeSearch.setValue("Clipboard History");
         await _key("n", async () =>
         {
             await _wait(
@@ -210,6 +225,7 @@ try
                 "second native IME composition"
             );
         });
+        await _switchImeLanguage("en");
         await _key("escape", async () =>
         {
             await _wait(
@@ -218,7 +234,7 @@ try
             );
         });
         await _window("launcher", true, true);
-        if (!await search.isExisting())
+        if (!await imeSearch.isExisting())
         {
             throw new Error("IME Escape left the launcher search");
         }
@@ -274,6 +290,13 @@ try
         await _key("switch-app", async () => _window("launcher", false));
         await _key("launcher", async () => _window("launcher", true, true));
         await _launcherReady();
+        await _wait(
+            async () =>
+                await driver.execute(
+                    "return document.activeElement === document.querySelector('.launcher input[role=combobox]')"
+                ) === true,
+            "native restoration of search input focus"
+        );
         await (await browser.$("[role=alertdialog]")).waitForExist({ reverse: true, timeout: 5000 });
         if (await search.getValue() !== "Empty Trash")
         {
@@ -287,6 +310,72 @@ try
         await (await browser.$("input[aria-label='Search settings']")).waitForExist({ timeout: 10000 });
         await browser.saveScreenshot(join(output, "settings.png"));
         assertions.push("native settings shortcut opens the actual Settings window");
+        await browser.switchToWindow("launcher");
+        await browser.execute(`
+            window.__nanikaLocalizationBaseline = {
+                input: document.querySelector('input[aria-label="Search for apps and commands"]'),
+                query: document.querySelector('input[aria-label="Search for apps and commands"]').value,
+                selected: document.querySelector('[role=option][aria-selected=true]')
+            };
+        `);
+        await browser.switchToWindow("settings");
+        await _selectLanguage("zh-Hans", "zh-Hans");
+        await browser.execute(`
+            const names = [...document.querySelectorAll('.sidebar button')].map(button => button.textContent.trim());
+            for (const name of ['应用程序', '脚本', '计算器', '剪贴板历史', '系统']) {
+                if (!names.includes(name)) throw new Error('Missing packaged extension translation: ' + name);
+            }
+        `);
+        assertions.push("all built-in names render Chinese from packaged resources through authorized metadata reads");
+        await browser.saveScreenshot(join(output, "settings-chinese.png"));
+        await browser.switchToWindow("launcher");
+        await _wait(
+            async () => await driver.execute("return document.documentElement.lang === 'zh-Hans'") === true,
+            "launcher localization delivery"
+        );
+        await browser.execute(`
+            const before = window.__nanikaLocalizationBaseline;
+            if (document.querySelector('input[aria-label="搜索应用和命令"]') !== before.input
+                || before.input.value !== before.query
+                || document.querySelector('[role=option][aria-selected=true]') !== before.selected) {
+                throw new Error('Language switching replaced launcher state');
+            }
+            if (before.selected.querySelector('.collection-title').textContent !== '清倒废纸篓'
+                || before.selected.querySelector('.subtitle').textContent !== '系统'
+                || before.selected.querySelector('mark')) {
+                throw new Error('Packaged root candidate did not translate coherently');
+            }
+        `);
+        await browser.switchToWindow("settings");
+        await _selectLanguage("en", "en");
+        assertions.push(
+            "real language saves update both retained WebViews, native title and tray labels without replacing launcher query or selection"
+        );
+        const systemLanguage = await Bun.file(join(state, "system-language.json")).json() as { locale: string; };
+        if (systemLanguage.locale !== "en" && systemLanguage.locale !== "zh-Hans")
+        {
+            throw new Error("Native system-language observation returned an unsupported locale");
+        }
+        await _selectLanguage("system", systemLanguage.locale);
+        await browser.switchToWindow("launcher");
+        await _wait(
+            async () => await driver.execute("return document.documentElement.lang") === systemLanguage.locale,
+            "Follow System delivery to Launcher"
+        );
+        await browser.execute(`
+            const before = window.__nanikaLocalizationBaseline;
+            if (document.querySelector('.launcher input[role=combobox]') !== before.input
+                || before.input.value !== before.query
+                || document.querySelector('[role=option][aria-selected=true]') !== before.selected) {
+                throw new Error('Follow System replaced retained launcher state');
+            }
+        `);
+        await Bun.write(join(output, "system-language.json"), Bun.file(join(state, "system-language.json")));
+        assertions.push(
+            "Follow System saves the preference and converges both retained WebViews and native title on the current OS language"
+        );
+        await browser.switchToWindow("settings");
+        await _selectLanguage("en", "en");
         const marker = identity;
         const copiedHtml = (await Bun.file(
             join(root, "apps/desktop/frontend/tests/syntax/fixtures/inline-chart.txt")
@@ -300,7 +389,9 @@ try
             .waitForExist({ timeout: 15000 });
         await _key("enter", async () =>
         {
-            await (await driver.$("button[aria-label='Clipboard History menu']")).waitForExist({ timeout: 10000 });
+            await (await driver.$("button[aria-label='\u2068Clipboard History\u2069 menu']")).waitForExist({
+                timeout: 10000
+            });
         });
         assertions.push("native Enter opens the selected extension through the real runtime");
         const filter = await browser.$("input[aria-label='Search clipboard history']");
@@ -334,7 +425,7 @@ try
             throw new Error("First Clipboard preview reloaded or returned to the launcher");
         }
         assertions.push("first Clipboard preview remains in the same document and extension after three seconds");
-        await (await browser.$("button[aria-label='Clipboard History menu']")).click();
+        await (await browser.$("button[aria-label='\u2068Clipboard History\u2069 menu']")).click();
         await (await browser.$("[role=menu]")).waitForExist({ timeout: 5000 });
         const menuItems = await browser.$$("[role=menuitem]");
         const settingsItem = await menuItems.find(async item => (await item.getText()).startsWith("Settings"));
@@ -404,7 +495,7 @@ catch (error)
                 join(output, "input.json"),
                 JSON.stringify(
                     await browser.execute(`
-                return { events: window.__nanikaE2eInput, visible: document.visibilityState,
+                return { events: window.__nanikaE2eInput, errors: window.__nanikaE2eErrors, visible: document.visibilityState,
                     focused: document.hasFocus(), active: document.activeElement?.outerHTML };
             `),
                     null,
@@ -706,5 +797,132 @@ async function _launcherReady(): Promise<void>
     await driver.waitUntil(
         async () => await driver.execute("return document.visibilityState === 'visible' && document.hasFocus()"),
         { timeout: 5000, timeoutMsg: "Launcher WebView did not regain visibility and focus" }
+    );
+}
+
+async function _switchImeLanguage(locale: "en" | "zh-Hans"): Promise<void>
+{
+    if (!browser)
+    {
+        throw new Error("WebDriver session is not ready");
+    }
+    const driver = browser;
+    await driver.execute(`
+        const input = document.querySelector('.launcher input[role=combobox]');
+        const composition = window.__nanikaE2eComposition;
+        if (!composition.active || document.activeElement !== input || !document.hasFocus()) {
+            throw new Error('Expected focused native composition before language save');
+        }
+        window.__nanikaE2eImeBaseline = {
+            input, value: input.value, start: input.selectionStart, end: input.selectionEnd,
+            direction: input.selectionDirection, starts: composition.starts, ends: composition.ends,
+            updates: composition.updates
+        };
+    `);
+    // The maintained driver's window switch selects a WebView without changing OS focus.
+    // Invoke from Settings because the real command authorizes that window as its caller.
+    await driver.switchToWindow("settings");
+    await driver.execute(
+        `
+        const locale = arguments[0];
+        window.__nanikaE2eLanguageSave = null;
+        const done = result => { window.__nanikaE2eLanguageSave = result; };
+        window.__TAURI_INTERNALS__.invoke('save_host_settings', {
+            request: { key: 'language', value: locale }
+        }).then(result => {
+            done(!result.error && result.saved.language === locale && result.effective?.language === locale
+                ? 'saved' : JSON.stringify(result));
+        }, error => done(JSON.stringify(error)));
+    `,
+        locale
+    );
+    await _wait(
+        async () => await driver.execute("return window.__nanikaE2eLanguageSave !== null"),
+        "language save completion during native composition"
+    );
+    const result = await driver.execute<string, []>("return window.__nanikaE2eLanguageSave");
+    if (result !== "saved")
+    {
+        throw new Error(`Language save during native composition failed: ${result}`);
+    }
+    await driver.switchToWindow("launcher");
+    await _wait(
+        async () => await driver.execute("return document.documentElement.lang") === locale,
+        "language delivery during native composition"
+    );
+    await _window("launcher", true, true);
+    await driver.execute(`
+        const before = window.__nanikaE2eImeBaseline;
+        const input = document.querySelector('.launcher input[role=combobox]');
+        const composition = window.__nanikaE2eComposition;
+        if (input !== before.input || document.activeElement !== input || !document.hasFocus()
+            || input.value !== before.value || input.selectionStart !== before.start
+            || input.selectionEnd !== before.end || input.selectionDirection !== before.direction
+            || !composition.active || composition.starts !== before.starts
+            || composition.ends !== before.ends || composition.updates !== before.updates) {
+            throw new Error('Language save interrupted native composition or replaced its input state');
+        }
+    `);
+    assertions.push(
+        `real language save to ${locale} preserves native composition, input identity, focus and selection`
+    );
+}
+
+async function _selectLanguage(preference: "en" | "system" | "zh-Hans", locale: "en" | "zh-Hans"): Promise<void>
+{
+    if (!browser)
+    {
+        throw new Error("WebDriver session is not ready");
+    }
+    const driver = browser;
+    // Driver click focuses the control; native keys exercise the actual Select contract.
+    await (await driver.$('[role=combobox][aria-label="Language"], [role=combobox][aria-label="语言"]')).click();
+    const highlighted = () => driver.$("[role=option][data-highlighted]");
+    await _key("enter", async () =>
+    {
+        await (await highlighted()).waitForExist({ timeout: 5000 });
+    });
+    const options = ["system", "en", "zh-Hans"];
+    let current = options.indexOf(await (await highlighted()).getAttribute("data-value") ?? "");
+    const target = options.indexOf(preference);
+    if (current < 0)
+    {
+        throw new Error("Language selector has no recognized highlighted option");
+    }
+    while (current !== target)
+    {
+        const direction = current < target ? "down" : "up";
+        current += current < target ? 1 : -1;
+        const expected = options[current];
+        await _key(direction, async () =>
+        {
+            await _wait(
+                async () => await (await highlighted()).getAttribute("data-value") === expected,
+                "language option"
+            );
+        });
+    }
+    await _key("enter", async () =>
+    {
+        await _wait(
+            async () =>
+                (await Bun.file(join(state, "config/nanika.jsonc")).text())
+                    .match(/"language"\s*:\s*"([^"]+)"/u)?.[1] === preference,
+            "persisted language preference"
+        );
+    });
+    await _wait(
+        async () => await driver.execute("return document.documentElement.lang") === locale,
+        "Settings language delivery"
+    );
+    await _wait(
+        async () =>
+        {
+            const native = await _state();
+            return native.windows.settings?.title === (locale === "en" ? "Nanika Settings" : "Nanika 设置")
+                && native.trayLabels[0] === (locale === "en" ? "Open Nanika" : "打开 Nanika")
+                && native.trayLabels[1] === (locale === "en" ? "Quit" : "退出");
+        },
+        "localized native Settings title and tray labels"
     );
 }

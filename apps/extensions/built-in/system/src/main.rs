@@ -25,14 +25,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "already_initialized",
-                        "System is already initialized."
+                        "error-already-initialized"
                     )?;
                 } else if protocol != PROTOCOL_NAME {
                     _error(
                         &mut output,
                         Some(request_id),
                         "unsupported_protocol",
-                        "Unsupported extension protocol."
+                        "error-unsupported-protocol"
                     )?;
                 } else {
                     initialized = true;
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 _request_id(&message),
                 "not_initialized",
-                "Initialize System before sending requests."
+                "error-not-initialized"
             )?,
             Message::Invoke {
                 request_id,
@@ -58,12 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 action_id
             } => {
                 if pending.is_some() {
-                    _error(
-                        &mut output,
-                        Some(request_id),
-                        "busy",
-                        "A system action is pending."
-                    )?;
+                    _error(&mut output, Some(request_id), "busy", "error-busy")?;
                     continue;
                 }
                 let Some(action) =
@@ -73,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         Some(request_id),
                         "unknown_action",
-                        "Unknown system action."
+                        "error-unknown-action"
                     )?;
                     continue;
                 };
@@ -112,12 +107,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 let current = pending.take().expect("pending action was validated");
+                if let HostServiceResponse::Failed { failure } = response {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(current.request_id),
+                            error: failure.into_error("error-host-service")
+                        }
+                    )?;
+                    continue;
+                }
                 let HostServiceResponse::SystemActionSubmitted = response else {
                     _error(
                         &mut output,
                         Some(current.request_id),
                         "invalid_response",
-                        "Unexpected system service response type."
+                        "error-invalid-response"
                     )?;
                     continue;
                 };
@@ -130,20 +135,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 )?;
             }
-            Message::Error {
-                request_id,
-                code,
-                message
-            } => {
-                if pending
-                    .as_ref()
-                    .is_some_and(|current| Some(&current.service_id) == request_id.as_ref())
-                {
-                    let current = pending.take().expect("matching pending action");
-                    _error(&mut output, Some(current.request_id), &code, &message)?;
-                } else {
-                    return Err("Unexpected host error.".into());
-                }
+            Message::Error { .. } => {
+                return Err("Unexpected host error outside a service response.".into());
             }
             // Host admission decides cancellation. Once a native operation was admitted,
             // retain the pending request until its real response, including after Cancel.
@@ -165,7 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 _request_id(&message),
                 "unsupported_message",
-                "System received an unsupported message."
+                "error-unsupported-message"
             )?
         }
     }
@@ -176,14 +169,16 @@ fn _error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str
+    reference: &str
 ) -> Result<(), FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
-            code: code.to_owned(),
-            message: message.to_owned()
+            error: nanika_protocol::ProtocolError::new(
+                code,
+                nanika_protocol::message(reference, [])
+            )
         }
     )
 }

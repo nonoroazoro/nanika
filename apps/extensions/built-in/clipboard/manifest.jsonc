@@ -2,74 +2,192 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.clipboard",
-  "name": "Clipboard History",
+  "name": {
+    "message": "extension-name"
+  },
+  "localization": {
+    "defaultLocale": "en",
+    "resources": {
+      "en": [
+        "locales/en.ftl"
+      ],
+      "zh-Hans": [
+        "locales/zh-Hans.ftl"
+      ]
+    }
+  },
   "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
   "targets": {
-    "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-clipboard.exe" },
-    "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-clipboard" },
-    "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-clipboard" }
+    "x86_64-pc-windows-msvc": {
+      "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-extension-clipboard.exe"
+    },
+    "aarch64-apple-darwin": {
+      "entrypoint": "bin/aarch64-apple-darwin/nanika-extension-clipboard"
+    },
+    "x86_64-apple-darwin": {
+      "entrypoint": "bin/x86_64-apple-darwin/nanika-extension-clipboard"
+    }
   },
-  "runtime": { "protocol": "nanika", "protocolVersion": 1 },
-  "permissions": ["clipboard.write"],
+  "runtime": {
+    "protocol": "nanika",
+    "protocolVersion": 1
+  },
+  "permissions": [
+    "clipboard.write"
+  ],
   "contributes": {
     "views": [
       {
         "id": "clipboard.history",
-        "title": "Clipboard History",
-        "description": "Search and copy previous clipboard content.",
+        "title": {
+          "message": "extension-name"
+        },
+        "description": {
+          "message": "view-history-description"
+        },
         "icon": "assets/icon.png",
-        "keywords": ["clipboard", "history", "paste"]
+        "keywords": [
+          {
+            "message": "keyword-clipboard"
+          },
+          {
+            "message": "keyword-history"
+          },
+          {
+            "message": "keyword-paste"
+          }
+        ],
+        "category": {
+          "message": "category-clipboard"
+        }
       }
     ],
     "configuration": {
-      "title": "Clipboard History",
+      "title": {
+        "message": "extension-name"
+      },
       "quickMenu": [
-        { "title": "Appearance", "items": [{ "kind": "toggle", "key": "clipboard.syntaxHighlighting" }] },
-        { "title": "Danger zone", "items": [{ "kind": "action", "id": "clipboard.clear" }] }
-      ],
-      "actions": [{
-        "buttonLabel": "Clear",
-        "action": {
-          "id": "clipboard.clear",
-          "title": "Clear history",
-          "style": "destructive",
-          "enabled": true,
-          "allow_default_execution": false,
-          "confirmation_title": "Clear all history?",
-          "confirmation_description": "All clipboard history will be permanently deleted. This cannot be undone.",
-          "group": "Danger zone"
+        {
+          "title": {
+            "message": "group-appearance"
+          },
+          "items": [
+            {
+              "kind": "toggle",
+              "key": "clipboard.syntaxHighlighting"
+            }
+          ],
+          "id": "appearance"
         },
-        "description": "Permanently delete all clipboard history. This cannot be undone."
-      }],
+        {
+          "title": {
+            "message": "group-danger-zone"
+          },
+          "items": [
+            {
+              "kind": "action",
+              "id": "clipboard.clear"
+            }
+          ],
+          "id": "danger-zone"
+        }
+      ],
+      "actions": [
+        {
+          "buttonLabel": {
+            "message": "setting-clipboard-clear-button-label"
+          },
+          "action": {
+            "id": "clipboard.clear",
+            "title": {
+              "message": "action-clipboard-clear-title"
+            },
+            "style": "destructive",
+            "enabled": true,
+            "allow_default_execution": false,
+            "confirmation_title": {
+              "message": "action-clipboard-clear-confirmation-title"
+            },
+            "confirmation_description": {
+              "message": "action-clipboard-clear-confirmation-description"
+            },
+            "group": {
+              "id": "danger-zone",
+              "title": {
+                "message": "group-danger-zone"
+              }
+            }
+          },
+          "description": {
+            "message": "setting-clipboard-clear-description"
+          }
+        }
+      ],
       "properties": {
         "clipboard.syntaxHighlighting": {
           "type": "boolean",
-          "title": "Syntax highlighting",
-          "group": "Appearance",
+          "title": {
+            "message": "setting-clipboard-syntax-highlighting-title"
+          },
+          "group": {
+            "id": "appearance",
+            "title": {
+              "message": "group-appearance"
+            }
+          },
           "order": 0,
-          "description": "Color recognized code and Markdown in text previews.",
-          "persistence": "afterApply", "default": true
+          "description": {
+            "message": "setting-clipboard-syntax-highlighting-description"
+          },
+          "persistence": "afterApply",
+          "default": true
         },
         "clipboard.maxEntries": {
           "type": "integerLimit",
-          "title": "Maximum history entries",
-          "group": "History retention",
+          "title": {
+            "message": "setting-clipboard-max-entries-title"
+          },
+          "group": {
+            "id": "history-retention",
+            "title": {
+              "message": "group-history-retention"
+            }
+          },
           "order": 1,
-          "description": "Maximum number of clipboard history entries retained locally.",
-          "persistence": "beforeApply", "default": { "unlimited": false, "value": 50 },
+          "description": {
+            "message": "setting-clipboard-max-entries-description"
+          },
+          "persistence": "beforeApply",
+          "default": {
+            "unlimited": false,
+            "value": 50
+          },
           "minimum": 1,
           "maximum": 5000,
           "multipleOf": 1
         },
         "clipboard.maxAgeDays": {
           "type": "integerLimit",
-          "title": "Maximum age in days",
-          "group": "History retention",
+          "title": {
+            "message": "setting-clipboard-max-age-days-title"
+          },
+          "group": {
+            "id": "history-retention",
+            "title": {
+              "message": "group-history-retention"
+            }
+          },
           "order": 2,
-          "description": "Maximum age of clipboard history retained locally.",
-          "persistence": "beforeApply", "default": { "unlimited": false, "value": 7 },
+          "description": {
+            "message": "setting-clipboard-max-age-days-description"
+          },
+          "persistence": "beforeApply",
+          "default": {
+            "unlimited": false,
+            "value": 7
+          },
           "minimum": 1,
           "maximum": 3650,
           "multipleOf": 1

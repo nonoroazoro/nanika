@@ -1,9 +1,12 @@
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
+import { settingsFailure } from "./error-presentation";
+
 import type { SettingsChange } from "./SettingsChange";
 import type { SettingsEditResult } from "./SettingsEditResult";
-import type { OperationProgress } from "../generated/OperationProgress";
-import type { SettingsWriteResult } from "../generated/SettingsWriteResult";
+import type { SettingsError } from "./SettingsError";
+import type { SettingsResult } from "./SettingsResult";
+import type { ProgressPresentation } from "../localization/ProgressPresentation";
 
 /**
  * Owns field edits and accepted operations across navigation and native hiding.
@@ -15,26 +18,26 @@ export class SettingsState<T extends object>
     saved: T = $state.raw({} as T);
     effective: T | null = $state.raw(null);
     readonly phase = new SvelteMap<keyof T, "queued" | "running">();
-    readonly progress = new SvelteMap<keyof T, OperationProgress>();
+    readonly progress = new SvelteMap<keyof T, ProgressPresentation>();
     readonly startedAt = new SvelteMap<keyof T, number>();
-    readonly errors = new SvelteMap<keyof T, string>();
-    private readonly _write: (change: SettingsChange<T>) => Promise<SettingsWriteResult<T>>;
+    readonly errors = new SvelteMap<keyof T, SettingsError>();
+    private readonly _write: (change: SettingsChange<T>) => Promise<SettingsResult<T>>;
 
     private readonly _prepare: (key: keyof T, draft: T[keyof T]) => SettingsEditResult<T[keyof T]>;
-    private readonly _notify: (error: string) => void;
+    private readonly _notify: (error: SettingsError) => void;
     private _pending = Promise.resolve();
     private readonly _uncommitted = new SvelteSet<keyof T>();
     private readonly _drafts = new SvelteSet<keyof T>();
     private readonly _failed = new SvelteSet<keyof T>();
     private _confirmed: T;
-    private _observation: (() => SettingsWriteResult<T>) | undefined;
+    private _observation: (() => SettingsResult<T>) | undefined;
     private _refreshing: Promise<void> | undefined;
 
     constructor(
-        initial: SettingsWriteResult<T>,
-        write: (change: SettingsChange<T>) => Promise<SettingsWriteResult<T>>,
+        initial: SettingsResult<T>,
+        write: (change: SettingsChange<T>) => Promise<SettingsResult<T>>,
         prepare: (key: keyof T, draft: T[keyof T]) => SettingsEditResult<T[keyof T]> = (_key, value) => ({ value }),
-        notify: (error: string) => void = () =>
+        notify: (error: SettingsError) => void = () =>
         {}
     )
     {
@@ -118,7 +121,7 @@ export class SettingsState<T extends object>
     /**
      * Reattaches a running operation from the backend snapshot before input is enabled.
      */
-    resume(key: keyof T, completion: Promise<SettingsWriteResult<T>>): void
+    resume(key: keyof T, completion: Promise<SettingsResult<T>>): void
     {
         this.phase.set(key, "running");
         this._pending = this._run(key, async () => completion);
@@ -136,7 +139,7 @@ export class SettingsState<T extends object>
      * Serializes an external-state read with writes without locking untouched controls.
      * Repeated activation signals share the same read; queued edits keep their draft.
      */
-    async refresh(read: () => Promise<SettingsWriteResult<T>>): Promise<void>
+    async refresh(read: () => Promise<SettingsResult<T>>): Promise<void>
     {
         if (this._refreshing)
         {
@@ -159,7 +162,7 @@ export class SettingsState<T extends object>
      * Applies the latest authoritative observation after accepted edits settle.
      * The reader is evaluated at delivery so coalesced lifecycle updates stay current.
      */
-    observe(read: () => SettingsWriteResult<T>): void
+    observe(read: () => SettingsResult<T>): void
     {
         const queued = this._observation !== undefined;
         this._observation = read;
@@ -177,7 +180,7 @@ export class SettingsState<T extends object>
         }
     }
 
-    private async _run(key: keyof T, write: () => Promise<SettingsWriteResult<T>>): Promise<void>
+    private async _run(key: keyof T, write: () => Promise<SettingsResult<T>>): Promise<void>
     {
         this.phase.set(key, "running");
         this.startedAt.set(key, this.startedAt.get(key) ?? Date.now());
@@ -194,11 +197,17 @@ export class SettingsState<T extends object>
         }
         catch (error)
         {
-            // Transport failure provides no evidence of application or rollback.
-            this.effective = null;
-            this.values[key] = structuredClone(this.saved[key]);
+            const failure = settingsFailure(error);
+            // No authoritative outcome replaced this draft. Preserve it across
+            // observations; only an explicit edit may retry the operation.
+            this._drafts.add(key);
+            if (!("code" in failure && failure.code === "rejected"))
+            {
+                // A lost completion provides no evidence of application or rollback.
+                this.effective = null;
+            }
             this._failed.add(key);
-            this._failure(key, String(error));
+            this._failure(key, failure);
         }
         finally
         {
@@ -208,7 +217,7 @@ export class SettingsState<T extends object>
         }
     }
 
-    private _reconcile(result: SettingsWriteResult<T>, completed?: keyof T): void
+    private _reconcile(result: SettingsResult<T>, completed?: keyof T): void
     {
         this.saved = result.saved;
         this.effective = result.effective;
@@ -226,7 +235,7 @@ export class SettingsState<T extends object>
         }
     }
 
-    private _failure(key: keyof T, error: string): void
+    private _failure(key: keyof T, error: SettingsError): void
     {
         this.errors.set(key, error);
         console.error("Settings operation failed", error);

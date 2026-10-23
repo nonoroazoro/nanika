@@ -3,14 +3,15 @@ import type { DetailView } from "./DetailView";
 import type { ListLayout } from "./ListLayout";
 import type { ListSection } from "./ListSection";
 import type { ListSelection } from "./ListSelection";
+import type { LocalizedText } from "./LocalizedText";
 import type { ViewFilter } from "./ViewFilter";
 
 export type ListView = {
-    title: string;
-    search_placeholder: string;
+    title: LocalizedText;
+    search_placeholder: LocalizedText;
     search_text: string;
-    empty_title: string;
-    empty_description: string;
+    empty_title: LocalizedText;
+    empty_description: LocalizedText;
     layout: ListLayout;
     sections: Array<ListSection>;
     /**

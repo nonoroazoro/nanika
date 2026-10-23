@@ -5,8 +5,8 @@ fn calculator_returns_deterministic_live_results() {
     let engine = CalculatorEngine::new();
     let (candidate, result) = engine.evaluate("2 + 3 * 4").expect("calculation result");
     assert_eq!(result, "14");
-    assert_eq!(candidate.title, "= 14");
-    assert_eq!(candidate.aliases, ["2 + 3 * 4"]);
+    assert_eq!(candidate.title, "= 14".into());
+    assert_eq!(candidate.aliases, ["2 + 3 * 4".into()]);
 }
 
 #[test]

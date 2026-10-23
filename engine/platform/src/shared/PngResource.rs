@@ -32,8 +32,18 @@ pub fn read_png_resource(path: &Path, payload_root: &Path) -> Result<Vec<u8>, Pn
     if bytes.len() > MAX_PNG_ENCODED_BYTES {
         return Err(PngResourceError::EncodedSize);
     }
-    let decoder = _decoder(&bytes);
-    let reader = decoder.read_info().map_err(PngResourceError::Decode)?;
+    png_resource_dimensions(&bytes)?;
+    Ok(bytes)
+}
+
+/// Read bounded PNG metadata without decoding pixels. Call only on admitted resource bytes.
+pub fn png_resource_dimensions(bytes: &[u8]) -> Result<(u32, u32), PngResourceError> {
+    if bytes.len() > MAX_PNG_ENCODED_BYTES {
+        return Err(PngResourceError::EncodedSize);
+    }
+    let reader = _decoder(bytes)
+        .read_info()
+        .map_err(PngResourceError::Decode)?;
     let info = reader.info();
     if info.animation_control.is_some() {
         return Err(PngResourceError::Animation);
@@ -44,7 +54,7 @@ pub fn read_png_resource(path: &Path, payload_root: &Path) -> Result<Vec<u8>, Pn
             height: info.height
         });
     }
-    Ok(bytes)
+    Ok((info.width, info.height))
 }
 
 /// Identifies the exact encoded bytes used by an immutable PNG resource URL.

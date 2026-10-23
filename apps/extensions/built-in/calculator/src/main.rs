@@ -35,17 +35,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 )?;
             }
-            Message::Initialize { request_id, .. } => write_error(
+            Message::Initialize { request_id, .. } => _write_error(
                 &mut output,
                 Some(request_id),
                 "unsupported_protocol",
-                "the requested extension protocol is unsupported"
+                "error-unsupported-protocol"
             )?,
-            message if !initialized => write_error(
+            message if !initialized => _write_error(
                 &mut output,
                 request_id(&message),
                 "not_initialized",
-                "initialize must complete before other requests"
+                "error-not-initialized"
             )?,
             Message::Query {
                 request_id,
@@ -62,11 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     })
                     .unwrap_or_default();
                 if cancelled.load(Ordering::Acquire) {
-                    write_error(
+                    _write_error(
                         &mut output,
                         Some(request_id),
                         "cancelled",
-                        "query was cancelled"
+                        "error-cancelled"
                     )?;
                     continue;
                 }
@@ -93,11 +93,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .cloned()
             {
                 Some(value) => invoke_host(&mut input, &mut output, request_id, generation, value)?,
-                None => write_error(
+                None => _write_error(
                     &mut output,
                     Some(request_id),
                     "unknown_action",
-                    "calculator entry or action does not exist"
+                    "error-unknown-action"
                 )?
             },
             Message::Refresh {
@@ -112,11 +112,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?,
             Message::Cancel { .. } => {}
             Message::PrepareEntries { .. } => {}
-            message => write_error(
+            message => _write_error(
                 &mut output,
                 request_id(&message),
                 "unsupported_message",
-                "the calculator extension received an unsupported message"
+                "error-unsupported-message"
             )?
         }
     }
@@ -148,26 +148,31 @@ fn invoke_host(
                 request_id: response_id,
                 parent_request_id,
                 generation: response_generation,
-                response: HostServiceResponse::ClipboardWritten { .. }
+                response
             }) if response_id == service_request_id
                 && parent_request_id == request_id
                 && response_generation == generation =>
             {
-                return write_frame(
-                    output,
-                    &Message::Result {
+                let reply = match response {
+                    HostServiceResponse::ClipboardWritten { .. } => Message::Result {
                         request_id,
                         generation,
                         effect: nanika_protocol::NavigationEffect::Dismiss
-                    }
-                );
+                    },
+                    HostServiceResponse::Failed { failure } => Message::Error {
+                        request_id: Some(request_id),
+                        error: failure.into_error("error-host-service")
+                    },
+                    _ => continue
+                };
+                return write_frame(output, &reply);
             }
-            Some(Message::Error {
-                request_id: Some(response_id),
-                code,
-                message
-            }) if response_id == service_request_id => {
-                return write_error(output, Some(request_id), &code, &message);
+            Some(Message::Error { .. }) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Unexpected host error outside a service response."
+                )
+                .into());
             }
             Some(_) => {}
             None => return Ok(())
@@ -175,18 +180,20 @@ fn invoke_host(
     }
 }
 
-fn write_error(
+fn _write_error(
     output: &mut impl std::io::Write,
     request_id: Option<String>,
     code: &str,
-    message: &str
+    reference: &str
 ) -> Result<(), nanika_protocol::FrameError> {
     write_frame(
         output,
         &Message::Error {
             request_id,
-            code: code.to_owned(),
-            message: message.to_owned()
+            error: nanika_protocol::ProtocolError::new(
+                code,
+                nanika_protocol::message(reference, [])
+            )
         }
     )
 }

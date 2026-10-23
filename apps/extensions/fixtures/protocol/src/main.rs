@@ -90,6 +90,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .append(true)
                         .open(root.join(format!("{request_id}.starts")))?;
                     writeln!(starts, "{configuration:?}")?;
+                    if let Ok(message) =
+                        std::fs::read_to_string(root.join("initialize-error-message"))
+                    {
+                        eprintln!("initialization stderr: {}", "diagnostic ".repeat(3000));
+                        write_frame(
+                            &mut output,
+                            &Message::Error {
+                                request_id: Some(request_id),
+                                error: nanika_protocol::ProtocolError::new(
+                                    "initialize_failed",
+                                    nanika_protocol::message(&message, [])
+                                )
+                                .with_detail("EACCES: fixture initialization")
+                            }
+                        )?;
+                        continue;
+                    }
                     if root.join(format!("fail-{request_id}")).exists() {
                         return Err(std::io::Error::other("fixture initialization failed").into());
                     }
@@ -107,8 +124,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Error {
                             request_id: None,
-                            code: "background_failure".to_owned(),
-                            message: "fixture background operation failed".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "background_failure".to_owned(),
+                                "fixture background operation failed".to_owned()
+                            )
                         }
                     )?;
                 }
@@ -251,8 +270,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
-                            code: "fixture_query_failure".to_owned(),
-                            message: "fixture query failed with an internal cause".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "fixture_query_failure".to_owned(),
+                                "fixture query failed with an internal cause".to_owned()
+                            )
                         }
                     )?;
                     continue;
@@ -354,6 +375,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 action_id
             } => {
                 wait_for_release(&arguments, &request_id)?;
+                if let Some(root) = data_root(&arguments)
+                    && let Ok(id) = std::fs::read_to_string(root.join("invocation-error-message"))
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            error: nanika_protocol::ProtocolError::new(
+                                "action_failed",
+                                nanika_protocol::message(id.trim(), [])
+                            )
+                            .with_detail("EACCES: fixture action")
+                        }
+                    )?;
+                    continue;
+                }
+
                 if let Some(marker) = &cancellation_invoke {
                     std::fs::write(marker, request_id.as_bytes())?;
                     if let Some(previous) = &previous_result {
@@ -393,13 +431,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             response: HostServiceResponse::Launched,
                             ..
                         }) if response_id == service_request_id => {}
-                        Some(Message::Error { code, message, .. }) => {
+                        Some(Message::HostResponse {
+                            request_id: response_id,
+                            parent_request_id,
+                            generation: response_generation,
+                            response: HostServiceResponse::Failed { failure }
+                        }) if response_id == format!("host-{request_id}")
+                            && parent_request_id == request_id
+                            && response_generation == generation =>
+                        {
+                            let error = failure.into_error("error-host-service");
                             write_frame(
                                 &mut output,
                                 &Message::Error {
                                     request_id: Some(request_id),
-                                    code,
-                                    message
+                                    error
                                 }
                             )?;
                             continue;
@@ -418,24 +464,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         effect: nanika_protocol::NavigationEffect::Push {
                             view_id,
                             revision: 1,
-                            view: Box::new(nanika_protocol::View::Detail {
-                                detail: nanika_protocol::DetailView {
-                                    title: None,
-                                    content: nanika_protocol::DetailContent::Text {
-                                        value: "Fixture view".to_owned(),
-                                        document: nanika_protocol::TextDocumentIndex::new(
-                                            "test.text".into(),
-                                            "fixture".into(),
-                                            "Fixture view"
-                                        )
-                                        .unwrap()
-                                        .document,
-                                        syntax_highlighting: false
-                                    },
-                                    metadata: Vec::new(),
-                                    actions: Vec::new()
-                                }
-                            })
+                            view: Box::new(_fixture_view(
+                                arguments
+                                    .iter()
+                                    .find_map(|argument| argument.strip_prefix("--view-title="))
+                            ))
                         }
                     }
                 } else if entry_id == nanika_protocol::SETTINGS_ENTRY_ID
@@ -458,8 +491,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     Message::Error {
                         request_id: Some(request_id),
-                        code: "unknown_action".to_owned(),
-                        message: "fixture entry or action does not exist".to_owned()
+                        error: nanika_protocol::ProtocolError::new(
+                            "unknown_action".to_owned(),
+                            "fixture entry or action does not exist".to_owned()
+                        )
                     }
                 };
                 write_frame(&mut output, &response)?;
@@ -471,6 +506,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 revision,
                 ..
             } => {
+                if let Some(root) = data_root(&arguments)
+                    && let Ok(id) = std::fs::read_to_string(root.join("view-error-message"))
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            error: nanika_protocol::ProtocolError::new(
+                                "view_failed",
+                                nanika_protocol::message(id.trim(), [])
+                            )
+                            .with_detail("EACCES: fixture view")
+                        }
+                    )?;
+                    continue;
+                }
+
                 if arguments
                     .iter()
                     .any(|value| value == "--request-launch-on-view")
@@ -491,14 +543,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     )?;
                     match read_frame(&mut input)? {
-                        Some(Message::HostResponse { .. }) => {}
-                        Some(Message::Error { code, message, .. }) => {
+                        Some(Message::HostResponse {
+                            response: HostServiceResponse::Launched,
+                            ..
+                        }) => {}
+                        Some(Message::HostResponse {
+                            request_id: response_id,
+                            parent_request_id,
+                            generation: response_generation,
+                            response: HostServiceResponse::Failed { failure }
+                        }) if response_id == format!("host-{request_id}")
+                            && parent_request_id == request_id
+                            && response_generation == generation =>
+                        {
+                            let error = failure.into_error("error-host-service");
                             write_frame(
                                 &mut output,
                                 &Message::Error {
                                     request_id: Some(request_id),
-                                    code,
-                                    message
+                                    error
                                 }
                             )?;
                             continue;
@@ -512,9 +575,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         request_id,
                         generation,
                         view_id,
-                        revision,
+                        revision: if arguments
+                            .iter()
+                            .any(|argument| argument.starts_with("--view-update-title="))
+                        {
+                            revision + 1
+                        } else {
+                            revision
+                        },
                         effect: nanika_protocol::NavigationEffect::None,
-                        view: None
+                        view: arguments
+                            .iter()
+                            .find_map(|argument| argument.strip_prefix("--view-update-title="))
+                            .map(|title| _fixture_view(Some(title)))
                     }
                 )?;
                 if let Some(response) = pending_text.take() {
@@ -525,6 +598,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 request_id,
                 view_id
             } => {
+                if let Some(root) = data_root(&arguments)
+                    && let Ok(id) = std::fs::read_to_string(root.join("view-close-error-message"))
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            error: nanika_protocol::ProtocolError::new(
+                                "view_failed",
+                                nanika_protocol::message(id.trim(), [])
+                            )
+                            .with_detail("EACCES: fixture view")
+                        }
+                    )?;
+                    continue;
+                }
+
                 let response = if open_views.remove(&view_id) {
                     Message::ViewClosed {
                         request_id,
@@ -533,8 +623,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     Message::Error {
                         request_id: Some(request_id),
-                        code: "unknown_view".to_owned(),
-                        message: "fixture view is not open".to_owned()
+                        error: nanika_protocol::ProtocolError::new(
+                            "unknown_view".to_owned(),
+                            "fixture view is not open".to_owned()
+                        )
                     }
                 };
                 write_frame(&mut output, &response)?;
@@ -563,8 +655,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
-                            code: "cancelled".to_owned(),
-                            message: "superseded query cancelled".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "cancelled".to_owned(),
+                                "superseded query cancelled".to_owned()
+                            )
                         }
                     )?;
                 } else if pending_invoke.as_ref() == Some(&(request_id.clone(), generation)) {
@@ -578,8 +672,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         Message::Error {
                             request_id: Some(request_id),
-                            code: "cancelled".to_owned(),
-                            message: "action cancelled".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "cancelled".to_owned(),
+                                "action cancelled".to_owned()
+                            )
                         }
                     };
                     if matches!(terminal, Message::Result { .. }) {
@@ -603,16 +699,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 wait_for_release(&arguments, &request_id)?;
-                if arguments
-                    .iter()
-                    .any(|argument| argument == "--fail-refresh")
+                let refresh_error = data_root(&arguments).and_then(|root| {
+                    std::fs::read_to_string(root.join("refresh-error-message")).ok()
+                });
+                if refresh_error.is_some()
+                    || arguments
+                        .iter()
+                        .any(|argument| argument == "--fail-refresh")
                 {
+                    let message = refresh_error
+                        .as_deref()
+                        .or_else(|| {
+                            arguments.iter().find_map(|argument| {
+                                argument.strip_prefix("--refresh-error-message=")
+                            })
+                        })
+                        .map_or_else(
+                            || "fixture refresh failed".into(),
+                            |id| nanika_protocol::message(id, [])
+                        );
                     write_frame(
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
-                            code: "refresh_failed".to_owned(),
-                            message: "fixture refresh failed".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "refresh_failed".to_owned(),
+                                message
+                            )
+                            .with_detail("fixture scan could not read its source")
                         }
                     )?;
                     continue;
@@ -639,7 +753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &Message::ConfigurationProgress {
                                 request_id: request_id.clone(),
                                 progress: nanika_protocol::OperationProgress {
-                                    label: "Applying fixture settings".to_owned(),
+                                    label: "Applying fixture settings".into(),
                                     completed,
                                     total: Some(2)
                                 }
@@ -662,8 +776,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
-                            code: "configuration_failed".to_owned(),
-                            message: "fixture could not apply configuration".to_owned()
+                            error: nanika_protocol::ProtocolError::new(
+                                "configuration_failed".to_owned(),
+                                "fixture could not apply configuration".to_owned()
+                            )
+                        }
+                    )?;
+                    continue;
+                }
+                if let Some(root) = data_root(&arguments)
+                    && let Ok(id) =
+                        std::fs::read_to_string(root.join("configuration-error-message"))
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            error: nanika_protocol::ProtocolError::new(
+                                "configuration_failed",
+                                nanika_protocol::message(id.trim(), [])
+                            )
+                            .with_detail("EACCES: fixture configuration")
                         }
                     )?;
                     continue;
@@ -681,8 +814,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut output,
                         &Message::Error {
                             request_id: Some(request_id),
-                            code: "text_unavailable".into(),
-                            message: "View is closed.".into()
+                            error: nanika_protocol::ProtocolError::new(
+                                "text_unavailable",
+                                "View is closed."
+                            )
+                        }
+                    )?;
+                    continue;
+                }
+                if let Some(root) = data_root(&arguments)
+                    && let Ok(id) = std::fs::read_to_string(root.join("text-error-message"))
+                {
+                    write_frame(
+                        &mut output,
+                        &Message::Error {
+                            request_id: Some(request_id),
+                            error: nanika_protocol::ProtocolError::new(
+                                "text_read_failed",
+                                nanika_protocol::message(id.trim(), [])
+                            )
+                            .with_detail("EACCES: fixture document")
                         }
                     )?;
                     continue;
@@ -728,8 +879,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut output,
                 &Message::Error {
                     request_id: None,
-                    code: "unsupported_message".to_owned(),
-                    message: "fixture received an unsupported message type".to_owned()
+                    error: nanika_protocol::ProtocolError::new(
+                        "unsupported_message".to_owned(),
+                        "fixture received an unsupported message type".to_owned()
+                    )
                 }
             )?
         }
@@ -753,23 +906,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn candidate(entry_id: &str, title: &str) -> nanika_protocol::Candidate {
     let mut action = nanika_protocol::Action::primary("fixture.run", "Run");
+    if let Some(message) = title.strip_prefix("localized-action:") {
+        action.title = nanika_protocol::message(message, []);
+    }
     if matches!(title, "explicit-only" | "confirm-action") {
         action.allow_default_execution = false;
     }
     if title == "confirm-action" {
         action.style = nanika_protocol::ActionStyle::Destructive;
-        action.confirmation_title = Some("Run now?".to_owned());
+        action.confirmation_title = Some("Run now?".into());
     }
     nanika_protocol::Candidate {
         kind: nanika_protocol::CandidateKind::Action,
         entry_id: entry_id.to_owned(),
-        title: title.to_owned(),
+        title: title
+            .strip_prefix("localized-candidate:")
+            .map_or_else(|| title.into(), |key| nanika_protocol::message(key, [])),
         subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-            "Fixture".to_owned()
+            if title.starts_with("localized-candidate:") {
+                nanika_protocol::message("kind", [])
+            } else {
+                "Fixture".into()
+            }
         )),
         action_id: "fixture.run".to_owned(),
         actions: vec![action],
-        aliases: vec!["fixture alias".to_owned()],
+        aliases: if title.starts_with("localized-candidate:") {
+            vec![nanika_protocol::message("alias", []), title.into()]
+        } else {
+            vec!["fixture alias".into()]
+        },
         icon: None
     }
 }
@@ -792,4 +958,25 @@ fn wait_for_release(arguments: &[String], request_id: &str) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn _fixture_view(title: Option<&str>) -> nanika_protocol::View {
+    nanika_protocol::View::Detail {
+        detail: nanika_protocol::DetailView {
+            title: title.map(|key| nanika_protocol::message(key, [])),
+            content: nanika_protocol::DetailContent::Text {
+                value: "Fixture view".to_owned(),
+                document: nanika_protocol::TextDocumentIndex::new(
+                    "test.text".into(),
+                    "fixture".into(),
+                    "Fixture view"
+                )
+                .unwrap()
+                .document,
+                syntax_highlighting: false
+            },
+            metadata: Vec::new(),
+            actions: Vec::new()
+        }
+    }
 }

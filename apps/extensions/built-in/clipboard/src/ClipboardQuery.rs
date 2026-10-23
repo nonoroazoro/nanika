@@ -65,6 +65,6 @@ impl ClipboardQuery {
             ClipboardContent::PngFile { .. } => "images"
         };
         (self.content_type == "all" || self.content_type == content_type)
-            && crate::query::matches(&self.text, &entry.title, &entry.content)
+            && crate::query::matches(&self.text, &entry.content, entry.image_dimensions)
     }
 }

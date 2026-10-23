@@ -8,6 +8,304 @@ use nanika_storage::NanikaPaths;
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
 
+#[test]
+fn startup_rejects_inventory_before_creating_user_storage() {
+    let fixture = Fixture::new();
+    let error = RuntimeService::start(
+        &fixture.paths,
+        &["invalid manifest"],
+        fixture.paths.app_data_root()
+    )
+    .err()
+    .unwrap();
+    assert!(matches!(
+        error,
+        nanika_host::OperationError::Host {
+            code: nanika_host::OperationErrorCode::BuiltInInventoryUnavailable,
+            detail: Some(_)
+        }
+    ));
+    assert!(!fixture.paths.bootstrap_file().exists());
+    assert!(!fixture.paths.host_database().exists());
+}
+
+#[test]
+fn startup_preserves_unreadable_configuration_and_its_original_cause() {
+    let fixture = Fixture::new();
+    std::fs::write(fixture.paths.config_root(), b"existing user file").unwrap();
+    let error = RuntimeService::start(&fixture.paths, &[], fixture.paths.app_data_root())
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        nanika_host::OperationError::Host {
+            code: nanika_host::OperationErrorCode::HostConfigurationUnavailable,
+            detail: Some(_)
+        }
+    ));
+    assert_eq!(
+        std::fs::read(fixture.paths.config_root()).unwrap(),
+        b"existing user file"
+    );
+}
+
+#[test]
+fn startup_preserves_unreadable_database_and_its_original_cause() {
+    let fixture = Fixture::new();
+    std::fs::create_dir_all(fixture.paths.database_dir()).unwrap();
+    std::fs::write(
+        fixture.paths.host_database(),
+        b"original unreadable database"
+    )
+    .unwrap();
+    let error = RuntimeService::start(&fixture.paths, &[], fixture.paths.app_data_root())
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        nanika_host::OperationError::Host {
+            code: nanika_host::OperationErrorCode::HostStorageUnavailable,
+            detail: Some(_)
+        }
+    ));
+    assert_eq!(
+        std::fs::read(fixture.paths.host_database()).unwrap(),
+        b"original unreadable database"
+    );
+}
+
+#[test]
+fn localized_publications_are_bound_to_package_resources_before_search_delivery() {
+    let mut fixture = Fixture::new();
+    let root = fixture
+        .paths
+        .app_data_root()
+        .join("resources")
+        .join(HEALTHY);
+    std::fs::create_dir_all(root.join("locales")).unwrap();
+    for (locale, text) in [("en", "Run"), ("zh-Hans", "运行")] {
+        std::fs::write(
+            root.join(format!("locales/{locale}.ftl")),
+            format!(
+                "run = {text}\nkind = {text}\nalias = {text}\noversized = {}",
+                "x".repeat(129)
+            )
+        )
+        .unwrap();
+    }
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["localization"] = serde_json::json!({
+        "defaultLocale": "en", "resources": {"en": ["locales/en.ftl"], "zh-Hans": ["locales/zh-Hans.ftl"]}
+    });
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("localized-action:run").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY)
+            && runtime
+                .search_warnings()
+                .iter()
+                .any(|warning| warning.extension_id.as_deref() == Some(DELAYED))
+    });
+    let snapshot = runtime.latest_snapshot().unwrap();
+    let candidate = &snapshot
+        .results
+        .iter()
+        .find(|result| result.candidate.extension_id() == HEALTHY)
+        .unwrap()
+        .candidate;
+    assert_eq!(
+        candidate.actions()[0].title,
+        nanika_protocol::message("run", [])
+    );
+    let scope = runtime.localization_scope(HEALTHY).unwrap();
+    assert_eq!(scope.extension_id, HEALTHY);
+    assert_eq!(
+        runtime
+            .localization_resources(&scope, snapshot.instances.get(HEALTHY).copied())
+            .unwrap()
+            .identity,
+        scope.identity
+    );
+    let generation = runtime.begin_query("localized-candidate:run").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let snapshot = runtime.latest_snapshot().unwrap();
+    let candidate = &snapshot
+        .results
+        .iter()
+        .find(|result| result.candidate.extension_id() == HEALTHY)
+        .unwrap()
+        .candidate;
+    assert_eq!(candidate.title(), &nanika_protocol::message("run", []));
+    assert_eq!(
+        candidate.subtitle(),
+        Some(&nanika_protocol::CandidateSubtitle::Label(
+            nanika_protocol::message("kind", [])
+        ))
+    );
+    for query in [
+        "localized-action:missing",
+        "localized-action:oversized",
+        "localized-candidate:missing"
+    ] {
+        let generation = runtime.begin_query(query).unwrap();
+        wait_until(|| {
+            runtime
+                .latest_snapshot()
+                .is_some_and(|snapshot| snapshot.generation == generation)
+                && runtime
+                    .search_warnings()
+                    .iter()
+                    .any(|warning| warning.extension_id.as_deref() == Some(HEALTHY))
+        });
+        assert!(!has_result(&runtime, generation, HEALTHY));
+    }
+    let generation = runtime.begin_query("recovered").unwrap();
+    wait_until(|| {
+        has_result(&runtime, generation, HEALTHY) && has_result(&runtime, generation, DELAYED)
+    });
+    fixture.stop(runtime);
+}
+
+#[test]
+fn localization_reads_bind_package_contents_and_live_instance_authority() {
+    let mut fixture = Fixture::new();
+    for (index, id) in [HEALTHY, DELAYED].iter().enumerate() {
+        let root = fixture.paths.app_data_root().join("resources").join(id);
+        std::fs::create_dir_all(root.join("locales")).unwrap();
+        for locale in ["en", "zh-Hans"] {
+            std::fs::write(
+                root.join(format!("locales/{locale}.ftl")),
+                format!("title = Package {index} {locale}")
+            )
+            .unwrap();
+        }
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&fixture.manifests[index]).unwrap();
+        manifest["localization"] = serde_json::json!({
+            "defaultLocale":"en",
+            "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}
+        });
+        fixture.manifests[index] = manifest.to_string();
+    }
+    let runtime = fixture.start();
+    wait_until(|| {
+        runtime
+            .extension_info()
+            .iter()
+            .all(|info| info.state == nanika_host::RuntimeExtensionState::Ready)
+    });
+    let info = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == HEALTHY)
+        .unwrap();
+    let scope = info.resource_scope.unwrap();
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let retained = runtime
+        .localization_resources(&scope, Some(instance))
+        .unwrap();
+    assert_eq!(retained.identity, scope.identity);
+    assert_eq!(
+        runtime
+            .localization_resources(&scope, runtime.instance_id(DELAYED))
+            .err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::LocalizationInstanceRetired
+        ))
+    );
+    let mut wrong_package = scope.clone();
+    wrong_package.extension_id = DELAYED.into();
+    assert_eq!(
+        runtime.localization_resources(&wrong_package, None).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::LocalizationPackageChanged
+        ))
+    );
+    wrong_package.extension_id = "com.example.missing".into();
+    assert_eq!(
+        runtime.localization_resources(&wrong_package, None).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::LocalizationResourcesUnavailable
+        ))
+    );
+    for identity in ["0".repeat(64), "A".repeat(64), "../locales/en.ftl".into()] {
+        let mut wrong_identity = scope.clone();
+        wrong_identity.identity = identity;
+        let failure = runtime
+            .localization_resources(&wrong_identity, Some(instance))
+            .err()
+            .unwrap();
+        let expected = if wrong_identity.identity == "0".repeat(64) {
+            nanika_host::OperationErrorCode::LocalizationPackageChanged
+        } else {
+            nanika_host::OperationErrorCode::LocalizationScopeInvalid
+        };
+        assert!(
+            matches!(failure, nanika_host::OperationError::Host { code, .. } if code == expected)
+        );
+    }
+    std::fs::remove_file(
+        fixture
+            .paths
+            .app_data_root()
+            .join(format!("resources/{HEALTHY}/locales/en.ftl"))
+    )
+    .unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &retained,
+        &runtime
+            .localization_resources(&scope, Some(instance))
+            .unwrap()
+    ));
+    runtime
+        .set_extension_enabled(HEALTHY, false)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        runtime.localization_resources(&scope, Some(instance)).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::LocalizationInstanceRetired
+        ))
+    );
+    assert!(std::sync::Arc::ptr_eq(
+        &retained,
+        &runtime.localization_resources(&scope, None).unwrap()
+    ));
+    runtime
+        .set_extension_enabled(HEALTHY, true)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    wait_until(|| {
+        runtime
+            .instance_id(HEALTHY)
+            .is_some_and(|current| current != instance)
+    });
+    assert_eq!(
+        runtime.localization_resources(&scope, Some(instance)).err(),
+        Some(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::LocalizationInstanceRetired
+        ))
+    );
+    assert!(std::sync::Arc::ptr_eq(
+        &retained,
+        &runtime
+            .localization_resources(&scope, runtime.instance_id(HEALTHY))
+            .unwrap()
+    ));
+    fixture.stop(runtime);
+    assert!(
+        retained
+            .locales
+            .values()
+            .all(|locale| !locale.sources.is_empty())
+    );
+}
+
 const WAIT: Duration = Duration::from_secs(5);
 const HEALTHY: &str = "com.nanika.application";
 const DELAYED: &str = "com.nanika.script";
@@ -204,7 +502,7 @@ fn pending_initialization_is_isolated_and_late_worker_uses_latest_query() {
             .unwrap()
             .results
             .iter()
-            .all(|result| result.candidate.title() == "latest")
+            .all(|result| result.candidate.title() == &"latest".into())
     );
     fixture.stop(runtime);
 }
@@ -229,16 +527,15 @@ fn query_failure_is_a_local_warning_and_healthy_results_remain_usable() {
             && runtime
                 .search_warnings()
                 .iter()
-                .any(|warning| warning.contains(DELAYED))
+                .any(|warning| warning.extension_id.as_deref() == Some(DELAYED))
     });
     assert!(runtime.storage_failure().is_none());
     assert!(!has_result(&runtime, generation, DELAYED));
-    assert!(
-        runtime
-            .search_warnings()
-            .iter()
-            .all(|warning| !warning.contains("internal cause"))
-    );
+    assert!(runtime.search_warnings().iter().any(
+        |warning| matches!(&warning.error, nanika_host::OperationError::Extension { error }
+                if error.error.code == "fixture_query_failure"
+                    && error.error.message == "fixture query failed with an internal cause".into())
+    ));
     runtime
         .invoke(
             &runtime.latest_snapshot().unwrap(),
@@ -405,12 +702,11 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
         .unwrap()
         .wait()
         .unwrap();
-    assert!(
-        outcome
-            .error
-            .as_ref()
-            .is_some_and(|error| error.contains("fixture could not apply configuration"))
-    );
+    assert!(matches!(
+        outcome.error.as_ref(),
+        Some(nanika_host::ConfigurationSaveError::SavedButNotApplied { cause })
+            if cause.to_string().contains("fixture could not apply configuration")
+    ));
     let info = runtime
         .extension_info()
         .into_iter()
@@ -425,7 +721,10 @@ fn settings_distinguishes_validation_failure_from_saved_application_failure() {
         serde_json::json!("invalid"),
         std::sync::Arc::new(|_| {})
     );
-    assert!(invalid.is_err());
+    assert!(
+        matches!(invalid.unwrap_err(), nanika_host::ConfigurationSaveError::Rejected { cause }
+        if matches!(*cause, nanika_host::OperationError::Host { code: nanika_host::OperationErrorCode::InvalidConfiguration, .. }))
+    );
     assert_eq!(
         runtime
             .extension_configurations()
@@ -504,7 +803,7 @@ fn static_catalog_does_not_activate_on_demand_processes_and_success_is_recorded_
         let info = runtime.extension_info();
         assert_eq!(info.len(), 1);
         assert_eq!(info[0].id, HEALTHY);
-        assert_eq!(info[0].name, "Test Extension");
+        assert_eq!(info[0].name, "Test Extension".into());
         assert_eq!(
             serde_json::to_value(&info[0]).unwrap()["icon"],
             "assets/icon.png"
@@ -775,7 +1074,7 @@ fn static_command_preserves_confirmation_policy_through_runtime_dispatch() {
     let mut action = Action::primary(COMMAND_EXECUTE_ACTION_ID, "Empty");
     action.allow_default_execution = false;
     action.style = ActionStyle::Destructive;
-    action.confirmation_title = Some("Empty now?".to_owned());
+    action.confirmation_title = Some("Empty now?".into());
     manifest["contributes"]
         .as_object_mut()
         .unwrap()
@@ -841,7 +1140,13 @@ fn confirmation_rejects_a_replaced_snapshot_within_the_same_generation() {
         "confirm-action",
         ActionInvocation::Confirmed
     );
-    assert!(matches!(rejected, Err(error) if error.contains("Search changed")));
+    assert!(matches!(
+        rejected,
+        Err(nanika_host::OperationError::Host {
+            code: nanika_host::OperationErrorCode::SearchChanged,
+            ..
+        })
+    ));
     let stored = nanika_storage::HostDatabase::open(fixture.paths.host_database()).unwrap();
     assert!(stored.load_usage().unwrap().is_empty());
     drop(stored);
@@ -1496,6 +1801,23 @@ fn repeated_exit_stops_after_one_restart_and_reports_both_failures() {
     fixture.manifests.truncate(1);
     let runtime = fixture.start();
     wait_until(|| runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready);
+    let observed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let phases = std::sync::Arc::clone(&observed);
+    let weak = std::sync::Arc::downgrade(&runtime);
+    runtime.set_notifier(std::sync::Arc::new(move || {
+        if let Some(runtime) = weak.upgrade() {
+            for info in runtime
+                .extension_info()
+                .into_iter()
+                .filter(|info| info.pending)
+            {
+                phases
+                    .lock()
+                    .unwrap()
+                    .push((info.state, info.lifecycle_error));
+            }
+        }
+    }));
     runtime.begin_query("fixture.exit").unwrap();
     let deadline = Instant::now() + WAIT;
     wait_until(|| {
@@ -1505,11 +1827,19 @@ fn repeated_exit_stops_after_one_restart_and_reports_both_failures() {
             "restart did not settle: {info:?}"
         );
         !info.pending
-            && info
-                .lifecycle_error
-                .as_deref()
-                .is_some_and(|error| error.contains("failed again after one automatic restart"))
+            && info.lifecycle_error.as_ref().is_some_and(|error| {
+                matches!(
+                    error,
+                    nanika_host::LifecycleError::RestartLimitReached { .. }
+                )
+            })
     });
+    assert!(observed.lock().unwrap().iter().any(|(state, error)| *state
+        == nanika_host::RuntimeExtensionState::Starting
+        && matches!(error, Some(nanika_host::LifecycleError::Restarting { .. }))));
+    assert!(observed.lock().unwrap().iter().any(|(state, error)| *state
+        == nanika_host::RuntimeExtensionState::Stopping
+        && matches!(error, Some(nanika_host::LifecycleError::Stopping { .. }))));
     assert_eq!(
         runtime.extension_info()[0].state,
         nanika_host::RuntimeExtensionState::Failed
@@ -1616,23 +1946,33 @@ fn initialization_failure_retries_once_without_blocking_other_extensions() {
         runtime.extension_info().iter().any(|info| {
             info.id == DELAYED
                 && !info.pending
-                && info
-                    .lifecycle_error
-                    .as_deref()
-                    .is_some_and(|error| error.contains("failed again after one automatic restart"))
+                && info.lifecycle_error.as_ref().is_some_and(|error| {
+                    matches!(
+                        error,
+                        nanika_host::LifecycleError::RestartLimitReached { .. }
+                    )
+                })
         })
     });
-    assert!(
-        runtime
-            .extension_info()
-            .iter()
-            .find(|info| info.id == DELAYED)
-            .unwrap()
-            .lifecycle_error
-            .as_deref()
-            .unwrap()
-            .contains("fixture initialization failed")
-    );
+    let info = runtime
+        .extension_info()
+        .into_iter()
+        .find(|info| info.id == DELAYED)
+        .unwrap();
+    let Some(nanika_host::LifecycleError::RestartLimitReached { original, failure }) =
+        info.lifecycle_error
+    else {
+        panic!("expected both initialization failures");
+    };
+    for cause in [original, failure] {
+        assert!(
+            cause
+                .diagnostic
+                .as_deref()
+                .is_some_and(|detail| detail.contains("fixture initialization failed"))
+        );
+    }
+
     assert_eq!(
         std::fs::read_to_string(
             fixture
@@ -1693,6 +2033,685 @@ fn progress_only_publication_preserves_runtime_action_authority() {
         result,
         nanika_host::ExtensionInvocationOutcome::Completed { .. }
     ));
+    fixture.stop(runtime);
+}
+
+#[test]
+fn localized_invocation_errors_reach_search_and_settings_without_recording_success() {
+    use nanika_protocol::ActionInvocation::{Default as DefaultInvocation, Explicit};
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let package = fixture
+        .paths
+        .app_data_root()
+        .join("resources")
+        .join(HEALTHY);
+    std::fs::create_dir_all(package.join("locales")).unwrap();
+    for (locale, text) in [
+        ("en", "Could not complete action"),
+        ("zh-Hans", "无法完成操作")
+    ] {
+        std::fs::write(
+            package.join(format!("locales/{locale}.ftl")),
+            format!("action-failed = {text}")
+        )
+        .unwrap();
+    }
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+    manifest["contributes"]["configuration"]["actions"] = serde_json::json!([{
+        "description": "Fixture action",
+        "action": {"id": "fixture.reset", "title": "Reset", "style": "secondary",
+            "enabled": true, "allow_default_execution": false}
+    }]);
+    manifest["contributes"]["configuration"]["quickMenu"] = serde_json::json!([
+        {"id": "actions", "title": "Actions", "items": [{"kind":"action", "id":"fixture.reset"}]}
+    ]);
+    fixture.manifests[0] = manifest.to_string();
+    let marker = fixture
+        .paths
+        .app_data_root()
+        .join("invocation-error-message");
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let mut retained = Vec::new();
+    for id in ["action-failed", "missing"] {
+        std::fs::write(&marker, id).unwrap();
+        let search = runtime
+            .invoke_with_usage(
+                &runtime.latest_snapshot().unwrap(),
+                HEALTHY,
+                "fixture.entry",
+                "fixture.run",
+                "fixture",
+                DefaultInvocation
+            )
+            .unwrap_err();
+        let settings = runtime
+            .invoke_settings_action(HEALTHY, instance, "fixture.reset", Explicit)
+            .unwrap_err();
+        let menu = runtime
+            .invoke_configuration_menu_action(HEALTHY, instance, "fixture.reset", Explicit)
+            .unwrap_err();
+        for error in [search, settings, menu] {
+            if id == "action-failed" {
+                assert!(matches!(
+                    &error,
+                    nanika_host::OperationError::Extension { .. }
+                ));
+                retained.push(error);
+            } else {
+                assert!(matches!(
+                    error,
+                    nanika_host::OperationError::Host {
+                        code: nanika_host::OperationErrorCode::ExtensionProtocol,
+                        ..
+                    }
+                ));
+            }
+        }
+    }
+    std::fs::remove_file(marker).unwrap();
+    runtime
+        .invoke_settings_action(HEALTHY, instance, "fixture.reset", Explicit)
+        .unwrap();
+    let completion = runtime
+        .invoke_with_usage(
+            &runtime.latest_snapshot().unwrap(),
+            HEALTHY,
+            "fixture.entry",
+            "fixture.run",
+            "fixture",
+            DefaultInvocation
+        )
+        .unwrap();
+    assert!(matches!(
+        completion.outcome,
+        nanika_host::ExtensionInvocationOutcome::Completed { .. }
+    ));
+    assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+    runtime.shutdown();
+    for error in retained {
+        let wire = serde_json::to_value(error).unwrap();
+        assert_eq!(wire["error"]["messages"]["en"], "Could not complete action");
+        assert_eq!(wire["error"]["messages"]["zh-Hans"], "无法完成操作");
+        assert_eq!(wire["error"]["error"]["detail"], "EACCES: fixture action");
+    }
+    let (storage, stored) =
+        nanika_storage::SearchStorageWorker::spawn(fixture.paths.host_database()).unwrap();
+    assert_eq!(stored.usage.len(), 1);
+    assert_eq!(
+        stored.usage[0].execution_count, 1,
+        "failed actions must not be recorded as successful"
+    );
+    storage.shutdown();
+    fixture.stop(runtime);
+}
+
+#[test]
+fn localized_initialization_failures_survive_recovery_and_explicit_reenable() {
+    for message in ["initialize-failed", "missing"] {
+        let mut fixture = Fixture::new();
+        fixture.manifests.truncate(1);
+        let package = fixture
+            .paths
+            .app_data_root()
+            .join("resources")
+            .join(HEALTHY);
+        std::fs::create_dir_all(package.join("locales")).unwrap();
+        for (locale, text) in [
+            ("en", "Could not initialize extension"),
+            ("zh-Hans", "无法初始化扩展")
+        ] {
+            std::fs::write(
+                package.join(format!("locales/{locale}.ftl")),
+                format!("initialize-failed = {text}")
+            )
+            .unwrap();
+        }
+        let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+        manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+        fixture.manifests[0] = manifest.to_string();
+        let marker = fixture
+            .paths
+            .app_data_root()
+            .join("initialize-error-message");
+        std::fs::write(&marker, message).unwrap();
+        let runtime = fixture.start();
+        wait_until(|| {
+            matches!(
+                runtime.extension_info()[0].lifecycle_error,
+                Some(nanika_host::LifecycleError::RestartLimitReached { .. })
+            )
+        });
+        let info = runtime.extension_info().remove(0);
+        assert!(info.enabled && !info.pending);
+        assert_eq!(runtime.instance_id(HEALTHY), None);
+        let retained = info.lifecycle_error.unwrap();
+        let nanika_host::LifecycleError::RestartLimitReached { original, failure } = &retained
+        else {
+            unreachable!()
+        };
+        for cause in [original, failure] {
+            let diagnostic = cause.diagnostic.as_ref().unwrap();
+            assert!(diagnostic.starts_with("stderr: initialization stderr:"));
+            assert!(diagnostic.len() > nanika_protocol::MAX_ERROR_DETAIL_BYTES);
+            assert!(diagnostic.len() <= nanika_host::MAX_LIFECYCLE_DIAGNOSTIC_BYTES);
+            if message == "initialize-failed" {
+                assert!(
+                    matches!(&cause.error, nanika_host::OperationError::Extension { error }
+                    if error.error.code == "initialize_failed")
+                );
+            } else {
+                assert!(matches!(
+                    cause.error,
+                    nanika_host::OperationError::Host {
+                        code: nanika_host::OperationErrorCode::ExtensionProtocol,
+                        ..
+                    }
+                ));
+            }
+        }
+        let starts = fixture
+            .paths
+            .app_data_root()
+            .join(format!("initialize-{HEALTHY}.starts"));
+        assert_eq!(std::fs::read_to_string(&starts).unwrap().lines().count(), 2);
+        std::fs::remove_file(marker).unwrap();
+        runtime
+            .set_extension_enabled(HEALTHY, false)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap();
+        runtime
+            .set_extension_enabled(HEALTHY, true)
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap();
+        wait_until(|| {
+            runtime.extension_info()[0].state == nanika_host::RuntimeExtensionState::Ready
+        });
+        assert!(runtime.extension_info()[0].lifecycle_error.is_none());
+        assert_eq!(std::fs::read_to_string(starts).unwrap().lines().count(), 3);
+        fixture.stop(runtime);
+        if message == "initialize-failed" {
+            let wire = serde_json::to_value(retained).unwrap();
+            for cause in ["original", "failure"] {
+                assert_eq!(
+                    wire[cause]["error"]["error"]["messages"]["en"],
+                    "Could not initialize extension"
+                );
+                assert_eq!(
+                    wire[cause]["error"]["error"]["messages"]["zh-Hans"],
+                    "无法初始化扩展"
+                );
+                assert_eq!(
+                    wire[cause]["error"]["error"]["error"]["detail"],
+                    "EACCES: fixture initialization"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn localized_refresh_failures_retain_warnings_and_results_until_explicit_retry() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let package = fixture
+        .paths
+        .app_data_root()
+        .join("resources")
+        .join(HEALTHY);
+    std::fs::create_dir_all(package.join("locales")).unwrap();
+    for (locale, text) in [
+        ("en", "Could not refresh catalog"),
+        ("zh-Hans", "无法刷新目录")
+    ] {
+        std::fs::write(
+            package.join(format!("locales/{locale}.ftl")),
+            format!("refresh-failed = {text}")
+        )
+        .unwrap();
+    }
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("ready").unwrap();
+    wait_until(|| has_result(&runtime, generation, HEALTHY));
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let before = runtime.latest_snapshot().unwrap();
+    let before_warnings = runtime.search_warnings();
+    let marker = fixture.paths.app_data_root().join("refresh-error-message");
+    let mut retained = None;
+    for id in ["refresh-failed", "missing"] {
+        std::fs::write(&marker, id).unwrap();
+        let errors = runtime.refresh_root_search(generation).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].extension_id.as_deref(), Some(HEALTHY));
+        assert!(runtime.search_warnings().contains(&errors[0]));
+        assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+        assert!(
+            std::sync::Arc::ptr_eq(&before, &runtime.latest_snapshot().unwrap()),
+            "refresh failure must preserve the accepted result window"
+        );
+        if id == "refresh-failed" {
+            assert!(matches!(
+                errors[0].error,
+                nanika_host::OperationError::Extension { .. }
+            ));
+            retained = Some(errors[0].clone());
+        } else {
+            assert!(matches!(
+                errors[0].error,
+                nanika_host::OperationError::Host {
+                    code: nanika_host::OperationErrorCode::ExtensionProtocol,
+                    ..
+                }
+            ));
+        }
+    }
+    std::fs::remove_file(marker).unwrap();
+    runtime.refresh_root_search(generation).unwrap();
+    assert_eq!(runtime.search_warnings(), before_warnings);
+    assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+    fixture.stop(runtime);
+    let retained = serde_json::to_value(retained.unwrap()).unwrap();
+    assert_eq!(retained["extensionId"], HEALTHY);
+    assert_eq!(
+        retained["error"]["error"]["messages"]["en"],
+        "Could not refresh catalog"
+    );
+    assert_eq!(
+        retained["error"]["error"]["messages"]["zh-Hans"],
+        "无法刷新目录"
+    );
+    assert_eq!(
+        retained["error"]["error"]["error"]["detail"],
+        "fixture scan could not read its source"
+    );
+}
+
+#[test]
+fn localized_configuration_failures_preserve_transaction_facts_and_explicit_retry() {
+    for policy in ["beforeApply", "afterApply"] {
+        let mut fixture = Fixture::new();
+        fixture.manifests.truncate(1);
+        let package = fixture
+            .paths
+            .app_data_root()
+            .join("resources")
+            .join(HEALTHY);
+        std::fs::create_dir_all(package.join("locales")).unwrap();
+        for (locale, text) in [
+            ("en", "Could not apply settings"),
+            ("zh-Hans", "无法应用设置")
+        ] {
+            std::fs::write(
+                package.join(format!("locales/{locale}.ftl")),
+                format!("apply-failed = {text}")
+            )
+            .unwrap();
+        }
+        let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+        manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+        manifest["contributes"]["configuration"]["properties"]["fixture.enabled"]["persistence"] =
+            policy.into();
+        fixture.manifests[0] = manifest.to_string();
+        let runtime = fixture.start();
+        let generation = runtime.begin_query("ready").unwrap();
+        wait_until(|| has_result(&runtime, generation, HEALTHY));
+        let instance = runtime.instance_id(HEALTHY).unwrap();
+        let marker = fixture
+            .paths
+            .app_data_root()
+            .join("configuration-error-message");
+        let mut retained = None;
+        for id in ["apply-failed", "missing"] {
+            std::fs::write(&marker, id).unwrap();
+            let request = format!("localized-configuration-{id}");
+            fixture.block(&request);
+            let receipt = runtime
+                .save_configuration(
+                    HEALTHY,
+                    &request,
+                    "fixture.enabled".into(),
+                    false.into(),
+                    std::sync::Arc::new(|_| {})
+                )
+                .unwrap();
+            wait_until(|| fixture.entered(&request));
+            // The accepted operation owns the reservation until its actual result arrives.
+            assert!(
+                runtime
+                    .save_configuration(
+                        HEALTHY,
+                        "duplicate",
+                        "fixture.enabled".into(),
+                        true.into(),
+                        std::sync::Arc::new(|_| {})
+                    )
+                    .is_err()
+            );
+            fixture.release(&request);
+            let outcome = receipt.wait().unwrap();
+            assert_eq!(outcome.saved["fixture.enabled"], policy == "afterApply");
+            assert!(outcome.effective.is_none());
+            let cause = match (policy, outcome.error.unwrap()) {
+                (
+                    "beforeApply",
+                    nanika_host::ConfigurationSaveError::SavedButNotApplied { cause }
+                ) => cause,
+                (
+                    "afterApply",
+                    nanika_host::ConfigurationSaveError::UnconfirmedNotSaved { cause }
+                ) => cause,
+                _ => panic!("failure must preserve the persistence policy")
+            };
+            if id == "apply-failed" {
+                assert!(matches!(
+                    &*cause,
+                    nanika_host::OperationError::Extension { .. }
+                ));
+                retained = Some(cause);
+            } else {
+                assert!(matches!(
+                    *cause,
+                    nanika_host::OperationError::Host {
+                        code: nanika_host::OperationErrorCode::ExtensionProtocol,
+                        ..
+                    }
+                ));
+            }
+            assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+        }
+        std::fs::remove_file(marker).unwrap();
+        let outcome = runtime
+            .save_configuration(
+                HEALTHY,
+                "explicit-retry",
+                "fixture.enabled".into(),
+                false.into(),
+                std::sync::Arc::new(|_| {})
+            )
+            .unwrap()
+            .wait()
+            .unwrap();
+        assert!(outcome.error.is_none());
+        assert_eq!(outcome.saved["fixture.enabled"], false);
+        assert_eq!(outcome.effective.unwrap()["fixture.enabled"], false);
+        assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+        fixture.stop(runtime);
+        let retained = serde_json::to_value(retained.unwrap()).unwrap();
+        assert_eq!(
+            retained["error"]["messages"]["en"],
+            "Could not apply settings"
+        );
+        assert_eq!(retained["error"]["messages"]["zh-Hans"], "无法应用设置");
+        assert_eq!(
+            retained["error"]["error"]["detail"],
+            "EACCES: fixture configuration"
+        );
+    }
+}
+
+#[test]
+fn localized_view_failures_preserve_the_open_view_until_close_succeeds() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let package = fixture
+        .paths
+        .app_data_root()
+        .join("resources")
+        .join(HEALTHY);
+    std::fs::create_dir_all(package.join("locales")).unwrap();
+    for (locale, text) in [("en", "Could not update view"), ("zh-Hans", "无法更新视图")] {
+        std::fs::write(
+            package.join(format!("locales/{locale}.ftl")),
+            format!("view-failed = {text}")
+        )
+        .unwrap();
+    }
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+    manifest["contributes"]["views"] = serde_json::json!([{"id":"fixture.view", "title":"Fixture view", "description":"View errors"}]);
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| {
+        runtime.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == generation
+                && snapshot
+                    .results
+                    .iter()
+                    .any(|result| result.candidate.entry_id() == "fixture.view")
+        })
+    });
+    let opened = runtime
+        .invoke(
+            &runtime.latest_snapshot().unwrap(),
+            HEALTHY,
+            "fixture.view",
+            nanika_protocol::VIEW_OPEN_ACTION_ID,
+            "fixture",
+            nanika_protocol::ActionInvocation::Default
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    let nanika_host::ExtensionInvocationOutcome::Completed {
+        effect:
+            nanika_protocol::NavigationEffect::Push {
+                view_id, revision, ..
+            },
+        ..
+    } = opened
+    else {
+        panic!("view opens")
+    };
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let mut retained = Vec::new();
+    for (marker, close) in [
+        ("view-error-message", false),
+        ("view-close-error-message", true)
+    ] {
+        let marker = fixture.paths.app_data_root().join(marker);
+        for id in ["view-failed", "missing"] {
+            std::fs::write(&marker, id).unwrap();
+            let receiver = if close {
+                runtime.close_view(HEALTHY, instance, generation, &view_id, revision)
+            } else {
+                runtime.view_event(
+                    HEALTHY,
+                    instance,
+                    generation,
+                    &view_id,
+                    revision,
+                    nanika_protocol::ViewEvent::Invalidated
+                )
+            }
+            .unwrap();
+            let error = receiver.recv_timeout(WAIT).unwrap().unwrap_err();
+            if id == "view-failed" {
+                assert!(matches!(
+                    &error,
+                    nanika_host::OperationError::Extension { .. }
+                ));
+                retained.push(error);
+            } else {
+                assert!(matches!(
+                    error,
+                    nanika_host::OperationError::Host {
+                        code: nanika_host::OperationErrorCode::ExtensionProtocol,
+                        ..
+                    }
+                ));
+            }
+            let chunk = runtime
+                .read_text(
+                    HEALTHY,
+                    instance,
+                    generation,
+                    view_id.clone(),
+                    nanika_protocol::TextRead {
+                        document_id: "test.text".into(),
+                        revision: "fixture".into(),
+                        index: 0
+                    }
+                )
+                .unwrap()
+                .recv_timeout(WAIT)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                chunk.value, "Fixture view",
+                "failed update/close must retain the open source"
+            );
+        }
+        std::fs::remove_file(marker).unwrap();
+    }
+    runtime
+        .view_event(
+            HEALTHY,
+            instance,
+            generation,
+            &view_id,
+            revision,
+            nanika_protocol::ViewEvent::Resumed
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    let closed = runtime
+        .close_view(HEALTHY, instance, generation, &view_id, revision)
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert_eq!(closed.effect, nanika_protocol::NavigationEffect::Pop);
+    assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
+    runtime.shutdown();
+    for error in retained {
+        let wire = serde_json::to_value(error).unwrap();
+        assert_eq!(wire["error"]["messages"]["en"], "Could not update view");
+        assert_eq!(wire["error"]["messages"]["zh-Hans"], "无法更新视图");
+        assert_eq!(wire["error"]["error"]["detail"], "EACCES: fixture view");
+    }
+    fixture.stop(runtime);
+}
+
+#[test]
+fn localized_text_failures_survive_runtime_delivery_and_allow_explicit_retry() {
+    let mut fixture = Fixture::new();
+    fixture.manifests.truncate(1);
+    let package = fixture
+        .paths
+        .app_data_root()
+        .join("resources")
+        .join(HEALTHY);
+    std::fs::create_dir_all(package.join("locales")).unwrap();
+    for (locale, text) in [
+        ("en", "Could not read document"),
+        ("zh-Hans", "无法读取文档")
+    ] {
+        std::fs::write(
+            package.join(format!("locales/{locale}.ftl")),
+            format!("read-failed = {text}")
+        )
+        .unwrap();
+    }
+    let mut manifest: serde_json::Value = serde_json::from_str(&fixture.manifests[0]).unwrap();
+    manifest["localization"] = serde_json::json!({"defaultLocale":"en", "resources":{"en":["locales/en.ftl"], "zh-Hans":["locales/zh-Hans.ftl"]}});
+    manifest["contributes"]["views"] = serde_json::json!([{"id":"fixture.view", "title":"Fixture view", "description":"Text read errors"}]);
+    fixture.manifests[0] = manifest.to_string();
+    let runtime = fixture.start();
+    let generation = runtime.begin_query("fixture").unwrap();
+    wait_until(|| {
+        runtime.latest_snapshot().is_some_and(|snapshot| {
+            snapshot.generation == generation
+                && snapshot
+                    .results
+                    .iter()
+                    .any(|result| result.candidate.entry_id() == "fixture.view")
+        })
+    });
+    let opened = runtime
+        .invoke(
+            &runtime.latest_snapshot().unwrap(),
+            HEALTHY,
+            "fixture.view",
+            nanika_protocol::VIEW_OPEN_ACTION_ID,
+            "fixture",
+            nanika_protocol::ActionInvocation::Default
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    let nanika_host::ExtensionInvocationOutcome::Completed {
+        effect: nanika_protocol::NavigationEffect::Push { view_id, .. },
+        ..
+    } = opened
+    else {
+        panic!("view opens");
+    };
+    let instance = runtime.instance_id(HEALTHY).unwrap();
+    let marker = fixture.paths.app_data_root().join("text-error-message");
+    for id in ["read-failed", "missing"] {
+        std::fs::write(&marker, id).unwrap();
+        let error = runtime
+            .read_text(
+                HEALTHY,
+                instance,
+                generation,
+                view_id.clone(),
+                nanika_protocol::TextRead {
+                    document_id: "test.text".into(),
+                    revision: "fixture".into(),
+                    index: 0
+                }
+            )
+            .unwrap()
+            .recv_timeout(WAIT)
+            .unwrap()
+            .unwrap_err();
+        let wire = serde_json::to_value(error).unwrap();
+        if id == "read-failed" {
+            assert_eq!(wire["kind"], "extension");
+            assert_eq!(wire["error"]["messages"]["en"], "Could not read document");
+            assert_eq!(wire["error"]["messages"]["zh-Hans"], "无法读取文档");
+            assert_eq!(wire["error"]["error"]["detail"], "EACCES: fixture document");
+        } else {
+            assert_eq!(wire["kind"], "host");
+            assert_eq!(wire["code"], "extensionProtocol");
+        }
+    }
+    std::fs::remove_file(marker).unwrap();
+    let chunk = runtime
+        .read_text(
+            HEALTHY,
+            instance,
+            generation,
+            view_id.clone(),
+            nanika_protocol::TextRead {
+                document_id: "test.text".into(),
+                revision: "fixture".into(),
+                index: 0
+            }
+        )
+        .unwrap()
+        .recv_timeout(WAIT)
+        .unwrap()
+        .unwrap();
+    assert_eq!(chunk.value, "Fixture view");
+    assert_eq!(runtime.instance_id(HEALTHY), Some(instance));
     fixture.stop(runtime);
 }
 
@@ -1804,8 +2823,8 @@ fn settings_actions_validate_declaration_confirmation_and_instance_and_share_adm
             "enabled": true, "allow_default_execution": false, "confirmation_title": "Reset now?"}
     }]);
     manifest["contributes"]["configuration"]["quickMenu"] = serde_json::json!([
-        {"title": "Display", "items": [{"kind": "toggle", "key": "fixture.enabled"}]},
-        {"title": "Danger zone", "items": [{"kind": "action", "id": "fixture.reset"}]}
+        {"id": "display", "title": "Display", "items": [{"kind": "toggle", "key": "fixture.enabled"}]},
+        {"id": "danger", "title": "Danger zone", "items": [{"kind": "action", "id": "fixture.reset"}]}
     ]);
     fixture.manifests[0] = manifest.to_string();
     let runtime = fixture.start();

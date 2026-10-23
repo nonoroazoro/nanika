@@ -1,4 +1,16 @@
 <script lang="ts">
+import { ExtensionPresentation } from "./localization/ExtensionPresentation";
+import { ProgressPresentation } from "./localization/ProgressPresentation";
+import { ResourceCache } from "./localization/ResourceCache";
+import type { ExtensionResourceScope } from "./generated/ExtensionResourceScope";
+import type { LocalizedText } from "./generated/LocalizedText";
+import type { TargetPlatform } from "./generated/TargetPlatform";
+import { localization } from "./localization/state.svelte";
+import { lifecycleErrorText } from "./localization/lifecycle-errors";
+import { operationErrorText, operationFailure } from "./localization/operation-errors";
+import type { OperationError } from "./generated/OperationError";
+import { settingsFailure } from "./settings/error-presentation";
+import type { LocalizationSnapshot } from "./generated/LocalizationSnapshot";
 import { isCompositionKey } from "./ui/keyboard";
 import "./settings/fields.css";
 import SettingsSidebar from "./settings/SettingsSidebar.svelte";
@@ -25,6 +37,7 @@ import AboutSettings from "./settings/AboutSettings.svelte";
 import SettingsToast from "./settings/SettingsToast.svelte";
 import SettingsField from "./settings/SettingsField.svelte";
 import ExtensionStatus from "./settings/ExtensionStatus.svelte";
+import type { SettingsError } from "./settings/SettingsError";
 import { SettingsApplications } from "./settings/SettingsApplications";
 import { SettingsState } from "./settings/SettingsState.svelte";
 import { StartupSettings } from "./settings/StartupSettings.svelte";
@@ -39,17 +52,28 @@ import type { LauncherSettings } from "./settings/LauncherSettings";
 import type { SettingsApplicationUpdate } from "./generated/SettingsApplicationUpdate";
 import type { SettingsSnapshot } from "./generated/SettingsSnapshot";
 
-let notification = $state<string | null>(null);
+$effect(() =>
+{
+    document.documentElement.lang = localization.locale;
+});
+
+let notification = $state<SettingsError | null>(null);
 let customControls = $state(false);
 let maximized = $state(false);
-let windowError = $state<string | null>(null);
+let windowError = $state<OperationError | null>(null);
 let snapshot = $state.raw<SettingsSnapshot | null>(null);
+const resources = new ResourceCache(settingsBridge.readResources);
+let presentations = $state.raw(new Map<string, ExtensionPresentation>());
+let presentationSession: number | null = null;
+let presentationError = $state<OperationError | null>(null);
+let preparingPresentation = $state(false);
+let presentationAttempt = 0;
 let host = $state.raw<SettingsState<LauncherSettings> | null>(null);
 const startup = new StartupSettings(settingsBridge.readStartup, settingsBridge.setStartup, _notify);
 let states = $state.raw<Record<string, ExtensionSettingsState>>({});
 let selection = $state("general");
 let loading = $state(true);
-let loadError = $state(false);
+let loadError = $state<OperationError | null>(null);
 const applications = new SettingsApplications();
 const search = new SettingsSearchState(settingsBridge.search);
 let revealed = $state<string | null>(null);
@@ -69,7 +93,7 @@ const selected = $derived(extensions.find(extension => extension.id === selectio
 const groups = $derived(
     propertyGroups(
         selected?.configuration?.contribution.properties ?? {},
-        selected?.configuration?.contribution.title ?? "Settings"
+        selected?.configuration?.contribution.title ?? ""
     )
 );
 const selectedState = $derived(states[selection]);
@@ -92,6 +116,25 @@ onMount(() =>
     });
 });
 
+function _localization(sessionId: number, next: LocalizationSnapshot): void
+{
+    if (!localization.accept(sessionId, next) || !host)
+    {
+        return;
+    }
+    // Reconcile after accepted writes; SettingsState preserves unrelated drafts and caret state.
+    const current = host;
+    current.observe(() =>
+    {
+        return {
+            values: { ...current.saved, language: localization.preference },
+            saved: { ...current.saved, language: localization.preference },
+            effective: current.effective ? { ...current.effective, language: localization.preference } : null,
+            error: null
+        };
+    });
+}
+
 function _requestedNavigation(next: SettingsNavigation): void
 {
     if (requestedNavigation && next.revision <= requestedNavigation.revision)
@@ -110,24 +153,35 @@ function _prepare(): void
 {
     windowError = null;
     selection = "general";
-    void _load().then(async () =>
+    void _load().then(_ready).catch(error =>
+    {
+        console.error("Settings could not finish opening", error);
+        loadError = operationFailure(error, "settingsReadFailed");
+    });
+}
+
+async function _ready(): Promise<void>
+{
+    windowError = null;
+    try
     {
         await tick();
         customControls = await settingsBridge.ready();
-    }).catch(error =>
+    }
+    catch (error)
     {
-        console.error("Settings could not finish opening", error);
-        loadError = true;
-    });
+        console.error("Settings window could not finish updating", error);
+        windowError = operationFailure(error, "settingsReadyFailed");
+    }
 }
 
 async function _load(): Promise<void>
 {
     loading = true;
-    loadError = false;
+    loadError = null;
     try
     {
-        snapshot = await settingsBridge.read(
+        const loaded = await settingsBridge.read(
             _application,
             _closed,
             next =>
@@ -136,22 +190,22 @@ async function _load(): Promise<void>
             },
             error => console.error("Settings progress receipt failed", error),
             _lifecycle,
-            _requestedNavigation
+            _requestedNavigation,
+            _localization
         );
-        if (lifecycleRevision > snapshot.lifecycleRevision)
+        // Host messages must use the saved locale even when package preparation fails.
+        localization.initialize(loaded.sessionId, loaded.localization, loaded.platform);
+        // Prepare immutable package names before exposing metadata to the sidebar or search.
+        const prepared = await _presentations(loaded.extensions, loaded.sessionId, loaded.platform);
+        loaded.general.language = localization.preference;
+        presentations = prepared;
+        presentationSession = loaded.sessionId;
+        if (lifecycleRevision <= loaded.lifecycleRevision)
         {
-            const updates = new Map(lifecycle.map(extension => [extension.id, extension]));
-            snapshot = {
-                ...snapshot,
-                lifecycleRevision,
-                extensions: snapshot.extensions.map(extension => ({ ...extension, ...updates.get(extension.id) }))
-            };
+            lifecycleRevision = loaded.lifecycleRevision;
+            lifecycle = loaded.extensions;
         }
-        else
-        {
-            lifecycleRevision = snapshot.lifecycleRevision;
-            lifecycle = snapshot.extensions;
-        }
+        snapshot = loaded;
         _requestedNavigation(snapshot.navigation);
         maximized = snapshot.maximized;
         host = new SettingsState<LauncherSettings>(
@@ -174,11 +228,16 @@ async function _load(): Promise<void>
         {
             _observeConfiguration(extension);
         }
+        await _refreshProgress();
+        if (lifecycleRevision > snapshot.lifecycleRevision)
+        {
+            await _mergeLifecycle();
+        }
     }
     catch (error)
     {
         console.error("Settings could not load", error);
-        loadError = true;
+        loadError = operationFailure(error, "settingsReadFailed");
     }
     finally
     {
@@ -203,19 +262,72 @@ async function _loadStartup(): Promise<void>
     }
 }
 
-function _application(update: SettingsApplicationUpdate): void
+async function _application(update: SettingsApplicationUpdate): Promise<void>
 {
-    if (applications.record(update) && update.result.status === "running" && update.result.progress)
+    if (applications.record(update))
     {
-        const state = states[update.extensionId];
-        if (state)
+        await _prepareProgress(update);
+    }
+}
+
+async function _prepareProgress(update: SettingsApplicationUpdate): Promise<void>
+{
+    const state = states[update.extensionId];
+    const current = snapshot;
+    if (!state || !current || update.result.status !== "running" || !update.result.progress)
+    {
+        return;
+    }
+    try
+    {
+        const scope = update.resourceScope;
+        if (scope && scope.extensionId !== update.extensionId)
         {
-            state.progress.set(update.key, update.result.progress);
+            throw new Error("Progress resources do not belong to the operation owner.");
+        }
+        const retained = presentations.get(update.extensionId)?.resources;
+        let bundle = scope ? retained : undefined;
+        if (scope && bundle?.identity !== scope.identity)
+        {
+            bundle = await resources.load({ surface: "settings", sessionId: current.sessionId, scope });
+        }
+        // Terminal results bypass progress preparation and must never be replaced by its late completion.
+        if (snapshot?.sessionId !== current.sessionId || applications.current(update.extensionId) !== update)
+        {
+            return;
+        }
+        state.progress.set(
+            update.key,
+            new ProgressPresentation(
+                update.result.progress,
+                bundle,
+                current.platform,
+                state.progress.get(update.key)
+            )
+        );
+    }
+    catch (error)
+    {
+        if (applications.current(update.extensionId) === update)
+        {
+            presentationError = operationFailure(error, "localizationReadFailed");
         }
     }
 }
 
-function _lifecycle(revision: number, updates: ExtensionLifecycle[]): void
+async function _refreshProgress(): Promise<void>
+{
+    for (const extension of snapshot?.extensions ?? [])
+    {
+        const update = applications.current(extension.id);
+        if (update)
+        {
+            await _prepareProgress(update);
+        }
+    }
+}
+
+async function _lifecycle(revision: number, updates: ExtensionLifecycle[]): Promise<void>
 {
     if (revision <= lifecycleRevision)
     {
@@ -223,29 +335,114 @@ function _lifecycle(revision: number, updates: ExtensionLifecycle[]): void
     }
     lifecycleRevision = revision;
     lifecycle = updates;
-    _mergeLifecycle();
-    search.refresh();
+    await _mergeLifecycle();
 }
 
-function _mergeLifecycle(): void
+async function _mergeLifecycle(): Promise<void>
 {
     if (!snapshot)
     {
         return;
     }
-    const updates = new Map(lifecycle.map(extension => [extension.id, extension]));
-    for (const extension of lifecycle)
+    const current = snapshot;
+    const attempt = ++presentationAttempt;
+    const revision = lifecycleRevision;
+    const updatesToApply = lifecycle;
+    preparingPresentation = true;
+    try
     {
-        _observeConfiguration(extension);
+        const prepared = await _presentations(updatesToApply, current.sessionId, current.platform);
+        if (
+            snapshot?.sessionId !== current.sessionId || revision !== lifecycleRevision
+            || attempt !== presentationAttempt
+        )
+        {
+            return;
+        }
+        const updates = new Map(updatesToApply.map(extension => [extension.id, extension]));
+        for (const extension of updatesToApply)
+        {
+            _observeConfiguration(extension);
+        }
+        presentations = prepared;
+        snapshot = {
+            ...snapshot,
+            lifecycleRevision: revision,
+            extensions: snapshot.extensions.map(extension => ({ ...extension, ...updates.get(extension.id) }))
+        };
+        presentationError = null;
+        await _refreshProgress();
+        search.refresh();
     }
-    snapshot = {
-        ...snapshot,
-        lifecycleRevision,
-        extensions: snapshot.extensions.map(extension => ({
-            ...extension,
-            ...updates.get(extension.id)
-        }))
-    };
+    catch (error)
+    {
+        if (attempt === presentationAttempt)
+        {
+            presentationError = operationFailure(error, "localizationReadFailed");
+        }
+    }
+    finally
+    {
+        if (attempt === presentationAttempt)
+        {
+            preparingPresentation = false;
+        }
+    }
+}
+
+async function _presentations(
+    metadata: ExtensionLifecycle[],
+    sessionId: number,
+    platform: TargetPlatform
+): Promise<Map<string, ExtensionPresentation>>
+{
+    const prepared = new SvelteMap<string, ExtensionPresentation>();
+    for (const extension of metadata)
+    {
+        const previous = presentationSession === sessionId ? presentations.get(extension.id) : undefined;
+        if (
+            previous?.matches(
+                extension.id,
+                extension.name,
+                extension.resourceScope,
+                platform,
+                extension.configuration?.contribution
+            )
+        )
+        {
+            prepared.set(extension.id, previous);
+            continue;
+        }
+        const bundle = extension.resourceScope
+            ? await resources.load({ surface: "settings", sessionId, scope: extension.resourceScope })
+            : undefined;
+        prepared.set(
+            extension.id,
+            new ExtensionPresentation(
+                extension.id,
+                extension.name,
+                extension.resourceScope,
+                bundle,
+                platform,
+                extension.configuration?.contribution
+            )
+        );
+    }
+    return prepared;
+}
+
+function _text(value: LocalizedText, scope?: ExtensionResourceScope): string
+{
+    if (!scope)
+    {
+        return localization.text(value);
+    }
+    const prepared = presentations.get(scope.extensionId);
+    if (!prepared || prepared.resources?.identity !== scope.identity)
+    {
+        throw new Error("Settings text does not belong to its prepared package.");
+    }
+    return prepared.text(value, localization.locale);
 }
 
 function _observeConfiguration(extension: Pick<ExtensionSettings, "id" | "configuration">): void
@@ -271,10 +468,6 @@ function _observeConfiguration(extension: Pick<ExtensionSettings, "id" | "config
     );
     if (application?.result.status === "running")
     {
-        if (application.result.progress)
-        {
-            state.progress.set(application.key, application.result.progress);
-        }
         state.resumeConfiguration(application.key, applications.completion(application));
     }
     else if (application?.result.status === "completed")
@@ -293,7 +486,7 @@ async function _setEnabled(id: string, enabled: boolean): Promise<void>
     }
     catch (error)
     {
-        _notify(String(error));
+        _notify(settingsFailure(error));
     }
     finally
     {
@@ -301,7 +494,7 @@ async function _setEnabled(id: string, enabled: boolean): Promise<void>
     }
 }
 
-function _notify(error: string): void
+function _notify(error: SettingsError): void
 {
     notification = error;
 }
@@ -315,11 +508,7 @@ function _closed(): void
     revealed = null;
     highlightedTarget = null;
     search.update("");
-    void tick().then(() => settingsBridge.ready()).catch(error =>
-    {
-        console.error("Settings could not finish closing", error);
-        windowError = String(error);
-    });
+    void _ready();
 }
 
 function _query(query: string): void
@@ -354,7 +543,7 @@ async function _navigate(page: string, target: SettingsSearchTarget): Promise<vo
     {
         highlightedTarget = null;
         search.refresh();
-        _notify("This setting is no longer available.");
+        _notify({ code: "unknownSetting", path: [] });
         return;
     }
     if (target.kind === "page")
@@ -400,9 +589,16 @@ function _searchKeydown(event: KeyboardEvent): void
 
 function _windowAction(action: SettingsWindowAction): void
 {
+    windowError = null;
     void settingsBridge.windowAction(action).catch(error =>
     {
-        windowError = String(error);
+        const code = {
+            drag: "windowDragFailed",
+            minimize: "windowMinimizeFailed",
+            toggleMaximize: "windowResizeFailed",
+            close: "windowCloseFailed"
+        } as const;
+        windowError = operationFailure(error, code[action.kind]);
     });
 }
 </script>
@@ -420,25 +616,55 @@ function _windowAction(action: SettingsWindowAction): void
     {#if customControls}
         <SettingsTitleBar {maximized} onAction={_windowAction} />
     {:else}
-        <!-- Overlay titlebars leave dragging to the WebView; native traffic lights stay outside this region. -->
-        <div
-            class="native-drag-region"
-            role="presentation"
-            onmousedown={event =>
-            {
-                if (event.button === 0 && event.detail === 1)
+        <!-- Reserve the native caption row so its drag region cannot cover error actions. -->
+        <div class="native-titlebar">
+            <div
+                class="native-drag-region"
+                role="presentation"
+                onmousedown={event =>
                 {
-                    _windowAction({ kind: "drag" });
-                }
-            }}
-        >
+                    if (event.button === 0 && event.detail === 1)
+                    {
+                        _windowAction({ kind: "drag" });
+                    }
+                }}
+            >
+            </div>
         </div>
     {/if}
-    {#if windowError}<div class="window-error" role="alert">{windowError}</div>{/if}
+    {#if windowError}
+        <div class="window-error" role="alert">
+            <span>{operationErrorText(windowError, localization.locale, value => localization.text(value))}</span>
+            {#if windowError.kind === "host" && windowError.code === "settingsReadyFailed"}
+                <Button
+                    onclick={() =>
+                    {
+                        void _ready();
+                    }}
+                >{localization.text({ message: "action-retry" })}</Button>
+            {/if}
+        </div>
+    {/if}
+    {#if presentationError}
+        <div class="window-error" role="alert">
+            <span>{operationErrorText(presentationError, localization.locale, value => localization.text(value))}</span>
+            <Button
+                disabled={preparingPresentation}
+                onclick={() =>
+                {
+                    void _mergeLifecycle();
+                }}
+            >
+                {localization.text({ message: "action-retry" })}
+            </Button>
+        </div>
+    {/if}
     <main class="settings">
-        <aside class="sidebar" aria-label="Settings navigation">
+        <aside class="sidebar" aria-label={localization.text({ message: "settings-navigation" })}>
             <SettingsSidebar
                 {extensions}
+                text={_text}
+                ready={snapshot !== null && !loadError}
                 {selection}
                 {revealed}
                 {search}
@@ -454,29 +680,32 @@ function _windowAction(action: SettingsWindowAction): void
         <ScrollArea class="settings-detail" bind:viewport={detailViewport}><section
                 class="content"
                 bind:this={detailContent}
-                aria-label="Settings content"
+                aria-label={localization.text({ message: "settings-content" })}
                 aria-busy={loading}
             >
                 {#if loading}
-                    <div class="empty-state" role="status">Loading settings…</div>
+                    <div class="empty-state" role="status">{localization.text({ message: "settings-loading" })}</div>
                 {:else if loadError}
                     <div class="empty-state" role="alert">
-                        <h1>Settings could not load</h1>
+                        <p>{operationErrorText(loadError, localization.locale, value => localization.text(value))}</p>
                         <Button
                             onclick={() =>
                             {
                                 void _load();
                             }}
                         >
-                            Try again
+                            {localization.text({ message: "action-retry" })}
                         </Button>
                     </div>
                 {:else if selection === "general" && host}
                     <GeneralSettings
                         settings={host}
                         sections={snapshot?.generalSections ?? []}
-                        startup={startup.status === null ? null : startup.settings}
-                        startupStatus={startup.status}
+                        {startup}
+                        onStartupRetry={() =>
+                        {
+                            void _loadStartup();
+                        }}
                     />
                 {:else if selection === "about" && snapshot}
                     <AboutSettings version={snapshot.version} />
@@ -485,12 +714,18 @@ function _windowAction(action: SettingsWindowAction): void
                         <header>
                             <div class="extension-heading">
                                 <span class="heading-icon"><ExtensionIcon src={selected.iconUrl} /></span><div>
-                                    <h1>{selected.name}</h1>
+                                    <h1>{_text(selected.name, selected.resourceScope)}</h1>
                                     {#key selected.id}<ExtensionStatus lifecycleState={selected.state} />{/key}
                                 </div>
                             </div>
                         </header>
-                        {#if selected.lifecycleError}<p role="alert">{selected.lifecycleError}</p>{/if}
+                        {#if selected.lifecycleError}
+                            <p class="lifecycle-error" role="alert">
+                                {
+                                    lifecycleErrorText(selected.lifecycleError, localization.locale, value => localization.text(value))
+                                }
+                            </p>
+                        {/if}
                         {#key selected.id}
                             <form
                                 onsubmit={event =>
@@ -506,17 +741,25 @@ function _windowAction(action: SettingsWindowAction): void
                                         aria-labelledby="extension-enabled-title"
                                     >
                                         <div class="property-copy">
-                                            <h2 id="extension-enabled-title">Enable extension</h2>
+                                            <h2 id="extension-enabled-title">
+                                                {localization.text({ message: "settings-enable-extension-title" })}
+                                            </h2>
                                         </div>
                                         <div class="property-control">
                                             <SettingsField
                                                 busy={selected.pending || toggling.has(selected.id)}
-                                                label={`Enable ${selected.name}`}
+                                                label={localization.text({
+                                                    message: "settings-enable-extension",
+                                                    args: { name: _text(selected.name, selected.resourceScope) }
+                                                })}
                                                 startedAt={toggling.get(selected.id)}
                                             >
                                                 <Switch
                                                     checked={selected.enabled}
-                                                    label={`Enable ${selected.name}`}
+                                                    label={localization.text({
+                                                        message: "settings-enable-extension",
+                                                        args: { name: _text(selected.name, selected.resourceScope) }
+                                                    })}
                                                     onChange={enabled =>
                                                     {
                                                         if (selected)
@@ -530,9 +773,12 @@ function _windowAction(action: SettingsWindowAction): void
                                     </section>
                                 </div>
                                 {#if !selected.configurationError && groups.length > 0}
-                                    {#each groups as [group, properties] (group)}
-                                        <section class="configuration-group" aria-label={group}>
-                                            <h2>{group}</h2>
+                                    {#each groups as [group, properties] (group.id)}
+                                        <section
+                                            class="configuration-group"
+                                            aria-label={_text(group.title, selected.resourceScope)}
+                                        >
+                                            <h2>{_text(group.title, selected.resourceScope)}</h2>
                                             <div class="fields">
                                                 {#each properties as [key, property] (key)}
                                                     <section
@@ -543,15 +789,19 @@ function _windowAction(action: SettingsWindowAction): void
                                                         aria-labelledby={`title-${key}`}
                                                     >
                                                         {#if !(property.type === "array" && property.items?.format === "directory")}<div class="property-copy">
-                                                                <h3 id={`title-${key}`}>{property.title}</h3>
+                                                                <h3 id={`title-${key}`}>
+                                                                    {_text(property.title, selected.resourceScope)}
+                                                                </h3>
                                                                 {#if property.description}<p>
-                                                                        {property.description}
+                                                                        {
+                                                                            property.description ? _text(property.description, selected.resourceScope) : null
+                                                                        }
                                                                     </p>{/if}
                                                             </div>{/if}
                                                         <div class="property-control">
                                                             <SettingsField
                                                                 busy={selectedState?.phase.get(key) !== undefined}
-                                                                label={property.title}
+                                                                label={_text(property.title, selected.resourceScope)}
                                                                 startedAt={selectedState?.startedAt.get(key)}
                                                                 progress={selectedState?.progress.get(key)}
                                                                 onCommit={() =>
@@ -563,9 +813,9 @@ function _windowAction(action: SettingsWindowAction): void
                                                                     <DirectoryList
                                                                         paths={values[key] as string[]}
                                                                         maximum={property.maxItems ?? 0}
-                                                                        label={property.title}
+                                                                        label={_text(property.title, selected.resourceScope)}
                                                                         titleId={`title-${key}`}
-                                                                        description={property.description}
+                                                                        description={property.description ? _text(property.description, selected.resourceScope) : null}
                                                                         onPick={() => settingsBridge.pickDirectory(selection, key)}
                                                                         onChange={paths =>
                                                                         {
@@ -576,7 +826,7 @@ function _windowAction(action: SettingsWindowAction): void
                                                                     <SettingsValue
                                                                         schema={property}
                                                                         value={values[key]}
-                                                                        label={property.title}
+                                                                        label={_text(property.title, selected.resourceScope)}
                                                                         id={`setting-${key}`}
                                                                         onChange={value => selectedState?.edit(key, value)}
                                                                         onCommit={() =>
@@ -599,6 +849,7 @@ function _windowAction(action: SettingsWindowAction): void
                                             extensionId={selected.id}
                                             iconUrl={selected.iconUrl}
                                             actions={selected.configuration.contribution.actions}
+                                            presentation={presentations.get(selected.id)!}
                                             disabled={!selected.enabled || selected.pending || selected.instanceId === null}
                                             onInvoke={(actionId, confirmed) =>
                                             settingsBridge.invokeAction({
@@ -611,7 +862,13 @@ function _windowAction(action: SettingsWindowAction): void
                                         />
                                     {/key}
                                 {/if}
-                                {#if selected.configurationError}<p role="alert">{selected.configurationError}</p>{/if}
+                                {#if selected.configurationError}
+                                    <p class="lifecycle-error" role="alert">
+                                        {
+                                            operationErrorText(selected.configurationError, localization.locale, value => localization.text(value))
+                                        }
+                                    </p>
+                                {/if}
                             </form>
                         {/key}
                     </div>
@@ -622,17 +879,26 @@ function _windowAction(action: SettingsWindowAction): void
 </div>
 
 <style>
+.lifecycle-error {
+    max-height: 35vh;
+    overflow: auto;
+    overflow-anchor: none;
+    overflow-wrap: anywhere;
+    overscroll-behavior: contain;
+    white-space: pre-wrap;
+}
+
 .configuration-group > h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); color: var(--text-secondary); font-weight: 600; }
-.settings-window { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: clip; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
+.settings-window { --settings-sidebar-width: 13rem; position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; overflow: clip; border: 1px solid var(--border-subtle); border-radius: var(--radius-window); background: var(--surface-window); }
 .settings-window.maximized { border: 0; border-radius: 0; }
 /* macOS owns the outer clipping and overlays native controls on these surfaces. */
 .settings-window.native-controls { --settings-titlebar-height: 48px; border: 0; border-radius: 0; }
+.native-titlebar { position: relative; flex-shrink: 0; height: var(--settings-titlebar-height); background: linear-gradient(to right, var(--settings-sidebar-surface) var(--settings-sidebar-width), var(--surface-window) var(--settings-sidebar-width)); }
 .native-drag-region { position: absolute; z-index: 1; top: 0; right: 0; left: 96px; height: var(--settings-titlebar-height); cursor: default; -webkit-user-select: none; user-select: none; }
-.native-controls .sidebar { padding-top: var(--settings-titlebar-height); }
-.native-controls :global(.settings-detail) { margin-top: var(--settings-titlebar-height); }
-.window-error { padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
+.native-controls .sidebar { padding-top: 0; }
+.window-error { flex-shrink: 0; max-height: 30vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--space-2) var(--space-5); color: var(--text-danger); font-size: var(--font-control); }
 
-.settings { display: grid; min-height: 0; flex: 1; grid-template-columns: 13rem minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
+.settings { display: grid; min-height: 0; flex: 1; grid-template-columns: var(--settings-sidebar-width) minmax(0, 1fr); width: 100%; height: 100%; background: var(--surface-window); color: var(--text-primary); font-size: var(--font-meta); }
 .sidebar { display: flex; flex-direction: column; min-height: 0; gap: var(--space-4); padding: 20px 10px 12px; border-right: 1px solid var(--border-subtle); background: var(--settings-sidebar-surface); }
 .extension-heading { display: flex; align-items: center; gap: 12px; }
 .heading-icon { --icon-size: 48px; display: block; flex-shrink: 0; }
@@ -643,6 +909,7 @@ header { margin-bottom: var(--settings-group-gap); }
 h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
 p { color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }
 form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.empty-state p { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .empty-state { display: grid; min-height: 100%; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; }
-@media (width < 800px) { .settings { grid-template-columns: 12rem minmax(0, 1fr); } .extension-page { padding: var(--space-4) var(--space-4) 0; } }
+@media (width < 800px) { .settings-window { --settings-sidebar-width: 12rem; } .extension-page { padding: var(--space-4) var(--space-4) 0; } }
 </style>

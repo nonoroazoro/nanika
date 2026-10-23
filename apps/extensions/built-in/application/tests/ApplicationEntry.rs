@@ -44,7 +44,7 @@ fn complete_catalog_keeps_exact_matches_available_to_host_ranking() {
     let candidate = selected
         .last()
         .expect("exact match should remain available");
-    assert_eq!(candidate.title, "Zettelkasten");
+    assert_eq!(candidate.title, "Zettelkasten".into());
     assert_eq!(
         candidate.icon,
         Some(nanika_protocol::IconSource::Empty),
@@ -62,8 +62,8 @@ fn small_snapshots_preserve_the_full_host_ranking_input() {
         .collect::<Vec<_>>();
 
     assert_eq!(selected.len(), 2);
-    assert_eq!(selected[0].title, "Zulu");
-    assert_eq!(selected[1].title, "Alpha");
+    assert_eq!(selected[0].title, "Zulu".into());
+    assert_eq!(selected[1].title, "Alpha".into());
 }
 
 #[test]
@@ -73,8 +73,11 @@ fn localized_names_keep_complete_original_names_searchable() {
 
     let candidate = localized.candidate();
 
-    assert_eq!(candidate.title, "图书");
-    assert_eq!(candidate.aliases, ["books", "book reader"]);
+    assert_eq!(candidate.title, "图书".into());
+    assert_eq!(
+        candidate.aliases,
+        ["books", "book reader"].map(nanika_protocol::LocalizedText::from)
+    );
 }
 
 #[test]
@@ -92,8 +95,11 @@ fn complete_catalog_keeps_aliases_available_to_host_ranking() {
         .collect::<Vec<_>>();
 
     let candidate = selected.last().expect("alias should remain available");
-    assert_eq!(candidate.title, "图书");
-    assert_eq!(candidate.aliases, ["books"]);
+    assert_eq!(candidate.title, "图书".into());
+    assert_eq!(
+        candidate.aliases,
+        ["books"].map(nanika_protocol::LocalizedText::from)
+    );
 }
 
 #[test]
@@ -125,7 +131,12 @@ fn romanized_aliases_work_with_the_existing_host_ranker() {
                     candidate.title,
                     candidate.action_id,
                     candidate.actions,
-                    candidate.aliases
+                    candidate
+                        .aliases
+                        .iter()
+                        .map(_literal)
+                        .map(str::to_owned)
+                        .collect()
                 )
             })
             .collect::<Vec<_>>();
@@ -134,7 +145,7 @@ fn romanized_aliases_work_with_the_existing_host_ranker() {
             ranked
                 .results
                 .first()
-                .map(|result| result.candidate.title()),
+                .map(|result| _literal(result.candidate.title())),
             Some(title),
             "query: {query}"
         );
@@ -153,7 +164,12 @@ fn alternate_chinese_names_gain_their_own_romanization() {
         candidate.title,
         candidate.action_id,
         candidate.actions,
-        candidate.aliases
+        candidate
+            .aliases
+            .iter()
+            .map(_literal)
+            .map(str::to_owned)
+            .collect()
     )];
     for query in ["音乐", "yinyue", "yy"] {
         assert_eq!(
@@ -183,14 +199,19 @@ fn localized_and_romanized_names_can_be_combined_in_one_query() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases
+                candidate
+                    .aliases
+                    .iter()
+                    .map(_literal)
+                    .map(str::to_owned)
+                    .collect()
             )
         })
         .collect::<Vec<_>>();
     for query in ["音乐 music", "音乐music", "yin music"] {
         let ranked = SearchEngine::new().query(query, &candidates, &UsageMap::new(), 0);
         assert_eq!(
-            ranked.results[0].candidate.title(),
+            _literal(ranked.results[0].candidate.title()),
             "音乐",
             "query: {query}"
         );
@@ -214,7 +235,12 @@ fn mixed_chinese_and_latin_names_match_without_storing_combinations() {
             candidate.title,
             candidate.action_id,
             candidate.actions,
-            candidate.aliases
+            candidate
+                .aliases
+                .iter()
+                .map(_literal)
+                .map(str::to_owned)
+                .collect()
         )];
         assert_eq!(
             SearchEngine::new()
@@ -242,12 +268,17 @@ fn literal_mixed_name_keeps_its_exact_match() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases
+                candidate
+                    .aliases
+                    .iter()
+                    .map(_literal)
+                    .map(str::to_owned)
+                    .collect()
             )
         })
         .collect::<Vec<_>>();
     let ranked = SearchEngine::new().query("音yue", &candidates, &UsageMap::new(), 0);
-    assert_eq!(ranked.results[0].candidate.title(), "音yue");
+    assert_eq!(_literal(ranked.results[0].candidate.title()), "音yue");
 }
 
 #[test]
@@ -267,18 +298,26 @@ fn literal_mixed_name_ranks_above_cross_name_matches() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases
+                candidate
+                    .aliases
+                    .iter()
+                    .map(_literal)
+                    .map(str::to_owned)
+                    .collect()
             )
         })
         .collect::<Vec<_>>();
     let initial_results =
         SearchEngine::new().query("t步", &initial_candidates, &UsageMap::new(), 0);
-    assert_eq!(initial_results.results[0].candidate.title(), "t步");
+    assert_eq!(
+        _literal(initial_results.results[0].candidate.title()),
+        "t步"
+    );
     assert!(
         initial_results
             .results
             .iter()
-            .any(|result| result.candidate.title() == "同步")
+            .any(|result| _literal(result.candidate.title()) == "同步")
     );
 }
 
@@ -298,7 +337,12 @@ fn mixed_query_preserves_exact_prefix_and_infix_order() {
                 candidate.title,
                 candidate.action_id,
                 candidate.actions,
-                candidate.aliases
+                candidate
+                    .aliases
+                    .iter()
+                    .map(_literal)
+                    .map(str::to_owned)
+                    .collect()
             )
         })
         .collect::<Vec<_>>();
@@ -307,7 +351,7 @@ fn mixed_query_preserves_exact_prefix_and_infix_order() {
         ranked
             .results
             .iter()
-            .map(|result| (result.candidate.title(), result.lexical_tier))
+            .map(|result| (_literal(result.candidate.title()), result.lexical_tier))
             .collect::<Vec<_>>(),
         [("同步", 3), ("同步工具", 2), ("不同步", 1)]
     );
@@ -343,4 +387,11 @@ fn packaged_applications_use_typed_native_activation_without_command_reconstruct
     );
     app.launch_kind = "unknown".into();
     assert!(app.launch_descriptor().is_err());
+}
+
+fn _literal(text: &nanika_protocol::LocalizedText) -> &str {
+    let nanika_protocol::LocalizedText::Literal(value) = text else {
+        panic!("Native application names and aliases must remain literal domain content");
+    };
+    value
 }

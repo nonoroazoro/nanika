@@ -3,6 +3,7 @@ import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 export interface SettingsSearchGroup
 {
     pageId: string;
-    title: string;
+    title: SettingsSearchEntry["pageTitle"];
+    resourceScope?: SettingsSearchEntry["pageResourceScope"];
     entries: SettingsSearchEntry[];
 }

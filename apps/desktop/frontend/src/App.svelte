@@ -1,10 +1,28 @@
 <script lang="ts">
+import {
+    operationErrorText as formatOperationError,
+    operationFailure as retainOperationFailure
+} from "./localization/operation-errors";
+import type { SettingsError } from "./settings/SettingsError";
+import { settingsErrorText, settingsFailure } from "./settings/error-presentation";
+import { prepareRootPresentation } from "./localization/root-presentation";
+import { ExtensionPresentation } from "./localization/ExtensionPresentation";
+import { ResourceCache } from "./localization/ResourceCache";
+import { TextPresentation } from "./localization/TextPresentation";
+import { actionFields } from "./localization/action-fields";
+import { viewFields } from "./localization/view-fields";
+import type { LocalizedText } from "./generated/LocalizedText";
+import type { LocalizedMessage } from "./generated/LocalizedMessage";
+import type { RootPresentation } from "./types/RootPresentation";
+import { localization } from "./localization/state.svelte";
 import { isCompositionKey } from "./ui/keyboard";
 import { confirmAction, confirmationPending } from "./ui/confirmation";
 import { configurationMenuOperation, configurationMenuSections } from "./logic/configuration-menu";
 import type { ConfigurationMenu } from "./generated/ConfigurationMenu";
 import ExtensionMenuIdentity from "./components/extensions/ExtensionMenuIdentity.svelte";
 import Button from "./components/ui/Button.svelte";
+import LauncherFailure from "./components/launcher/LauncherFailure.svelte";
+import type { OperationError } from "./generated/OperationError";
 import { RootSearchState } from "./logic/RootSearchState.svelte";
 import { onMount, tick } from "svelte";
 
@@ -28,15 +46,51 @@ import type { ViewInteraction } from "./types/ViewInteraction";
 import type { ViewEventReceipt } from "./generated/ViewEventReceipt";
 import type { SearchObservation } from "./development";
 
+$effect(() =>
+{
+    document.documentElement.lang = localization.locale;
+});
+
 let application = $state<ApplicationSnapshot | null>(null);
-let failed = $state(false);
-let queryFailure = $state<string | null>(null);
+const resources = new ResourceCache(tauriBridge.readResources);
+let viewPresentation = $state.raw<ExtensionPresentation | null>(null);
+let viewTexts = $state.raw<TextPresentation | null>(null);
+let rootPresentations = $state.raw<ReadonlyMap<string, RootPresentation>>(new Map());
+let presentationInstance: number | null = null;
+let presentationSession: number | null = null;
+let presentationError = $state<OperationError | null>(null);
+let preparingPresentation = $state(false);
+let pendingPresentation: RootSearchSnapshot | null = null;
+let presentationAttempt = 0;
+let failure = $state<OperationError | null>(null);
+let startupFailed = $state(false);
+let queryFailure = $state<LocalizedMessage | OperationError | null>(null);
+const queryErrorText = $derived.by(() =>
+{
+    if (!queryFailure)
+    {
+        return null;
+    }
+    return "kind" in queryFailure
+        ? formatOperationError(queryFailure, localization.locale, value => localization.text(value))
+        : localization.text(queryFailure);
+});
 let invoking = $state(false);
 let contextMenu = $state.raw<ContextMenuPresentation | null>(null);
 let menuRequest = 0;
 let menuOpen = $state(false);
+const menuHeading = $derived(
+    menuOpen && contextMenu?.headingPresentation
+        ? contextMenu.headingPresentation.name(localization.locale)
+        : contextMenu?.heading
+);
+const menuSections = $derived(
+    menuOpen && contextMenu?.localizedSections
+        ? contextMenu.localizedSections[localization.locale]
+        : contextMenu?.sections
+);
 let configurationPending = $state(false);
-let operationFailure = $state<string | null>(null);
+let operationFailure = $state<SettingsError | null>(null);
 // A completed empty view survives pending queries just like a completed list.
 let hasCompletedSearch = $state(false);
 let navigation = $state.raw<NavigationSnapshot>({
@@ -49,14 +103,28 @@ let navigation = $state.raw<NavigationSnapshot>({
 let viewPending = $state(false);
 let viewCanLoadMore = $state(false);
 let viewQuery = $state("");
-let viewInputError = $state<string | null>(null);
+let viewInputError = $state<LocalizedMessage | null>(null);
 let viewOperation = 0;
 const submitViewEvent = orderedViewEvents(tauriBridge.viewEvent, tauriBridge.invokeContextMenu);
 const viewInput = viewInputScheduler();
-const navigationError = $derived(navigation.error);
+const navigationError = $derived(
+    navigation.error
+        ? formatOperationError(
+            retainOperationFailure(navigation.error, "invocationFailed"),
+            localization.locale,
+            value => localization.text(value)
+        )
+        : null
+);
+const operationErrorText = $derived(
+    operationFailure === null
+        ? null
+        : settingsErrorText(operationFailure, localization.locale, value => localization.text(value))
+);
 const rootSearchState = new RootSearchState({
     navigation: { revision: 0, current: null, busy: false, error: null, dismissCount: 0 },
     sessionId: 0,
+    localization: { preference: "system", locale: "en", revision: 0 },
     requestId: 0,
     revision: 0,
     query: "",
@@ -97,12 +165,13 @@ onMount(() =>
                 await tauriBridge.closeSession(initial.sessionId);
                 return;
             }
+            localization.initialize(initial.sessionId, initial.localization, initial.platform);
             application = initial;
             const pending = pendingRootSearch;
             pendingRootSearch = null;
             if (pending)
             {
-                updateRootSearch(pending);
+                await updateRootSearch(pending);
             }
             if (latestRequestId > 0)
             {
@@ -127,13 +196,14 @@ onMount(() =>
     };
 });
 
-function fail(error: unknown): void
+function fail(error: unknown, startup = false): void
 {
     if (disposed)
     {
         return;
     }
-    failed = true;
+    failure = retainOperationFailure(error, startup ? "runtimeStartupFailed" : "runtimeUnavailable");
+    startupFailed = startup;
     if (import.meta.env.DEV)
     {
         observeSearch(latestRequestId, "failed");
@@ -158,14 +228,18 @@ async function showContextMenu(target: MenuTarget, position: [number, number] | 
         {
             return;
         }
-        contextMenu = { request, actions, position };
+        const bundle = target.kind === "view"
+            ? viewPresentation?.resources
+            : rootPresentations.get(target.extensionId)?.presentation.resources;
+        const presentation = new TextPresentation(bundle, application.platform, actionFields(actions));
+        contextMenu = { request, actions, position, presentation };
         menuOpen = true;
     }
     catch (error)
     {
         if (token === menuRequest)
         {
-            operationFailure = String(error);
+            operationFailure = settingsFailure(error);
         }
     }
 }
@@ -173,13 +247,22 @@ async function showContextMenu(target: MenuTarget, position: [number, number] | 
 function closeContextMenu(): void
 {
     menuRequest++;
+    if (menuOpen && contextMenu)
+    {
+        contextMenu = {
+            ...contextMenu,
+            heading: contextMenu.headingPresentation?.name(localization.locale) ?? contextMenu.heading,
+            sections: menuSections,
+            locale: localization.locale
+        };
+    }
     menuOpen = false;
 }
 
 async function invokeContextMenu(actionId: string): Promise<void>
 {
-    const current = contextMenu;
     closeContextMenu();
+    const current = contextMenu;
     if (!current)
     {
         return;
@@ -195,10 +278,14 @@ async function invokeContextMenu(actionId: string): Promise<void>
                 ? { kind: "image" as const, url: current.extensionIconUrl }
                 : null;
             confirmed = await confirmAction({
-                title: action.confirmation_title,
+                content: () => ({
+                    title: current.presentation!.text(action.confirmation_title!, localization.locale),
+                    label: current.presentation!.text(action.title, localization.locale),
+                    message: action.confirmation_description
+                        ? current.presentation!.text(action.confirmation_description, localization.locale)
+                        : ""
+                }),
                 destructive: action.style === "destructive",
-                label: action.title,
-                message: action.confirmation_description ?? "",
                 icon: action.icon
                     ? { kind: "symbol", name: action.icon }
                     : fallbackIcon
@@ -262,6 +349,10 @@ async function invokeContextMenu(actionId: string): Promise<void>
             {
                 await tauriBridge.invokeConfigurationMenu(current.configurationMenu.request, operation);
             }
+            catch (error)
+            {
+                operationFailure = settingsFailure(error);
+            }
             finally
             {
                 configurationPending = false;
@@ -279,7 +370,7 @@ async function invokeContextMenu(actionId: string): Promise<void>
     }
     catch (error)
     {
-        operationFailure = String(error);
+        operationFailure = settingsFailure(error);
     }
 }
 
@@ -293,7 +384,7 @@ async function openSettings(extensionId?: string): Promise<void>
     }
     catch (error)
     {
-        operationFailure = String(error);
+        operationFailure = settingsFailure(error);
     }
 }
 
@@ -323,7 +414,7 @@ async function showAppMenu(trigger: HTMLButtonElement, extension?: ExtensionView
     {
         if (token === menuRequest)
         {
-            operationFailure = String(error);
+            operationFailure = settingsFailure(error);
         }
         return;
     }
@@ -341,23 +432,69 @@ async function showAppMenu(trigger: HTMLButtonElement, extension?: ExtensionView
     }
     const settings = {
         id: "settings",
-        title: "Settings",
+        title: localization.text({ message: "settings-title" }),
         enabled: true,
         allow_default_execution: false,
         style: "secondary" as const,
         group: null
     };
+    const settingsSections: NonNullable<ContextMenuPresentation["localizedSections"]> = {
+        en: [{ items: [{ ...settings, title: localization.text({ message: "settings-title" }, undefined, "en") }] }],
+        "zh-Hans": [{
+            items: [{ ...settings, title: localization.text({ message: "settings-title" }, undefined, "zh-Hans") }]
+        }]
+    };
+    let localizedSections = settingsSections;
+    let actionPresentation: TextPresentation | undefined;
+    try
+    {
+        if (request && snapshot && viewPresentation)
+        {
+            const prepared = viewPresentation;
+            actionPresentation = new TextPresentation(
+                prepared.resources,
+                application!.platform,
+                actionFields(
+                    snapshot.groups.flatMap(group =>
+                        group.items.flatMap(item => item.kind === "action" ? [item.action] : [])
+                    )
+                )
+            );
+            localizedSections = {
+                en: [
+                    ...configurationMenuSections(snapshot, configurationPending, value => prepared.text(value, "en")),
+                    ...settingsSections.en
+                ],
+                "zh-Hans": [
+                    ...configurationMenuSections(
+                        snapshot,
+                        configurationPending,
+                        value => prepared.text(value, "zh-Hans")
+                    ),
+                    ...settingsSections["zh-Hans"]
+                ]
+            };
+        }
+    }
+    catch (error)
+    {
+        operationFailure = settingsFailure(error);
+        return;
+    }
     contextMenu = {
+        presentation: actionPresentation,
+        localizedSections,
         request: null,
         settingsExtensionId: extension?.extensionId,
         extensionIconUrl: extension?.extensionIconUrl,
-        heading: extension?.extensionName ?? "Nanika",
+        heading: extension ? viewPresentation?.name(localization.locale) : "Nanika",
+        headingPresentation: extension ? viewPresentation ?? undefined : undefined,
         shortcuts: { settings: [application?.platform === "macos" ? "⌘" : "Ctrl", ","] },
         actions: [settings],
         ...(request && snapshot
             ? {
                 configurationMenu: { request, snapshot },
-                sections: [...configurationMenuSections(snapshot, configurationPending), { items: [settings] }]
+                sections: localizedSections?.[localization.locale]
             }
             : {}),
         position: null,
@@ -387,7 +524,7 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
     if ([...query].length > application.maxQueryChars)
     {
-        queryFailure = `Search supports up to ${application.maxQueryChars} characters. Edit the input to continue.`;
+        queryFailure = { message: "search-input-too-long", args: { maximum: application.maxQueryChars } };
         if (import.meta.env.DEV)
         {
             observeSearch(requestId, "rejected");
@@ -404,7 +541,7 @@ async function submitQuery(requestId: number, query: string): Promise<void>
         if (requestId === latestRequestId)
         {
             console.error("Search query could not be submitted", error);
-            queryFailure = "Search could not be updated. Try again.";
+            queryFailure = retainOperationFailure(error, "searchSubmissionFailed");
             if (import.meta.env.DEV)
             {
                 observeSearch(requestId, "rejected");
@@ -435,13 +572,18 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
             actionId: result.actionId,
             confirmed
         };
+        const prepared = rootPresentations.get(result.extensionId)?.presentation;
         if (
             confirmed
             && !await confirmAction({
                 destructive: result.actionStyle === "destructive",
-                title: result.confirmationTitle!,
-                label: result.title,
-                message: result.confirmationDescription ?? "",
+                content: () => ({
+                    title: prepared!.text(result.confirmationTitle!, localization.locale),
+                    label: prepared!.text(result.actionTitle, localization.locale),
+                    message: result.confirmationDescription
+                        ? prepared!.text(result.confirmationDescription, localization.locale)
+                        : ""
+                }),
                 icon: result.icon
             })
         )
@@ -460,7 +602,7 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
     catch (error)
     {
         console.error("Action failed", error);
-        operationFailure = String(error);
+        operationFailure = retainOperationFailure(error, "invocationUnconfirmed");
     }
     finally
     {
@@ -468,7 +610,7 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
     }
 }
 
-function updateRootSearch(next: RootSearchSnapshot): void
+async function updateRootSearch(next: RootSearchSnapshot): Promise<void>
 {
     if (disposed)
     {
@@ -501,6 +643,93 @@ function updateRootSearch(next: RootSearchSnapshot): void
             }
         }
     }
+    const localizationChanged = localization.accept(next.sessionId, next.localization);
+    const pending = pendingPresentation;
+    if (
+        localizationChanged && presentationError && pending
+        && next.requestId === pending.requestId && next.resultRevision === pending.resultRevision
+        && next.resultOffset === pending.resultOffset && next.totalResults === pending.totalResults
+        && next.results === pending.results && next.phase === pending.phase
+        && next.navigation.revision === pending.navigation.revision
+    )
+    {
+        // A locale-only update must not retry failed resource work or replace the coherent UI.
+        // Retain its newer transport revision for an explicit retry of the same presentation.
+        pendingPresentation = next;
+        return;
+    }
+    const current = next.navigation.revision > navigation.revision ? next.navigation.current : navigation.current;
+    const session = application;
+    const attempt = ++presentationAttempt;
+    pendingPresentation = next;
+    preparingPresentation = true;
+    try
+    {
+        let prepared = viewPresentation;
+        if (
+            current && (
+                presentationSession !== session.sessionId || presentationInstance !== current.instanceId
+                || !prepared?.matches(
+                    current.extensionId,
+                    current.extensionName,
+                    current.resourceScope,
+                    session.platform
+                )
+            )
+        )
+        {
+            const bundle = current.resourceScope
+                ? await resources.load({
+                    surface: "launcher",
+                    sessionId: session.sessionId,
+                    instanceId: current.instanceId,
+                    scope: current.resourceScope
+                })
+                : undefined;
+            prepared = new ExtensionPresentation(
+                current.extensionId,
+                current.extensionName,
+                current.resourceScope,
+                bundle,
+                session.platform
+            );
+        }
+        const preparedViewTexts =
+            current && (current.view !== navigation.current?.view || !viewTexts || prepared !== viewPresentation)
+                ? new TextPresentation(prepared?.resources, session.platform, viewFields(current.view))
+                : viewTexts;
+        // Searching retains the previous rows, so their resource owners must remain retained too.
+        const preparedRootPresentation = next.phase === "ready" && next.requestId === latestRequestId
+                && (next.results !== rootSearch.results || next.sessionId !== rootSearch.sessionId)
+            ? await prepareRootPresentation(next.results, session, rootPresentations, resources)
+            : rootPresentations;
+        if (disposed || attempt !== presentationAttempt || application?.sessionId !== session.sessionId)
+        {
+            return;
+        }
+        viewPresentation = current ? prepared : null;
+        viewTexts = current ? preparedViewTexts : null;
+        rootPresentations = preparedRootPresentation;
+        presentationInstance = current?.instanceId ?? null;
+        presentationSession = session.sessionId;
+        pendingPresentation = null;
+        presentationError = null;
+    }
+    catch (error)
+    {
+        if (attempt === presentationAttempt)
+        {
+            presentationError = retainOperationFailure(error, "localizationReadFailed");
+        }
+        return;
+    }
+    finally
+    {
+        if (attempt === presentationAttempt)
+        {
+            preparingPresentation = false;
+        }
+    }
     lastRevision = next.revision;
     updateNavigation(next.navigation);
     if (next.requestId !== latestRequestId)
@@ -509,7 +738,7 @@ function updateRootSearch(next: RootSearchSnapshot): void
     }
     if (next.phase === "error")
     {
-        fail(next.error ?? "Search failed without an error message.");
+        fail(next.error ?? { kind: "host", code: "runtimeStartupFailed" }, true);
         return;
     }
     // Keep the last coherent list noninteractive until Rust can validate the new results.
@@ -626,7 +855,7 @@ async function runViewInput(
         if (operation === viewOperation)
         {
             console.error("View operation failed", error);
-            operationFailure = String(error);
+            operationFailure = retainOperationFailure(error, "viewOperationUnconfirmed");
         }
         return null;
     }
@@ -678,15 +907,25 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
         event.preventDefault();
     }
 }
+
+function _menuText(value: LocalizedText): string
+{
+    if (typeof value === "string")
+    {
+        return value;
+    }
+    if (!contextMenu?.presentation)
+    {
+        throw new Error("The menu presentation is unavailable.");
+    }
+    return contextMenu.presentation.text(value, menuOpen ? localization.locale : contextMenu.locale!);
+}
 </script>
 
 <svelte:window onkeydowncapture={controlLauncherKeyboard} />
 
-{#if failed}
-    <main class="fatal" role="alert">
-        <strong>Search is unavailable.</strong>
-        <Button onclick={() => window.location.reload()}>Try again</Button>
-    </main>
+{#if failure}
+    <LauncherFailure error={failure} startup={startupFailed} sessionId={application?.sessionId ?? null} />
 {:else}
     <svelte:boundary onerror={(error => fail(error))}>
         {#if navigation.current}
@@ -694,10 +933,12 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 <ExtensionView
                     canLoadMore={viewCanLoadMore}
                     snapshot={navigation.current}
+                    extensionName={viewPresentation!.name(localization.locale)}
+                    presentation={viewTexts!}
                     resourceOrigin={application?.resourceOrigin ?? ""}
                     query={viewQuery}
                     busy={viewPending || viewInputError !== null}
-                    error={viewInputError ?? operationFailure ?? navigationError}
+                    error={viewInputError ? localization.text(viewInputError) : operationErrorText ?? navigationError}
                     onQuery={changeViewQuery}
                     onEvent={sendViewEvent}
                     textScope={JSON.stringify([application?.sessionId ?? 0, navigation.current.extensionId, navigation.current.instanceId])}
@@ -720,6 +961,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
             {/key}
         {:else}
             <RootSearch
+                presentations={rootPresentations}
                 platform={application?.platform ?? null}
                 searchState={rootSearchState}
                 {hasCompletedSearch}
@@ -728,7 +970,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 {
                     void showAppMenu(trigger);
                 }}
-                inputError={queryFailure}
+                inputError={queryErrorText}
                 busy={invoking || navigation.busy || !application
                 || rootSearch.requestId !== latestRequestId
                 || rootSearch.phase !== "ready"}
@@ -752,21 +994,39 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
                 }, position)}
             />
         {/if}
+        {#if presentationError}
+            <div class="operation-failure" role="alert">
+                <span>{
+                    formatOperationError(presentationError, localization.locale, value => localization.text(value))
+                }</span>
+                <Button
+                    disabled={preparingPresentation}
+                    onclick={() =>
+                    {
+                        if (pendingPresentation)
+                        {
+                            void updateRootSearch(pendingPresentation);
+                        }
+                    }}
+                >{localization.text({ message: "action-retry" })}</Button>
+            </div>
+        {/if}
         {#if (operationFailure || navigationError) && !navigation.current}
-            <div class="operation-failure" role="alert">{operationFailure ?? navigationError}</div>
+            <div class="operation-failure" role="alert">{operationErrorText ?? navigationError}</div>
         {/if}
         {#snippet failed()}
-            <main class="fatal" role="alert">Search could not be displayed.</main>
+            <main class="fatal" role="alert">{localization.text({ message: "launcher-display-failed" })}</main>
         {/snippet}
     </svelte:boundary>
 {/if}
 
 <ContextMenu
+    text={_menuText}
     actions={contextMenu?.actions ?? []}
-    sections={contextMenu?.sections}
+    sections={menuSections}
     position={contextMenu?.position ?? null}
     anchor={contextMenu?.anchor}
-    heading={contextMenu?.heading}
+    heading={menuHeading}
     shortcuts={contextMenu?.shortcuts}
     open={menuOpen}
     onClose={closeContextMenu}
@@ -784,7 +1044,7 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 >
     {#snippet footer()}
         {#if contextMenu?.settingsExtensionId}
-            <ExtensionMenuIdentity name={contextMenu.heading!} iconUrl={contextMenu.extensionIconUrl!} />
+            <ExtensionMenuIdentity name={menuHeading!} iconUrl={contextMenu.extensionIconUrl!} />
         {:else if application}<AppMenuBrand version={application.version} />{/if}
     {/snippet}
 </ContextMenu>
@@ -806,6 +1066,10 @@ function controlLauncherKeyboard(event: KeyboardEvent): void
 
 .operation-failure {
   position: absolute;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 35%;
+  overflow: auto;
   right: var(--space-4);
   bottom: var(--space-4);
   left: var(--space-4);

@@ -43,16 +43,16 @@ impl CalculatorEngine {
             Candidate {
                 kind: CandidateKind::Action,
                 entry_id: format!("calculator.{}", stable_hash(&[query, result])),
-                title: format!("= {result}"),
+                title: format!("= {result}").into(),
                 subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                    "Calculator".to_owned()
+                    nanika_protocol::message("extension-name", [])
                 )),
                 action_id: COPY_ACTION_ID.to_owned(),
                 actions: vec![nanika_protocol::Action::primary(
                     COPY_ACTION_ID,
-                    "Copy result"
+                    nanika_protocol::message("action-copy-result", [])
                 )],
-                aliases: vec![query.to_owned()],
+                aliases: vec![query.into()],
                 icon: None
             },
             result.to_owned()

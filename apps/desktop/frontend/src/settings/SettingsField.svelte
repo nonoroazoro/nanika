@@ -4,7 +4,8 @@ import { repeatMotion } from "../components/motion/repeat";
 import { uiActivity } from "../ui/activity";
 
 import type { Snippet } from "svelte";
-import type { OperationProgress } from "../generated/OperationProgress";
+import type { ProgressPresentation } from "../localization/ProgressPresentation";
+import { localization } from "../localization/state.svelte";
 
 const sweep = repeatMotion({
     transform: ["translateX(0%)", "translateX(185%)"],
@@ -12,11 +13,12 @@ const sweep = repeatMotion({
     ease: cubicBezier(0.42, 0, 0.58, 1)
 }, "--motion-progress-duration");
 
-const { busy = false, label, startedAt, progress, onCommit, children }: {
+const { busy = false, disableWhileBusy = true, label, startedAt, progress, onCommit, children }: {
     busy?: boolean;
+    disableWhileBusy?: boolean;
     label: string;
     startedAt?: number;
-    progress?: OperationProgress;
+    progress?: ProgressPresentation;
     onCommit?: () => void;
     children: Snippet;
 } = $props();
@@ -54,11 +56,18 @@ function _finishPointer(): void
     }
 }
 
-const description = $derived(
-    progress
-        ? `${progress.label}${progress.total === null ? "" : `: ${progress.completed} of ${progress.total}`}`
-        : `Updating ${label}`
-);
+const description = $derived.by(() =>
+{
+    if (!progress)
+    {
+        return localization.text({ message: "settings-progress-updating", args: { label } });
+    }
+    const text = progress.label(localization.locale);
+    return progress.total === null ? text : localization.text({
+        message: "settings-progress-units",
+        args: { label: text, completed: progress.completed, total: progress.total }
+    });
+});
 
 // Synchronize a one-shot presentation delay. It never delays operation completion.
 $effect(() =>
@@ -91,7 +100,7 @@ $effect(() =>
 <div class="setting-field">
     <fieldset
         bind:this={fieldset}
-        disabled={busy}
+        disabled={busy && disableWhileBusy}
         aria-busy={busy || undefined}
         onfocusout={_focusOut}
         onpointerdowncapture={() =>

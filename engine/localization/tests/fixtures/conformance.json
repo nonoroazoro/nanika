@@ -1,0 +1,839 @@
+{
+    "contracts": {
+        "brand": {
+            "arguments": []
+        },
+        "salutation": {
+            "arguments": []
+        },
+        "integer": {
+            "arguments": [
+                "count"
+            ]
+        },
+        "files": {
+            "arguments": [
+                "count"
+            ]
+        },
+        "platform": {
+            "arguments": [
+                "platform"
+            ]
+        },
+        "content": {
+            "arguments": [
+                "value"
+            ]
+        },
+        "reference": {
+            "arguments": [
+                "count"
+            ]
+        },
+        "files-more": {
+            "arguments": [
+                "count",
+                "name"
+            ]
+        }
+    },
+    "cases": [
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 0
+                }
+            },
+            "expected": "Count: ⁨0⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 1
+                }
+            },
+            "expected": "Count: ⁨1⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 2
+                }
+            },
+            "expected": "Count: ⁨2⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "Count: ⁨1000⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -1
+                }
+            },
+            "expected": "Count: ⁨-1⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -9007199254740991
+                }
+            },
+            "expected": "Count: ⁨-9007199254740991⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 9007199254740991
+                }
+            },
+            "expected": "Count: ⁨9007199254740991⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 0
+                }
+            },
+            "expected": "No files"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 1
+                }
+            },
+            "expected": "One file"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 2
+                }
+            },
+            "expected": "⁨2⁩ files"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "⁨1000⁩ files"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": -1
+                }
+            },
+            "expected": "One file"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 9007199254740991
+                }
+            },
+            "expected": "⁨9007199254740991⁩ files"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "platform"
+            },
+            "expected": "Empty Trash"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "platform"
+            },
+            "expected": "Empty Recycle Bin"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "report.pdf"
+                }
+            },
+            "expected": "Content: ⁨report.pdf⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "<b>Hello</b>"
+                }
+            },
+            "expected": "Content: ⁨<b>Hello</b>⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "中文😀"
+                }
+            },
+            "expected": "Content: ⁨中文😀⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "مرحبا"
+                }
+            },
+            "expected": "Content: ⁨مرحبا⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "café"
+                }
+            },
+            "expected": "Content: ⁨café⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "Count: ⁨1000⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "brand"
+            },
+            "expected": "Welcome to ⁨Nanika⁩.",
+            "rustExpected": "Welcome to Nanika."
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "salutation"
+            },
+            "expected": "Hello, ⁨Ada⁩!"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 0
+                }
+            },
+            "expected": "数量：⁨0⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 1
+                }
+            },
+            "expected": "数量：⁨1⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 2
+                }
+            },
+            "expected": "数量：⁨2⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "数量：⁨1000⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -1
+                }
+            },
+            "expected": "数量：⁨-1⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -9007199254740991
+                }
+            },
+            "expected": "数量：⁨-9007199254740991⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 9007199254740991
+                }
+            },
+            "expected": "数量：⁨9007199254740991⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 0
+                }
+            },
+            "expected": "没有文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 1
+                }
+            },
+            "expected": "⁨1⁩ 个文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 2
+                }
+            },
+            "expected": "⁨2⁩ 个文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "⁨1000⁩ 个文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": -1
+                }
+            },
+            "expected": "⁨-1⁩ 个文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "files",
+                "args": {
+                    "count": 9007199254740991
+                }
+            },
+            "expected": "⁨9007199254740991⁩ 个文件"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "platform"
+            },
+            "expected": "清倒废纸篓"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "platform"
+            },
+            "expected": "清空回收站"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "report.pdf"
+                }
+            },
+            "expected": "内容：⁨report.pdf⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "<b>Hello</b>"
+                }
+            },
+            "expected": "内容：⁨<b>Hello</b>⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "中文😀"
+                }
+            },
+            "expected": "内容：⁨中文😀⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "مرحبا"
+                }
+            },
+            "expected": "内容：⁨مرحبا⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "content",
+                "args": {
+                    "value": "café"
+                }
+            },
+            "expected": "内容：⁨café⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 1000
+                }
+            },
+            "expected": "数量：⁨1000⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "brand"
+            },
+            "expected": "欢迎使用 ⁨Nanika⁩。",
+            "rustExpected": "欢迎使用 Nanika。"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "salutation"
+            },
+            "expected": "你好，⁨Ada⁩！"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "files-more",
+                "args": {
+                    "name": "report.pdf",
+                    "count": 2
+                }
+            },
+            "expected": "⁨report.pdf⁩ and ⁨2⁩ more"
+        },
+        {
+            "locale": "en",
+            "platform": "macos",
+            "text": {
+                "message": "files-more",
+                "args": {
+                    "count": 2,
+                    "name": "report.pdf"
+                }
+            },
+            "expected": "⁨report.pdf⁩ and ⁨2⁩ more"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "files-more",
+                "args": {
+                    "name": "report.pdf",
+                    "count": 2
+                }
+            },
+            "expected": "⁨report.pdf⁩ 及其他 ⁨2⁩ 项"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "macos",
+            "text": {
+                "message": "files-more",
+                "args": {
+                    "count": 2,
+                    "name": "report.pdf"
+                }
+            },
+            "expected": "⁨report.pdf⁩ 及其他 ⁨2⁩ 项"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 999
+                }
+            },
+            "expected": "Count: ⁨999⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 999
+                }
+            },
+            "expected": "Count: ⁨999⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -1000
+                }
+            },
+            "expected": "Count: ⁨-1000⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -1000
+                }
+            },
+            "expected": "Count: ⁨-1000⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 4294967296
+                }
+            },
+            "expected": "Count: ⁨4294967296⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 4294967296
+                }
+            },
+            "expected": "Count: ⁨4294967296⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -4294967296
+                }
+            },
+            "expected": "Count: ⁨-4294967296⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -4294967296
+                }
+            },
+            "expected": "Count: ⁨-4294967296⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 9007199254740990
+                }
+            },
+            "expected": "Count: ⁨9007199254740990⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 9007199254740990
+                }
+            },
+            "expected": "Count: ⁨9007199254740990⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -9007199254740990
+                }
+            },
+            "expected": "Count: ⁨-9007199254740990⁩"
+        },
+        {
+            "locale": "en",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -9007199254740990
+                }
+            },
+            "expected": "Count: ⁨-9007199254740990⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 999
+                }
+            },
+            "expected": "数量：⁨999⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 999
+                }
+            },
+            "expected": "数量：⁨999⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -1000
+                }
+            },
+            "expected": "数量：⁨-1000⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -1000
+                }
+            },
+            "expected": "数量：⁨-1000⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 4294967296
+                }
+            },
+            "expected": "数量：⁨4294967296⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 4294967296
+                }
+            },
+            "expected": "数量：⁨4294967296⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -4294967296
+                }
+            },
+            "expected": "数量：⁨-4294967296⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -4294967296
+                }
+            },
+            "expected": "数量：⁨-4294967296⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": 9007199254740990
+                }
+            },
+            "expected": "数量：⁨9007199254740990⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": 9007199254740990
+                }
+            },
+            "expected": "数量：⁨9007199254740990⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "integer",
+                "args": {
+                    "count": -9007199254740990
+                }
+            },
+            "expected": "数量：⁨-9007199254740990⁩"
+        },
+        {
+            "locale": "zh-Hans",
+            "platform": "windows",
+            "text": {
+                "message": "reference",
+                "args": {
+                    "count": -9007199254740990
+                }
+            },
+            "expected": "数量：⁨-9007199254740990⁩"
+        }
+    ]
+}

@@ -21,6 +21,7 @@ use crate::{
 type ReceivePoll = Option<Option<Message>>;
 
 pub struct ExtensionProcess {
+    _localization: Option<Arc<nanika_localization::ResourceSet>>,
     connection_exit: Arc<crate::ExtensionConnectionExit>,
     candidate_changes: ExtensionNotifier,
     view_invalidations: crate::ViewInvalidationNotifier,
@@ -43,6 +44,12 @@ pub struct ExtensionProcess {
 }
 
 impl ExtensionProcess {
+    pub(crate) fn set_localization(
+        &mut self,
+        resources: Option<Arc<nanika_localization::ResourceSet>>
+    ) {
+        self._localization = resources;
+    }
     pub fn spawn(program: impl AsRef<Path>) -> io::Result<Self> {
         Self::spawn_with(
             program,
@@ -153,7 +160,7 @@ impl ExtensionProcess {
                 }
                 reader_configuration.fail(SupervisorError::ChannelClosed);
                 reader_refresh.fail(SupervisorError::ChannelClosed);
-                reader_text.fail("Extension connection closed during text read.".to_owned());
+                reader_text.fail(SupervisorError::ChannelClosed);
             }) {
             Ok(thread) => thread,
             Err(error) => {
@@ -190,6 +197,7 @@ impl ExtensionProcess {
             }
         };
         Ok(Self {
+            _localization: None,
             connection_exit,
             candidate_changes,
             view_invalidations,
@@ -343,14 +351,13 @@ impl ExtensionProcess {
             }
             Ok(Some(Message::Error {
                 request_id: response_id,
-                code,
-                message
+                error
             })) => Err(extension_reported_error(
                 "initialize",
                 &request_id,
                 response_id.as_deref(),
-                &code,
-                &message
+                error,
+                self._localization.as_deref()
             )),
             Ok(Some(message)) => Err(SupervisorError::UnexpectedMessage(format!("{message:?}"))),
             Ok(None) => Err(SupervisorError::ChannelClosed)
@@ -438,10 +445,12 @@ impl ExtensionProcess {
             completion(Err(error));
             return;
         }
-        if !self
-            .configuration_reply
-            .register(request_id.clone(), progress, completion)
-        {
+        if !self.configuration_reply.register(
+            request_id.clone(),
+            progress,
+            self._localization.clone(),
+            completion
+        ) {
             return;
         }
         if let Err(error) = self.send(Message::ConfigurationChanged {
@@ -461,17 +470,20 @@ impl ExtensionProcess {
         completion: crate::TextReadCompletion
     ) {
         if let Err(error) = self.ensure_initialized() {
-            completion(Err(error.to_string()));
-            return;
-        }
-        if let Err(error) = read.validate() {
             completion(Err(error));
             return;
         }
-        if !self
-            .text_read_reply
-            .register(request_id.clone(), generation, read.clone(), completion)
-        {
+        if let Err(error) = read.validate() {
+            completion(Err(SupervisorError::UnexpectedMessage(error)));
+            return;
+        }
+        if !self.text_read_reply.register(
+            request_id.clone(),
+            generation,
+            read.clone(),
+            self._localization.clone(),
+            completion
+        ) {
             return;
         }
         if let Err(error) = self.send(Message::TextRead {
@@ -480,7 +492,7 @@ impl ExtensionProcess {
             view_id,
             read
         }) {
-            self.text_read_reply.fail(error.to_string());
+            self.text_read_reply.fail(error);
         }
     }
 
@@ -494,10 +506,12 @@ impl ExtensionProcess {
             completion(Err(error));
             return;
         }
-        if !self
-            .refresh_reply
-            .register(request_id.clone(), generation, completion)
-        {
+        if !self.refresh_reply.register(
+            request_id.clone(),
+            generation,
+            self._localization.clone(),
+            completion
+        ) {
             return;
         }
         if let Err(error) = self.send(Message::Refresh {
@@ -552,9 +566,11 @@ impl ExtensionProcess {
                     generation: response_generation,
                     effect
                 }) if response_id == request_id && response_generation == generation => {
-                    effect
-                        .validate()
-                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    nanika_localization::validate_navigation_presentation(
+                        &effect,
+                        self._localization.as_deref()
+                    )
+                    .map_err(SupervisorError::UnexpectedMessage)?;
                     return Ok(effect);
                 }
                 Some(Message::HostRequest {
@@ -573,18 +589,17 @@ impl ExtensionProcess {
                 }
                 Some(Message::Error {
                     request_id: response_id,
-                    code,
-                    message
+                    error
                 }) => {
-                    if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
+                    if response_id.as_deref() == Some(&request_id) && error.code == "cancelled" {
                         return Err(SupervisorError::Cancelled("action"));
                     }
                     return Err(extension_reported_error(
                         "action",
                         &request_id,
                         response_id.as_deref(),
-                        &code,
-                        &message
+                        error,
+                        self._localization.as_deref()
                     ));
                 }
                 Some(_) => {}
@@ -605,9 +620,25 @@ impl ExtensionProcess {
             Some(Message::CatalogBatch {
                 request_id: response,
                 batch
-            }) if response == request_id => Ok(batch),
-            Some(Message::Error { code, message, .. }) => Err(SupervisorError::UnexpectedMessage(
-                format!("{code}: {message}")
+            }) if response == request_id => {
+                for entry in &batch.entries {
+                    nanika_localization::validate_action_presentation(
+                        &entry.actions,
+                        self._localization.as_deref()
+                    )
+                    .map_err(SupervisorError::UnexpectedMessage)?;
+                }
+                Ok(batch)
+            }
+            Some(Message::Error {
+                request_id: response_id,
+                error
+            }) => Err(extension_reported_error(
+                "catalog",
+                &request_id,
+                response_id.as_deref(),
+                error,
+                self._localization.as_deref()
             )),
             None => Err(SupervisorError::ChannelClosed),
             _ => Err(SupervisorError::UnexpectedMessage(
@@ -664,8 +695,11 @@ impl ExtensionProcess {
                     entries
                 }) if response_id == request_id && response_generation == generation => {
                     for entry in &entries {
-                        nanika_protocol::validate_actions(&entry.actions)
-                            .map_err(SupervisorError::UnexpectedMessage)?;
+                        nanika_localization::validate_action_presentation(
+                            &entry.actions,
+                            self._localization.as_deref()
+                        )
+                        .map_err(SupervisorError::UnexpectedMessage)?;
                         if !entry
                             .actions
                             .iter()
@@ -698,12 +732,11 @@ impl ExtensionProcess {
                 }
                 Some(Message::Error {
                     request_id: response_id,
-                    code,
-                    message
+                    error
                 }) => {
                     if cancellation_sent && response_id.as_deref() == Some(&request_id) {
-                        if code != "cancelled" {
-                            tracing::warn!(%request_id, %code, %message, "superseded query failed");
+                        if error.code != "cancelled" {
+                            tracing::warn!(%request_id, %error, "superseded query failed");
                         }
                         return Ok(false);
                     }
@@ -711,8 +744,8 @@ impl ExtensionProcess {
                         "query",
                         &request_id,
                         response_id.as_deref(),
-                        &code,
-                        &message
+                        error,
+                        self._localization.as_deref()
                     ));
                 }
                 Some(_) => {}
@@ -782,17 +815,22 @@ impl ExtensionProcess {
                     && response_generation == generation
                     && response_view_id == view_id =>
                 {
-                    effect
-                        .validate()
-                        .map_err(SupervisorError::UnexpectedMessage)?;
+                    nanika_localization::validate_navigation_presentation(
+                        &effect,
+                        self._localization.as_deref()
+                    )
+                    .map_err(SupervisorError::UnexpectedMessage)?;
                     if let Some(view) = &view {
                         if response_revision <= revision {
                             return Err(SupervisorError::UnexpectedMessage(
                                 "extension view revision did not advance".to_owned()
                             ));
                         }
-                        view.validate()
-                            .map_err(SupervisorError::UnexpectedMessage)?;
+                        nanika_localization::validate_view_presentation(
+                            view,
+                            self._localization.as_deref()
+                        )
+                        .map_err(SupervisorError::UnexpectedMessage)?;
                     } else if response_revision != revision {
                         return Err(SupervisorError::UnexpectedMessage(
                             "extension view revision changed without a replacement view".to_owned()
@@ -819,18 +857,17 @@ impl ExtensionProcess {
                 }
                 Some(Message::Error {
                     request_id: response_id,
-                    code,
-                    message
+                    error
                 }) => {
-                    if response_id.as_deref() == Some(&request_id) && code == "cancelled" {
+                    if response_id.as_deref() == Some(&request_id) && error.code == "cancelled" {
                         return Err(SupervisorError::Cancelled("view event"));
                     }
                     return Err(extension_reported_error(
                         "view event",
                         &request_id,
                         response_id.as_deref(),
-                        &code,
-                        &message
+                        error,
+                        self._localization.as_deref()
                     ));
                 }
                 Some(_) => {}
@@ -859,15 +896,14 @@ impl ExtensionProcess {
                 }) if response_id == request_id && response_view_id == view_id => return Ok(()),
                 Some(Message::Error {
                     request_id: response_id,
-                    code,
-                    message
+                    error
                 }) => {
                     return Err(extension_reported_error(
                         "view close",
                         &request_id,
                         response_id.as_deref(),
-                        &code,
-                        &message
+                        error,
+                        self._localization.as_deref()
                     ));
                 }
                 Some(_) => {}
@@ -951,9 +987,10 @@ impl ExtensionProcess {
         let mut failure = None;
         loop {
             match self.receive()? {
-                Some(Message::Error { code, message, .. }) => {
-                    failure
-                        .get_or_insert(format!("extension cleanup failed with {code}: {message}"));
+                Some(Message::Error { error, .. }) => {
+                    failure.get_or_insert_with(|| {
+                        prepare_extension_error(error, self._localization.as_deref())
+                    });
                 }
                 Some(_) => {}
                 None => break
@@ -974,13 +1011,13 @@ impl ExtensionProcess {
         self.join_threads()?;
         self.clean_exit = status.success();
         if !status.success() {
-            failure.get_or_insert(format!(
+            failure.get_or_insert(SupervisorError::UnexpectedMessage(format!(
                 "extension exited with {status}; stderr: {}",
                 self.stderr_tail()
-            ));
+            )));
         }
         match failure {
-            Some(error) => Err(SupervisorError::UnexpectedMessage(error)),
+            Some(error) => Err(error),
             None => Ok(())
         }
     }
@@ -1024,15 +1061,14 @@ impl ExtensionProcess {
                 }) if response_id == request_id => return Ok(()),
                 Some(Message::Error {
                     request_id: response_id,
-                    code,
-                    message
+                    error
                 }) => {
                     return Err(extension_reported_error(
                         "configuration",
                         &request_id,
                         response_id.as_deref(),
-                        &code,
-                        &message
+                        error,
+                        self._localization.as_deref()
                     ));
                 }
                 Some(_) => {}
@@ -1049,13 +1085,21 @@ impl ExtensionProcess {
         request: nanika_protocol::HostServiceRequest,
         interruption: &mut impl FnMut() -> ExtensionInterruption
     ) -> Result<(), SupervisorError> {
+        use nanika_protocol::{HostServiceFailure, HostServiceFailureKind, HostServiceResponse};
+
         match interruption() {
             ExtensionInterruption::None => {}
             ExtensionInterruption::Cancel => {
-                return self.send(Message::Error {
-                    request_id: Some(request_id),
-                    code: "cancelled".to_owned(),
-                    message: "action was cancelled before host service admission".to_owned()
+                return self.send(Message::HostResponse {
+                    request_id,
+                    parent_request_id,
+                    generation,
+                    response: HostServiceResponse::Failed {
+                        failure: HostServiceFailure::new(
+                            HostServiceFailureKind::Cancelled,
+                            "action was cancelled before host service admission"
+                        )
+                    }
                 });
             }
             ExtensionInterruption::Terminate => {
@@ -1073,15 +1117,24 @@ impl ExtensionProcess {
             .ok_or_else(|| "host services are unavailable".to_owned())
             .and_then(|(extension_id, services)| {
                 services.prepare(extension_id, request, interruption)
-            });
+            })
+            .map_err(|detail| HostServiceFailure::new(HostServiceFailureKind::Rejected, detail));
         let receiver = match prepared {
             Ok(prepared) => match interruption() {
-                ExtensionInterruption::None => prepared.admit(),
+                ExtensionInterruption::None => prepared.admit().map_err(|detail| {
+                    HostServiceFailure::new(HostServiceFailureKind::Rejected, detail)
+                }),
                 ExtensionInterruption::Cancel => {
-                    return self.send(Message::Error {
-                        request_id: Some(request_id),
-                        code: "cancelled".into(),
-                        message: "action was cancelled before host service admission".into()
+                    return self.send(Message::HostResponse {
+                        request_id,
+                        parent_request_id,
+                        generation,
+                        response: HostServiceResponse::Failed {
+                            failure: HostServiceFailure::new(
+                                HostServiceFailureKind::Cancelled,
+                                "action was cancelled before host service admission"
+                            )
+                        }
                     });
                 }
                 ExtensionInterruption::Terminate => {
@@ -1107,28 +1160,31 @@ impl ExtensionProcess {
                     }
                 }
                 match receiver.recv_timeout(Duration::from_millis(25)) {
-                    Ok(result) => break result,
+                    Ok(result) => {
+                        break result.map_err(|detail| {
+                            HostServiceFailure::new(HostServiceFailureKind::Failed, detail)
+                        });
+                    }
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => {
-                        break Err("host service closed before replying".to_owned());
+                        break Err(HostServiceFailure::new(
+                            HostServiceFailureKind::Unconfirmed,
+                            "host service closed before replying"
+                        ));
                     }
                 }
             },
             Err(error) => Err(error)
         };
-        match result {
-            Ok(response) => self.send(Message::HostResponse {
-                request_id,
-                parent_request_id,
-                generation,
-                response
-            }),
-            Err(message) => self.send(Message::Error {
-                request_id: Some(request_id),
-                code: "host_service_failed".to_owned(),
-                message
-            })
-        }
+        self.send(Message::HostResponse {
+            request_id,
+            parent_request_id,
+            generation,
+            response: match result {
+                Ok(response) => response,
+                Err(failure) => HostServiceResponse::Failed { failure }
+            }
+        })
     }
     fn _admit_operation(
         &mut self,
@@ -1201,19 +1257,41 @@ fn extension_reported_error(
     operation: &str,
     expected_request_id: &str,
     response_request_id: Option<&str>,
-    code: &str,
-    message: &str
+    error: nanika_protocol::ProtocolError,
+    resources: Option<&nanika_localization::ResourceSet>
 ) -> SupervisorError {
+    if response_request_id == Some(expected_request_id) {
+        return prepare_extension_error(error, resources);
+    }
     let correlation = match response_request_id {
-        Some(response_request_id) if response_request_id == expected_request_id => String::new(),
-        Some(response_request_id) => format!(
-            "uncorrelated error response for request {response_request_id} while waiting for {expected_request_id}: "
+        Some(response) => format!(
+            "uncorrelated error response for request {response} while waiting for {expected_request_id}"
         ),
         None => format!(
-            "uncorrelated error response without a request id while waiting for {expected_request_id}: "
+            "uncorrelated error response without a request id while waiting for {expected_request_id}"
         )
     };
     SupervisorError::UnexpectedMessage(format!(
-        "{correlation}extension {operation} failed with {code}: {message}"
+        "{correlation}: extension {operation} failed with {error}"
     ))
 }
+
+pub(crate) fn prepare_extension_error(
+    error: nanika_protocol::ProtocolError,
+    resources: Option<&nanika_localization::ResourceSet>
+) -> SupervisorError {
+    match nanika_localization::PreparedError::new(
+        error,
+        resources,
+        nanika_platform::target_platform().as_str()
+    ) {
+        Ok(error) => SupervisorError::Reported(Box::new(error)),
+        Err(error) => SupervisorError::UnexpectedMessage(format!(
+            "invalid extension error presentation: {error}"
+        ))
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/ExtensionProcess/errors.rs"]
+mod error_tests;

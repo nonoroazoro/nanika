@@ -2,7 +2,20 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.application",
-  "name": "Applications",
+  "name": {
+    "message": "extension-name"
+  },
+  "localization": {
+    "defaultLocale": "en",
+    "resources": {
+      "en": [
+        "locales/en.ftl"
+      ],
+      "zh-Hans": [
+        "locales/zh-Hans.ftl"
+      ]
+    }
+  },
   "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
@@ -27,77 +40,173 @@
   ],
   "contributes": {
     "configuration": {
-      "title": "Applications",
+      "title": {
+        "message": "extension-name"
+      },
       "properties": {
         "application.builtin.macos.systemApplications": {
           "type": "boolean",
-          "title": "System applications",
-          "description": "Search system application folders.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["macos"],
+          "title": {
+            "message": "setting-application-builtin-macos-system-applications-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-macos-system-applications-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "macos"
+          ],
           "order": 10
         },
         "application.builtin.macos.userApplications": {
           "type": "boolean",
-          "title": "User applications",
-          "description": "Search applications in your user folder.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["macos"],
+          "title": {
+            "message": "setting-application-builtin-macos-user-applications-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-macos-user-applications-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "macos"
+          ],
           "order": 20
         },
         "application.builtin.windows.packaged": {
           "type": "boolean",
-          "title": "Packaged applications",
-          "description": "Search registered packaged applications available to your user.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
+          "title": {
+            "message": "setting-application-builtin-windows-packaged-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-windows-packaged-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "windows"
+          ],
           "order": 10
         },
         "application.builtin.windows.systemPrograms": {
           "type": "boolean",
-          "title": "System Start Menu",
-          "description": "Search the shared Windows Start Menu.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
+          "title": {
+            "message": "setting-application-builtin-windows-system-programs-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-windows-system-programs-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "windows"
+          ],
           "order": 20
         },
         "application.builtin.windows.scoopGlobal": {
           "type": "boolean",
-          "title": "Global Scoop shims",
-          "description": "Search active shims from the machine-wide Scoop installation.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
+          "title": {
+            "message": "setting-application-builtin-windows-scoop-global-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-windows-scoop-global-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "windows"
+          ],
           "order": 30
         },
         "application.builtin.windows.scoopUser": {
           "type": "boolean",
-          "title": "User Scoop shims",
-          "description": "Search active shims from your Scoop installation.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
+          "title": {
+            "message": "setting-application-builtin-windows-scoop-user-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-windows-scoop-user-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "windows"
+          ],
           "order": 40
         },
         "application.builtin.windows.userPrograms": {
           "type": "boolean",
-          "title": "User Start Menu",
-          "description": "Search your Windows Start Menu.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": true,
-          "platforms": ["windows"],
+          "title": {
+            "message": "setting-application-builtin-windows-user-programs-title"
+          },
+          "description": {
+            "message": "setting-application-builtin-windows-user-programs-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": true,
+          "platforms": [
+            "windows"
+          ],
           "order": 60
         },
         "application.roots": {
           "type": "array",
-          "title": "Folders",
-          "description": "Search these folders in addition to your system applications.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": [],
+          "title": {
+            "message": "setting-application-roots-title"
+          },
+          "description": {
+            "message": "setting-application-roots-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": [],
           "order": 100,
           "maxItems": 256,
           "items": {
@@ -108,6 +217,8 @@
         }
       }
     },
-    "rootSearch": {"mode": "catalog"}
+    "rootSearch": {
+      "mode": "catalog"
+    }
   }
 }

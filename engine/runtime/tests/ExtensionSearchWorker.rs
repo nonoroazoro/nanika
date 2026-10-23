@@ -49,6 +49,7 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
         .register_source(
             "test.extension",
             crate::ExtensionRuntimeSource {
+                localization: None,
                 activation: nanika_extension_package::ExtensionActivation::OnDemand,
                 live_configuration: true,
                 start: Box::new(move |_| {
@@ -64,8 +65,8 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
                         "Run"
                     ),
                     command: "test.command".to_owned(),
-                    title: "Test".to_owned(),
-                    description: "Test command".to_owned(),
+                    title: "Test".to_owned().into(),
+                    description: "Test command".to_owned().into(),
                     category: None,
                     keywords: Vec::new(),
                     icon: None
@@ -88,7 +89,8 @@ fn failed_instance_rejects_further_work_and_leaves_restart_to_the_runtime_owner(
             Ok(receipt) => receipt
                 .recv_timeout(Duration::from_secs(2))
                 .unwrap()
-                .unwrap_err(),
+                .unwrap_err()
+                .to_string(),
             Err(error) => error.to_string()
         };
         assert!(error.contains("fixture activation failure"));
@@ -161,16 +163,16 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
                 "Run"
             ),
             command: "example.open".to_owned(),
-            title: "Open Example".to_owned(),
-            description: "Open the example view.".to_owned(),
-            category: Some("Example".to_owned()),
-            keywords: vec!["sample".to_owned()],
+            title: "Open Example".to_owned().into(),
+            description: "Open the example view.".to_owned().into(),
+            category: Some("Example".to_owned().into()),
+            keywords: vec!["sample".to_owned().into()],
             icon: Some("assets/command.png".to_owned())
         }],
         views: vec![ViewContribution {
             id: "example.view".to_owned(),
-            title: "Example View".to_owned(),
-            description: "Browse examples.".to_owned(),
+            title: "Example View".to_owned().into(),
+            description: "Browse examples.".to_owned().into(),
             category: None,
             keywords: Vec::new(),
             icon: None
@@ -182,7 +184,7 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
     assert_eq!(candidates.len(), 2);
     assert_eq!(
         candidates[0].aliases,
-        ["sample", "Open the example view.", "Example"]
+        ["sample", "Open the example view.", "Example"].map(nanika_protocol::LocalizedText::from)
     );
     assert_eq!(
         candidates[0].icon,
@@ -197,6 +199,85 @@ fn static_contribution_candidates_preserve_type_and_declared_metadata() {
         candidates[1].action_id,
         nanika_protocol::VIEW_OPEN_ACTION_ID
     );
+}
+
+#[test]
+fn dormant_localized_contributions_match_both_languages_without_starting_the_extension() {
+    use nanika_localization::{ResourceSet, SupportedLocale};
+    use nanika_protocol::message;
+    let resources = ResourceSet::new(SupportedLocale::English, [
+        (SupportedLocale::English, vec![("en.ftl".into(), "title = Empty Trash\ndescription = Empty discarded items\ncategory = System\nalias = Delete".into())]),
+        (SupportedLocale::SimplifiedChinese, vec![("zh-Hans.ftl".into(), "title = 清倒废纸篓\ndescription = 删除丢弃的项目\ncategory = 系统\nalias = 删除".into())])
+    ].into(), true).unwrap();
+    let owner = nanika_search::SearchOwner::spawn(Default::default()).unwrap();
+    let handle = owner.handle();
+    let coordinator = crate::ExtensionSearchCoordinator::new();
+    coordinator
+        .register_source(
+            "example.localized",
+            crate::ExtensionRuntimeSource {
+                localization: Some(Arc::new(resources)),
+                activation: nanika_extension_package::ExtensionActivation::OnDemand,
+                live_configuration: true,
+                start: Box::new(|_| {
+                    panic!("searching static contributions must not start the extension")
+                })
+            },
+            handle.clone(),
+            ExtensionContributions {
+                commands: vec![CommandContribution {
+                    action: nanika_protocol::Action::primary(
+                        nanika_protocol::COMMAND_EXECUTE_ACTION_ID,
+                        message("title", [])
+                    ),
+                    command: "empty".into(),
+                    title: message("title", []),
+                    description: message("description", []),
+                    category: Some(message("category", [])),
+                    keywords: vec![message("alias", [])],
+                    icon: None
+                }],
+                ..Default::default()
+            },
+            Default::default()
+        )
+        .unwrap();
+    for query in [
+        "Trash",
+        "废纸篓",
+        "feizhilou",
+        "Delete",
+        "删除",
+        "System",
+        "系统"
+    ] {
+        let generation = handle.begin_query(query).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(snapshot) = handle
+                .latest_snapshot()
+                .filter(|s| s.generation == generation)
+            {
+                assert_eq!(snapshot.results.len(), 1, "{query}");
+                let candidate = &snapshot.results[0].candidate;
+                assert_eq!(candidate.entry_id(), "empty");
+                assert_eq!(candidate.title(), &message("title", []));
+                assert_eq!(
+                    candidate.subtitle(),
+                    Some(&nanika_protocol::CandidateSubtitle::Label(message(
+                        "category",
+                        []
+                    )))
+                );
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "{query}");
+            std::thread::yield_now();
+        }
+    }
+    assert_eq!(coordinator.ready_extension_ids(), ["example.localized"]);
+    coordinator.shutdown();
+    owner.shutdown();
 }
 
 #[test]
@@ -226,7 +307,10 @@ fn worker_exit_completes_every_queued_refresh_with_an_error() {
             .recv_timeout(Duration::from_secs(1))
             .unwrap()
             .unwrap_err();
-        assert!(error.contains("closed before refreshing"));
+        assert_eq!(
+            error,
+            crate::OperationError::new(crate::OperationErrorCode::RefreshUnconfirmed)
+        );
     }
 }
 
@@ -238,6 +322,7 @@ fn worker_panic_is_a_failed_stop() {
         .register_source(
             "test.panic",
             crate::ExtensionRuntimeSource {
+                localization: None,
                 activation: nanika_extension_package::ExtensionActivation::Startup,
                 live_configuration: true,
                 start: Box::new(|_| panic!("fixture factory panic"))
@@ -248,11 +333,9 @@ fn worker_panic_is_a_failed_stop() {
         )
         .unwrap();
     let worker = coordinator.worker("test.panic").unwrap();
-    assert!(
-        worker
-            .wait_stopped()
-            .unwrap_err()
-            .contains("without a stop result")
+    assert_eq!(
+        worker.wait_stopped().unwrap_err().error,
+        crate::OperationError::new(crate::OperationErrorCode::ExtensionStopUnconfirmed)
     );
     assert_eq!(worker.lifecycle().0, crate::RuntimeExtensionState::Failed);
     coordinator.shutdown();
@@ -268,6 +351,7 @@ fn dormant_factory_receives_the_last_accepted_configuration() {
         .register_source(
             "test.configuration",
             crate::ExtensionRuntimeSource {
+                localization: None,
                 activation: nanika_extension_package::ExtensionActivation::OnDemand,
                 live_configuration: true,
                 start: Box::new(move |configuration| {

@@ -1,4 +1,7 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
+import { highlightTitle } from "../../logic/title-highlight";
+import type { TextPresentation } from "../../localization/TextPresentation";
 import { isCompositionKey } from "../../ui/keyboard";
 import type { SearchResult } from "../../generated/SearchResult";
 import type { TargetPlatform } from "../../generated/TargetPlatform";
@@ -7,8 +10,10 @@ import ActionSymbol from "../extensions/ActionSymbol.svelte";
 
 interface Props
 {
+    presentation: TextPresentation;
     platform: TargetPlatform | null;
     result: SearchResult;
+    query: string;
     active: boolean;
     position: number;
     total: number;
@@ -16,7 +21,10 @@ interface Props
     onContextMenu: (event: MouseEvent) => void;
 }
 
-const { platform, result, active, position, total, onInvoke, onContextMenu }: Props = $props();
+const { presentation, platform, result, query, active, position, total, onInvoke, onContextMenu }: Props = $props();
+const title = $derived(presentation.text(result.title, localization.locale));
+const titleParts = $derived(highlightTitle(title, query));
+const subtitle = $derived(result.subtitle ? presentation.text(result.subtitle.text, localization.locale) : null);
 </script>
 
 <li
@@ -56,10 +64,15 @@ const { platform, result, active, position, total, onInvoke, onContextMenu }: Pr
         class="copy"
         class:description={result.subtitle?.kind === "description"}
     >
-        <span class="title collection-title" title={result.title}>{result.title}</span>
+        <span
+            class="title collection-title"
+            title={title}
+        >{#each titleParts as part, index (index)}{#if part.highlighted}<mark>{part.text}</mark>{:else}{
+                        part.text
+                    }{/if}{/each}</span>
         {#if result.subtitle}
-            <span class="subtitle" class:label={result.subtitle.kind === "label"} title={result.subtitle.text}>{
-                result.subtitle.text
+            <span class="subtitle" class:label={result.subtitle.kind === "label"} title={subtitle ?? ""}>{
+                subtitle
             }</span>
         {/if}
     </span>
@@ -94,6 +107,14 @@ li.active {
 
 .title {
   min-width: 0;
+}
+
+mark {
+  color: inherit;
+  background: transparent;
+  text-decoration: underline;
+  text-decoration-color: var(--text-secondary);
+  text-underline-offset: 0.15em;
 }
 
 .subtitle {

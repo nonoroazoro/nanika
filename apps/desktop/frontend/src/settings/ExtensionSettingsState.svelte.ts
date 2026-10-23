@@ -1,6 +1,8 @@
+import { configurationFailure } from "./error-presentation";
 import { SettingsState } from "./SettingsState.svelte";
 import { prepareSetting } from "./validation";
 
+import type { SettingsError } from "./SettingsError";
 import type { ConfigurationSaveOutcome } from "../generated/ConfigurationSaveOutcome";
 import type { ExtensionSettings } from "../generated/ExtensionSettings";
 import type { SaveSettingsRequest } from "../generated/SaveSettingsRequest";
@@ -16,12 +18,12 @@ export class ExtensionSettingsState extends SettingsState<Record<string, JsonVal
 
     constructor(
         configuration: NonNullable<ExtensionSettings["configuration"]>,
-        error: string | null,
+        error: SettingsError | null,
         write: (change: Omit<SaveSettingsRequest, "extensionId">) => Promise<ConfigurationSaveOutcome>,
-        notify: (error: string) => void
+        notify: (error: SettingsError) => void
     )
     {
-        let latest: ConfigurationSaveOutcome = { ...configuration, error };
+        let latest: Omit<ConfigurationSaveOutcome, "error"> = configuration;
         const accept = (result: ConfigurationSaveOutcome): ConfigurationSaveOutcome =>
         {
             if (result.revision >= latest.revision)
@@ -31,8 +33,18 @@ export class ExtensionSettingsState extends SettingsState<Record<string, JsonVal
             return { ...latest, error: result.error };
         };
         super(
-            latest,
-            async change => accept(await write(change)),
+            { ...latest, error },
+            async change =>
+            {
+                try
+                {
+                    return accept(await write(change));
+                }
+                catch (failure)
+                {
+                    throw Object.assign(new Error("Configuration write failed."), configurationFailure(failure));
+                }
+            },
             (key, draft) => prepareSetting(configuration.contribution.properties, key, draft),
             notify
         );

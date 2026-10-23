@@ -56,7 +56,7 @@ fn settings_actions_are_explicit_operations_outside_configuration_values() {
             "description": "Delete stored data.",
             "action": { "id": "reset", "title": "Reset", "style": "destructive",
                 "enabled": true, "allow_default_execution": false,
-                "confirmation_title": "Reset all data?", "group": "Danger zone" }
+                "confirmation_title": "Reset all data?", "group": {"id":"danger-zone","title":"Danger zone"} }
         }]
     }))
     .unwrap();
@@ -83,8 +83,8 @@ fn quick_menu_requires_bounded_unique_references_to_boolean_settings_or_actions(
         },
         "actions": [{"description": "Delete data.", "action": {"id": "clear", "title": "Clear", "style": "destructive", "enabled": true, "allow_default_execution": false, "confirmation_title": "Clear all?"}}],
         "quickMenu": [
-            {"title": "Appearance", "items": [{"kind": "toggle", "key": "enabled"}]},
-            {"title": "Danger zone", "items": [{"kind": "action", "id": "clear"}]}
+            {"id": "appearance", "title": "Appearance", "items": [{"kind": "toggle", "key": "enabled"}]},
+            {"id": "danger", "title": "Danger zone", "items": [{"kind": "action", "id": "clear"}]}
         ]
     });
     serde_json::from_value::<ConfigurationContribution>(base.clone())
@@ -121,5 +121,44 @@ fn quick_menu_requires_bounded_unique_references_to_boolean_settings_or_actions(
     let visible = contribution.for_platform(TargetPlatform::Macos);
     visible.validate().unwrap();
     assert_eq!(visible.quick_menu.len(), 1);
-    assert_eq!(visible.quick_menu[0].title, "Danger zone");
+    assert_eq!(visible.quick_menu[0].title, "Danger zone".into());
+}
+
+#[test]
+fn group_identity_is_explicit_and_conflicting_definitions_are_rejected() {
+    let base = json!({"title":"Settings", "properties": {
+        "first": {"title":"First", "type":"boolean", "default":true, "persistence":"beforeApply", "group":{"id":"first", "title":"Options"}},
+        "second": {"title":"Second", "type":"boolean", "default":false, "persistence":"beforeApply", "group":{"id":"second", "title":"Options"}}
+    }, "quickMenu":[{"id":"first", "title":"Options", "items":[{"kind":"toggle", "key":"first"}]}]});
+    serde_json::from_value::<ConfigurationContribution>(base.clone())
+        .unwrap()
+        .validate()
+        .unwrap();
+    let mut conflict = base.clone();
+    conflict["properties"]["second"]["group"] = json!({"id":"first", "title":"Different"});
+    assert!(
+        serde_json::from_value::<ConfigurationContribution>(conflict)
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    let mut conflict = base.clone();
+    conflict["quickMenu"][0]["title"] = json!("Different");
+    assert!(
+        serde_json::from_value::<ConfigurationContribution>(conflict)
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    let mut invalid = base.clone();
+    invalid["properties"]["first"]["group"]["id"] = json!("$configuration");
+    assert!(
+        serde_json::from_value::<ConfigurationContribution>(invalid)
+            .unwrap()
+            .validate()
+            .is_err()
+    );
+    let mut legacy = base;
+    legacy["properties"]["first"]["group"] = json!("Options");
+    assert!(serde_json::from_value::<ConfigurationContribution>(legacy).is_err());
 }

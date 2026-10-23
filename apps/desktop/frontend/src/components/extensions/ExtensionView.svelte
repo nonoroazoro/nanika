@@ -1,4 +1,8 @@
 <script lang="ts">
+import { operationErrorText, operationFailure } from "../../localization/operation-errors";
+import type { OperationError } from "../../generated/OperationError";
+import { localization } from "../../localization/state.svelte";
+import type { TextPresentation } from "../../localization/TextPresentation";
 import { isCompositionKey } from "../../ui/keyboard";
 import { initialListItemCount } from "../../ui/list-loading";
 import ChevronLeftIcon from "../icons/ChevronLeftIcon.svelte";
@@ -31,6 +35,8 @@ const {
     textScope,
     onReadText,
     snapshot,
+    extensionName,
+    presentation,
     query,
     resourceOrigin,
     busy,
@@ -47,6 +53,8 @@ const {
     textScope: string;
     onReadText: (read: TextRead) => Promise<TextChunk>;
     snapshot: ExtensionViewSnapshot;
+    extensionName: string;
+    presentation: TextPresentation;
     query: string;
     resourceOrigin: string;
     busy: boolean;
@@ -62,17 +70,21 @@ const {
 } = $props();
 const list = $derived(snapshot.view.kind === "list" ? snapshot.view.list : null);
 const items = $derived(list?.sections.flatMap(section => section.items) ?? []);
-let selection = $state<{ item: ListItem; index: number; revision: number | null; token: number; } | null>(null);
+let selection = $state<
+    { item: ListItem; presentation: TextPresentation; index: number; revision: number | null; token: number; } | null
+>(null);
 let selectionToken = 0;
 const selected = $derived(selection?.item ?? list?.selection?.item ?? null);
 const selectedIndex = $derived(selection?.index ?? list?.selection?.index ?? null);
 const totalItems = $derived(list?.sections.reduce((sum, section) => sum + section.total, 0) ?? 0);
 const detailPending = $derived(list !== null && (selected?.id ?? null) !== (list.selection?.item.id ?? null));
-let settledPreview = $state.raw<{ itemId: string | null; detail: DetailView | null; } | null>(null);
+let settledPreview = $state.raw<
+    { itemId: string | null; detail: DetailView | null; presentation: TextPresentation; } | null
+>(null);
 const preview = $derived(
     detailPending
         ? settledPreview
-        : { itemId: list?.selection?.item.id ?? null, detail: list?.detail ?? null }
+        : { itemId: list?.selection?.item.id ?? null, detail: list?.detail ?? null, presentation }
 );
 const detail = $derived(snapshot.view.kind === "detail" ? snapshot.view.detail : preview?.detail ?? null);
 
@@ -82,9 +94,14 @@ $effect(() =>
     // Keep its identity with its content so stale responses cannot reset detail scrolling either.
     if (list && !detailPending)
     {
-        settledPreview = { itemId: list.selection?.item.id ?? null, detail: list.detail };
+        settledPreview = { itemId: list.selection?.item.id ?? null, detail: list.detail, presentation };
     }
 });
+const detailPresentation = $derived(
+    snapshot.view.kind === "detail" ? presentation : preview?.presentation ?? presentation
+);
+const detailTitle = $derived(detail?.title ? detailPresentation.text(detail.title, localization.locale) : null);
+const actionPresentation = $derived(list && selection ? selection.presentation : presentation);
 const actions = $derived(list ? selected?.actions ?? [] : detail?.actions ?? []);
 const primaryAction = $derived(
     actions.find(action =>
@@ -94,14 +111,19 @@ const primaryAction = $derived(
 const secondaryActions = $derived(actions.filter(action => action.style !== "primary"));
 let alive = true;
 let confirming = $state(false);
-let confirmationError = $state<string | null>(null);
+let confirmationError = $state.raw<OperationError | null>(null);
+const confirmationErrorText = $derived(
+    confirmationError
+        ? operationErrorText(confirmationError, localization.locale, value => localization.text(value))
+        : null
+);
 onDestroy(() =>
 {
     alive = false;
 });
 const leadingStatusEntries = $derived(secondaryActions.map(action => ({
     id: `action:${action.id}`,
-    title: action.title,
+    title: actionPresentation.text(action.title, localization.locale),
     destructive: action.style === "destructive",
     disabled: busy || confirming || !action.enabled
 })));
@@ -118,7 +140,7 @@ const trailingStatusEntries = $derived(
     primaryAction
         ? [{
             id: `action:${primaryAction.id}`,
-            title: primaryAction.title,
+            title: actionPresentation.text(primaryAction.title, localization.locale),
             interactive: list === null,
             disabled: busy,
             keys: ["↵"],
@@ -377,12 +399,13 @@ function selectItem(id: string): void
     {
         return;
     }
-    selection = { item, index, revision: null, token };
+    const selectedPresentation = presentation;
+    selection = { item, index, revision: null, token, presentation: selectedPresentation };
     void onEvent({ kind: "selectionChanged", collection_id: list.collection_id, index }).then(revision =>
     {
         if (selection?.token === token)
         {
-            selection = revision === null ? null : { item, index, revision, token };
+            selection = revision === null ? null : { item, index, revision, token, presentation: selectedPresentation };
         }
     });
 }
@@ -454,12 +477,17 @@ async function invokeAction(actionId: string): Promise<void>
     confirmationError = null;
     try
     {
+        const prepared = actionPresentation;
         const confirmed = action.confirmation_title
             ? await confirmAction({
-                title: action.confirmation_title,
+                content: () => ({
+                    title: prepared.text(action.confirmation_title!, localization.locale),
+                    label: prepared.text(action.title, localization.locale),
+                    message: action.confirmation_description
+                        ? prepared.text(action.confirmation_description, localization.locale)
+                        : ""
+                }),
                 destructive: action.style === "destructive",
-                label: action.title,
-                message: action.confirmation_description ?? "",
                 icon: action.icon
                     ? { kind: "symbol", name: action.icon }
                     : { kind: "image", url: snapshot.extensionIconUrl }
@@ -482,7 +510,7 @@ async function invokeAction(actionId: string): Promise<void>
     }
     catch (failure)
     {
-        confirmationError = String(failure);
+        confirmationError = operationFailure(failure, "viewOperationFailed");
     }
     finally
     {
@@ -589,11 +617,11 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
 
 <main
     class="extension-view"
-    aria-label={list?.title ?? detail?.title ?? "Extension view"}
+    aria-label={list ? presentation.text(list.title, localization.locale) : detailTitle ?? localization.text({ message: "view-label" })}
     oncontextmenu={list ? undefined : event => _openContextMenu(null, event)}
 >
     <header class="collection-header" class:has-filter={Boolean(list?.filter)}>
-        <Button class="back" onclick={onBack} disabled={busy} aria-label="Back to previous view">
+        <Button class="back" onclick={onBack} disabled={busy} aria-label={localization.text({ message: "view-back" })}>
             <ChevronLeftIcon size={16} />
         </Button>
         {#if list}
@@ -602,8 +630,8 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                 bind:ref={input}
                 value={query}
                 role="combobox"
-                aria-label={list.search_placeholder || "Search this view"}
-                placeholder={list.search_placeholder}
+                aria-label={presentation.text(list.search_placeholder, localization.locale) || localization.text({ message: "view-search" })}
+                placeholder={presentation.text(list.search_placeholder, localization.locale)}
                 aria-autocomplete="list"
                 aria-controls="extension-items"
                 aria-expanded={totalItems > 0}
@@ -616,7 +644,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                 })}
             />
             {#if list.filter}
-                <div class="filter" role="group" aria-label="Content filter">
+                <div class="filter" role="group" aria-label={localization.text({ message: "view-content-filter" })}>
                     {#each list.filter.options as option (option.value)}
                         <Button
                             aria-pressed={option.value === list.filter.selected_value}
@@ -635,16 +663,16 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                 }
                             }}
                         >
-                            {option.title}
+                            {presentation.text(option.title, localization.locale)}
                         </Button>
                     {/each}
                 </div>
             {/if}
         {:else}
-            <h1>{detail?.title ?? "Details"}</h1>
+            <h1>{detailTitle ?? localization.text({ message: "view-details" })}</h1>
         {/if}
     </header>
-    {#if error || confirmationError}<div class="error" role="alert">{error ?? confirmationError}</div>{/if}
+    {#if error || confirmationErrorText}<div class="error" role="alert">{error ?? confirmationErrorText}</div>{/if}
     <div class="content" class:split={list?.layout === "split"} aria-busy={busy}>
         {#if list}
             <!-- The combobox owns list navigation, including clicks on empty space. -->
@@ -681,7 +709,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                             style:height={`${geometry.extent}px`}
                             id="extension-items"
                             role="listbox"
-                            aria-label={list.title}
+                            aria-label={presentation.text(list.title, localization.locale)}
                         >
                             {#each list.sections as section, sectionIndex (section.id)}
                                 <li role="presentation">
@@ -689,12 +717,12 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                             class="section-heading"
                                             style:top={`${sectionStarts[sectionIndex]!.top - coordinateShift}px`}
                                         >
-                                            {section.title}
+                                            {presentation.text(section.title, localization.locale)}
                                         </h2>{/if}
                                     <ul
                                         class="section-window"
                                         role="group"
-                                        aria-label={section.title ?? "Items"}
+                                        aria-label={section.title ? presentation.text(section.title, localization.locale) : localization.text({ message: "view-items" })}
                                         style:top={`${
                                             sectionStarts[sectionIndex]!.top + (section.title ? headingHeight : 0) + section.offset * rowHeight
                                             - coordinateShift
@@ -746,10 +774,14 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                                     </span>
                                                     {#if item.subtitle}
                                                         <span class="item-copy"><span class="collection-title">{
-                                                                item.title
-                                                            }</span><small>{item.subtitle}</small></span>
+                                                                presentation.text(item.title, localization.locale)
+                                                            }</span><small>{
+                                                                presentation.text(item.subtitle, localization.locale)
+                                                            }</small></span>
                                                     {:else}
-                                                        <span class="collection-title">{item.title}</span>
+                                                        <span class="collection-title">{
+                                                            presentation.text(item.title, localization.locale)
+                                                        }</span>
                                                     {/if}
                                                 </div>
                                             </li>
@@ -758,19 +790,23 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                                 </li>
                             {/each}
                         </ul>
-                        {#if items.length === 0}<span class="loading-items" role="status">Loading items…</span>{/if}
+                        {#if items.length === 0}<span class="loading-items" role="status">{
+                                localization.text({ message: "view-loading-items" })
+                            }</span>{/if}
                     </ScrollArea>
                     {#if rangeRead.failed}
                         <div class="range-error" role="status">
-                            <span>Items could not load.</span>
-                            <Button disabled={!canLoadMore} onclick={() => rangeRead.reset()}>Try again</Button>
+                            <span>{localization.text({ message: "view-items-load-failed" })}</span>
+                            <Button disabled={!canLoadMore} onclick={() => rangeRead.reset()}>{
+                                localization.text({ message: "action-retry" })
+                            }</Button>
                         </div>
                     {/if}
                 {:else}
                     <div class="list-empty">
                         <EmptyState
-                            title={list.empty_title}
-                            description={list.empty_description}
+                            title={presentation.text(list.empty_title, localization.locale)}
+                            description={presentation.text(list.empty_description, localization.locale)}
                         >
                             {#snippet icon()}
                                 {#if list.search_text.trim()}
@@ -792,6 +828,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                     {#if detail}
                         <ViewDetail
                             {detail}
+                            presentation={detailPresentation}
                             busy={!canLoadMore || detailPending}
                             {onReadText}
                             onLanguageChange={(document, label) =>
@@ -811,7 +848,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
     <StatusBar
         leadingEntries={[{
             id: "extension-menu",
-            title: `${snapshot.extensionName} menu`,
+            title: localization.text({ message: "extension-menu-label", args: { name: extensionName } }),
             icon: { src: snapshot.extensionIconUrl },
             iconOnly: true,
             menu: { controls: "context-menu", expanded: menuOpen }
@@ -868,5 +905,5 @@ small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: v
 .filter :global(button:hover:not(:disabled, [aria-disabled="true"])) { border-color: transparent; background: var(--surface-hovered); }
 .filter :global(button[aria-pressed='true']) { background: var(--surface-selected); }
 .filter :global(button[aria-pressed='true']:hover) { background: var(--surface-selected); }
-.error { padding: var(--space-2) var(--space-5); font-size: var(--font-meta); }
+.error { padding: var(--space-2) var(--space-5); font-size: var(--font-meta); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35%; overflow: auto; flex-shrink: 0; }
 </style>

@@ -14,8 +14,8 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
         max_entries: None,
         max_age_days: None
     };
-    let mut store = ClipboardStore::open(&path).unwrap();
-    let database = ClipboardDatabase::open(&path).unwrap();
+    let mut store = ClipboardStore::open(&path, &root.join("payloads")).unwrap();
+    let database = ClipboardDatabase::open(&path, &root.join("payloads")).unwrap();
     for filter in ["all", "text", "files", "images"] {
         for query in ["", "needle", "ä"] {
             let mut state = ClipboardViewState::new();
@@ -79,7 +79,11 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                     .capture(
                         &ClipboardEntry {
                             entry_id: id.into(),
-                            title: "Saved".into(),
+                            image_dimensions: matches!(content, ClipboardContent::PngFile { .. })
+                                .then_some(crate::ClipboardImageDimensions {
+                                    width: 1,
+                                    height: 1
+                                }),
                             content,
                             byte_size: 1,
                             captured_at
@@ -131,7 +135,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
                 .capture(
                     &ClipboardEntry {
                         entry_id: "expired".into(),
-                        title: "needle".into(),
+                        image_dimensions: None,
                         content: ClipboardContent::Text {
                             value: "needle".into()
                         },
@@ -160,7 +164,7 @@ fn incremental_queries_match_fresh_database_scans_after_committed_mutations() {
 
 #[test]
 fn unmatched_capture_and_removal_preserve_query_identity() {
-    let mut store = ClipboardStore::open(":memory:").unwrap();
+    let mut store = ClipboardStore::open(":memory:", std::path::Path::new(".")).unwrap();
     let mut state = ClipboardViewState::new();
     state.query = "needle".into();
     let current = store.present(state, None).unwrap();
@@ -168,7 +172,7 @@ fn unmatched_capture_and_removal_preserve_query_identity() {
         .capture(
             &ClipboardEntry {
                 entry_id: "unmatched".into(),
-                title: "other".into(),
+                image_dimensions: None,
                 content: ClipboardContent::Text {
                     value: "other".into()
                 },
@@ -207,12 +211,12 @@ fn unmatched_capture_and_removal_preserve_query_identity() {
 
 #[test]
 fn closing_a_view_releases_all_transient_query_and_preview_caches() {
-    let mut store = crate::ClipboardStore::open(":memory:").unwrap();
+    let mut store = crate::ClipboardStore::open(":memory:", std::path::Path::new(".")).unwrap();
     store
         .capture(
             &ClipboardEntry {
                 entry_id: "entry".into(),
-                title: "Entry".into(),
+                image_dimensions: None,
                 content: ClipboardContent::Text {
                     value: "Document".into()
                 },
@@ -247,7 +251,7 @@ fn closing_a_view_releases_all_transient_query_and_preview_caches() {
 
 #[test]
 fn text_revisions_follow_committed_mutations_instead_of_selection_or_timestamps() {
-    let mut store = ClipboardStore::open(":memory:").unwrap();
+    let mut store = ClipboardStore::open(":memory:", std::path::Path::new(".")).unwrap();
     let config = ClipboardConfig {
         syntax_highlighting: true,
         max_entries: Some(1),
@@ -255,7 +259,7 @@ fn text_revisions_follow_committed_mutations_instead_of_selection_or_timestamps(
     };
     let entry = |id: &str, value: &str| ClipboardEntry {
         entry_id: id.to_owned(),
-        title: "Entry".to_owned(),
+        image_dimensions: None,
         content: ClipboardContent::Text {
             value: value.to_owned()
         },

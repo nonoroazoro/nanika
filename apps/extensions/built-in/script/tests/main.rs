@@ -68,7 +68,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     let entry = batch.entries.into_iter().next().expect("script candidate");
-    assert_eq!(entry.title, "Build project");
+    assert_eq!(entry.title, "Build project".into());
     write_frame(
         &mut input,
         &Message::Invoke {
@@ -131,7 +131,10 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     )
     .unwrap();
     assert!(
-        matches!(read_reply(&mut output), Some(Message::Error { request_id: Some(id), .. }) if id == "bad-directory")
+        matches!(read_reply(&mut output), Some(Message::Error { request_id: Some(id), error }) if id == "bad-directory"
+            && error.code == "configuration_apply_failed"
+            && error.message == nanika_protocol::message("error-apply-configuration", [])
+            && error.detail.as_ref().is_some_and(|detail| detail.contains("missing")))
     );
     std::fs::write(root.join("Second.py"), b"print(2)").unwrap();
     write_frame(
@@ -169,7 +172,7 @@ fn script_process_consumes_host_configuration_and_requests_host_launch() {
     assert_eq!(entries.len(), 1);
     let removed_id = entries
         .iter()
-        .find(|entry| entry.title == "Second")
+        .find(|entry| entry.title == "Second".into())
         .unwrap()
         .entry_id
         .clone();

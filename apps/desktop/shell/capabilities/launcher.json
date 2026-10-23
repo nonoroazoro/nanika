@@ -18,6 +18,8 @@
     "allow-publish-query",
     "allow-read-results",
     "allow-read-text",
+    "allow-read-localization-resources",
+    "allow-read-startup-diagnostic",
     "allow-view-event"
   ]
 }

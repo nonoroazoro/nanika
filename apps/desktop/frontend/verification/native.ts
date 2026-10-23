@@ -8,9 +8,9 @@ import { syntaxScenarios } from "./syntax/scenarios";
 export async function runNative(): Promise<void>
 {
     await invoke("verification_progress", { message: "Frontend started" });
-    const surface = await syntaxScenarios.promise;
-    await invoke("verification_progress", { message: "Syntax surface mounted" });
     const scenario = new URLSearchParams(location.search).get("scenario");
+    const surface = scenario === "localization:switching" ? null : await syntaxScenarios.promise;
+    await invoke("verification_progress", { message: "Verification surface mounted" });
     try
     {
         await document.fonts.ready;
@@ -34,15 +34,20 @@ export async function runNative(): Promise<void>
         let result: unknown;
         try
         {
-            if (scenario === "syntax:rendering")
+            if (scenario === "localization:switching")
+            {
+                const { verifyLocalization } = await import("./localization");
+                result = await verifyLocalization();
+            }
+            else if (scenario === "syntax:rendering" && surface)
             {
                 result = await surface.benchmark();
             }
-            else if (scenario === "syntax:latency")
+            else if (scenario === "syntax:latency" && surface)
             {
                 result = await surface.latency();
             }
-            else if (scenario === "syntax:lifecycle")
+            else if (scenario === "syntax:lifecycle" && surface)
             {
                 const rounds = [];
                 for (let round = 0; round < 3; round++)
@@ -76,7 +81,10 @@ export async function runNative(): Promise<void>
         {
             document.removeEventListener("visibilitychange", changed);
         }
-        if (scenario !== "syntax:lifecycle" && visibilityChanges.includes("hidden"))
+        if (
+            scenario !== "syntax:lifecycle" && scenario !== "localization:switching"
+            && visibilityChanges.includes("hidden")
+        )
         {
             throw new Error("Window became hidden during the rendering sample");
         }

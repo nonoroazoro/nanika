@@ -9,7 +9,10 @@ use nanika_extension_package::{ConfigurationContribution, ConfigurationPersisten
 use nanika_protocol::ExtensionConfiguration;
 use serde_json::Value;
 
-use crate::{ConfigurationOperation, ConfigurationSaveOutcome, RuntimeExtensionConfiguration};
+use crate::{
+    ConfigurationOperation, ConfigurationSaveOutcome, OperationError, OperationErrorCode as Code,
+    RuntimeExtensionConfiguration
+};
 
 #[derive(Debug, Clone)]
 struct RegisteredConfiguration {
@@ -75,7 +78,7 @@ impl ExtensionConfigurationRegistry {
         extension_id: &str,
         key: String,
         value: Value
-    ) -> Result<ConfigurationOperation, String> {
+    ) -> Result<ConfigurationOperation, OperationError> {
         self._prepare(extension_id, key, value, None)
     }
 
@@ -85,7 +88,7 @@ impl ExtensionConfigurationRegistry {
         key: String,
         value: bool,
         revision: u64
-    ) -> Result<ConfigurationOperation, String> {
+    ) -> Result<ConfigurationOperation, OperationError> {
         self._prepare(extension_id, key, Value::Bool(value), Some(revision))
     }
 
@@ -164,7 +167,7 @@ impl ExtensionConfigurationRegistry {
     pub(crate) fn outcome(
         &self,
         extension_id: &str,
-        error: Option<String>
+        error: Option<crate::ConfigurationSaveError>
     ) -> ConfigurationSaveOutcome {
         let registered = self
             .registered
@@ -301,36 +304,38 @@ impl ExtensionConfigurationRegistry {
         key: String,
         value: Value,
         menu_revision: Option<u64>
-    ) -> Result<ConfigurationOperation, String> {
+    ) -> Result<ConfigurationOperation, OperationError> {
         let mut registered = self
             .registered
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let reservation = self.operations.reserve(extension_id)?;
         let current = registered.get_mut(extension_id).ok_or_else(|| {
-            format!("extension does not contribute configuration: {extension_id}")
+            OperationError::with_detail(Code::ExtensionConfigurationUnavailable, extension_id)
         })?;
         let visible = current
             .contribution
             .for_platform(nanika_platform::target_platform());
         if let Some(revision) = menu_revision {
             if revision != current.revision {
-                return Err("Configuration changed. Reopen the menu.".into());
+                return Err(OperationError::new(Code::ConfigurationChanged));
             }
             if !visible.exposes_menu_item(
                 &nanika_extension_package::ConfigurationMenuItem::Toggle { key: key.clone() }
             ) {
-                return Err("This setting is not exposed in the quick menu.".into());
+                return Err(OperationError::new(Code::ConfigurationPropertyUnavailable));
             }
         }
-        let property = visible
-            .properties
-            .get(&key)
-            .ok_or_else(|| format!("unknown or unavailable configuration property: {key}"))?;
+        let property = visible.properties.get(&key).ok_or_else(|| {
+            OperationError::with_detail(Code::ConfigurationPropertyUnavailable, &key)
+        })?;
         let persistence = property.persistence;
         let mut values = Self::_values(current);
         values.insert(key.clone(), value.clone());
-        current.contribution.validate_values(&values)?;
+        current
+            .contribution
+            .validate_values(&values)
+            .map_err(|detail| OperationError::with_detail(Code::InvalidConfiguration, detail))?;
         Ok(ConfigurationOperation {
             _reservation: reservation,
             registry: Arc::clone(self),

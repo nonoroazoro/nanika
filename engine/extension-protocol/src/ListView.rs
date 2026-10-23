@@ -1,15 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+use crate::LocalizedText;
+
 use crate::{DetailView, ListLayout, ListSection, ViewFilter};
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListView {
-    pub title: String,
-    pub search_placeholder: String,
+    pub title: LocalizedText,
+    pub search_placeholder: LocalizedText,
     pub search_text: String,
-    pub empty_title: String,
-    pub empty_description: String,
+    pub empty_title: LocalizedText,
+    pub empty_description: LocalizedText,
     pub layout: ListLayout,
     pub sections: Vec<ListSection>,
     /// Immutable query/order identity. Change when matching IDs or their order change,

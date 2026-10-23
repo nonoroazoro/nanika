@@ -1,4 +1,5 @@
 import type { ContextMenuRequest } from "../generated/ContextMenuRequest.ts";
+import type { OperationError } from "../generated/OperationError.ts";
 import type { ViewEventReceipt } from "../generated/ViewEventReceipt.ts";
 import type { ViewInteractionRequest } from "../types/ViewInteractionRequest.ts";
 
@@ -46,7 +47,13 @@ export function orderedViewEvents(
             }
             if (pending.length >= 16)
             {
-                reject(new Error("View input is pending. Wait for the extension before continuing."));
+                reject(Object.assign(
+                    new Error("View input is pending. Wait for the extension before continuing."),
+                    {
+                        kind: "host",
+                        code: "operationPending"
+                    } satisfies OperationError
+                ));
                 return;
             }
             pending.push({ request, dispatch, resolve, reject });

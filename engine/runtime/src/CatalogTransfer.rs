@@ -73,9 +73,10 @@ impl CatalogTransfer {
     pub(crate) fn commit(
         &mut self,
         search: &nanika_search::SearchContributor,
-        contributions: Vec<nanika_protocol::Candidate>
+        contributions: &[nanika_search::Candidate],
+        resources: Option<&nanika_localization::ResourceSet>
     ) -> Result<Option<u64>, SupervisorError> {
-        if !self._complete {
+        if !self._complete || self._rejected {
             return Err(SupervisorError::UnexpectedMessage(
                 "incomplete catalog transaction".into()
             ));
@@ -83,19 +84,28 @@ impl CatalogTransfer {
         let extension_id = search.extension_id();
         let reserved = contributions
             .iter()
-            .map(|entry| entry.entry_id.as_str())
+            .map(|entry| entry.entry_id())
             .collect::<std::collections::HashSet<_>>();
         self._entries
             .retain(|entry| !reserved.contains(entry.entry_id.as_str()));
         self._removed.retain(|id| !reserved.contains(id.as_str()));
+        let mut entries = match crate::search_candidates(
+            extension_id,
+            std::mem::take(&mut self._entries),
+            resources
+        ) {
+            Ok(entries) => entries,
+            Err(error) => {
+                self._rejected = true;
+                self._removed.clear();
+                return Err(SupervisorError::UnexpectedMessage(error));
+            }
+        };
         if self._replace {
-            self._entries.extend(contributions);
+            entries.extend(contributions.iter().cloned());
         }
-        let committed = search.commit_catalog(
-            self._replace,
-            crate::search_candidates(extension_id, std::mem::take(&mut self._entries)),
-            std::mem::take(&mut self._removed)
-        );
+        let committed =
+            search.commit_catalog(self._replace, entries, std::mem::take(&mut self._removed));
         match committed {
             Err(nanika_search::SearchQueueError::Retired) => return Ok(None),
             Err(error) => return Err(SupervisorError::UnexpectedMessage(error.to_string())),

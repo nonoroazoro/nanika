@@ -5,6 +5,12 @@ use tauri::Manager;
 mod adapters;
 #[path = "ApplicationSnapshot.rs"]
 mod application_snapshot;
+#[path = "LocalizationResourceRequest.rs"]
+mod localization_resource_request;
+use localization_resource_request::LocalizationResourceRequest;
+#[path = "LocalizationReadPermit.rs"]
+mod localization_read_permit;
+use localization_read_permit::LocalizationReadPermit;
 mod commands;
 #[path = "ConfigurationMenuRequest.rs"]
 mod configuration_menu_request;
@@ -70,8 +76,19 @@ use view_event_receipt::*;
 #[path = "ViewInvalidationDelivery.rs"]
 mod view_invalidation_delivery;
 use view_invalidation_delivery::*;
+#[path = "HostPreferencesState.rs"]
+mod host_preferences_state;
+mod host_resources;
+#[path = "LanguageRefresh.rs"]
+mod language_refresh;
+#[path = "NativeLocalization.rs"]
+mod native_localization;
+use native_localization::NativeLocalization;
 #[path = "HostSettings.rs"]
 mod host_settings;
+#[path = "NativeLocalizationState.rs"]
+mod native_localization_state;
+use host_preferences_state::HostPreferencesState;
 mod settings;
 #[path = "SettingsNavigation.rs"]
 mod settings_navigation;
@@ -85,8 +102,11 @@ use settings_window::*;
 #[path = "SettingsWindowAction.rs"]
 mod settings_window_action;
 use settings_window_action::*;
+#[path = "SettingsOperationError.rs"]
+mod settings_operation_error;
 #[path = "SettingsSnapshot.rs"]
 mod settings_snapshot;
+use settings_operation_error::SettingsOperationError;
 mod tray;
 mod window;
 use settings_snapshot::*;
@@ -118,6 +138,12 @@ mod search_delivery_tests;
 const DEFAULT_HOTKEY: &str = "Ctrl+Space";
 #[cfg(target_os = "windows")]
 const DEFAULT_HOTKEY: &str = "Ctrl+Alt+Space";
+
+/// Reads the actual native menu labels for the isolated E2E runner.
+#[cfg(feature = "e2e")]
+pub fn native_tray_labels(app: &tauri::AppHandle) -> tauri::Result<[String; 2]> {
+    app.state::<NativeLocalization>().labels()
+}
 
 pub fn run() -> Result<(), String> {
     let paths = nanika_storage::NanikaPaths::discover()
@@ -160,6 +186,8 @@ pub fn run_with(
     let events = instance.take_events().map_err(|error| error.to_string())?;
     let diagnostics = nanika_host::Diagnostics::initialize(&paths.app_data_root().join("logs"))?;
     let host_settings = host_settings::HostSettings::open(&paths)?;
+    let localization = host_settings.snapshot().localization;
+    host_resources::resources()?;
     let icon_protocol = std::sync::Arc::new(icon_protocol::IconProtocol::spawn(
         paths.cache_root().to_path_buf(),
         paths.payload_dir().to_path_buf()
@@ -179,7 +207,7 @@ pub fn run_with(
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .manage(DesktopState::new(instance, diagnostics)?)
+        .manage(DesktopState::new(instance, diagnostics, localization)?)
         .invoke_handler(tauri::generate_handler![
             dismiss_launcher,
             read_context_menu,
@@ -196,6 +224,8 @@ pub fn run_with(
             view_event,
             open_settings,
             read_settings,
+            read_localization_resources,
+            read_startup_diagnostic,
             search_settings,
             acknowledge_settings_delivery,
             settings_ready,
@@ -212,6 +242,23 @@ pub fn run_with(
         .on_window_event(handle_window_event)
         .setup(move |app| {
             tray::install(app.handle())?;
+            app.state::<NativeLocalization>().apply(
+                app.handle(),
+                app.state::<host_settings::HostSettings>()
+                    .snapshot()
+                    .localization
+            )?;
+            let refresh_app = app.handle().clone();
+            let mut refresh = language_refresh::LanguageRefresh::spawn(move || {
+                if let Err(error) = refresh_app
+                    .state::<host_settings::HostSettings>()
+                    .refresh_language(&refresh_app)
+                {
+                    tracing::error!(%error, "system language refresh failed");
+                }
+            })?;
+            refresh.observe_system()?;
+            app.state::<DesktopState>().set_language_refresh(refresh);
             let runtime_handle = app.handle().clone();
             let runtime_paths = paths.clone();
             let runtime_resources = app.path().resource_dir()?.join("extensions");
@@ -229,7 +276,8 @@ pub fn run_with(
                                 .set_packages(runtime.extension_resource_roots());
                             for diagnostic in runtime.startup_diagnostics() {
                                 tracing::warn!(
-                                    message = diagnostic,
+                                    extension_id = diagnostic.extension_id,
+                                    error = %diagnostic.error,
                                     "runtime capability unavailable"
                                 );
                             }
@@ -301,6 +349,9 @@ pub fn run_with(
 #[path = "SettingsWriteResult.rs"]
 mod settings_write_result;
 pub(crate) use settings_write_result::*;
+#[path = "HostSettingsFailure.rs"]
+mod host_settings_failure;
+pub(crate) use host_settings_failure::*;
 #[path = "HostSettingsChange.rs"]
 mod host_settings_change;
 pub(crate) use host_settings_change::*;

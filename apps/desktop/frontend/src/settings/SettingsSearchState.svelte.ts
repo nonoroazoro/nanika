@@ -1,3 +1,6 @@
+import { operationFailure } from "../localization/operation-errors";
+
+import type { OperationError } from "../generated/OperationError";
 import type { SettingsSearchEntry } from "../generated/SettingsSearchEntry";
 
 /**
@@ -10,7 +13,7 @@ export class SettingsSearchState
     results = $state.raw<SettingsSearchEntry[]>([]);
     busy = $state(false);
     hasCompletedSearch = $state(false);
-    error = $state<string | null>(null);
+    error = $state<OperationError | null>(null);
     private _revision = 0;
     private _running = false;
     private _pending = false;
@@ -79,7 +82,7 @@ export class SettingsSearchState
                 {
                     if (revision === this._revision)
                     {
-                        this.error = String(error);
+                        this.error = operationFailure(error, "settingsSearchFailed");
                     }
                 }
             }

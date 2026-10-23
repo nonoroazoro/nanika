@@ -4,6 +4,8 @@ use std::sync::{Mutex, mpsc};
 
 #[derive(Default)]
 pub struct PendingHostService {
+    _preparation_error: Option<String>,
+    _admission_error: Option<String>,
     _on_prepare: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     _preparations: std::sync::atomic::AtomicUsize,
     _admissions: std::sync::atomic::AtomicUsize,
@@ -13,6 +15,18 @@ impl PendingHostService {
     pub fn stop_during_prepare(stop: impl Fn() + Send + Sync + 'static) -> Self {
         Self {
             _on_prepare: Some(std::sync::Arc::new(stop)),
+            ..Default::default()
+        }
+    }
+    pub fn reject_preparation(detail: &str) -> Self {
+        Self {
+            _preparation_error: Some(detail.into()),
+            ..Default::default()
+        }
+    }
+    pub fn reject_admission(detail: &str) -> Self {
+        Self {
+            _admission_error: Some(detail.into()),
             ..Default::default()
         }
     }
@@ -26,13 +40,20 @@ impl PendingHostService {
     pub fn submitted(&self) -> bool {
         self.response.lock().unwrap().is_some()
     }
-    pub fn complete(&self) -> bool {
+    pub fn disconnect(&self) {
+        self.response
+            .lock()
+            .unwrap()
+            .take()
+            .expect("accepted receipt");
+    }
+    pub fn complete(&self, result: Result<HostServiceResponse, String>) -> bool {
         self.response
             .lock()
             .unwrap()
             .take()
             .unwrap()
-            .send(Ok(HostServiceResponse::Launched))
+            .send(result)
             .is_ok()
     }
 }
@@ -48,7 +69,13 @@ impl HostServiceHandler for PendingHostService {
         if let Some(stop) = &self._on_prepare {
             stop();
         }
+        if let Some(error) = &self._preparation_error {
+            return Err(error.clone());
+        }
         Ok(nanika_host::PreparedHostService::new(move || {
+            if let Some(error) = &self._admission_error {
+                return Err(error.clone());
+            }
             self._admissions
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let (response, receiver) = mpsc::sync_channel(1);

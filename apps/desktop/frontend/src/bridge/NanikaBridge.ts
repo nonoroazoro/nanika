@@ -5,6 +5,9 @@ import type { ConfigurationMenuOperation } from "../generated/ConfigurationMenuO
 import type { ConfigurationMenuRequest } from "../generated/ConfigurationMenuRequest";
 import type { ContextMenuRequest } from "../generated/ContextMenuRequest";
 import type { InvokeCandidateRequest } from "../generated/InvokeCandidateRequest";
+import type { LifecycleFailure } from "../generated/LifecycleFailure";
+import type { LocalizationResourceRequest } from "../generated/LocalizationResourceRequest";
+import type { PreparedResources } from "../generated/PreparedResources";
 import type { PublishQueryRequest } from "../generated/PublishQueryRequest";
 import type { ReadTextRequest } from "../generated/ReadTextRequest";
 import type { TextChunk } from "../generated/TextChunk";
@@ -15,6 +18,7 @@ import type { ViewInteractionRequest } from "../types/ViewInteractionRequest";
 
 export interface NanikaBridge
 {
+    readResources(request: Extract<LocalizationResourceRequest, { surface: "launcher"; }>): Promise<PreparedResources>;
     readConfigurationMenu(request: ConfigurationMenuRequest): Promise<ConfigurationMenu>;
     invokeConfigurationMenu(request: ConfigurationMenuRequest, operation: ConfigurationMenuOperation): Promise<void>;
     readText(request: ReadTextRequest): Promise<TextChunk>;
@@ -25,10 +29,11 @@ export interface NanikaBridge
         confirmed: boolean
     ): Promise<ViewEventReceipt | null>;
     openSession(
-        listener: (snapshot: RootSearchSnapshot) => void,
+        listener: (snapshot: RootSearchSnapshot) => Promise<void> | void,
         onError: (error: unknown) => void
     ): Promise<ApplicationSnapshot>;
     closeSession(sessionId: number): Promise<void>;
+    readStartupDiagnostic(sessionId: number): Promise<LifecycleFailure>;
     readResults(request: ReadResultsRequest): Promise<void>;
     publishQuery(request: PublishQueryRequest): Promise<void>;
     invokeCandidate(request: InvokeCandidateRequest): Promise<void>;

@@ -6,14 +6,17 @@ use crate::resource_protocol;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SearchResult {
+    pub(crate) instance_id: u64,
+    pub(crate) resource_scope: Option<nanika_host::ExtensionResourceScope>,
     pub(crate) extension_id: String,
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
+    pub(crate) action_title: nanika_protocol::LocalizedText,
     pub(crate) action_style: nanika_protocol::ActionStyle,
     pub(crate) allow_default_execution: bool,
-    pub(crate) confirmation_title: Option<String>,
-    pub(crate) confirmation_description: Option<String>,
-    pub(crate) title: String,
+    pub(crate) confirmation_title: Option<nanika_protocol::LocalizedText>,
+    pub(crate) confirmation_description: Option<nanika_protocol::LocalizedText>,
+    pub(crate) title: nanika_protocol::LocalizedText,
     pub(crate) subtitle: Option<nanika_protocol::CandidateSubtitle>,
     pub(crate) icon: Option<crate::result_icon::ResultIcon>,
     pub(crate) kind: String,
@@ -41,9 +44,14 @@ impl SearchResult {
                 .or_else(|| extension_icon.as_ref().and_then(image))
         };
         Self {
+            instance_id: 0,
+            resource_scope: None,
             extension_id: candidate.extension_id().to_owned(),
             entry_id: candidate.entry_id().to_owned(),
             action_id: candidate.action_id().to_owned(),
+            action_title: primary
+                .map(|action| action.title.clone())
+                .unwrap_or_else(|| candidate.title().clone()),
             action_style: primary
                 .map_or(nanika_protocol::ActionStyle::Primary, |action| action.style),
             allow_default_execution: candidate.actions().iter().any(|action| {

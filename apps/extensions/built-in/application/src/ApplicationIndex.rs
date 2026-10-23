@@ -68,7 +68,7 @@ impl ApplicationIndex {
         mut publish: impl FnMut(Vec<ApplicationEntry>, Vec<String>)
     ) -> Result<ScanReport, ApplicationError> {
         progress(nanika_protocol::OperationProgress {
-            label: "Finding application sources".to_owned(),
+            label: nanika_protocol::message("progress-finding-sources", []),
             completed: 0,
             total: None
         });
@@ -143,7 +143,7 @@ impl ApplicationIndex {
             .saturating_add(1);
         for (index, (root, priority)) in roots.iter().enumerate() {
             progress(nanika_protocol::OperationProgress {
-                label: "Scanning application sources".to_owned(),
+                label: nanika_protocol::message("progress-scanning-sources", []),
                 completed: index as u32,
                 total: Some(total)
             });
@@ -273,7 +273,7 @@ impl ApplicationIndex {
         }
 
         progress(nanika_protocol::OperationProgress {
-            label: "Updating application index".to_owned(),
+            label: nanika_protocol::message("progress-updating-index", []),
             completed: total - 1,
             total: Some(total)
         });

@@ -1,0 +1,25 @@
+[package]
+name = "nanika-localization"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fluent-bundle.workspace = true
+fluent-syntax.workspace = true
+unic-langid.workspace = true
+serde.workspace = true
+sha2.workspace = true
+ts-rs = { workspace = true, optional = true }
+nanika-protocol = { path = "../extension-protocol" }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+typescript = ["dep:ts-rs", "nanika-protocol/typescript"]

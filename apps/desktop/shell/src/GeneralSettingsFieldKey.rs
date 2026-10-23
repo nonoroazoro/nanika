@@ -6,6 +6,7 @@ pub(crate) enum GeneralSettingsFieldKey {
     LauncherShortcut,
     HideOnBlur,
     Theme,
+    Language,
     LaunchAtLogin
 }
 
@@ -15,6 +16,7 @@ impl GeneralSettingsFieldKey {
             Self::LauncherShortcut => "launcherShortcut",
             Self::HideOnBlur => "hideOnBlur",
             Self::Theme => "theme",
+            Self::Language => "language",
             Self::LaunchAtLogin => "launchAtLogin"
         }
     }

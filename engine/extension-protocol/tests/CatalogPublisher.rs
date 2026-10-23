@@ -54,7 +54,7 @@ fn updates_during_transfer_preserve_the_published_snapshot_and_next_delta() {
         }
     }
     assert_eq!(entries.len(), 600);
-    assert!(entries.iter().all(|entry| entry.title == "Before"));
+    assert!(entries.iter().all(|entry| entry.title == "Before".into()));
     let delta = publisher.read().unwrap();
     assert!(!delta.replace && delta.complete);
     assert_eq!(delta.entries.len(), 2);

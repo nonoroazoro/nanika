@@ -7,12 +7,12 @@ use crate::{ConfigurationPersistence, ConfigurationSchema};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationProperty {
-    pub title: String,
-    /// Named presentation group. Omission uses the contribution title.
+    pub title: nanika_protocol::LocalizedText,
+    /// Stable presentation group. Omission uses the contribution title with an implicit identity.
     #[serde(default)]
-    pub group: Option<String>,
+    pub group: Option<nanika_protocol::PresentationGroup>,
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: Option<nanika_protocol::LocalizedText>,
     pub default: Value,
     pub persistence: ConfigurationPersistence,
     /// Empty means the property is shown on every supported platform.

@@ -2,7 +2,20 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.script",
-  "name": "Scripts",
+  "name": {
+    "message": "extension-name"
+  },
+  "localization": {
+    "defaultLocale": "en",
+    "resources": {
+      "en": [
+        "locales/en.ftl"
+      ],
+      "zh-Hans": [
+        "locales/zh-Hans.ftl"
+      ]
+    }
+  },
   "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",
@@ -26,14 +39,26 @@
   ],
   "contributes": {
     "configuration": {
-      "title": "Scripts",
+      "title": {
+        "message": "extension-name"
+      },
       "properties": {
         "script.roots": {
           "type": "array",
-          "title": "Folders",
-          "description": "Find PowerShell, Python, JavaScript, and shell scripts in these folders.",
-          "group": "Search locations",
-          "persistence": "beforeApply", "default": [],
+          "title": {
+            "message": "setting-script-roots-title"
+          },
+          "description": {
+            "message": "setting-script-roots-description"
+          },
+          "group": {
+            "id": "search-locations",
+            "title": {
+              "message": "group-search-locations"
+            }
+          },
+          "persistence": "beforeApply",
+          "default": [],
           "maxItems": 256,
           "items": {
             "type": "string",
@@ -43,6 +68,8 @@
         }
       }
     },
-    "rootSearch": {"mode": "catalog"}
+    "rootSearch": {
+      "mode": "catalog"
+    }
   }
 }

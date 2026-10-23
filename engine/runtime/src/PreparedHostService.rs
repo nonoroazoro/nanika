@@ -11,6 +11,8 @@ impl<'a> PreparedHostService<'a> {
             _submit: Box::new(submit)
         }
     }
+    /// An error means responsibility was not transferred to the native service.
+    /// After admission, retain the receipt even if a wake or notification fails.
     pub fn admit(self) -> Result<HostServiceReceipt, String> {
         (self._submit)()
     }

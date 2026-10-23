@@ -15,7 +15,12 @@ export function groupSearchResults(results: readonly SettingsSearchEntry[]): Set
         let group = groups.get(entry.pageId);
         if (!group)
         {
-            group = { pageId: entry.pageId, title: entry.pageTitle, entries: [] };
+            group = {
+                pageId: entry.pageId,
+                title: entry.pageTitle,
+                entries: [],
+                ...(entry.pageResourceScope ? { resourceScope: entry.pageResourceScope } : {})
+            };
             groups.set(entry.pageId, group);
         }
         if (entry.target.kind !== "page")

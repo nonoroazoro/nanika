@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{LocalizedText, ViewMetadataValue};
+
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ViewMetadata {
-    pub title: String,
-    pub value: String
+    pub title: LocalizedText,
+    pub value: ViewMetadataValue
 }

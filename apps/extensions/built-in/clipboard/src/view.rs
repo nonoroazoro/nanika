@@ -30,28 +30,32 @@ pub(crate) fn clipboard_view(
     }];
     Ok(View::List {
         list: Box::new(ListView {
-            title: "Clipboard History".to_owned(),
-            search_placeholder: "Search clipboard history".to_owned(),
+            title: nanika_protocol::message("extension-name", []),
+            search_placeholder: nanika_protocol::message("view-search-placeholder", []),
             search_text: state.query.clone(),
-            empty_title: if filtered {
-                "No matching entries"
-            } else {
-                "No clipboard history yet"
-            }
-            .to_owned(),
-            empty_description: if filtered {
-                "Try a different search or filter."
-            } else {
-                "Copied content will appear here."
-            }
-            .to_owned(),
+            empty_title: nanika_protocol::message(
+                if filtered {
+                    "view-empty-filtered-title"
+                } else {
+                    "view-empty-title"
+                },
+                []
+            ),
+            empty_description: nanika_protocol::message(
+                if filtered {
+                    "view-empty-filtered-description"
+                } else {
+                    "view-empty-description"
+                },
+                []
+            ),
             layout: ListLayout::Split,
             sections,
             collection_id,
             selection: selected
                 .zip(selected_index)
                 .map(|(preview, index)| {
-                    list_item(&crate::ClipboardItem::from_entry(&preview.entry))
+                    list_item(&crate::ClipboardItem::from_entry(&preview.entry)?)
                         .map(|item| nanika_protocol::ListSelection { index, item })
                 })
                 .transpose()?,
@@ -62,10 +66,10 @@ pub(crate) fn clipboard_view(
                 id: "contentType".to_owned(),
                 selected_value: state.content_type.clone(),
                 options: vec![
-                    filter_option("all", "All Types"),
-                    filter_option("text", "Text"),
-                    filter_option("files", "Files"),
-                    filter_option("images", "Images"),
+                    filter_option("all", "filter-all"),
+                    filter_option("text", "content-text"),
+                    filter_option("files", "content-files"),
+                    filter_option("images", "content-images"),
                 ]
             })
         })
@@ -74,13 +78,12 @@ pub(crate) fn clipboard_view(
 fn list_item(entry: &crate::ClipboardItem) -> Result<ListItem, String> {
     Ok(ListItem {
         id: entry.entry_id.clone(),
-        title: crate::labels::display_label(&entry.title, 128),
+        title: entry.summary.title()?,
         subtitle: None,
-        icon: Some(match entry.kind.as_str() {
-            "text" => ViewItemIcon::Text,
-            "files" => ViewItemIcon::Files,
-            "image" => ViewItemIcon::Image,
-            _ => return Err("invalid clipboard content kind".into())
+        icon: Some(match entry.summary {
+            crate::ClipboardSummary::Text { .. } => ViewItemIcon::Text,
+            crate::ClipboardSummary::Files { .. } => ViewItemIcon::Files,
+            crate::ClipboardSummary::Image { .. } => ViewItemIcon::Image
         }),
         actions: vec![copy_action()]
     })
@@ -135,18 +138,20 @@ fn detail_view(
                     source: ImageSource {
                         path: format!("{}.png", entry.entry_id)
                     },
-                    alternative_text: crate::labels::display_label(&entry.title, 128)
+                    alternative_text: entry.summary()?.title()?
                 }
             }
         },
         metadata: vec![
             ViewMetadata {
-                title: "Content type".to_owned(),
-                value: content_type(entry).to_owned()
+                title: nanika_protocol::message("metadata-content-type", []),
+                value: nanika_protocol::message(content_type(entry), []).into()
             },
             ViewMetadata {
-                title: "Size".to_owned(),
-                value: format_bytes(entry.byte_size)
+                title: nanika_protocol::message("metadata-size", []),
+                value: nanika_protocol::ViewMetadataValue::Bytes {
+                    bytes: entry.byte_size
+                }
             },
         ],
         actions: Vec::new()
@@ -157,7 +162,7 @@ fn copy_action() -> Action {
     Action {
         icon: None,
         id: COPY_ACTION_ID.to_owned(),
-        title: "Copy to Clipboard".to_owned(),
+        title: nanika_protocol::message("action-copy", []),
         confirmation_description: None,
         confirmation_title: None,
         allow_default_execution: true,
@@ -170,25 +175,15 @@ fn copy_action() -> Action {
 fn filter_option(value: &str, title: &str) -> ViewFilterOption {
     ViewFilterOption {
         value: value.to_owned(),
-        title: title.to_owned()
+        title: nanika_protocol::message(title, [])
     }
 }
 
 fn content_type(entry: &ClipboardEntry) -> &'static str {
     match entry.content {
-        ClipboardContent::Text { .. } => "Text",
-        ClipboardContent::Files { .. } => "Files",
-        ClipboardContent::PngFile { .. } => "Image"
-    }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes < 1_024 {
-        format!("{bytes} B")
-    } else if bytes < 1_048_576 {
-        format!("{:.1} KiB", bytes as f64 / 1_024.0)
-    } else {
-        format!("{:.1} MiB", bytes as f64 / 1_048_576.0)
+        ClipboardContent::Text { .. } => "content-text",
+        ClipboardContent::Files { .. } => "content-files",
+        ClipboardContent::PngFile { .. } => "content-image"
     }
 }
 

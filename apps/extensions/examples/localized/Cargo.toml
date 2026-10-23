@@ -1,0 +1,19 @@
+[package]
+name = "nanika-localization-example"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nanika-protocol = { path = "../../../../engine/extension-protocol" }
+
+[dev-dependencies]
+nanika-extension-package = { path = "../../../../engine/extension-management" }
+nanika-host = { path = "../../../../engine/runtime" }
+nanika-localization = { path = "../../../../engine/localization" }
+nanika-search = { path = "../../../../engine/search" }
+
+[lints]
+workspace = true

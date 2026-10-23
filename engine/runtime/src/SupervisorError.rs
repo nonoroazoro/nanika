@@ -6,6 +6,7 @@ use nanika_protocol::FrameError;
 pub enum SupervisorError {
     Io(io::Error),
     Protocol(FrameError),
+    Reported(Box<nanika_localization::PreparedError>),
     ChannelClosed,
     Cancelled(&'static str),
     Terminated(&'static str),
@@ -17,6 +18,7 @@ impl std::fmt::Display for SupervisorError {
         match self {
             Self::Io(error) => write!(formatter, "I/O error: {error}"),
             Self::Protocol(error) => write!(formatter, "protocol error: {error}"),
+            Self::Reported(error) => write!(formatter, "extension reported {error}"),
             Self::ChannelClosed => write!(formatter, "extension protocol channel closed"),
             Self::Cancelled(operation) => {
                 write!(formatter, "extension cancelled during {operation}")
@@ -37,6 +39,7 @@ impl std::error::Error for SupervisorError {
         match self {
             Self::Io(error) => Some(error),
             Self::Protocol(error) => Some(error),
+            Self::Reported(error) => Some(error),
             Self::ChannelClosed
             | Self::Cancelled(_)
             | Self::Terminated(_)

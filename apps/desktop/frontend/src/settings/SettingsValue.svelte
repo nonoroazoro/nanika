@@ -1,4 +1,6 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
+import { validationErrorText } from "./validation-presentation";
 import { MAX_CONFIGURATION_STRING_BYTES } from "../generated/limits";
 import Button from "../components/ui/Button.svelte";
 import Input from "../components/ui/Input.svelte";
@@ -24,7 +26,9 @@ const object = $derived(value && typeof value === "object" && !Array.isArray(val
 let visibleCount = $state(20);
 let stringInput = $state<HTMLInputElement>();
 const currentStringError = $derived(schema.type === "string" ? stringError(schema, value) : null);
-$effect(() => stringInput?.setCustomValidity(currentStringError ?? ""));
+$effect(() =>
+    stringInput?.setCustomValidity(validationErrorText(currentStringError, message => localization.text(message)))
+);
 function _change(next: JsonValue): void
 {
     onChange(next);
@@ -58,7 +62,7 @@ function _change(next: JsonValue): void
                     <SettingsValue
                         schema={schema.items}
                         value={item}
-                        label={`${label}, entry ${index + 1}`}
+                        label={localization.text({ message: "settings-array-entry-label", args: { label, index: index + 1 } })}
                         id={`${id}-${index}`}
                         {onCommit}
                         onChange={next => onChange(array.map((current, position) => position === index ? next : current))}
@@ -67,10 +71,10 @@ function _change(next: JsonValue): void
                 <Button
                     variant="outline"
                     class="remove"
-                    aria-label={`Remove ${label} entry ${index + 1}`}
+                    aria-label={localization.text({ message: "settings-array-remove-label", args: { label, index: index + 1 } })}
                     onclick={() => _change(array.filter((_, position) => position !== index))}
                 >
-                    Remove
+                    {localization.text({ message: "settings-array-remove" })}
                 </Button>
             </div>
         {/each}
@@ -88,7 +92,7 @@ function _change(next: JsonValue): void
                     }
                 }}
             >
-                Add entry
+                {localization.text({ message: "settings-array-add" })}
             </Button>
             {#if array.length > visibleCount}<Button
                     variant="outline"
@@ -98,9 +102,13 @@ function _change(next: JsonValue): void
                         visibleCount += 20;
                     }}
                 >
-                    Show more ({array.length - visibleCount})
+                    {
+                        localization.text({ message: "settings-array-show-more", args: { count: array.length - visibleCount } })
+                    }
                 </Button>{/if}
-            <span>{array.length} / {schema.maxItems}</span>
+            <span>{
+                localization.text({ message: "settings-array-count", args: { count: array.length, maximum: schema.maxItems ?? 0 } })
+            }</span>
         </div>
     </div>
 {:else if schema.type === "object"}
@@ -111,9 +119,9 @@ function _change(next: JsonValue): void
                     <span>{fieldTitle(key)}</span>
                     {#if !schema.required.includes(key)}
                         <div class="optional">
-                            <span>Include</span><Switch
+                            <span>{localization.text({ message: "settings-object-include" })}</span><Switch
                                 checked={Object.hasOwn(object, key)}
-                                label={`Include ${fieldTitle(key)}`}
+                                label={localization.text({ message: "settings-object-include-label", args: { field: fieldTitle(key) } })}
                                 onChange={checked =>
                                 {
                                     const next = { ...object };
@@ -135,7 +143,7 @@ function _change(next: JsonValue): void
                     <SettingsValue
                         schema={child}
                         value={object[key]}
-                        label={`${label}, ${fieldTitle(key)}`}
+                        label={localization.text({ message: "settings-object-field-label", args: { label, field: fieldTitle(key) } })}
                         id={`${id}-${key}`}
                         {onCommit}
                         onChange={next => onChange({ ...object, [key]: next })}

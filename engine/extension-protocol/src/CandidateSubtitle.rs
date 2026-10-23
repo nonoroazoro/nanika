@@ -5,6 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", content = "text", rename_all = "camelCase")]
 pub enum CandidateSubtitle {
-    Label(String),
-    Description(String)
+    Label(crate::LocalizedText),
+    Description(crate::LocalizedText)
 }

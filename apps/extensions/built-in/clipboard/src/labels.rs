@@ -24,3 +24,11 @@ pub(crate) fn display_label(value: &str, maximum: usize) -> String {
         output
     }
 }
+
+pub(crate) fn text_preview(value: &str) -> String {
+    let line = value
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(value);
+    display_label(line.trim(), 96)
+}

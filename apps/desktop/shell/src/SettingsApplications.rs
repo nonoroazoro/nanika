@@ -6,6 +6,11 @@ use crate::{SettingsApplicationUpdate, SettingsEvent, SettingsSaveResult};
 /// Retains operation facts separately from bounded, replaceable progress delivery.
 #[derive(Default)]
 pub(crate) struct SettingsApplications {
+    pub(crate) search: std::sync::Arc<crate::SettingsSearchCatalog>,
+    pub(crate) session_id: u64,
+    pub(crate) localization: nanika_localization::LocalizationSnapshot,
+    _localization_in_flight: Option<u64>,
+    _localization_sent: u64,
     pub(crate) lifecycle_revision: u64,
     pub(crate) lifecycle: Vec<crate::ExtensionLifecycle>,
     pub(crate) latest: BTreeMap<String, SettingsApplicationUpdate>,
@@ -58,12 +63,16 @@ impl SettingsApplications {
         if self.lifecycle == current {
             return false;
         }
+        self.search = std::sync::Arc::new(crate::SettingsSearchCatalog::new(&current));
         self.lifecycle = current;
         self.lifecycle_revision += 1;
         true
     }
 
-    pub(crate) fn subscribe(&mut self, channel: Channel<SettingsEvent>) {
+    pub(crate) fn subscribe(&mut self, session_id: u64, channel: Channel<SettingsEvent>) {
+        self.session_id = session_id;
+        self._localization_in_flight = None;
+        self._localization_sent = 0;
         self.updates = Some(channel);
         self.in_flight = None;
         self._lifecycle_in_flight = None;
@@ -131,6 +140,10 @@ impl SettingsApplications {
         &mut self,
         delivery_id: u64
     ) -> Option<(Channel<SettingsEvent>, SettingsEvent)> {
+        if self._localization_in_flight == Some(delivery_id) {
+            self._localization_in_flight = None;
+            return self.next_localization();
+        }
         if self._lifecycle_in_flight == Some(delivery_id) {
             self._lifecycle_in_flight = None;
             return self.next_lifecycle();
@@ -161,6 +174,27 @@ impl SettingsApplications {
         ))
     }
 
+    /// Coalesce presentation changes independently of accepted configuration work.
+    pub(crate) fn next_localization(&mut self) -> Option<(Channel<SettingsEvent>, SettingsEvent)> {
+        if self._localization_in_flight.is_some()
+            || self._localization_sent == self.localization.revision
+        {
+            return None;
+        }
+        let channel = self.updates.clone()?;
+        self.next_delivery_id += 1;
+        self._localization_in_flight = Some(self.next_delivery_id);
+        self._localization_sent = self.localization.revision;
+        Some((
+            channel,
+            SettingsEvent::Localization {
+                session_id: self.session_id,
+                delivery_id: self.next_delivery_id,
+                localization: self.localization
+            }
+        ))
+    }
+
     pub(crate) fn disconnect(&mut self, channel_id: u32) {
         if self
             .updates
@@ -168,6 +202,7 @@ impl SettingsApplications {
             .is_some_and(|channel| channel.id() == channel_id)
         {
             self.updates = None;
+            self._localization_in_flight = None;
             self._lifecycle_in_flight = None;
             self.in_flight = None;
             self.pending.clear();

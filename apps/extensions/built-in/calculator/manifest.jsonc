@@ -2,7 +2,14 @@
   "format": "nanika-extension",
   "manifestVersion": 1,
   "id": "com.nanika.calculator",
-  "name": "Calculator",
+  "name": { "message": "extension-name" },
+  "localization": {
+    "defaultLocale": "en",
+    "resources": {
+      "en": ["locales/en.ftl"],
+      "zh-Hans": ["locales/zh-Hans.ftl"]
+    }
+  },
   "icon": "assets/icon.png",
   "version": "0.1.0",
   "hostApi": "^0.1",

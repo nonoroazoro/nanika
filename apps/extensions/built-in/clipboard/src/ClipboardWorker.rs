@@ -123,7 +123,7 @@ impl ClipboardWorker {
         let thread = std::thread::Builder::new()
             .name("nanika-clipboard-owner".to_owned())
             .spawn(move || {
-                let mut store = match ClipboardStore::open(database_path) {
+                let mut store = match ClipboardStore::open(database_path, &payload_root) {
                     Ok(store) => store,
                     Err(error) => {
                         let _ = ready.send(Err(error));

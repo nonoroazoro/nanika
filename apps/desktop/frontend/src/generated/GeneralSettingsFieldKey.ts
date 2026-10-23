@@ -3,4 +3,4 @@
 /**
  * Stable identities for the host-owned General settings controls.
  */
-export type GeneralSettingsFieldKey = "launcherShortcut" | "hideOnBlur" | "theme" | "launchAtLogin";
+export type GeneralSettingsFieldKey = "launcherShortcut" | "hideOnBlur" | "theme" | "language" | "launchAtLogin";

@@ -2,17 +2,22 @@
 import type { ActionStyle } from "./ActionStyle";
 import type { CandidateKind } from "./CandidateKind";
 import type { CandidateSubtitle } from "./CandidateSubtitle";
+import type { ExtensionResourceScope } from "./ExtensionResourceScope";
+import type { LocalizedText } from "./LocalizedText";
 import type { ResultIcon } from "./ResultIcon";
 
 export type SearchResult = {
+    instanceId: number;
+    resourceScope: ExtensionResourceScope | null;
     extensionId: string;
     entryId: string;
     actionId: string;
+    actionTitle: LocalizedText;
     actionStyle: ActionStyle;
     allowDefaultExecution: boolean;
-    confirmationTitle: string | null;
-    confirmationDescription: string | null;
-    title: string;
+    confirmationTitle: LocalizedText | null;
+    confirmationDescription: LocalizedText | null;
+    title: LocalizedText;
     subtitle: CandidateSubtitle | null;
     icon: ResultIcon | null;
     kind: string;

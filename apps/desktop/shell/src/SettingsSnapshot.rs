@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SettingsSnapshot {
+    pub(crate) session_id: u64,
+    pub(crate) platform: nanika_platform::TargetPlatform,
+    pub(crate) localization: nanika_localization::LocalizationSnapshot,
     pub(crate) navigation: crate::SettingsNavigation,
     pub(crate) lifecycle_revision: u64,
     pub(crate) maximized: bool,
@@ -45,7 +48,7 @@ pub(crate) enum SettingsSaveResult {
         outcome: nanika_host::ConfigurationSaveOutcome
     },
     Failed {
-        error: String
+        error: nanika_host::ConfigurationSaveError
     }
 }
 
@@ -55,6 +58,9 @@ pub(crate) enum SettingsSaveResult {
 pub(crate) struct SettingsApplicationUpdate {
     pub(crate) request_id: u64,
     pub(crate) extension_id: String,
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) resource_scope: Option<nanika_host::ExtensionResourceScope>,
     pub(crate) key: String,
     pub(crate) result: SettingsSaveResult
 }
@@ -63,6 +69,13 @@ pub(crate) struct SettingsApplicationUpdate {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum SettingsEvent {
+    Localization {
+        #[serde(rename = "sessionId")]
+        session_id: u64,
+        #[serde(rename = "deliveryId")]
+        delivery_id: u64,
+        localization: nanika_localization::LocalizationSnapshot
+    },
     Navigation {
         navigation: crate::SettingsNavigation
     },
@@ -85,21 +98,31 @@ pub(crate) enum SettingsEvent {
     ShortcutPressed
 }
 
-impl From<Result<nanika_host::ConfigurationSaveOutcome, String>> for SettingsSaveResult {
-    fn from(result: Result<nanika_host::ConfigurationSaveOutcome, String>) -> Self {
+impl From<Result<nanika_host::ConfigurationSaveOutcome, nanika_host::OperationError>>
+    for SettingsSaveResult
+{
+    fn from(
+        result: Result<nanika_host::ConfigurationSaveOutcome, nanika_host::OperationError>
+    ) -> Self {
         match result {
             Ok(outcome) => Self::Completed { outcome },
-            Err(error) => Self::Failed { error }
+            Err(error) => Self::Failed {
+                error: nanika_host::ConfigurationSaveError::unconfirmed(error)
+            }
         }
     }
 }
 
-pub(crate) fn validate_settings_request(request: &SaveSettingsRequest) -> Result<(), String> {
+pub(crate) fn validate_settings_request(
+    request: &SaveSettingsRequest
+) -> Result<(), nanika_host::OperationError> {
     if !nanika_foundation::is_valid_extension_id(&request.extension_id)
         || request.key.is_empty()
         || request.key.len() > 128
     {
-        return Err("Invalid extension settings request.".to_owned());
+        return Err(nanika_host::OperationError::new(
+            nanika_host::OperationErrorCode::InvalidConfiguration
+        ));
     }
     Ok(())
 }

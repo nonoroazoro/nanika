@@ -2,9 +2,14 @@
 import type { ExtensionSettings } from "./ExtensionSettings";
 import type { GeneralSettingsSection } from "./GeneralSettingsSection";
 import type { LauncherPreferences } from "./LauncherPreferences";
+import type { LocalizationSnapshot } from "./LocalizationSnapshot";
 import type { SettingsNavigation } from "./SettingsNavigation";
+import type { TargetPlatform } from "./TargetPlatform";
 
 export type SettingsSnapshot = {
+    sessionId: number;
+    platform: TargetPlatform;
+    localization: LocalizationSnapshot;
     navigation: SettingsNavigation;
     lifecycleRevision: number;
     maximized: boolean;

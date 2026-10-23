@@ -30,22 +30,31 @@ fn empty_history_and_unmatched_scopes_publish_distinct_copy() {
             };
             assert_eq!(list.total(), 0);
             assert!(list.sections.iter().all(|section| section.items.is_empty()));
-            assert_eq!(list.search_placeholder, "Search clipboard history");
+            assert_eq!(
+                list.search_placeholder,
+                nanika_protocol::message("view-search-placeholder", [])
+            );
             assert_eq!(
                 list.empty_title,
-                if filtered {
-                    "No matching entries"
-                } else {
-                    "No clipboard history yet"
-                }
+                nanika_protocol::message(
+                    if filtered {
+                        "view-empty-filtered-title"
+                    } else {
+                        "view-empty-title"
+                    },
+                    []
+                )
             );
             assert_eq!(
                 list.empty_description,
-                if filtered {
-                    "Try a different search or filter."
-                } else {
-                    "Copied content will appear here."
-                }
+                nanika_protocol::message(
+                    if filtered {
+                        "view-empty-filtered-description"
+                    } else {
+                        "view-empty-description"
+                    },
+                    []
+                )
             );
         }
     });
@@ -63,12 +72,16 @@ fn clear_scope_matches_full_type_and_query() {
     entries.push(files);
     let mut image = _entry(107, "Image needle");
     image.entry_id = "a".repeat(64);
+    image.image_dimensions = Some(crate::ClipboardImageDimensions {
+        width: 1,
+        height: 1
+    });
     image.content = ClipboardContent::PngFile {
         path: "image.png".into()
     };
     entries.push(image);
     _with_store(&entries, |store, _| {
-        for (kind, count) in [("text", 105), ("files", 1), ("images", 1), ("all", 107)] {
+        for (kind, count) in [("text", 105), ("files", 1), ("images", 0), ("all", 106)] {
             let mut state = ClipboardViewState::new();
             state.query = "  NEEDLE  ".into();
             state.content_type = kind.into();
@@ -82,9 +95,10 @@ fn clear_scope_matches_full_type_and_query() {
                 count.min(CLIPBOARD_BATCH_SIZE)
             );
             assert!(
-                list.sections[0].items[0]
-                    .actions
+                list.sections[0]
+                    .items
                     .iter()
+                    .flat_map(|item| &item.actions)
                     .all(|action| action.id != crate::CLEAR_ACTION_ID)
             );
         }
@@ -321,7 +335,6 @@ fn file_labels_escape_controls_while_original_paths_and_copy_payload_remain_inta
         "/example/   ".into(),
     ];
     let mut entry = _entry(1, "name\nwith\ttabs.txt");
-    entry.title = "name\nwith\ttabs.txt".into();
     entry.content = ClipboardContent::Files {
         paths: paths.clone()
     };
@@ -330,12 +343,14 @@ fn file_labels_escape_controls_while_original_paths_and_copy_payload_remain_inta
         let View::List { list } = current.view else {
             unreachable!()
         };
-        assert!(
-            !list.sections[0].items[0]
-                .title
-                .chars()
-                .any(char::is_control)
-        );
+        let nanika_protocol::LocalizedText::Message(reference) = &list.sections[0].items[0].title
+        else {
+            panic!("File collections use a message with a literal name argument")
+        };
+        let nanika_protocol::MessageArgument::Text(title) = &reference.args["name"] else {
+            panic!("literal name")
+        };
+        assert!(!title.chars().any(char::is_control));
         let DetailContent::Files { files } = list.detail.unwrap().content else {
             unreachable!()
         };
@@ -489,10 +504,32 @@ fn query_cache_preserves_unicode_matching_and_never_matches_across_file_boundari
     });
 }
 
+#[test]
+fn metadata_publishes_exact_utf8_bytes_without_formatting_or_changing_the_payload() {
+    let content = "界".repeat(512);
+    _with_store(&[_entry(1, &content)], |store, _| {
+        let current = store.present(ClipboardViewState::new(), None).unwrap();
+        let View::List { list } = current.view else {
+            unreachable!()
+        };
+        let detail = list.detail.unwrap();
+        assert_eq!(
+            detail.metadata[1].value,
+            nanika_protocol::ViewMetadataValue::Bytes { bytes: 1536 }
+        );
+        assert_eq!(
+            store.content("1").unwrap(),
+            ClipboardContent::Text {
+                value: content.clone()
+            }
+        );
+    });
+}
+
 fn _entry(id: u64, value: &str) -> ClipboardEntry {
     ClipboardEntry {
         entry_id: id.to_string(),
-        title: crate::text_title(value),
+        image_dimensions: None,
         content: ClipboardContent::Text {
             value: value.into()
         },
@@ -518,12 +555,12 @@ fn _with_store(
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     let path = root.join("clipboard.db");
-    let db = ClipboardDatabase::open(&path).unwrap();
+    let db = ClipboardDatabase::open(&path, &root.join("payloads")).unwrap();
     for entry in entries {
         db.upsert(entry).unwrap();
     }
     drop(db);
-    let mut store = ClipboardStore::open(path).unwrap();
+    let mut store = ClipboardStore::open(path, &root.join("payloads")).unwrap();
     test(&mut store, &root);
     drop(store);
     std::fs::remove_dir_all(root).unwrap();

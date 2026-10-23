@@ -11,7 +11,7 @@ const MAX_CONFIGURATION_BYTES: usize = 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConfigurationContribution {
-    pub title: String,
+    pub title: nanika_protocol::LocalizedText,
     pub properties: BTreeMap<String, ConfigurationProperty>,
     #[serde(default)]
     pub actions: Vec<crate::SettingsAction>,
@@ -21,26 +21,20 @@ pub struct ConfigurationContribution {
 
 impl ConfigurationContribution {
     pub fn validate(&self) -> Result<(), String> {
-        validate_text(&self.title, 128, "configuration title")?;
         if (self.properties.is_empty() && self.actions.is_empty()) || self.properties.len() > 64 {
             return Err(
                 "configuration must contain properties or actions, with at most 64 properties"
                     .to_owned()
             );
         }
+        self._visit_texts(&mut |label, text, maximum| validate_text(text, maximum, label))?;
+        self._validate_groups()?;
         for (key, property) in &self.properties {
             validate_key(key)?;
             if property.platforms.len() > 2
                 || (property.platforms.len() == 2 && property.platforms[0] == property.platforms[1])
             {
                 return Err(format!("invalid configuration platforms for {key}"));
-            }
-            validate_text(&property.title, 128, "configuration property title")?;
-            if let Some(group) = &property.group {
-                validate_text(group, 128, "configuration property group")?;
-            }
-            if let Some(description) = &property.description {
-                validate_text(description, 512, "configuration property description")?;
             }
             property.schema.validate_definition()?;
             property
@@ -58,10 +52,6 @@ impl ConfigurationContribution {
                 .collect::<Vec<_>>()
         )?;
         for item in &self.actions {
-            validate_text(&item.description, 512, "settings action description")?;
-            if let Some(label) = &item.button_label {
-                validate_text(label, 128, "settings action button label")?;
-            }
             if item.action.allow_default_execution {
                 return Err("settings actions require explicit invocation".into());
             }
@@ -131,13 +121,136 @@ impl ConfigurationContribution {
             .any(|group| group.items.contains(item))
     }
 
+    /// Validate every rendered field before admission, then retain bilingual search data.
+    pub(crate) fn _prepare_presentation(
+        &self,
+        resources: Option<&nanika_localization::ResourceSet>
+    ) -> Result<BTreeMap<String, Vec<String>>, String> {
+        self.validate()?;
+        for item in &self.actions {
+            nanika_localization::validate_action_presentation(
+                std::slice::from_ref(&item.action),
+                resources
+            )?;
+        }
+        let locales = [
+            nanika_localization::SupportedLocale::English,
+            nanika_localization::SupportedLocale::SimplifiedChinese
+        ];
+        for locale in locales {
+            for platform in ["macos", "windows"] {
+                self._visit_texts(&mut |field, text, maximum| {
+                    let output =
+                        _format(text, resources, locale, platform, maximum).map_err(|error| {
+                            format!("{field}: {}: {platform}: {error}", locale.as_str())
+                        })?;
+                    validate_text(&output.into(), maximum, field)
+                })?;
+            }
+        }
+        let platform = nanika_platform::target_platform().as_str();
+        let mut search = BTreeMap::new();
+        for (key, property) in &self.properties {
+            let mut values = Vec::new();
+            for locale in locales {
+                for text in [
+                    &property.title,
+                    property
+                        .group
+                        .as_ref()
+                        .map(|group| &group.title)
+                        .unwrap_or(&self.title)
+                ] {
+                    let value = _format(text, resources, locale, platform, 128)?;
+                    if !values.contains(&value) {
+                        values.push(value);
+                    }
+                }
+            }
+            search.insert(format!("field:{key}"), values);
+        }
+        for item in &self.actions {
+            let mut values = Vec::new();
+            for locale in locales {
+                for text in std::iter::once(&item.action.title)
+                    .chain(item.action.group.as_ref().map(|group| &group.title))
+                {
+                    let value = _format(text, resources, locale, platform, 128)?;
+                    if !values.contains(&value) {
+                        values.push(value);
+                    }
+                }
+            }
+            search.insert(format!("action:{}", item.action.id), values);
+        }
+        Ok(search)
+    }
+
+    /// Visit presentation only; schema keys, defaults, and stored values never enter Fluent.
+    fn _visit_texts(
+        &self,
+        visitor: &mut impl FnMut(&str, &nanika_protocol::LocalizedText, usize) -> Result<(), String>
+    ) -> Result<(), String> {
+        visitor("title", &self.title, 128)?;
+        for (key, property) in &self.properties {
+            visitor(&format!("properties.{key}.title"), &property.title, 128)?;
+            if let Some(group) = &property.group {
+                visitor(&format!("properties.{key}.group.title"), &group.title, 128)?;
+            }
+            if let Some(description) = &property.description {
+                visitor(&format!("properties.{key}.description"), description, 512)?;
+            }
+        }
+        for item in &self.actions {
+            visitor(
+                &format!("actions.{}.description", item.action.id),
+                &item.description,
+                512
+            )?;
+            if let Some(label) = &item.button_label {
+                visitor(
+                    &format!("actions.{}.buttonLabel", item.action.id),
+                    label,
+                    128
+                )?;
+            }
+        }
+        for group in &self.quick_menu {
+            visitor(&format!("quickMenu.{}.title", group.id), &group.title, 128)?;
+        }
+        Ok(())
+    }
+
+    fn _validate_groups(&self) -> Result<(), String> {
+        let mut definitions = self
+            .properties
+            .values()
+            .filter_map(|property| property.group.clone())
+            .chain(
+                self.actions
+                    .iter()
+                    .filter_map(|item| item.action.group.clone())
+            )
+            .collect::<Vec<_>>();
+        let mut menus = HashSet::new();
+        for group in &self.quick_menu {
+            if !menus.insert(&group.id) {
+                return Err("duplicate configuration menu group id".into());
+            }
+            definitions.push(nanika_protocol::PresentationGroup {
+                id: group.id.clone(),
+                title: group.title.clone()
+            });
+        }
+        nanika_protocol::PresentationGroup::validate_definitions(&definitions)
+    }
+
     fn _validate_quick_menu(&self) -> Result<(), String> {
         if self.quick_menu.len() > 8 {
             return Err("configuration quick menu exceeds 8 groups".into());
         }
         let mut seen = HashSet::new();
         for group in &self.quick_menu {
-            validate_text(&group.title, 128, "configuration menu group title")?;
             if group.items.is_empty() {
                 return Err("configuration menu groups must not be empty".into());
             }
@@ -169,12 +282,39 @@ impl ConfigurationContribution {
     }
 }
 
-fn validate_text(value: &str, maximum: usize, label: &str) -> Result<(), String> {
+fn validate_text(
+    value: &nanika_protocol::LocalizedText,
+    maximum: usize,
+    label: &str
+) -> Result<(), String> {
+    let value = match value {
+        nanika_protocol::LocalizedText::Literal(value) => value,
+        nanika_protocol::LocalizedText::Message(reference) => {
+            return reference
+                .validate()
+                .map_err(|error| format!("{label}: {error}"));
+        }
+    };
     if value.trim().is_empty() {
         Err(format!("{label} is empty"))
     } else if value.len() > maximum {
         Err(format!("{label} exceeds {maximum} bytes"))
     } else {
         Ok(())
+    }
+}
+
+fn _format(
+    text: &nanika_protocol::LocalizedText,
+    resources: Option<&nanika_localization::ResourceSet>,
+    locale: nanika_localization::SupportedLocale,
+    platform: &str,
+    maximum: usize
+) -> Result<String, String> {
+    match text {
+        nanika_protocol::LocalizedText::Literal(value) => Ok(value.clone()),
+        nanika_protocol::LocalizedText::Message(_) => resources
+            .ok_or("message reference requires localization resources")?
+            .format(locale, text, platform, maximum, false)
     }
 }

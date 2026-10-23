@@ -36,12 +36,49 @@ if (surface === "syntax")
 }
 else if (surface === "settings")
 {
+    const { finishInvocationFailure } = await import("./fixtures/invocation");
+    Object.assign(window, { finishInvocationFailure });
     const { default: Settings } = await import("../src/Settings.svelte");
+    const {
+        changeSettingsLanguage,
+        finishSettingsProgress,
+        publishForeignProgress,
+        publishLifecycleFailure,
+        finishLifecycleFailure,
+        failNextSettingsWrite,
+        setStartupReadFailure
+    } = await import(
+        "./fixtures/settingsBridge"
+    );
+    Object.assign(window, {
+        changeSettingsLanguage,
+        finishSettingsProgress,
+        publishForeignProgress,
+        publishLifecycleFailure,
+        finishLifecycleFailure,
+        failNextSettingsWrite,
+        setStartupReadFailure
+    });
     mount(Settings, { target });
 }
 else if (surface === "launcher")
 {
+    const { finishInvocationFailure } = await import("./fixtures/invocation");
+    Object.assign(window, { finishInvocationFailure });
     const { default: App } = await import("../src/App.svelte");
+    const { changeLauncherLanguage, failNextConfigurationSave, allowTextRead, completeViewFailure, setCatalogWarning } =
+        await import(
+            "./fixtures/tauriBridge"
+        );
+    const { failNextLocalizationRead } = await import("./fixtures/localization");
+    Object.assign(window, {
+        changeLauncherLanguage,
+        failNextLocalizationRead,
+        failNextConfigurationSave,
+        allowTextRead,
+        completeViewFailure,
+        setCatalogWarning
+    });
     mount(App, { target });
 }
 else

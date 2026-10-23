@@ -14,10 +14,11 @@ test = false
 bench = false
 
 [dependencies]
-nanika-desktop = { path = "../shell" }
+nanika-desktop = { path = "../shell", features = ["e2e"] }
 nanika-storage = { path = "../../../engine/storage" }
 nanika-platform = { path = "../../../engine/platform" }
 nanika-config = { path = "../../../engine/configuration" }
+nanika-localization = { path = "../../../engine/localization" }
 serde_json.workspace = true
 clipboard-rs.workspace = true
 tauri.workspace = true

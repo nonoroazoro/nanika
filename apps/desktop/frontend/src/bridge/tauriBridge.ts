@@ -7,6 +7,8 @@ import type { RootSearchSnapshot } from "../types/RootSearchSnapshot";
 let _rangeSequence = 0;
 
 export const tauriBridge: NanikaBridge = {
+    readResources: async request => invoke("read_localization_resources", { request }),
+    readStartupDiagnostic: async sessionId => invoke("read_startup_diagnostic", { sessionId }),
     readConfigurationMenu: async request => invoke("read_configuration_menu", { request }),
     invokeConfigurationMenu: async (request, operation) => invoke("invoke_configuration_menu", { request, operation }),
     readText: async request => invoke("read_text", { request }),
@@ -21,12 +23,17 @@ export const tauriBridge: NanikaBridge = {
         {
             try
             {
-                if (!previous && (update.results === undefined || update.navigation.current === undefined))
+                const localization = update.localization ?? previous?.localization;
+                if (
+                    !localization
+                    || (!previous && (update.results === undefined || update.navigation.current === undefined))
+                )
                 {
-                    throw new Error("The first session update must include results and navigation.");
+                    throw new Error("The first session update must include results, navigation, and localization.");
                 }
                 const snapshot: RootSearchSnapshot = {
                     ...update,
+                    localization,
                     results: update.results ?? previous?.results ?? [],
                     navigation: {
                         ...update.navigation,
@@ -36,10 +43,12 @@ export const tauriBridge: NanikaBridge = {
                     }
                 };
                 previous = snapshot;
-                listener(snapshot);
-                void invoke("acknowledge_search", {
-                    sessionId: snapshot.sessionId,
-                    revision: snapshot.revision
+                void Promise.resolve(listener(snapshot)).then(async () =>
+                {
+                    await invoke("acknowledge_search", {
+                        sessionId: snapshot.sessionId,
+                        revision: snapshot.revision
+                    });
                 }).catch(onError);
             }
             catch (error)

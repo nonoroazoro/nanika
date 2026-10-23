@@ -11,7 +11,7 @@ pub(crate) type RefreshCompletion = Box<dyn FnOnce(Result<(), SupervisorError>) 
 /// Routes scan completion independently of query and action replies.
 #[derive(Default)]
 pub(crate) struct RefreshReply {
-    _pending: Mutex<Option<(String, u64, RefreshCompletion)>>,
+    _pending: Mutex<Option<crate::PendingRefresh>>,
     _closed: AtomicBool
 }
 
@@ -20,6 +20,7 @@ impl RefreshReply {
         &self,
         id: String,
         generation: u64,
+        resources: Option<std::sync::Arc<nanika_localization::ResourceSet>>,
         completion: RefreshCompletion
     ) -> bool {
         let mut pending = self
@@ -38,7 +39,12 @@ impl RefreshReply {
             )));
             return false;
         }
-        *pending = Some((id, generation, completion));
+        *pending = Some(crate::PendingRefresh {
+            id,
+            generation,
+            resources,
+            completion
+        });
         true
     }
 
@@ -49,8 +55,8 @@ impl RefreshReply {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .take();
-        if let Some((_, _, completion)) = pending {
-            completion(Err(error));
+        if let Some(pending) = pending {
+            (pending.completion)(Err(error));
         }
     }
 
@@ -62,34 +68,25 @@ impl RefreshReply {
             ._pending
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let Some((id, expected_generation, _)) = pending.as_ref() else {
+        let Some(current) = pending.as_ref() else {
             return false;
         };
         let (result, consumed) = match frame {
             Ok(Some(Message::Refreshed {
                 request_id,
                 generation
-            })) if request_id == id && generation == expected_generation => (Ok(()), true),
-            Ok(Some(Message::Error {
-                request_id: Some(request_id),
-                code,
-                message
-            })) if request_id == id => (
-                Err(SupervisorError::UnexpectedMessage(format!(
-                    "refresh failed: {code}: {message}"
-                ))),
-                true
-            ),
-            Ok(Some(Message::Error {
-                request_id: None,
-                code,
-                message
-            })) => (
-                Err(SupervisorError::UnexpectedMessage(format!(
-                    "refresh failed: {code}: {message}"
-                ))),
-                false
-            ),
+            })) if request_id == &current.id && generation == &current.generation => (Ok(()), true),
+            Ok(Some(Message::Error { request_id, error }))
+                if request_id.as_ref().is_none_or(|id| id == &current.id) =>
+            {
+                (
+                    Err(crate::prepare_extension_error(
+                        error.clone(),
+                        current.resources.as_deref()
+                    )),
+                    request_id.is_some()
+                )
+            }
             Ok(None) => (Err(SupervisorError::ChannelClosed), false),
             Err(error) => (
                 Err(SupervisorError::UnexpectedMessage(format!(
@@ -99,7 +96,7 @@ impl RefreshReply {
             ),
             _ => return false
         };
-        let (_, _, completion) = pending.take().expect("pending refresh reply");
+        let completion = pending.take().expect("pending refresh reply").completion;
         drop(pending);
         completion(result);
         consumed

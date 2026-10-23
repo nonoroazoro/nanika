@@ -1,4 +1,6 @@
 <script lang="ts">
+import { localization } from "../../localization/state.svelte";
+import type { TextPresentation } from "../../localization/TextPresentation";
 import TextPreview from "./TextPreview.svelte";
 import type { DetailView } from "../../generated/DetailView";
 import CachedFileIcon from "./CachedFileIcon.svelte";
@@ -9,7 +11,19 @@ import type { TextChunk } from "../../generated/TextChunk";
 
 const COLLECTION_PREVIEW_LIMIT = 3;
 const FILE_PATH_PREVIEW_LIMIT = 5;
-const { textScope, detail, resourceOrigin, extensionId, busy, onReadText, onLanguageChange, viewport, revision }: {
+const {
+    presentation,
+    textScope,
+    detail,
+    resourceOrigin,
+    extensionId,
+    busy,
+    onReadText,
+    onLanguageChange,
+    viewport,
+    revision
+}: {
+    presentation: TextPresentation;
     busy: boolean;
     onLanguageChange?: (document: TextDocument, language: string | null) => void;
     textScope: string;
@@ -30,6 +44,8 @@ function resolveImageSource(): string | null
     return `${resourceOrigin}/${extensionId}/payload/${detail.content.source.path}`;
 }
 
+const title = $derived(detail.title === null ? null : presentation.text(detail.title, localization.locale));
+
 const imageSource = $derived(resolveImageSource());
 const previewFiles = $derived(
     detail.content.kind === "files" ? detail.content.files.slice(0, COLLECTION_PREVIEW_LIMIT) : []
@@ -39,19 +55,22 @@ const previewKey = $derived(
 );
 </script>
 
-<article class:image-detail={detail.content.kind === "image"} aria-label={detail.title ?? "Details"}>
-    {#if detail.title && detail.content.kind !== "text"}<h2>{detail.title}</h2>{/if}
+<article
+    class:image-detail={detail.content.kind === "image"}
+    aria-label={title ?? localization.text({ message: "view-details" })}
+>
+    {#if title && detail.content.kind !== "text"}<h2>{title}</h2>{/if}
     {#if detail.content.kind === "image" && imageSource}
         <div class="image-preview">
             <img
                 src={imageSource}
-                alt={detail.content.alternative_text}
+                alt={presentation.text(detail.content.alternative_text, localization.locale)}
                 decoding="async"
             />
         </div>
     {:else if detail.content.kind === "text"}
         <TextPreview
-            title={detail.title}
+            {title}
             scope={textScope}
             content={detail.content}
             {viewport}
@@ -70,7 +89,7 @@ const previewKey = $derived(
                     preview
                 />
             </div>
-            <ul class="files" aria-label="Files">
+            <ul class="files" aria-label={localization.text({ message: "view-files" })}>
                 <li>
                     <span class="file-icon"><CachedFileIcon
                             reference={detail.content.files[0]?.icon ?? null}
@@ -84,18 +103,20 @@ const previewKey = $derived(
             <div
                 class="collection-preview"
                 role="img"
-                aria-label={`${detail.content.files.length} item collection`}
+                aria-label={localization.text({ message: "view-file-collection-label", args: { count: detail.content.files.length } })}
             >
                 <FileCollectionPreview files={previewFiles} {resourceOrigin} {extensionId} groupKey={previewKey} />
             </div>
-            <ul class="files" aria-label="File collection">
+            <ul class="files" aria-label={localization.text({ message: "view-file-collection" })}>
                 <li>
                     <span class="file-icon"><CachedFileIcon
                             reference={detail.content.files[0]?.icon ?? null}
                             {resourceOrigin}
                             {extensionId}
                         /></span>
-                    <span>{detail.content.files.length} items</span>
+                    <span>{
+                        localization.text({ message: "view-file-count", args: { count: detail.content.files.length } })
+                    }</span>
                 </li>
             </ul>
         {/if}
@@ -104,23 +125,30 @@ const previewKey = $derived(
         <dl>
             {#if detail.content.kind === "files"}
                 <div>
-                    <dt>{detail.content.files.length === 1 ? "Path" : "Paths"}</dt>
+                    <dt>
+                        {
+                            localization.text({ message: "view-file-paths", args: { count: detail.content.files.length } })
+                        }
+                    </dt>
                     <dd class="file-paths">
                         {#each detail.content.files.slice(0, FILE_PATH_PREVIEW_LIMIT) as file, index (index)}
                             <span>{file.path}</span>
                         {/each}
                         {#if detail.content.files.length > FILE_PATH_PREVIEW_LIMIT}
-                            <span class="remaining-files">{detail.content.files.length - FILE_PATH_PREVIEW_LIMIT} more {
-                                    detail.content.files.length - FILE_PATH_PREVIEW_LIMIT === 1 ? "file" : "files"
-                                }</span>
+                            <span class="remaining-files">{
+                                localization.text({
+                                    message: "view-files-more",
+                                    args: { count: detail.content.files.length - FILE_PATH_PREVIEW_LIMIT }
+                                })
+                            }</span>
                         {/if}
                     </dd>
                 </div>
             {/if}
             {#each detail.metadata as entry, index (index)}
                 <div>
-                    <dt>{entry.title}</dt>
-                    <dd>{entry.value}</dd>
+                    <dt>{presentation.text(entry.title, localization.locale)}</dt>
+                    <dd>{presentation.text(entry.value, localization.locale)}</dd>
                 </div>
             {/each}
         </dl>

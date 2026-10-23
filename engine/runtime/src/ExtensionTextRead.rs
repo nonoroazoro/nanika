@@ -4,5 +4,6 @@ pub(crate) struct ExtensionTextRead {
     pub(crate) generation: u64,
     pub(crate) view_id: String,
     pub(crate) read: nanika_protocol::TextRead,
-    pub(crate) completion: std::sync::mpsc::Sender<Result<nanika_protocol::TextChunk, String>>
+    pub(crate) completion:
+        std::sync::mpsc::Sender<Result<nanika_protocol::TextChunk, crate::OperationError>>
 }

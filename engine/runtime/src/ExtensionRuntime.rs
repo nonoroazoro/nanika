@@ -25,6 +25,14 @@ impl From<ExtensionProcess> for ExtensionRuntime {
 }
 
 impl ExtensionRuntime {
+    pub(crate) fn set_localization(
+        &mut self,
+        resources: Option<Arc<nanika_localization::ResourceSet>>
+    ) {
+        if let Self::Nanika(process) = self {
+            process.set_localization(resources);
+        }
+    }
     pub(crate) fn observe_exit(&self, observer: Arc<dyn Fn(String) + Send + Sync>) {
         match self {
             Self::Nanika(process) => process.observe_exit(observer),
@@ -170,9 +178,9 @@ impl ExtensionRuntime {
             Self::Nanika(process) => {
                 process.start_text_read(request_id, generation, view_id, read, completion)
             }
-            Self::Acp(_) => completion(Err(
+            Self::Acp(_) => completion(Err(SupervisorError::UnexpectedMessage(
                 "This runtime does not publish text document resources.".to_owned()
-            ))
+            )))
         }
     }
 
@@ -233,16 +241,16 @@ impl ExtensionRuntime {
                     vec![Candidate {
                         kind: nanika_protocol::CandidateKind::Action,
                         entry_id: "prompt".to_owned(),
-                        title: format!("Ask {}", process.extension_id()),
+                        title: format!("Ask {}", process.extension_id()).into(),
                         subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
-                            "AI Command".to_owned()
+                            "AI Command".into()
                         )),
                         action_id: "prompt".to_owned(),
                         actions: vec![nanika_protocol::Action::primary(
                             "prompt".to_owned(),
                             "Open"
                         )],
-                        aliases: vec![query],
+                        aliases: vec![query.into()],
                         icon: None
                     }]
                 } else {

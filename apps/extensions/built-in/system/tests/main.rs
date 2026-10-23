@@ -78,7 +78,7 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
         )
         .unwrap();
         assert!(
-            matches!(read_frame(&mut output).unwrap(), Some(Message::Error { code, .. }) if code == "busy")
+            matches!(read_frame(&mut output).unwrap(), Some(Message::Error { error, .. }) if error.code == "busy" && error.message == nanika_protocol::message("error-busy", []) && error.detail.is_none())
         );
         write_frame(
             &mut input,
@@ -117,15 +117,21 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
     };
     write_frame(
         &mut input,
-        &Message::Error {
-            request_id: Some(request_id),
-            code: "denied".into(),
-            message: "OS permission denied".into()
+        &Message::HostResponse {
+            request_id,
+            parent_request_id: "failure".into(),
+            generation: 8,
+            response: HostServiceResponse::Failed {
+                failure: nanika_protocol::HostServiceFailure::new(
+                    nanika_protocol::HostServiceFailureKind::Rejected,
+                    "OS permission denied"
+                )
+            }
         }
     )
     .unwrap();
     assert!(
-        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), code, message }) if id == "failure" && code == "denied" && message == "OS permission denied")
+        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { request_id: Some(id), error }) if id == "failure" && error.code == "host_service_rejected" && error.message == nanika_protocol::message("error-host-service", [("outcome".into(), "rejected".into())]) && error.detail.as_deref() == Some("OS permission denied"))
     );
     write_frame(
         &mut input,
@@ -138,7 +144,7 @@ fn actions_use_correlated_host_requests_preserve_failures_and_do_not_cancel_acce
     )
     .unwrap();
     assert!(
-        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { code, .. }) if code == "unknown_action")
+        matches!(read_frame(&mut output).unwrap(), Some(Message::Error { error, .. }) if error.code == "unknown_action" && error.message == nanika_protocol::message("error-unknown-action", []) && error.detail.is_none())
     );
     drop(input);
     assert!(child.wait().unwrap().success());

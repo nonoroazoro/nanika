@@ -1,4 +1,5 @@
 <script lang="ts">
+import { localization } from "../localization/state.svelte";
 import appIcon from "../../../shell/icons/icon.svg";
 import { settingsAnchor } from "./anchor";
 
@@ -6,16 +7,16 @@ const { version }: { version: string; } = $props();
 </script>
 
 <div class="about-page" id={settingsAnchor("about", { kind: "page" })}>
-    <h1>About</h1>
+    <h1>{localization.text({ message: "settings-about" })}</h1>
     <div class="about-content">
         <div class="identity">
             <img class="app-icon" src={appIcon} width="96" height="96" alt="" draggable="false" />
             <h2>Nanika</h2>
-            <p>A home for your apps, commands, and extensions.</p>
+            <p>{localization.text({ message: "settings-about-description" })}</p>
         </div>
-        <dl class="app-information" aria-label="Application information">
+        <dl class="app-information" aria-label={localization.text({ message: "settings-app-information" })}>
             <div class="information-row">
-                <dt>Version</dt>
+                <dt>{localization.text({ message: "settings-version" })}</dt>
                 <dd>{version}</dd>
             </div>
         </dl>

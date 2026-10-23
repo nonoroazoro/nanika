@@ -25,6 +25,26 @@ beforeEach(() =>
     harness.invoke.mockClear();
 });
 
+test("launcher resources carry instance and session authority without paths", async () =>
+{
+    const request = {
+        surface: "launcher" as const,
+        sessionId: 7,
+        instanceId: 8,
+        scope: { extensionId: "com.example.extension", identity: "a".repeat(64) }
+    };
+    await tauriBridge.readResources(request);
+    expect(harness.invoke).toHaveBeenLastCalledWith("read_localization_resources", { request });
+    expectTypeOf<{ scope: typeof request.scope; sessionId: number; surface: "settings"; }>()
+        .not.toExtend<Parameters<NanikaBridge["readResources"]>[0]>();
+});
+
+test("startup diagnostic reads carry the current session and no file path", async () =>
+{
+    await tauriBridge.readStartupDiagnostic(7);
+    expect(harness.invoke).toHaveBeenLastCalledWith("read_startup_diagnostic", { sessionId: 7 });
+});
+
 test("the frontend cannot send host-owned invalidation events", () =>
 {
     expectTypeOf<{ kind: "invalidated"; }>().not.toExtend<ViewInteraction>();
@@ -83,13 +103,37 @@ test("wire omissions retain results and navigation identity; null explicitly ret
     const delta = _update();
     delta.revision = 2;
     delete delta.results;
+    delete delta.localization;
     delete delta.navigation.current;
     channel.onmessage(delta);
+    expect(snapshots[1]?.localization).toBe(snapshots[0]?.localization);
     expect(snapshots[1]?.results).toBe(snapshots[0]?.results);
     expect(snapshots[1]?.navigation.current).toBe(snapshots[0]?.navigation.current);
     channel.onmessage({ ...delta, revision: 3, navigation: { ...delta.navigation, current: null } });
     expect(snapshots[2]?.navigation.current).toBeNull();
+    await Promise.resolve();
     expect(harness.invoke).toHaveBeenLastCalledWith("acknowledge_search", { sessionId: 1, revision: 3 });
+    expect(onError).not.toHaveBeenCalled();
+});
+
+test("resource preparation settles before the host can send another search delivery", async () =>
+{
+    const preparation = Promise.withResolvers<undefined>();
+    const onError = vi.fn<(error: unknown) => void>();
+    await tauriBridge.openSession(async () =>
+    {
+        await preparation.promise;
+    }, onError);
+    const channel = TestSearchChannel.instances[0];
+    assert.ok(channel);
+    channel.onmessage(_update());
+    await Promise.resolve();
+    expect(harness.invoke).not.toHaveBeenCalledWith("acknowledge_search", expect.anything());
+    preparation.resolve(undefined);
+    await vi.waitFor(() =>
+    {
+        expect(harness.invoke).toHaveBeenLastCalledWith("acknowledge_search", { sessionId: 1, revision: 1 });
+    });
     expect(onError).not.toHaveBeenCalled();
 });
 
@@ -126,6 +170,7 @@ function _update(): SearchUpdate
     return {
         navigation: { revision: 1, current: null, busy: false, error: null, dismissCount: 0 },
         sessionId: 1,
+        localization: { preference: "system", locale: "en", revision: 1 },
         requestId: 1,
         revision: 1,
         query: "",

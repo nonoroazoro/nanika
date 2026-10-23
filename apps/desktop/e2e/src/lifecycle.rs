@@ -5,7 +5,7 @@ use tauri::Manager;
 
 pub(crate) fn plugin(directory: PathBuf) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let mut ready = false;
-    let mut previous_windows = None;
+    let mut previous_state = None;
     tauri::plugin::Builder::new("e2e-lifecycle")
         .setup(|app, _| {
             let app = app.clone();
@@ -34,7 +34,7 @@ pub(crate) fn plugin(directory: PathBuf) -> tauri::plugin::TauriPlugin<tauri::Wr
             // Window listeners run after RunEvent, and visibility changes need not emit a WindowEvent.
             if ready
                 && matches!(event, tauri::RunEvent::MainEventsCleared)
-                && let Err(error) = _record(app, &directory, &mut previous_windows)
+                && let Err(error) = _record(app, &directory, &mut previous_state)
             {
                 eprintln!("Could not record native state: {error}");
                 app.exit(1);
@@ -46,29 +46,31 @@ pub(crate) fn plugin(directory: PathBuf) -> tauri::plugin::TauriPlugin<tauri::Wr
 fn _record(
     app: &tauri::AppHandle,
     directory: &std::path::Path,
-    previous_windows: &mut Option<serde_json::Map<String, serde_json::Value>>
+    previous_state: &mut Option<serde_json::Value>
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut windows = serde_json::Map::new();
     for (label, window) in app.webview_windows() {
         windows.insert(
             label,
             serde_json::json!({
+                "title": window.title()?,
                 "visible": window.is_visible()?,
                 "focused": window.is_focused()?,
                 "pickerOpen": crate::native_dialog::is_open(&window)?
             })
         );
     }
-    if previous_windows.as_ref() == Some(&windows) {
-        return Ok(());
-    }
     let state = serde_json::json!({
         "pid": std::process::id(),
         "identity": app.config().identifier,
         "platform": std::env::consts::OS,
         "webviewVersion": tauri::webview_version()?,
-        "windows": windows
+        "windows": windows,
+        "trayLabels": nanika_desktop::native_tray_labels(app)?
     });
+    if previous_state.as_ref() == Some(&state) {
+        return Ok(());
+    }
     let temporary = directory.join("native-state.tmp");
     std::fs::write(&temporary, serde_json::to_vec(&state)?)?;
     std::fs::rename(temporary, directory.join("native-state.json"))?;
@@ -78,6 +80,6 @@ fn _record(
         .append(true)
         .open(directory.join("native-state.jsonl"))?;
     writeln!(history, "{state}")?;
-    *previous_windows = Some(windows);
+    *previous_state = Some(state);
     Ok(())
 }

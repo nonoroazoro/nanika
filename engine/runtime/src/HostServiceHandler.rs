@@ -3,6 +3,7 @@ use nanika_protocol::HostServiceRequest;
 
 pub trait HostServiceHandler: Send + Sync {
     /// Prepare stable inputs before the caller makes the final admission decision.
+    /// Returning an error must leave the native operation unadmitted.
     fn prepare(
         &self,
         extension_id: &str,

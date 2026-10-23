@@ -486,6 +486,7 @@ fn _runtime_source(
 ) -> nanika_host::ExtensionRuntimeSource {
     let arguments: Vec<_> = arguments.into_iter().collect();
     nanika_host::ExtensionRuntimeSource {
+        localization: None,
         activation: nanika_extension_package::ExtensionActivation::Startup,
         live_configuration: false,
         start: Box::new(move |configuration| {

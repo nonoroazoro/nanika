@@ -58,13 +58,17 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         Some(Message::Refreshed { generation: 2, .. })
     ));
     let entries = read_catalog(&mut input, &mut output, &mut catalog);
-    assert!(entries.iter().any(|entry| entry.title == "Nanika Sample"));
-    assert!(entries.iter().any(|entry| entry.title == "音乐"));
-    assert!(entries.iter().any(|entry| entry.title == "同步"));
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.title == "Nanika Sample".into())
+    );
+    assert!(entries.iter().any(|entry| entry.title == "音乐".into()));
+    assert!(entries.iter().any(|entry| entry.title == "同步".into()));
     let entry = loop {
         let entries = read_catalog(&mut input, &mut output, &mut catalog);
         if let Some(entry) = entries.into_iter().find(|entry| {
-            entry.title == "Nanika Sample"
+            entry.title == "Nanika Sample".into()
                 && matches!(entry.icon, Some(nanika_protocol::IconSource::Cache(_)))
         }) {
             break entry;
@@ -156,9 +160,11 @@ fn process_refreshes_a_configured_root_and_contributes_candidates() {
         read_response(&mut output, "invalid invoke result"),
         Some(Message::Error {
             request_id: Some(request_id),
-            code,
+            error,
             ..
-        }) if request_id == "invoke-application-invalid" && code == "invalid_host_response"
+        }) if request_id == "invoke-application-invalid" && error.code == "invalid_host_response"
+            && error.message == nanika_protocol::message("error-invalid-host-response", [])
+            && error.detail.as_deref() == Some("host response does not match the pending application invocation")
     ));
     drop(input);
     assert!(child.wait().expect("child should exit").success());
@@ -208,14 +214,14 @@ fn process_keeps_search_available_when_startup_icon_cache_fails() {
     let entries = catalog_until_candidate(&mut input, &mut output, &mut catalog, "Nanika Sample");
     let entry = entries
         .iter()
-        .find(|entry| entry.title == "Nanika Sample")
+        .find(|entry| entry.title == "Nanika Sample".into())
         .expect("search should remain available");
     assert_eq!(entry.icon, Some(nanika_protocol::IconSource::Empty));
     let cleared_entries = read_catalog(&mut input, &mut output, &mut catalog);
     assert!(
         cleared_entries
             .iter()
-            .any(|entry| entry.title == "Nanika Sample")
+            .any(|entry| entry.title == "Nanika Sample".into())
     );
     drop(input);
     assert!(child.wait().expect("child should exit").success());
@@ -275,7 +281,11 @@ fn configuration_acknowledgement_waits_for_updated_candidates() {
     assert!(progress.iter().any(|value| value.total.is_some()));
 
     let updated = read_catalog(&mut input, &mut output, &mut catalog);
-    assert!(updated.iter().any(|entry| entry.title == "Nanika Sample"));
+    assert!(
+        updated
+            .iter()
+            .any(|entry| entry.title == "Nanika Sample".into())
+    );
     prepare_entries(&mut input, 2, &updated);
 
     drop(input);
@@ -330,7 +340,7 @@ fn catalog_until_candidate(
 ) -> Vec<nanika_protocol::Candidate> {
     loop {
         let entries = read_catalog(input, output, catalog);
-        if entries.iter().any(|entry| entry.title == title) {
+        if entries.iter().any(|entry| entry.title == title.into()) {
             prepare_entries(&mut *input, 1, &entries);
             return entries;
         }
@@ -521,7 +531,7 @@ fn failed_paths_are_logged_without_blocking_configuration_refresh_or_search() {
     assert!(
         read_catalog(&mut input, &mut output, &mut catalog)
             .iter()
-            .any(|entry| entry.title == "Nanika Sample")
+            .any(|entry| entry.title == "Nanika Sample".into())
     );
     drop(input);
     assert!(child.wait().unwrap().success());

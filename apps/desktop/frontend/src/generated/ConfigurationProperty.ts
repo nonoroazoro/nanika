@@ -3,16 +3,18 @@ import type { ConfigurationPersistence } from "./ConfigurationPersistence";
 import type { ConfigurationSchema } from "./ConfigurationSchema";
 import type { ConfigurationStringFormat } from "./ConfigurationStringFormat";
 import type { ConfigurationValueType } from "./ConfigurationValueType";
+import type { LocalizedText } from "./LocalizedText";
+import type { PresentationGroup } from "./PresentationGroup";
 import type { TargetPlatform } from "./TargetPlatform";
 import type { JsonValue } from "./serde_json/JsonValue";
 
 export type ConfigurationProperty = {
-    title: string;
+    title: LocalizedText;
     /**
-     * Named presentation group. Omission uses the contribution title.
+     * Stable presentation group. Omission uses the contribution title with an implicit identity.
      */
-    group: string | null;
-    description: string | null;
+    group: PresentationGroup | null;
+    description: LocalizedText | null;
     default: JsonValue;
     persistence: ConfigurationPersistence;
     /**

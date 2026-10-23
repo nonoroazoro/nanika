@@ -19,21 +19,91 @@ impl View {
         match self {
             Self::List { list } => validate_list(list),
             Self::Detail { detail } => validate_detail(detail)
+        }?;
+        self.visit_texts(&mut |field, text, maximum, allow_empty| match text {
+            crate::LocalizedText::Literal(value) => {
+                validate_text(field, value, maximum, allow_empty)
+            }
+            crate::LocalizedText::Message(reference) => reference
+                .validate()
+                .map_err(|error| format!("{field}: {error}"))
+        })?;
+        let mut groups = Vec::new();
+        self.visit_actions(&mut |actions| {
+            groups.extend(actions.iter().filter_map(|action| action.group.as_ref()));
+            Ok(())
+        })?;
+        crate::PresentationGroup::validate_definitions(groups)
+    }
+
+    /// Visit view labels, including offscreen selection and detail, without visiting domain content or actions.
+    pub fn visit_texts<'a>(
+        &'a self,
+        visitor: &mut impl FnMut(&str, &'a crate::LocalizedText, usize, bool) -> Result<(), String>
+    ) -> Result<(), String> {
+        match self {
+            Self::Detail { detail } => _visit_detail_texts(detail, visitor),
+            Self::List { list } => {
+                visitor("view title", &list.title, 256, false)?;
+                visitor(
+                    "view search placeholder",
+                    &list.search_placeholder,
+                    256,
+                    true
+                )?;
+                visitor("view empty title", &list.empty_title, 256, false)?;
+                visitor("view empty description", &list.empty_description, 512, true)?;
+                for section in &list.sections {
+                    if let Some(title) = &section.title {
+                        visitor("list section title", title, 256, false)?;
+                    }
+                    for item in &section.items {
+                        _visit_item_texts(item, visitor)?;
+                    }
+                }
+                if let Some(selection) = &list.selection {
+                    _visit_item_texts(&selection.item, visitor)?;
+                }
+                if let Some(detail) = &list.detail {
+                    _visit_detail_texts(detail, visitor)?;
+                }
+                if let Some(filter) = &list.filter {
+                    for option in &filter.options {
+                        visitor("view filter option title", &option.title, 128, false)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Visit all published action lists, including a selection outside the delivered window.
+    pub fn visit_actions<'a>(
+        &'a self,
+        visitor: &mut impl FnMut(&'a [Action]) -> Result<(), String>
+    ) -> Result<(), String> {
+        match self {
+            Self::Detail { detail } => visitor(&detail.actions),
+            Self::List { list } => {
+                for section in &list.sections {
+                    for item in &section.items {
+                        visitor(&item.actions)?;
+                    }
+                }
+                if let Some(selection) = &list.selection {
+                    visitor(&selection.item.actions)?;
+                }
+                if let Some(detail) = &list.detail {
+                    visitor(&detail.actions)?;
+                }
+                Ok(())
+            }
         }
     }
 }
 
 fn validate_list(list: &ListView) -> Result<(), String> {
-    validate_text("view title", &list.title, 256, false)?;
-    validate_text(
-        "view search placeholder",
-        &list.search_placeholder,
-        256,
-        true
-    )?;
     validate_view_search_text(&list.search_text)?;
-    validate_text("view empty title", &list.empty_title, 256, false)?;
-    validate_text("view empty description", &list.empty_description, 512, true)?;
     if list.sections.len() > 32 {
         return Err("view has too many list sections".to_owned());
     }
@@ -46,9 +116,6 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         validate_id("list section id", &section.id)?;
         if !section_ids.insert(section.id.as_str()) {
             return Err("view list section ids must be unique".to_owned());
-        }
-        if let Some(title) = &section.title {
-            validate_text("list section title", title, 256, false)?;
         }
         total = total
             .checked_add(section.total)
@@ -102,7 +169,6 @@ fn validate_list(list: &ListView) -> Result<(), String> {
         let mut values = HashSet::new();
         for option in &filter.options {
             validate_id("view filter option value", &option.value)?;
-            validate_text("view filter option title", &option.title, 128, false)?;
             if !values.insert(option.value.as_str()) {
                 return Err("view filter option values must be unique".to_owned());
             }
@@ -115,9 +181,6 @@ fn validate_list(list: &ListView) -> Result<(), String> {
 }
 
 fn validate_detail(detail: &DetailView) -> Result<(), String> {
-    if let Some(title) = &detail.title {
-        validate_text("detail title", title, 512, true)?;
-    }
     match &detail.content {
         DetailContent::Text {
             value, document, ..
@@ -155,16 +218,7 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
                 }
             }
         }
-        DetailContent::Image {
-            source,
-            alternative_text
-        } => {
-            validate_text(
-                "detail image alternative text",
-                alternative_text,
-                512,
-                false
-            )?;
+        DetailContent::Image { source, .. } => {
             if !crate::is_valid_resource_path(&source.path) {
                 return Err("detail image resource path is invalid".to_owned());
             }
@@ -174,8 +228,7 @@ fn validate_detail(detail: &DetailView) -> Result<(), String> {
         return Err("view detail has too much metadata".to_owned());
     }
     for metadata in &detail.metadata {
-        validate_text("detail metadata title", &metadata.title, 256, false)?;
-        validate_text("detail metadata value", &metadata.value, 2_048, true)?;
+        metadata.value.validate()?;
     }
     validate_actions(&detail.actions)
 }
@@ -185,25 +238,22 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
         return Err("view exposes too many actions".to_owned());
     }
     let mut ids = HashSet::new();
+    crate::PresentationGroup::validate_definitions(
+        actions.iter().filter_map(|action| action.group.as_ref())
+    )?;
     for action in actions {
-        if let Some(group) = &action.group {
-            validate_text("action group", group, 128, false)?;
-        }
         validate_id("view action id", &action.id)?;
-        validate_text("view action title", &action.title, 128, false)?;
-        if let Some(title) = &action.confirmation_title {
-            if action.allow_default_execution {
-                return Err(
-                    "action requiring confirmation cannot allow default execution".to_owned()
-                );
-            }
-            validate_text("view action confirmation title", title, 128, false)?;
+        action.visit_texts(&mut |field, text, maximum| match text {
+            crate::LocalizedText::Literal(value) => validate_text(field, value, maximum, false),
+            crate::LocalizedText::Message(reference) => reference
+                .validate()
+                .map_err(|error| format!("{field}: {error}"))
+        })?;
+        if action.confirmation_title.is_some() && action.allow_default_execution {
+            return Err("action requiring confirmation cannot allow default execution".to_owned());
         }
-        if let Some(description) = &action.confirmation_description {
-            if action.confirmation_title.is_none() {
-                return Err("confirmation description requires a confirmation title".into());
-            }
-            validate_text("action confirmation description", description, 512, false)?;
+        if action.confirmation_description.is_some() && action.confirmation_title.is_none() {
+            return Err("confirmation description requires a confirmation title".into());
         }
         if !ids.insert(action.id.as_str()) {
             return Err("view action ids must be unique".to_owned());
@@ -243,10 +293,6 @@ fn validate_text(
 
 fn validate_item(item: &crate::ListItem) -> Result<(), String> {
     validate_id("list item id", &item.id)?;
-    validate_text("list item title", &item.title, 512, false)?;
-    if let Some(subtitle) = &item.subtitle {
-        validate_text("list item subtitle", subtitle, 512, true)?;
-    }
     validate_actions(&item.actions)?;
     if let Some(crate::ViewItemIcon::Native(reference)) = &item.icon
         && !reference.is_valid()
@@ -260,6 +306,44 @@ fn validate_item(item: &crate::ListItem) -> Result<(), String> {
 pub fn validate_view_search_text(value: &str) -> Result<(), String> {
     if value.chars().count() > MAX_VIEW_SEARCH_CHARS {
         return Err("view search text exceeds the supported size".to_owned());
+    }
+    Ok(())
+}
+
+fn _visit_item_texts<'a>(
+    item: &'a crate::ListItem,
+    visitor: &mut impl FnMut(&str, &'a crate::LocalizedText, usize, bool) -> Result<(), String>
+) -> Result<(), String> {
+    visitor("list item title", &item.title, 512, false)?;
+    if let Some(subtitle) = &item.subtitle {
+        visitor("list item subtitle", subtitle, 512, true)?;
+    }
+    Ok(())
+}
+
+fn _visit_detail_texts<'a>(
+    detail: &'a DetailView,
+    visitor: &mut impl FnMut(&str, &'a crate::LocalizedText, usize, bool) -> Result<(), String>
+) -> Result<(), String> {
+    if let Some(title) = &detail.title {
+        visitor("detail title", title, 512, true)?;
+    }
+    if let DetailContent::Image {
+        alternative_text, ..
+    } = &detail.content
+    {
+        visitor(
+            "detail image alternative text",
+            alternative_text,
+            512,
+            false
+        )?;
+    }
+    for metadata in &detail.metadata {
+        visitor("detail metadata title", &metadata.title, 256, false)?;
+        if let crate::ViewMetadataValue::Text(value) = &metadata.value {
+            visitor("detail metadata value", value, 2_048, true)?;
+        }
     }
     Ok(())
 }

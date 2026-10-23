@@ -1,0 +1,31 @@
+{
+    "format": "nanika-extension",
+    "manifestVersion": 1,
+    "id": "org.example.localized",
+    "name": { "message": "extension-name" },
+    "localization": {
+        "defaultLocale": "en",
+        "resources": {
+            "en": ["locales/en.ftl"],
+            "zh-Hans": ["locales/zh-Hans.ftl"]
+        }
+    },
+    "icon": "assets/icon.png",
+    "version": "0.1.0",
+    "hostApi": "^0.1",
+    "activation": "onDemand",
+    "targets": {
+        "aarch64-apple-darwin": { "entrypoint": "bin/aarch64-apple-darwin/nanika-localization-example" },
+        "x86_64-apple-darwin": { "entrypoint": "bin/x86_64-apple-darwin/nanika-localization-example" },
+        "x86_64-pc-windows-msvc": { "entrypoint": "bin/x86_64-pc-windows-msvc/nanika-localization-example.exe" }
+    },
+    "runtime": { "protocol": "nanika", "protocolVersion": 1 },
+    "contributes": {
+        "views": [{
+            "id": "example.files",
+            "title": { "message": "view-title" },
+            "description": { "message": "view-description" },
+            "keywords": [{ "message": "keyword-files" }]
+        }]
+    }
+}

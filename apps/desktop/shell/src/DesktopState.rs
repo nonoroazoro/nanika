@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use nanika_host::{OperationError, OperationErrorCode as Code};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 use std::thread::JoinHandle;
@@ -9,6 +10,8 @@ use crate::{
 };
 
 pub(crate) struct DesktopState {
+    _localization_reads: Arc<AtomicUsize>,
+    _language_refresh: Mutex<Option<crate::language_refresh::LanguageRefresh>>,
     _launcher_refresh: Mutex<Option<crate::launcher_refresh::LauncherRefresh>>,
     next_session_id: AtomicU64,
     next_settings_request: AtomicU64,
@@ -32,7 +35,7 @@ impl DesktopState {
     pub(crate) fn menu_actions(
         &self,
         request: &crate::ContextMenuRequest
-    ) -> Result<Vec<nanika_protocol::Action>, String> {
+    ) -> Result<Vec<nanika_protocol::Action>, OperationError> {
         let state = self
             .shared
             .lock()
@@ -40,7 +43,7 @@ impl DesktopState {
         let session = state
             .session
             .as_ref()
-            .ok_or("The window session is not open.")?;
+            .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
         session.menu_actions(request)
     }
 
@@ -49,7 +52,7 @@ impl DesktopState {
         request: &crate::ContextMenuRequest,
         action_id: String,
         confirmed: bool
-    ) -> Result<Option<crate::ViewEventReceipt>, String> {
+    ) -> Result<Option<crate::ViewEventReceipt>, OperationError> {
         let invocation = if confirmed {
             nanika_protocol::ActionInvocation::Confirmed
         } else {
@@ -60,7 +63,7 @@ impl DesktopState {
             .iter()
             .any(|action| action.id == action_id && action.allows_invocation(invocation))
         {
-            return Err("The action is unavailable.".to_owned());
+            return Err(OperationError::new(Code::ActionUnavailable));
         }
         match &request.target {
             crate::MenuTarget::Search {
@@ -109,7 +112,7 @@ impl DesktopState {
     pub(crate) fn configuration_menu(
         &self,
         request: &crate::ConfigurationMenuRequest
-    ) -> Result<nanika_host::ConfigurationMenu, String> {
+    ) -> Result<nanika_host::ConfigurationMenu, OperationError> {
         let (runtime, extension_id) = self._configuration_menu_authority(request)?;
         runtime.configuration_menu(&extension_id, request.instance_id)
     }
@@ -118,9 +121,11 @@ impl DesktopState {
         &self,
         request: &crate::ConfigurationMenuRequest,
         operation: crate::ConfigurationMenuOperation,
-        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static
-    ) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
+        progress: impl Fn(crate::SettingsApplicationUpdate) + Send + Sync + 'static
+    ) -> Result<(), crate::SettingsOperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::RuntimeUnavailable, detail))?;
         let (runtime, extension_id) = self._configuration_menu_authority(request)?;
         match operation {
             crate::ConfigurationMenuOperation::Action { id, confirmed } => runtime
@@ -133,7 +138,8 @@ impl DesktopState {
                     } else {
                         nanika_protocol::ActionInvocation::Explicit
                     }
-                ),
+                )
+                .map_err(Into::into),
             crate::ConfigurationMenuOperation::Set {
                 key,
                 value,
@@ -145,22 +151,28 @@ impl DesktopState {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner());
                     let id = self.next_settings_request.fetch_add(1, Ordering::Relaxed);
-                    let owner = extension_id.clone();
-                    let property = key.clone();
+                    let update = crate::SettingsApplicationUpdate {
+                        request_id: id,
+                        extension_id: extension_id.clone(),
+                        resource_scope: runtime.localization_scope(&extension_id),
+                        key: key.clone(),
+                        result: crate::SettingsSaveResult::Running { progress: None }
+                    };
+                    let pending = update.clone();
                     let receipt = runtime.save_menu_configuration(
                         &extension_id,
                         request.instance_id,
                         revision,
-                        key.clone(),
-                        value,
-                        Arc::new(move |value| progress(id, &owner, &property, value))
-                    )?;
-                    let update = crate::SettingsApplicationUpdate {
-                        request_id: id,
-                        extension_id,
                         key,
-                        result: crate::SettingsSaveResult::Running { progress: None }
-                    };
+                        value,
+                        Arc::new(move |value| {
+                            let mut update = pending.clone();
+                            update.result = crate::SettingsSaveResult::Running {
+                                progress: Some(value)
+                            };
+                            progress(update);
+                        })
+                    )?;
                     self.publish_settings_application(update.clone());
                     (update, receipt)
                 };
@@ -173,14 +185,23 @@ impl DesktopState {
         &self,
         mut update: crate::SettingsApplicationUpdate,
         receipt: nanika_host::ConfigurationSaveReceipt
-    ) -> Result<(), String> {
+    ) -> Result<(), crate::SettingsOperationError> {
         let result = receipt.wait();
         let error = match &result {
-            Ok(outcome) => outcome.error.clone(),
-            Err(error) => Some(error.clone())
+            Ok(outcome) => outcome
+                .error
+                .clone()
+                .map(crate::SettingsOperationError::Configuration),
+            Err(error) => Some(crate::SettingsOperationError::Configuration(
+                nanika_host::ConfigurationSaveError::unconfirmed(error.clone())
+            ))
         };
         if let Some(error) = &error {
-            tracing::error!(extension_id = update.extension_id, %error, "settings operation failed");
+            tracing::error!(
+                extension_id = update.extension_id,
+                ?error,
+                "settings operation failed"
+            );
         }
         update.result = result.into();
         self.publish_settings_application(update);
@@ -189,9 +210,13 @@ impl DesktopState {
 
     pub(crate) fn new(
         instance: nanika_platform::SingleInstance,
-        diagnostics: nanika_host::Diagnostics
+        diagnostics: nanika_host::Diagnostics,
+        localization: nanika_localization::LocalizationSnapshot
     ) -> Result<Self, String> {
-        let shared = Arc::new(Mutex::new(DesktopRuntime::default()));
+        let shared = Arc::new(Mutex::new(DesktopRuntime {
+            localization,
+            ..Default::default()
+        }));
         let refresh_state = Arc::clone(&shared);
         let launcher_refresh = crate::launcher_refresh::LauncherRefresh::spawn(move || {
             let (runtime, generation) = {
@@ -213,14 +238,20 @@ impl DesktopState {
             // Neither the native event loop nor the Channel writer waits for discovery.
             // CandidatesChanged schedules each contributor's current query through
             // the existing instance-bound delivery path, including during navigation.
-            if let Err(error) = runtime.refresh_root_search(generation) {
-                tracing::warn!(%error, "launcher catalog refresh failed");
+            if let Err(errors) = runtime.refresh_root_search(generation) {
+                for warning in errors {
+                    tracing::warn!(extension_id = warning.extension_id, error = %warning.error, "launcher catalog refresh failed");
+                }
             }
         })
         .map_err(|error| error.to_string())?;
         let (wakes, receiver) = mpsc::sync_channel(1);
         let worker_state = Arc::clone(&shared);
-        let settings_applications = Arc::new(Mutex::new(crate::SettingsApplications::default()));
+        let settings_applications = Arc::new(Mutex::new({
+            let mut settings = crate::SettingsApplications::default();
+            settings.localization = localization;
+            settings
+        }));
         let delivery_settings = Arc::clone(&settings_applications);
         let dispatcher = std::thread::Builder::new()
             .name("nanika-search-delivery".to_owned())
@@ -242,6 +273,8 @@ impl DesktopState {
             })
             .map_err(|error| error.to_string())?;
         Ok(Self {
+            _localization_reads: Arc::new(AtomicUsize::new(0)),
+            _language_refresh: Mutex::new(None),
             _launcher_refresh: Mutex::new(Some(launcher_refresh)),
             next_session_id: AtomicU64::new(1),
             next_settings_request: AtomicU64::new(1),
@@ -262,6 +295,24 @@ impl DesktopState {
         })
     }
 
+    pub(crate) fn set_language_refresh(&self, refresh: crate::language_refresh::LanguageRefresh) {
+        *self
+            ._language_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(refresh);
+    }
+
+    pub(crate) fn refresh_language(&self) {
+        if let Some(refresh) = self
+            ._language_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+        {
+            refresh.wake();
+        }
+    }
+
     pub(crate) fn launcher_opened(&self) {
         if self.stopping.load(Ordering::Acquire) {
             return;
@@ -279,8 +330,10 @@ impl DesktopState {
     pub(crate) fn open_session(
         &self,
         updates: tauri::ipc::Channel<RootSearchSnapshot>
-    ) -> Result<ApplicationSnapshot, String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<ApplicationSnapshot, OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::ApplicationShuttingDown, detail))?;
         let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
         let mut state = self
             .shared
@@ -288,12 +341,15 @@ impl DesktopState {
             .unwrap_or_else(|error| error.into_inner());
         let mut session = SearchSession::new(id, updates);
         if let Some(runtime) = &state.runtime {
-            session.generation = runtime.begin_query("")?;
+            session.generation = runtime
+                .begin_query("")
+                .map_err(|detail| OperationError::with_detail(Code::SessionOpenFailed, detail))?;
         }
         // Registration and the initial empty query are atomic relative to delivery.
         // The response contains metadata only; all search data uses the Channel.
         let previous = state.session.replace(session);
         let runtime = state.runtime.clone();
+        let localization = state.localization;
         drop(state);
         self.wake();
         retire_views(runtime, previous);
@@ -301,21 +357,18 @@ impl DesktopState {
         Ok(ApplicationSnapshot {
             session_id: id,
             version: env!("CARGO_PKG_VERSION"),
-            locale: nanika_platform::system_locale(),
+            localization,
             platform: nanika_platform::target_platform(),
             max_query_chars: nanika_search::MAX_QUERY_CHARS,
             resource_origin: crate::resource_protocol::origin().to_owned()
         })
     }
 
-    pub(crate) fn publish_query(&self, request: PublishQueryRequest) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
-        if request.request_id == 0
-            || request.request_id > 9_007_199_254_740_991
-            || request.query.chars().count() > nanika_search::MAX_QUERY_CHARS
-        {
-            return Err("Invalid search request.".to_owned());
-        }
+    pub(crate) fn publish_query(&self, request: PublishQueryRequest) -> Result<(), OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::ApplicationShuttingDown, detail))?;
+        request.validate()?;
         let mut state = self
             .shared
             .lock()
@@ -323,7 +376,9 @@ impl DesktopState {
         let DesktopRuntime {
             runtime, session, ..
         } = &mut *state;
-        let session = session.as_mut().ok_or("The window session is not open.")?;
+        let session = session
+            .as_mut()
+            .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
         session.authorize(request.session_id)?;
         if request.request_id <= session.request_id {
             // Async commands may reach Rust in a different order from user input.
@@ -337,7 +392,11 @@ impl DesktopState {
         session.delivered_range = None;
         session.phase = None;
         session.generation = if let Some(runtime) = runtime {
-            runtime.begin_query(session.query.clone())?
+            runtime
+                .begin_query(session.query.clone())
+                .map_err(|detail| {
+                    OperationError::with_detail(Code::SearchSubmissionFailed, detail)
+                })?
         } else {
             0
         };
@@ -346,7 +405,10 @@ impl DesktopState {
         Ok(())
     }
 
-    pub(crate) fn read_results(&self, request: crate::ReadResultsRequest) -> Result<(), String> {
+    pub(crate) fn read_results(
+        &self,
+        request: crate::ReadResultsRequest
+    ) -> Result<(), OperationError> {
         let mut state = self
             .shared
             .lock()
@@ -354,14 +416,18 @@ impl DesktopState {
         let session = state
             .session
             .as_mut()
-            .ok_or("The window session is not open.")?;
+            .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
         session.request_range(request)?;
         drop(state);
         self.wake();
         Ok(())
     }
 
-    pub(crate) fn acknowledge_search(&self, session_id: u64, revision: u64) -> Result<(), String> {
+    pub(crate) fn acknowledge_search(
+        &self,
+        session_id: u64,
+        revision: u64
+    ) -> Result<(), OperationError> {
         let mut state = self
             .shared
             .lock()
@@ -369,7 +435,7 @@ impl DesktopState {
         let session = state
             .session
             .as_mut()
-            .ok_or("The window session is not open.")?;
+            .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
         session.authorize(session_id)?;
         if session.in_flight.is_some_and(|(sent, _)| sent == revision) {
             let elapsed = session
@@ -378,7 +444,7 @@ impl DesktopState {
                 .map(|(_, at)| at.elapsed().as_millis());
             tracing::debug!(session_id, revision, elapsed_ms = ?elapsed, "frontend received search update");
         } else {
-            return Err("Unexpected search acknowledgement.".to_owned());
+            return Err(OperationError::new(Code::SearchAcknowledgementFailed));
         }
         drop(state);
         self.wake();
@@ -409,29 +475,44 @@ impl DesktopState {
         &self,
         request: &InvokeCandidateRequest,
         invocation: nanika_protocol::ActionInvocation
-    ) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<(), OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::RuntimeUnavailable, detail))?;
         let (runtime, query, snapshot) = {
             let mut state = self
                 .shared
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+            let runtime = Arc::clone(
+                state
+                    .runtime
+                    .as_ref()
+                    .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?
+            );
             let session = state
                 .session
                 .as_mut()
-                .ok_or("The window session is not open.")?;
+                .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
             session.authorize(request.session_id)?;
             session.authorize_result(request.request_id, request.result_revision)?;
             if !session.navigation.stack.is_empty() {
-                return Err("Search changed. Select a current result.".to_owned());
+                return Err(OperationError::new(Code::SearchChanged));
             }
             let snapshot = session
                 .delivered
                 .clone()
                 .filter(|snapshot| snapshot.generation == session.generation)
-                .ok_or("Search results are not ready.")?;
-            session.navigation.begin()?;
+                .ok_or_else(|| {
+                    OperationError::with_detail(
+                        Code::SearchChanged,
+                        "Search results are not ready."
+                    )
+                })?;
+            session
+                .navigation
+                .begin()
+                .map_err(|detail| OperationError::with_detail(Code::OperationPending, detail))?;
             (runtime, session.query.clone(), snapshot)
         };
         self.wake();
@@ -466,8 +547,11 @@ impl DesktopState {
     pub(crate) fn read_text(
         &self,
         request: crate::ReadTextRequest
-    ) -> Result<nanika_protocol::TextChunk, String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<nanika_protocol::TextChunk, nanika_host::OperationError> {
+        use nanika_host::{OperationError, OperationErrorCode as Code};
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::RuntimeUnavailable, detail))?;
         let (runtime, route) = {
             let state = self
                 .shared
@@ -476,11 +560,20 @@ impl DesktopState {
             let session = state
                 .session
                 .as_ref()
-                .ok_or("The window session is not open.")?;
+                .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
             session.authorize(request.session_id)?;
-            let route = session.navigation.authorize_text_read(&request)?.clone();
+            let route = session
+                .navigation
+                .authorize_text_read(&request)
+                .map_err(|detail| OperationError::with_detail(Code::TextSourceChanged, detail))?
+                .clone();
             (
-                Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?),
+                Arc::clone(
+                    state
+                        .runtime
+                        .as_ref()
+                        .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?
+                ),
                 route
             )
         };
@@ -502,25 +595,34 @@ impl DesktopState {
                 let session = state
                     .session
                     .as_ref()
-                    .ok_or("The window session is not open.")?;
+                    .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
                 session.authorize(request.session_id)?;
                 session
                     .navigation
-                    .authorize_text_revision(route.route_id, route.revision)?;
-                let current = session.navigation.authorize_text_read(&request)?;
+                    .authorize_text_revision(route.route_id, route.revision)
+                    .map_err(|detail| {
+                        OperationError::with_detail(Code::TextSourceChanged, detail)
+                    })?;
+                let current =
+                    session
+                        .navigation
+                        .authorize_text_read(&request)
+                        .map_err(|detail| {
+                            OperationError::with_detail(Code::TextSourceChanged, detail)
+                        })?;
                 if current.instance_id != route.instance_id
                     || current.generation != route.generation
                 {
-                    return Err("Text source instance changed.".to_owned());
+                    return Err(OperationError::new(Code::TextSourceChanged));
                 }
             }
             match result {
                 Ok(result) => return result,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err("Text source closed without a result.".to_owned());
+                    return Err(OperationError::new(Code::ExtensionUnavailable));
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) if std::time::Instant::now() >= deadline => {
-                    return Err("Text source read timed out.".to_owned());
+                    return Err(OperationError::new(Code::TextReadTimeout));
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
@@ -531,8 +633,10 @@ impl DesktopState {
         &self,
         request: crate::ViewEventRequest,
         menu_revision: Option<u64>
-    ) -> Result<crate::ViewEventReceipt, String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<crate::ViewEventReceipt, OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::RuntimeUnavailable, detail))?;
         // A retired WebView must not hold up an unrelated session's operations.
         let operation_lock = {
             let state = self
@@ -542,7 +646,7 @@ impl DesktopState {
             let session = state
                 .session
                 .as_ref()
-                .ok_or("The window session is not open.")?;
+                .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
             session.authorize(request.session_id)?;
             Arc::clone(&session.view_operation_lock)
         };
@@ -554,18 +658,26 @@ impl DesktopState {
                 .shared
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            let runtime = Arc::clone(state.runtime.as_ref().ok_or("Nanika is still starting.")?);
+            let runtime = Arc::clone(
+                state
+                    .runtime
+                    .as_ref()
+                    .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?
+            );
             let session = state
                 .session
                 .as_mut()
-                .ok_or("The window session is not open.")?;
+                .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
             session.authorize(request.session_id)?;
             // Exclude invalidation while validating the route passed to the extension.
             let route = session
                 .navigation
                 .authorize_input(&request, menu_revision)?
                 .clone();
-            session.navigation.begin()?;
+            session
+                .navigation
+                .begin()
+                .map_err(|detail| OperationError::with_detail(Code::OperationPending, detail))?;
             (runtime, route)
         };
         self.wake();
@@ -589,9 +701,12 @@ impl DesktopState {
                     route.revision
                 )?
             };
-            let completion = completion
-                .recv()
-                .map_err(|_| "Extension closed without a view result.".to_owned())??;
+            let completion = completion.recv().map_err(|_| {
+                OperationError::with_detail(
+                    Code::ViewOperationUnconfirmed,
+                    "Extension closed without a view result."
+                )
+            })??;
             if let Some(view) = completion.view {
                 let mut state = self
                     .shared
@@ -600,16 +715,17 @@ impl DesktopState {
                 let session = state
                     .session
                     .as_mut()
-                    .ok_or("The window session is not open.")?;
+                    .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
                 session.authorize(request.session_id)?;
                 session
                     .navigation
-                    .authorize_view(route.route_id, route.revision)?;
+                    .authorize_view(route.route_id, route.revision)
+                    .map_err(|detail| OperationError::with_detail(Code::ViewChanged, detail))?;
                 let current = session
                     .navigation
                     .stack
                     .last_mut()
-                    .ok_or("No extension view is open.")?;
+                    .ok_or_else(|| OperationError::new(Code::ViewChanged))?;
                 runtime.with_extension_instance(&route.extension_id, route.instance_id, || {
                     current.view = Arc::new(view);
                     current.revision = completion.revision;
@@ -633,7 +749,7 @@ impl DesktopState {
             Ok(crate::ViewEventReceipt {
                 view_revision,
                 navigation_revision: navigation_revision
-                    .ok_or("The originating window session has closed.")?
+                    .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?
             })
         })
     }
@@ -641,7 +757,7 @@ impl DesktopState {
     fn _configuration_menu_authority(
         &self,
         request: &crate::ConfigurationMenuRequest
-    ) -> Result<(Arc<nanika_host::RuntimeService>, String), String> {
+    ) -> Result<(Arc<nanika_host::RuntimeService>, String), OperationError> {
         let state = self
             .shared
             .lock()
@@ -649,9 +765,12 @@ impl DesktopState {
         let session = state
             .session
             .as_ref()
-            .ok_or("The window session is not open.")?;
+            .ok_or_else(|| OperationError::new(Code::SessionUnavailable))?;
         let route = session.configuration_menu_route(request)?;
-        let runtime = state.runtime.clone().ok_or("Nanika is still starting.")?;
+        let runtime = state
+            .runtime
+            .clone()
+            .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?;
         Ok((runtime, route.extension_id.clone()))
     }
 
@@ -663,7 +782,7 @@ impl DesktopState {
         generation: u64,
         effect: nanika_protocol::NavigationEffect,
         already_closed: bool
-    ) -> Result<(), String> {
+    ) -> Result<(), OperationError> {
         let (extension_id, instance_id) = origin;
         if runtime.instance_id(extension_id) != Some(instance_id) {
             return Ok(());
@@ -744,7 +863,7 @@ impl DesktopState {
             .extension_info()
             .into_iter()
             .find(|info| info.id == extension_id)
-            .ok_or("Extension metadata is unavailable.")?;
+            .ok_or_else(|| OperationError::new(Code::ExtensionUnavailable))?;
         let result = if let Some(session) = state
             .session
             .as_mut()
@@ -772,20 +891,25 @@ impl DesktopState {
                 &view_id,
                 revision
             )
-            .map_err(|error| {
-                format!(
-                    "{} Cleanup failed: {error}",
+            .map_err(|cleanup| OperationError::Cleanup {
+                primary: Box::new(
                     result
                         .as_ref()
                         .err()
-                        .map_or("The originating window session has closed.", String::as_str)
-                )
+                        .cloned()
+                        .unwrap_or_else(|| OperationError::new(Code::SessionUnavailable))
+                ),
+                cleanup: Box::new(cleanup)
             })?;
         }
         result
     }
 
-    fn finish_navigation(&self, session_id: u64, result: Result<(), String>) -> Option<u64> {
+    fn finish_navigation(
+        &self,
+        session_id: u64,
+        result: Result<(), OperationError>
+    ) -> Option<u64> {
         let mut state = self
             .shared
             .lock()
@@ -806,8 +930,10 @@ impl DesktopState {
     pub(crate) fn install_runtime(
         &self,
         runtime: Arc<nanika_host::RuntimeService>
-    ) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<(), OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::ApplicationShuttingDown, detail))?;
         let wakes = self.wakes.clone();
         let view_invalidation_wakes = self.view_invalidation_wakes.clone();
         runtime.set_notifier(Arc::new(move || {
@@ -830,7 +956,9 @@ impl DesktopState {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if let Some(session) = &mut state.session {
-            session.generation = runtime.begin_query(session.query.clone())?;
+            session.generation = runtime
+                .begin_query(session.query.clone())
+                .map_err(|detail| OperationError::with_detail(Code::SearchUnavailable, detail))?;
         }
         state.runtime = Some(runtime);
         drop(state);
@@ -838,12 +966,25 @@ impl DesktopState {
         Ok(())
     }
 
-    pub(crate) fn fail_startup(&self, error: String) {
+    pub(crate) fn startup_diagnostic(
+        &self,
+        session_id: u64
+    ) -> Result<nanika_host::LifecycleFailure, OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::ApplicationShuttingDown, detail))?;
+        self.shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .startup_diagnostic(session_id)
+    }
+
+    pub(crate) fn fail_startup(&self, error: OperationError) {
         tracing::error!(%error, "runtime initialization failed");
         self.shared
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .startup_error = Some(error);
+            .fail_startup(error);
         self.wake();
     }
 
@@ -881,16 +1022,40 @@ impl DesktopState {
         Ok(guard)
     }
 
+    pub(crate) fn publish_localization(
+        &self,
+        localization: nanika_localization::LocalizationSnapshot
+    ) {
+        {
+            let mut state = self
+                .shared
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if localization.revision <= state.localization.revision {
+                return;
+            }
+            state.localization = localization;
+        }
+        self.settings_applications
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .localization = localization;
+        self.wake();
+    }
+
     pub(crate) fn subscribe_settings(&self, updates: tauri::ipc::Channel<crate::SettingsEvent>) {
         self.settings_applications
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .subscribe(updates);
+            .subscribe(
+                self.next_session_id.fetch_add(1, Ordering::Relaxed),
+                updates
+            );
     }
 
     pub(crate) fn read_settings(
         &self,
-        general: nanika_config::LauncherPreferences
+        host: crate::HostPreferencesState
     ) -> Result<crate::SettingsSnapshot, String> {
         let _operation = self.begin_operation()?;
         // Only persistence is serialized here. Discovery never holds this lock.
@@ -925,24 +1090,68 @@ impl DesktopState {
             lifecycle_revision: applications.lifecycle_revision,
             maximized: false,
             version: env!("CARGO_PKG_VERSION"),
-            general,
+            session_id: applications.session_id,
+            platform: nanika_platform::target_platform(),
+            localization: host.localization,
+            general: host.preferences,
             general_sections: crate::general_settings::sections(),
             extensions
         })
     }
 
+    pub(crate) fn reserve_localization_read(
+        &self
+    ) -> Result<crate::LocalizationReadPermit, OperationError> {
+        crate::LocalizationReadPermit::acquire(Arc::clone(&self._localization_reads))
+    }
+
+    pub(crate) fn read_localization_resources(
+        &self,
+        request: crate::LocalizationResourceRequest
+    ) -> Result<Arc<nanika_localization::PreparedResources>, OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::ApplicationShuttingDown, detail))?;
+        let shared = self
+            .shared
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        request.authorize_session(
+            shared.session.as_ref(),
+            &self
+                .settings_applications
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+        )?;
+        let runtime = shared
+            .runtime
+            .clone()
+            .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?;
+        drop(shared);
+        match request {
+            crate::LocalizationResourceRequest::Settings { scope, .. } => {
+                runtime.localization_resources(&scope, None)
+            }
+            crate::LocalizationResourceRequest::Launcher {
+                scope, instance_id, ..
+            } => runtime.localization_resources(&scope, Some(instance_id))
+        }
+    }
+
     pub(crate) fn invoke_settings_action(
         &self,
         request: crate::SettingsActionRequest
-    ) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<(), OperationError> {
+        let _operation = self
+            .begin_operation()
+            .map_err(|detail| OperationError::with_detail(Code::RuntimeUnavailable, detail))?;
         let runtime = self
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .runtime
             .clone()
-            .ok_or("Nanika is still starting.")?;
+            .ok_or_else(|| OperationError::new(Code::RuntimeUnavailable))?;
         runtime.invoke_settings_action(
             &request.extension_id,
             request.instance_id,
@@ -980,7 +1189,7 @@ impl DesktopState {
                 .settings_applications
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            crate::SettingsSearchCatalog::new(&applications.lifecycle)
+            Arc::clone(&applications.search)
         };
         catalog.search(query)
     }
@@ -989,10 +1198,17 @@ impl DesktopState {
         &self,
         extension_id: &str,
         enabled: bool
-    ) -> Result<(), String> {
-        let _operation = self.begin_operation()?;
+    ) -> Result<(), nanika_host::LifecycleFailure> {
+        let _operation = self.begin_operation().map_err(|detail| {
+            nanika_host::LifecycleFailure::from(nanika_host::OperationError::with_detail(
+                nanika_host::OperationErrorCode::RuntimeUnavailable,
+                detail
+            ))
+        })?;
         if !nanika_foundation::is_valid_extension_id(extension_id) {
-            return Err("Invalid extension identity.".into());
+            return Err(nanika_host::LifecycleFailure::new(
+                nanika_host::OperationErrorCode::ExtensionUnavailable
+            ));
         }
         let runtime = self
             .shared
@@ -1000,53 +1216,75 @@ impl DesktopState {
             .unwrap_or_else(|error| error.into_inner())
             .runtime
             .clone()
-            .ok_or("Nanika is still starting.")?;
+            .ok_or_else(|| {
+                nanika_host::LifecycleFailure::new(
+                    nanika_host::OperationErrorCode::RuntimeUnavailable
+                )
+            })?;
         let receipt = runtime.set_extension_enabled(extension_id, enabled)?;
-        receipt
-            .recv()
-            .map_err(|_| "Extension lifecycle closed without a result.".to_owned())?
+        receipt.recv().map_err(|_| {
+            nanika_host::LifecycleFailure::new(
+                nanika_host::OperationErrorCode::ExtensionLifecycleUnconfirmed
+            )
+        })?
     }
 
     pub(crate) fn save_settings(
         &self,
         request: crate::SaveSettingsRequest,
-        progress: impl Fn(u64, &str, &str, nanika_protocol::OperationProgress) + Send + Sync + 'static
+        progress: impl Fn(crate::SettingsApplicationUpdate) + Send + Sync + 'static
     ) -> Result<
         (
             crate::SettingsApplicationUpdate,
             nanika_host::ConfigurationSaveReceipt
         ),
-        String
+        nanika_host::ConfigurationSaveError
     > {
-        let _operation = self.begin_operation()?;
+        let _operation = self.begin_operation().map_err(|detail| {
+            nanika_host::ConfigurationSaveError::rejected(OperationError::with_detail(
+                Code::RuntimeUnavailable,
+                detail
+            ))
+        })?;
         let _settings = self
             .settings_operation_lock
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        crate::validate_settings_request(&request)?;
+        crate::validate_settings_request(&request)
+            .map_err(nanika_host::ConfigurationSaveError::rejected)?;
         let runtime = self
             .shared
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .runtime
             .clone()
-            .ok_or("Nanika is still starting.")?;
+            .ok_or_else(|| {
+                nanika_host::ConfigurationSaveError::rejected(OperationError::new(
+                    Code::RuntimeUnavailable
+                ))
+            })?;
         let id = self.next_settings_request.fetch_add(1, Ordering::Relaxed);
-        let extension_id = request.extension_id.clone();
-        let key = request.key.clone();
+        let update = crate::SettingsApplicationUpdate {
+            request_id: id,
+            extension_id: request.extension_id.clone(),
+            resource_scope: runtime.localization_scope(&request.extension_id),
+            key: request.key.clone(),
+            result: crate::SettingsSaveResult::Running { progress: None }
+        };
+        let pending = update.clone();
         let receipt = runtime.save_configuration(
             &request.extension_id,
             format!("settings-{id}"),
-            request.key.clone(),
+            request.key,
             request.value,
-            Arc::new(move |value| progress(id, &extension_id, &key, value))
+            Arc::new(move |value| {
+                let mut update = pending.clone();
+                update.result = crate::SettingsSaveResult::Running {
+                    progress: Some(value)
+                };
+                progress(update);
+            })
         )?;
-        let update = crate::SettingsApplicationUpdate {
-            request_id: id,
-            extension_id: request.extension_id,
-            key: request.key,
-            result: crate::SettingsSaveResult::Running { progress: None }
-        };
         self.publish_settings_application(update.clone());
         Ok((update, receipt))
     }
@@ -1126,6 +1364,12 @@ impl DesktopState {
             .unwrap_or_else(|error| error.into_inner())
             .take();
         drop(refresh);
+        let language_refresh = self
+            ._language_refresh
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        drop(language_refresh);
         let _operations = self
             .operations
             .write()
@@ -1211,30 +1455,35 @@ impl Drop for DesktopState {
 
 pub(crate) fn apply_invocation_completion(
     completion: nanika_host::RuntimeInvocationCompletion,
-    apply: impl FnOnce(nanika_protocol::NavigationEffect) -> Result<(), String>
-) -> Result<(), String> {
+    apply: impl FnOnce(nanika_protocol::NavigationEffect) -> Result<(), OperationError>
+) -> Result<(), OperationError> {
     let nanika_host::ExtensionInvocationOutcome::Completed { effect, .. } = completion.outcome
     else {
-        return Err("The action was cancelled before it completed.".to_owned());
+        return Err(OperationError::new(Code::Cancelled));
     };
     apply(effect)
 }
 
-fn close_runtime_view(
+pub(crate) fn close_runtime_view(
     runtime: &nanika_host::RuntimeService,
     extension_id: &str,
     instance_id: u64,
     generation: u64,
     view_id: &str,
     revision: u64
-) -> Result<(), String> {
+) -> Result<(), OperationError> {
     if runtime.instance_id(extension_id) != Some(instance_id) {
         return Ok(());
     }
     runtime
         .close_view(extension_id, instance_id, generation, view_id, revision)?
         .recv()
-        .map_err(|_| "Extension closed without acknowledging view closure.".to_owned())??;
+        .map_err(|_| {
+            OperationError::with_detail(
+                Code::ViewOperationUnconfirmed,
+                "Extension closed without acknowledging view closure."
+            )
+        })??;
     Ok(())
 }
 

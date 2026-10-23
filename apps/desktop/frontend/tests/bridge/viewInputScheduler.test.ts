@@ -65,7 +65,10 @@ test("a failed query is not retried and a newer explicit query remains eligible"
     input.query("failed", 30);
     const blocking = input.begin(input.takeNext());
     input.complete(blocking, null);
-    input.update({ ..._navigation(3), error: "extension rejected query" });
+    input.update({
+        ..._navigation(3),
+        error: { kind: "host", code: "viewOperationFailed", detail: "extension rejected query" }
+    });
     assert.equal(input.busy, false);
     assert.equal(input.takeNext(), null);
     input.query("new intent", 30);

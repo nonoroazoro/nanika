@@ -9,6 +9,40 @@ use nanika_extension_package::{
 use nanika_storage::{ExtensionKind, HostDatabase, NanikaPaths, StoredExtension};
 use zip::write::SimpleFileOptions;
 
+#[path = "package/localization.rs"]
+mod localization;
+
+#[test]
+fn authoring_manifest_reader_reuses_admission_and_rejects_empty_or_oversized_files() {
+    let root = temporary_root("authoring-manifest");
+    cleanup(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("manifest.jsonc");
+    std::fs::write(
+        &path,
+        include_str!("../../../apps/extensions/examples/localized/manifest.jsonc")
+    )
+    .unwrap();
+    assert_eq!(
+        nanika_extension_package::load_extension_manifest(&path)
+            .unwrap()
+            .id,
+        "org.example.localized"
+    );
+    for size in [0, 4 * 1024 * 1024] {
+        std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+        assert!(
+            nanika_extension_package::load_extension_manifest(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("manifest size is invalid")
+        );
+    }
+    std::fs::write(&path, "{ invalid }").unwrap();
+    assert!(nanika_extension_package::load_extension_manifest(&path).is_err());
+    cleanup(&root);
+}
+
 #[test]
 fn host_inventory_reserves_identity_before_install_and_during_resolution() {
     let root = temporary_root("host-inventory");
@@ -56,6 +90,7 @@ fn package_install_enablement_resolution_and_removal_round_trip() {
     assert!(installed.program.is_file());
     assert!(installed.resource_root.join("manifest.jsonc").is_file());
     assert_eq!(installed.icon, "assets/icon.png");
+    assert!(installed.localization.is_none());
 
     let database = HostDatabase::open(paths.host_database()).expect("database");
     let records = database.load_extensions().expect("load extensions");
@@ -421,8 +456,8 @@ fn manifest_rejects_acp_view_contributions() {
         &ExtensionContributions {
             views: vec![ViewContribution {
                 id: "example.view".to_owned(),
-                title: "Example".to_owned(),
-                description: "Browse examples.".to_owned(),
+                title: "Example".to_owned().into(),
+                description: "Browse examples.".to_owned().into(),
                 category: None,
                 keywords: Vec::new(),
                 icon: None
@@ -451,16 +486,16 @@ fn manifest_rejects_ids_shared_by_commands_and_views() {
                     "Run"
                 ),
                 command: "example.open".to_owned(),
-                title: "Open Example".to_owned(),
-                description: "Open the example.".to_owned(),
+                title: "Open Example".to_owned().into(),
+                description: "Open the example.".to_owned().into(),
                 category: None,
                 keywords: Vec::new(),
                 icon: None
             }],
             views: vec![ViewContribution {
                 id: "example.open".to_owned(),
-                title: "Example".to_owned(),
-                description: "Browse examples.".to_owned(),
+                title: "Example".to_owned().into(),
+                description: "Browse examples.".to_owned().into(),
                 category: None,
                 keywords: Vec::new(),
                 icon: None
@@ -1060,7 +1095,7 @@ mod presentation {
             "runtime": { "protocol": "nanika", "protocolVersion": 1 }
         });
         let parsed = parse_extension_manifest(&baseline.to_string()).unwrap();
-        assert_eq!(parsed.name, "Example Tools");
+        assert_eq!(parsed.name, "Example Tools".into());
         assert_eq!(parsed.icon, "assets/icon.png");
         for name in [
             String::new(),
@@ -1094,7 +1129,7 @@ fn static_command_requires_valid_explicit_action_policy() {
     let mut action =
         nanika_protocol::Action::primary(nanika_protocol::COMMAND_EXECUTE_ACTION_ID, "Empty");
     action.style = nanika_protocol::ActionStyle::Destructive;
-    action.confirmation_title = Some("Empty now?".to_owned());
+    action.confirmation_title = Some("Empty now?".into());
     let mut value = command;
     value["action"] = serde_json::to_value(&action).unwrap();
     let mut contributions = ExtensionContributions {

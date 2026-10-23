@@ -77,6 +77,26 @@ impl HostDiagnostic {
         &self.user_message
     }
 
+    /// Preserve admitted extension errors; the caller chooses the host fallback by operation.
+    pub(crate) fn operation_error(
+        &self,
+        fallback: crate::OperationErrorCode
+    ) -> crate::OperationError {
+        if let Some(source) = &self.source {
+            if let Some(error) = source.downcast_ref::<crate::SupervisorError>() {
+                return crate::OperationError::from(error);
+            }
+            if let Some(error) = source.downcast_ref::<crate::OperationError>() {
+                return error.clone();
+            }
+            if let Some(failure) = source.downcast_ref::<crate::LifecycleFailure>() {
+                return failure.error.clone();
+            }
+            return crate::OperationError::with_detail(fallback, source.to_string());
+        }
+        crate::OperationError::with_detail(fallback, self.user_message.clone())
+    }
+
     /// User-visible failure with the concrete source retained as plain text.
     pub fn detailed_message(&self) -> String {
         self.source.as_ref().map_or_else(

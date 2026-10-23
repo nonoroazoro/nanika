@@ -15,6 +15,30 @@ const descriptor = {
 
 describe("independent text reads", () =>
 {
+    it("ignores retired failures after a new read succeeds", async () =>
+    {
+        const source = new TextDocumentModel(descriptor, "a".repeat(16_384));
+        const stale = Promise.withResolvers<never>();
+        const pending = source.readNext(async () => stale.promise);
+        source.cancelReads();
+        await source.readNext(async request => ({ ...request, value: "b" }));
+        stale.reject({ kind: "host", code: "textReadTimeout" });
+        await expect(pending).resolves.toBeUndefined();
+        expect(source.chunks[1]).toBe("b");
+        expect(source.complete).toBe(true);
+    });
+    it("preserves structured failures and resident text until an explicit retry succeeds", async () =>
+    {
+        const source = new TextDocumentModel(descriptor, "a".repeat(16_384));
+        const error = Object.assign(new Error("Text read timed out"), { kind: "host", code: "textReadTimeout" });
+        await expect(source.readNext(async () =>
+        {
+            throw error;
+        })).rejects.toBe(error);
+        expect(source.chunks).toEqual(["a".repeat(16_384)]);
+        await source.readNext(async request => ({ ...request, value: "b" }));
+        expect(source.complete).toBe(true);
+    });
     it("deduplicates concurrent demand without navigation receipts", async () =>
     {
         const source = new TextDocumentModel(descriptor, "a".repeat(16_384));

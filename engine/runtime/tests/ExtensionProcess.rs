@@ -3,10 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nanika_extension_package::ExtensionContributions;
-use nanika_host::{
-    ExtensionLimits, ExtensionProcess, ExtensionSearchCoordinator, SupervisorError,
-    publish_extension_snapshot
-};
+use nanika_host::{ExtensionLimits, ExtensionProcess, ExtensionSearchCoordinator, SupervisorError};
 use nanika_search::{SearchOwner, UsageMap};
 
 #[path = "support/TestHostServices.rs"]
@@ -16,6 +13,181 @@ use test_host_services::TestHostServices;
 
 fn fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_nanika-extension-fixture"))
+}
+
+#[test]
+fn refresh_failure_keeps_prepared_locales_and_source_after_the_process_stops() {
+    use nanika_localization::{ResourceSet, SupportedLocale};
+    for id in ["failed", "missing"] {
+        let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+        let coordinator = ExtensionSearchCoordinator::new();
+        let mut source = _fixture_source([
+            "--fail-refresh".into(),
+            format!("--refresh-error-message={id}").into()
+        ]);
+        source.localization = Some(Arc::new(
+            ResourceSet::new(
+                SupportedLocale::English,
+                [
+                    (
+                        SupportedLocale::English,
+                        vec![(
+                            "en.ftl".into(),
+                            "failed = Could not refresh the catalog".into()
+                        )]
+                    ),
+                    (
+                        SupportedLocale::SimplifiedChinese,
+                        vec![("zh.ftl".into(), "failed = 无法刷新目录".into())]
+                    )
+                ]
+                .into(),
+                true
+            )
+            .unwrap()
+        ));
+        coordinator
+            .register_source(
+                "fixture.localized-error",
+                source,
+                owner.handle(),
+                Default::default(),
+                Default::default()
+            )
+            .unwrap();
+        let completion = coordinator
+            .refresh("fixture.localized-error", 1)
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap_err();
+        let diagnostic = coordinator.first_error().expect("retained diagnostic");
+        coordinator.shutdown();
+        owner.shutdown();
+        let serialized = serde_json::to_value(&completion).unwrap();
+        let failure = std::error::Error::source(&diagnostic)
+            .unwrap()
+            .downcast_ref::<SupervisorError>()
+            .unwrap();
+        if id == "failed" {
+            let SupervisorError::Reported(error) = failure else {
+                panic!("expected admitted business error: {failure}");
+            };
+            assert_eq!(error.error.code, "refresh_failed");
+            assert_eq!(serialized["kind"], "extension");
+            assert_eq!(
+                serialized["error"]["messages"]["en"],
+                "Could not refresh the catalog"
+            );
+            assert_eq!(serialized["error"]["messages"]["zh-Hans"], "无法刷新目录");
+            assert_eq!(
+                error.error.detail.as_deref(),
+                Some("fixture scan could not read its source")
+            );
+            assert_eq!(
+                error.messages[&SupportedLocale::English],
+                "Could not refresh the catalog"
+            );
+            assert_eq!(
+                error.messages[&SupportedLocale::SimplifiedChinese],
+                "无法刷新目录"
+            );
+        } else {
+            assert_eq!(serialized["code"], "extensionProtocol");
+            assert!(matches!(failure, SupervisorError::UnexpectedMessage(_)));
+            assert!(failure.to_string().contains("missing: unknown message"));
+        }
+    }
+}
+
+#[test]
+fn pushed_and_updated_view_messages_use_the_instance_resource_owner() {
+    for (initial, update) in [
+        ("label", "label"),
+        ("missing", "label"),
+        ("label", "missing")
+    ] {
+        let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+        let coordinator = ExtensionSearchCoordinator::new();
+        let mut source = _fixture_source([
+            format!("--view-title={initial}").into(),
+            format!("--view-update-title={update}").into()
+        ]);
+        source.localization = Some(Arc::new(
+            nanika_localization::ResourceSet::new(
+                nanika_localization::SupportedLocale::English,
+                [(
+                    nanika_localization::SupportedLocale::English,
+                    vec![("en.ftl".into(), "label = View".into())]
+                )]
+                .into(),
+                false
+            )
+            .unwrap()
+        ));
+        coordinator
+            .register_source(
+                "fixture.extension",
+                source,
+                owner.handle(),
+                fixture_contributions(),
+                Default::default()
+            )
+            .unwrap();
+        let instance = coordinator.instance_id("fixture.extension").unwrap();
+        let opened = coordinator
+            .invoke(
+                "fixture.extension",
+                instance,
+                1,
+                "fixture.view",
+                nanika_protocol::VIEW_OPEN_ACTION_ID,
+                ""
+            )
+            .unwrap()
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        if initial == "missing" {
+            assert!(opened.unwrap_err().to_string().contains("missing"));
+        } else {
+            let nanika_host::ExtensionInvocationOutcome::Completed {
+                effect:
+                    nanika_protocol::NavigationEffect::Push {
+                        view_id,
+                        revision,
+                        view
+                    },
+                ..
+            } = opened.unwrap()
+            else {
+                panic!("Expected a pushed view")
+            };
+            let nanika_protocol::View::Detail { detail } = view.as_ref() else {
+                panic!("Expected detail")
+            };
+            assert_eq!(detail.title, Some(nanika_protocol::message("label", [])));
+            let updated = coordinator
+                .view_event(
+                    "fixture.extension",
+                    instance,
+                    1,
+                    view_id,
+                    revision,
+                    nanika_protocol::ViewEvent::Resumed
+                )
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            if update == "missing" {
+                assert!(updated.unwrap_err().to_string().contains("missing"));
+            } else {
+                assert!(updated.unwrap().view.is_some());
+            }
+            assert_eq!(detail.title, Some(nanika_protocol::message("label", [])));
+        }
+        coordinator.shutdown();
+        owner.shutdown();
+    }
 }
 
 #[test]
@@ -135,8 +307,8 @@ fn fixture_contributes_a_generation_tagged_search_snapshot() {
         .query("query-1", 7, "calculator")
         .expect("fixture should return candidates");
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].title, "calculator");
-    assert_eq!(entries[0].aliases, ["fixture alias"]);
+    assert_eq!(entries[0].title, "calculator".into());
+    assert_eq!(entries[0].aliases, ["fixture alias".into()]);
     extension.shutdown().expect("fixture should shut down");
 }
 
@@ -244,20 +416,17 @@ fn extension_snapshot_reaches_the_shared_search_owner() {
     let generation = search
         .begin_query("calculator")
         .expect("query should enqueue");
-    let mut extension = ExtensionProcess::spawn(fixture_path()).expect("fixture should spawn");
-    extension
-        .initialize("initialize-search-owner")
-        .expect("fixture should initialize");
-    let entries = extension
-        .query("query-search-owner", generation, "calculator")
-        .expect("fixture should return candidates");
-    publish_extension_snapshot(
-        &search.register_extension("fixture.extension", 1).unwrap(),
-        generation,
-        entries,
-        true
-    )
-    .expect("snapshot should enqueue");
+    let coordinator = ExtensionSearchCoordinator::new();
+    coordinator
+        .register_source(
+            "fixture.extension",
+            _fixture_source([]),
+            search.clone(),
+            fixture_contributions(),
+            Default::default()
+        )
+        .expect("worker should register");
+    coordinator.query(generation, "calculator");
 
     let deadline = Instant::now() + Duration::from_secs(1);
     loop {
@@ -274,7 +443,7 @@ fn extension_snapshot_reaches_the_shared_search_owner() {
         assert!(Instant::now() < deadline, "search snapshot should arrive");
         std::thread::yield_now();
     }
-    extension.shutdown().expect("fixture should shut down");
+    drop(coordinator);
     owner.shutdown();
 }
 
@@ -364,7 +533,12 @@ fn root_refresh_isolates_failures_and_skips_static_contributors() {
     let static_skipped = !skipped.exists();
     std::fs::remove_dir_all(root).unwrap();
     let error = result.expect_err("refresh failure must propagate");
-    assert!(error.contains("test.failed") && error.contains("fixture refresh failed"));
+    assert_eq!(error.len(), 1);
+    assert_eq!(error[0].extension_id.as_deref(), Some("test.failed"));
+    assert!(
+        matches!(&error[0].error, nanika_host::OperationError::Extension { error }
+        if error.error.code == "refresh_failed")
+    );
     assert!(healthy_completed && static_skipped);
 }
 
@@ -394,7 +568,7 @@ fn extension_search_worker_dispatches_off_the_caller_thread() {
             && snapshot.generation == generation
             && snapshot.results.len() == 1
         {
-            assert_eq!(snapshot.results[0].candidate.title(), "calculator");
+            assert_eq!(snapshot.results[0].candidate.title(), &"calculator".into());
             break;
         }
         assert!(Instant::now() < deadline, "worker snapshot should arrive");
@@ -440,7 +614,7 @@ fn extension_worker_publishes_incremental_snapshots() {
         if snapshot
             .results
             .iter()
-            .any(|row| row.candidate.title() == "Partial")
+            .any(|row| row.candidate.title() == &"Partial".into())
         {
             assert_eq!(snapshot.pending_extensions, ["fixture.extension"]);
             saw_partial = true;
@@ -448,7 +622,7 @@ fn extension_worker_publishes_incremental_snapshots() {
         if snapshot
             .results
             .iter()
-            .any(|row| row.candidate.title() == "Fixture")
+            .any(|row| row.candidate.title() == &"Fixture".into())
         {
             assert!(saw_partial, "partial data must publish before completion");
             assert!(snapshot.pending_extensions.is_empty());
@@ -589,7 +763,7 @@ fn superseded_query_error_is_drained_before_the_current_query() {
     coordinator.shutdown();
     std::fs::remove_file(marker).unwrap();
     assert_eq!(snapshot.results.len(), 1);
-    assert_eq!(snapshot.results[0].candidate.title(), "latest");
+    assert_eq!(snapshot.results[0].candidate.title(), &"latest".into());
 }
 
 #[test]
@@ -699,7 +873,7 @@ fn accepted_host_service_result_survives_action_cancellation() {
         .cancel_invocation("fixture.extension", 1)
         .unwrap();
     let premature_result = invocation.recv_timeout(Duration::from_millis(100));
-    let delivered = services.complete();
+    let delivered = services.complete(Ok(nanika_protocol::HostServiceResponse::Launched));
     let result = invocation.recv_timeout(Duration::from_secs(5));
     coordinator.shutdown();
     assert!(matches!(
@@ -716,6 +890,130 @@ fn accepted_host_service_result_survives_action_cancellation() {
             nanika_host::ExtensionInvocationOutcome::Completed { .. }
         ))
     ));
+}
+
+#[test]
+fn host_service_failures_retain_admission_facts_and_localized_causes() {
+    use nanika_localization::{ResourceSet, SupportedLocale};
+    const DETAIL: &str = "EACCES: /Original/私密.txt";
+    for stage in ["prepare", "admit", "failed", "unconfirmed", "cancel"] {
+        let owner = SearchOwner::spawn(UsageMap::new()).unwrap();
+        let coordinator = Arc::new(ExtensionSearchCoordinator::new());
+        let weak = Arc::downgrade(&coordinator);
+        let services = Arc::new(match stage {
+            "prepare" => pending_host_service::PendingHostService::reject_preparation(DETAIL),
+            "admit" => pending_host_service::PendingHostService::reject_admission(DETAIL),
+            "cancel" => pending_host_service::PendingHostService::stop_during_prepare(move || {
+                weak.upgrade()
+                    .unwrap()
+                    .cancel_invocation("fixture.extension", 1)
+                    .unwrap();
+            }),
+            _ => Default::default()
+        });
+        coordinator.set_host_services(services.clone());
+        let mut source = _fixture_source(["--request-launch-on-invoke".into()]);
+        source.localization = Some(Arc::new(
+            ResourceSet::new(
+                SupportedLocale::English,
+                [
+                    (
+                        SupportedLocale::English,
+                        vec![(
+                            "en.ftl".into(),
+                            include_str!("../../../apps/extensions/built-in/system/locales/en.ftl")
+                                .into()
+                        )]
+                    ),
+                    (
+                        SupportedLocale::SimplifiedChinese,
+                        vec![(
+                            "zh-Hans.ftl".into(),
+                            include_str!(
+                                "../../../apps/extensions/built-in/system/locales/zh-Hans.ftl"
+                            )
+                            .into()
+                        )]
+                    )
+                ]
+                .into(),
+                true
+            )
+            .unwrap()
+        ));
+        coordinator
+            .register_source(
+                "fixture.extension",
+                source,
+                owner.handle(),
+                fixture_contributions(),
+                Default::default()
+            )
+            .unwrap();
+        let invocation = coordinator
+            .invoke(
+                "fixture.extension",
+                coordinator.instance_id("fixture.extension").unwrap(),
+                7,
+                "fixture.entry",
+                "fixture.run",
+                "query"
+            )
+            .unwrap();
+        if matches!(stage, "failed" | "unconfirmed") {
+            wait_for_review_condition(|| services.submitted());
+            coordinator
+                .cancel_invocation("fixture.extension", 1)
+                .unwrap();
+            assert!(matches!(
+                invocation.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+            if stage == "failed" {
+                assert!(services.complete(Err(DETAIL.into())));
+            } else {
+                services.disconnect();
+            }
+        }
+        let result = invocation.recv_timeout(Duration::from_secs(5));
+        coordinator.shutdown();
+        owner.shutdown();
+        assert_eq!(
+            services.admissions(),
+            usize::from(matches!(stage, "failed" | "unconfirmed"))
+        );
+        if stage == "cancel" {
+            assert_eq!(
+                result.unwrap().unwrap(),
+                nanika_host::ExtensionInvocationOutcome::Cancelled
+            );
+            continue;
+        }
+        let error = result.unwrap().unwrap_err();
+        assert!(!format!("{error:?}").contains("私密"));
+        let nanika_host::OperationError::Extension { error } = error else {
+            panic!("localized service failure");
+        };
+        let (code, english, chinese, detail) = match stage {
+            "prepare" | "admit" => ("host_service_rejected", "did not accept", "未受理", DETAIL),
+            "failed" => (
+                "host_service_failed",
+                "reported a failure",
+                "报告了失败",
+                DETAIL
+            ),
+            _ => (
+                "host_service_unconfirmed",
+                "could not confirm",
+                "无法确认",
+                "host service closed before replying"
+            )
+        };
+        assert_eq!(error.error.code, code);
+        assert_eq!(error.error.detail.as_deref(), Some(detail));
+        assert!(error.messages[&SupportedLocale::English].contains(english));
+        assert!(error.messages[&SupportedLocale::SimplifiedChinese].contains(chinese));
+    }
 }
 
 #[test]
@@ -909,11 +1207,11 @@ fn refresh_requeries_the_same_generation_with_an_entry_patch() {
             && snapshot
                 .results
                 .iter()
-                .any(|entry| entry.candidate.title() == "Updated")
+                .any(|entry| entry.candidate.title() == &"Updated".into())
             && snapshot
                 .results
                 .iter()
-                .any(|entry| entry.candidate.title() == "Keep")
+                .any(|entry| entry.candidate.title() == &"Keep".into())
         {
             updated = true;
             break;
@@ -946,16 +1244,21 @@ fn cancelled_patch_requires_a_new_baseline_in_the_same_generation() {
     let generation = search.begin_query("").unwrap();
     coordinator.query(generation, "");
     wait_for_review_condition(|| {
-        search
-            .latest_snapshot()
-            .is_some_and(|s| s.results.iter().any(|e| e.candidate.title() == "Original"))
+        search.latest_snapshot().is_some_and(|s| {
+            s.results
+                .iter()
+                .any(|e| e.candidate.title() == &"Original".into())
+        })
     });
     coordinator.query(generation, "");
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut recovered = false;
     while Instant::now() < deadline {
         if search.latest_snapshot().is_some_and(|s| {
-            s.generation == generation && s.results.iter().any(|e| e.candidate.title() == "Updated")
+            s.generation == generation
+                && s.results
+                    .iter()
+                    .any(|e| e.candidate.title() == &"Updated".into())
         }) {
             recovered = true;
             break;
@@ -1014,7 +1317,7 @@ fn cumulative_catalog_patches_exceeding_eight_mib_remain_searchable() {
     );
     assert_eq!(
         snapshot.results.last().unwrap().candidate.entry_id(),
-        "entry-6000"
+        "entry-999"
     );
     coordinator.shutdown();
     owner.shutdown();
@@ -1084,11 +1387,11 @@ fn manifest_contributions_do_not_replace_an_incremental_catalog() {
             && snapshot
                 .results
                 .iter()
-                .any(|entry| entry.candidate.title() == "Updated")
+                .any(|entry| entry.candidate.title() == &"Updated".into())
             && snapshot
                 .results
                 .iter()
-                .any(|entry| entry.candidate.title() == "Keep")
+                .any(|entry| entry.candidate.title() == &"Keep".into())
         {
             updated = true;
             break;
@@ -1140,7 +1443,7 @@ fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
             snapshot
                 .results
                 .iter()
-                .any(|row| row.candidate.title() == "Keep")
+                .any(|row| row.candidate.title() == &"Keep".into())
         })
     });
     let baseline = search.latest_snapshot().unwrap();
@@ -1172,7 +1475,7 @@ fn manifest_identity_is_authoritative_when_a_patch_changes_its_action_id() {
         .iter()
         .find(|row| row.candidate.entry_id() == "fixture.entry")
         .unwrap();
-    assert_eq!(command.candidate.title(), "Manifest command");
+    assert_eq!(command.candidate.title(), &"Manifest command".into());
     assert_eq!(
         command.candidate.action_id(),
         nanika_protocol::COMMAND_EXECUTE_ACTION_ID
@@ -1328,7 +1631,7 @@ fn manifest_baseline_survives_dynamic_progress_without_reranking() {
             baseline
                 .results
                 .iter()
-                .any(|result| result.candidate.title() == "Manifest command")
+                .any(|result| result.candidate.title() == &"Manifest command".into())
         );
         coordinator.query(generation, "");
         let mut saw_pending = false;
@@ -1425,7 +1728,7 @@ fn root_and_view_termination_preserve_the_same_host_admission_boundary() {
             });
             let stopped_without_service = stopped.recv_timeout(Duration::from_secs(2)).is_ok();
             if !during_preparation {
-                let _ = service.complete();
+                let _ = service.complete(Ok(nanika_protocol::HostServiceResponse::Launched));
             }
             thread.join().unwrap();
             assert!(
@@ -1445,7 +1748,16 @@ fn root_and_view_termination_preserve_the_same_host_admission_boundary() {
                     .unwrap()
                     .unwrap_err()
             };
-            assert!(error.contains("terminated"), "{error}");
+            assert!(
+                matches!(
+                    error,
+                    nanika_host::OperationError::Host {
+                        code: nanika_host::OperationErrorCode::ExtensionTerminated,
+                        ..
+                    }
+                ),
+                "{error}"
+            );
             owner.shutdown();
         }
     }
@@ -1456,6 +1768,7 @@ fn _fixture_source(
 ) -> nanika_host::ExtensionRuntimeSource {
     let arguments: Vec<_> = arguments.into_iter().collect();
     nanika_host::ExtensionRuntimeSource {
+        localization: None,
         activation: nanika_extension_package::ExtensionActivation::Startup,
         live_configuration: true,
         start: Box::new(move |_| {
