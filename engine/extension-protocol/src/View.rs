@@ -20,13 +20,8 @@ impl View {
             Self::List { list } => validate_list(list),
             Self::Detail { detail } => validate_detail(detail)
         }?;
-        self.visit_texts(&mut |field, text, maximum, allow_empty| match text {
-            crate::LocalizedText::Literal(value) => {
-                validate_text(field, value, maximum, allow_empty)
-            }
-            crate::LocalizedText::Message(reference) => reference
-                .validate()
-                .map_err(|error| format!("{field}: {error}"))
+        self.visit_texts(&mut |field, text, maximum, allow_empty| {
+            text.validate_literals(|value| validate_text(field, value, maximum, allow_empty))
         })?;
         let mut groups = Vec::new();
         self.visit_actions(&mut |actions| {
@@ -243,11 +238,8 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
     )?;
     for action in actions {
         validate_id("view action id", &action.id)?;
-        action.visit_texts(&mut |field, text, maximum| match text {
-            crate::LocalizedText::Literal(value) => validate_text(field, value, maximum, false),
-            crate::LocalizedText::Message(reference) => reference
-                .validate()
-                .map_err(|error| format!("{field}: {error}"))
+        action.visit_texts(&mut |field, text, maximum| {
+            text.validate_literals(|value| validate_text(field, value, maximum, false))
         })?;
         if action.confirmation_title.is_some() && action.allow_default_execution {
             return Err("action requiring confirmation cannot allow default execution".to_owned());

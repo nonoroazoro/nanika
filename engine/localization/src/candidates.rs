@@ -36,6 +36,19 @@ pub fn candidate_search_text(
                     values.push(value.clone());
                 }
             }
+            LocalizedText::Translated(translated) => {
+                translated.validate()?;
+                for value in translated.values() {
+                    crate::LocaleBundle::_validate_output(value, MAX_EXPANDED_BYTES, false)
+                        .map_err(|error| format!("{}: {field}: {error}", candidate.entry_id))?;
+                    if searchable
+                        && !value.trim().is_empty()
+                        && !values.iter().any(|existing| existing == value)
+                    {
+                        values.push(value.to_owned());
+                    }
+                }
+            }
             LocalizedText::Message(reference) => {
                 let resources = resources.ok_or_else(|| {
                     format!(

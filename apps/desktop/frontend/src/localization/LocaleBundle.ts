@@ -3,6 +3,7 @@ import { FluentBundle, FluentNumber, FluentResource } from "@fluent/bundle";
 import type { FluentVariable } from "@fluent/bundle";
 
 import { validOutput } from "./output";
+import { formatTranslatedText } from "./translated-text";
 import {
     MAX_LOCALE_BYTES,
     MAX_LOCALE_RESOURCES,
@@ -23,6 +24,7 @@ import type { SupportedLocale } from "../generated/SupportedLocale";
 export class LocaleBundle
 {
     private readonly _bundle: FluentBundle;
+    private readonly _locale: SupportedLocale;
     private readonly _contracts: ReadonlyMap<string, readonly string[]>;
 
     constructor(
@@ -31,6 +33,7 @@ export class LocaleBundle
         contracts: Readonly<Record<string, MessageContract>>
     )
     {
+        this._locale = locale;
         const encoder = new TextEncoder();
         const bytes = sources.map(source => encoder.encode(source).byteLength);
         if (
@@ -86,6 +89,10 @@ export class LocaleBundle
         if (typeof text === "string")
         {
             result = text;
+        }
+        else if ("translations" in text)
+        {
+            result = formatTranslatedText(text, this._locale, maximumChars, allowEmpty);
         }
         else
         {

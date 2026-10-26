@@ -7,7 +7,28 @@ use serde::{Deserialize, Serialize};
 #[serde(untagged)]
 pub enum LocalizedText {
     Literal(String),
-    Message(MessageReference)
+    Message(MessageReference),
+    Translated(crate::TranslatedText)
+}
+
+impl LocalizedText {
+    /// Validate every supplied translation with the destination's existing literal rules.
+    pub fn validate_literals(
+        &self,
+        mut validate: impl FnMut(&str) -> Result<(), String>
+    ) -> Result<(), String> {
+        match self {
+            Self::Literal(value) => validate(value),
+            Self::Message(reference) => reference.validate(),
+            Self::Translated(text) => {
+                text.validate()?;
+                for value in text.values() {
+                    validate(value)?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl From<String> for LocalizedText {

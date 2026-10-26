@@ -86,6 +86,43 @@ fn indexing(criterion: &mut Criterion) {
                 .collect::<Vec<_>>()
         });
     });
+    #[cfg(target_os = "macos")]
+    {
+        for application in std::fs::read_dir(&config.roots[0]).unwrap() {
+            for (locale, name) in [
+                ("en", "Music"),
+                ("zh-Hans", "音乐"),
+                ("zh-Hant", "音樂"),
+                ("ja", "ミュージック"),
+                ("fr", "Musique")
+            ] {
+                let resource = application
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .join(format!("Contents/Resources/{locale}.lproj"));
+                std::fs::create_dir_all(&resource).unwrap();
+                std::fs::write(
+                    resource.join("InfoPlist.strings"),
+                    format!("\"CFBundleDisplayName\" = \"{name}\";")
+                )
+                .unwrap();
+            }
+        }
+        index
+            .scan(&config, generation, &cancellation, |_| {}, |_, _| {})
+            .unwrap();
+        generation += 1;
+        criterion.bench_function("application_multilingual_scan_500", |bencher| {
+            bencher.iter(|| {
+                let report = index
+                    .scan(&config, generation, &cancellation, |_| {}, |_, _| {})
+                    .unwrap();
+                generation += 1;
+                report
+            });
+        });
+    }
     drop(index);
     std::fs::remove_dir_all(root).expect("benchmark directory should be removable");
 }

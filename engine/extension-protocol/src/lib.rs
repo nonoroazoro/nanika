@@ -163,6 +163,9 @@ pub use text_invalidation::TextInvalidation;
 /// Reserved Invoke entry for manifest-declared Settings actions.
 pub const SETTINGS_ENTRY_ID: &str = "nanika.settings";
 
+#[path = "TranslatedText.rs"]
+mod translated_text;
+pub use translated_text::{TranslatedText, canonical_language_tag};
 #[path = "LocalizedText.rs"]
 mod localized_text;
 pub use localized_text::*;

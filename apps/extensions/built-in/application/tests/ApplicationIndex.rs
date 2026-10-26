@@ -1111,6 +1111,7 @@ fn committed_sources_preserve_winners_across_roots_failures_and_restart() {
 
 fn entry(id: &str) -> ApplicationEntry {
     ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: id.to_owned(),
         source_key: id.to_owned(),
         display_name: id.to_owned(),

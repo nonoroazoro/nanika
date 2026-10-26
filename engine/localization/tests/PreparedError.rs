@@ -192,3 +192,24 @@ fn _resources(english: &str, chinese: &str) -> ResourceSet {
     )
     .unwrap()
 }
+
+#[test]
+fn supplied_error_translations_require_no_package_resources() {
+    let error = ProtocolError::new(
+        "failed",
+        nanika_protocol::LocalizedText::Translated(nanika_protocol::TranslatedText {
+            fallback: "Failed".into(),
+            translations: [
+                ("en".into(), "Failed".into()),
+                ("zh-Hans".into(), "失败".into())
+            ]
+            .into()
+        })
+    );
+    let prepared = PreparedError::new(error, None, "macos").unwrap();
+    assert_eq!(prepared.messages[&SupportedLocale::English], "Failed");
+    assert_eq!(
+        prepared.messages[&SupportedLocale::SimplifiedChinese],
+        "失败"
+    );
+}

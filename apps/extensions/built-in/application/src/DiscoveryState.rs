@@ -11,8 +11,6 @@ use crate::ApplicationError;
 /// Process-local validation state owned by the discovery thread.
 pub(crate) struct DiscoveryState {
     metadata: HashMap<PathBuf, Metadata>,
-    #[cfg(target_os = "macos")]
-    preferred_languages: Option<Vec<String>>,
     #[cfg(windows)]
     executables: HashMap<PathBuf, (u64, i128, bool)>
 }
@@ -21,8 +19,6 @@ impl DiscoveryState {
     pub(crate) fn new() -> Self {
         Self {
             metadata: HashMap::new(),
-            #[cfg(target_os = "macos")]
-            preferred_languages: None,
             #[cfg(windows)]
             executables: HashMap::new()
         }
@@ -30,10 +26,6 @@ impl DiscoveryState {
 
     pub(crate) fn begin_scan(&mut self) {
         self.metadata.clear();
-        #[cfg(target_os = "macos")]
-        {
-            self.preferred_languages = None;
-        }
     }
 
     pub(crate) fn metadata(&mut self, path: &Path) -> Result<&Metadata, ApplicationError> {
@@ -41,11 +33,6 @@ impl DiscoveryState {
             self.metadata.insert(path.to_path_buf(), path.metadata()?);
         }
         Ok(self.metadata.get(path).expect("metadata was inserted"))
-    }
-
-    #[cfg(target_os = "macos")]
-    pub(crate) fn preferred_languages(&mut self, load: impl FnOnce() -> Vec<String>) -> &[String] {
-        self.preferred_languages.get_or_insert_with(load)
     }
 
     #[cfg(windows)]

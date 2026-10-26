@@ -153,8 +153,14 @@ impl ResourceSet {
         allow_empty: bool
     ) -> Result<String, String> {
         // A formatting error is a contract failure, not permission to mask it with another language.
-        self.bundle_for(locale, text)
-            .format(text, platform, maximum_chars, allow_empty)
+        crate::format_text(
+            text,
+            Some(self),
+            locale,
+            platform,
+            maximum_chars,
+            allow_empty
+        )
     }
 
     pub(crate) fn bundle_for(
@@ -165,7 +171,7 @@ impl ResourceSet {
         self._bundles
             .get(&locale)
             .filter(|bundle| match text {
-                LocalizedText::Literal(_) => true,
+                LocalizedText::Literal(_) | LocalizedText::Translated(_) => true,
                 LocalizedText::Message(reference) => {
                     bundle.contracts().contains_key(&reference.message)
                 }

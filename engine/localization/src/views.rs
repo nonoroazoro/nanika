@@ -21,7 +21,7 @@ pub fn validate_view_presentation(
     view.validate()?;
     view.visit_actions(&mut |actions| validate_action_presentation(actions, resources))?;
     view.visit_texts(&mut |field, text, maximum, allow_empty| {
-        if matches!(text, LocalizedText::Literal(_)) {
+        if !matches!(text, LocalizedText::Message(_)) {
             return Ok(());
         }
         let resources = resources

@@ -1,4 +1,5 @@
 import { actionFields } from "./action-fields";
+import { formatText } from "./text";
 import { TextPresentation } from "./TextPresentation";
 
 import type { ResourceSet } from "./ResourceSet";
@@ -45,7 +46,7 @@ export class ExtensionPresentation
         const names = { en: "", "zh-Hans": "" };
         for (const locale of ["en", "zh-Hans"] as const)
         {
-            const value = typeof name === "string" ? name : resources?.format(locale, name, platform, 128);
+            const value = formatText(name, resources, locale, platform, 128);
             if (!value?.trim() || /\p{Cc}/u.test(value) || new TextEncoder().encode(value).length > 128)
             {
                 throw new Error("The extension name could not be rendered within its limits.");
@@ -123,11 +124,7 @@ export class ExtensionPresentation
         {
             return this.actions.text(value, locale);
         }
-        if (!this.resources)
-        {
-            throw new Error("The extension has no localization resources.");
-        }
-        return this.resources.format(locale, value, this._platform, 2048, true);
+        return formatText(value, this.resources, locale, this._platform, 2048, true);
     }
 
     /**
@@ -155,9 +152,7 @@ export class ExtensionPresentation
         const values = { en: "", "zh-Hans": "" };
         for (const locale of ["en", "zh-Hans"] as const)
         {
-            const value = typeof text === "string"
-                ? text
-                : this.resources?.format(locale, text, this._platform, maximum);
+            const value = formatText(text, this.resources, locale, this._platform, maximum);
             if (!value?.trim() || new TextEncoder().encode(value).length > maximum)
             {
                 throw new Error("The configuration text could not be rendered within its limits.");

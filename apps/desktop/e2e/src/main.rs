@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
+mod application_names;
 mod clipboard;
 #[allow(unsafe_code)]
 mod ime;
@@ -82,6 +84,8 @@ fn _launch(
     preferences.launcher_shortcut = "Ctrl+Alt+Shift+F12".into();
     preferences.language = nanika_localization::LanguagePreference::English;
     preferences.save(&store)?;
+    #[cfg(target_os = "macos")]
+    application_names::seed(&directory, &store)?;
     let mut context = nanika_desktop::context();
     context.config_mut().identifier = identity.to_owned();
     for window in &mut context.config_mut().app.windows {

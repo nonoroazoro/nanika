@@ -87,3 +87,24 @@ function _resources(chinese: string): ResourceSet
         }
     });
 }
+
+test("native names switch repeatedly without resources and reject invalid inactive translations", () =>
+{
+    const value = { fallback: "NeteaseMusic", translations: { en: "NetEaseMusic", "zh-Hans": "网易云音乐" } };
+    const before = structuredClone(value);
+    const presentation = new TextPresentation(undefined, "macos", [{ value, maximum: 128 }]);
+    for (let index = 0; index < 100; index++)
+    {
+        expect(presentation.text(value, "en")).toBe("NetEaseMusic");
+        expect(presentation.text(value, "zh-Hans")).toBe("网易云音乐");
+    }
+    expect(value).toEqual(before);
+    expect(() =>
+    {
+        return new TextPresentation(undefined, "macos", [{
+            value: { ...value, translations: { ...value.translations, ja: "bad\u0000" } },
+            maximum: 128
+        }]);
+    }).toThrow();
+    expect(presentation.text(value, "zh-Hans")).toBe("网易云音乐");
+});

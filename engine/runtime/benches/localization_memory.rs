@@ -72,6 +72,7 @@ fn main() {
     }
     for count in [1_000, 50_000] {
         _verify_replacement_release(&bilingual, count);
+        _verify_domain_names_release(count);
     }
 }
 
@@ -112,5 +113,58 @@ fn _verify_replacement_release(resources: &nanika_localization::ResourceSet, cou
     println!(
         "{}",
         serde_json::json!({"kind": "replacement_release", "entries": count, "cycles": 8, "residual_bytes": residual})
+    );
+}
+
+fn _verify_domain_names_release(count: usize) {
+    let baseline = LIVE.load(Ordering::Relaxed);
+    {
+        let mut engine = SearchEngine::new();
+        let usage = UsageMap::new();
+        let mut steady = None;
+        for _ in 0..8 {
+            let entries = (0..count)
+                .map(|index| {
+                    let mut publication = support::publication(index, false);
+                    publication.title = nanika_protocol::LocalizedText::Translated(
+                        nanika_protocol::TranslatedText {
+                            fallback: format!("Application {index}"),
+                            translations: [
+                                ("en".into(), format!("Application {index}")),
+                                ("zh-Hans".into(), format!("应用程序 {index}")),
+                                ("zh-TW".into(), format!("應用程式 {index}")),
+                                ("ja".into(), format!("アプリ {index}"))
+                            ]
+                            .into()
+                        }
+                    );
+                    let values =
+                        nanika_localization::candidate_search_text(&publication, None, "macos")
+                            .unwrap();
+                    support::indexed_candidate(publication, values)
+                })
+                .collect::<Vec<_>>();
+            for (_, query) in support::QUERIES {
+                black_box(engine.query(query, &entries, &usage, 1_000));
+            }
+            drop(entries);
+            let live = LIVE.load(Ordering::Relaxed);
+            if let Some(expected) = steady {
+                assert_eq!(
+                    live, expected,
+                    "domain name replacement must not retain dropped names"
+                );
+            }
+            steady = Some(live);
+        }
+    }
+    let residual = LIVE.load(Ordering::Relaxed).saturating_sub(baseline);
+    assert_eq!(
+        residual, 0,
+        "translated titles and search values must release their heap"
+    );
+    println!(
+        "{}",
+        serde_json::json!({"kind":"domain_names_release", "entries":count, "cycles":8, "residual_bytes":residual})
     );
 }

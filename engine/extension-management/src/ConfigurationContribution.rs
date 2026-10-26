@@ -121,7 +121,7 @@ impl ConfigurationContribution {
             .any(|group| group.items.contains(item))
     }
 
-    /// Validate every rendered field before admission, then retain bilingual search data.
+    /// Validate every rendered field before admission, then retain every source name for search.
     pub(crate) fn _prepare_presentation(
         &self,
         resources: Option<&nanika_localization::ResourceSet>
@@ -152,16 +152,21 @@ impl ConfigurationContribution {
         let mut search = BTreeMap::new();
         for (key, property) in &self.properties {
             let mut values = Vec::new();
-            for locale in locales {
-                for text in [
-                    &property.title,
-                    property
-                        .group
-                        .as_ref()
-                        .map(|group| &group.title)
-                        .unwrap_or(&self.title)
-                ] {
-                    let value = _format(text, resources, locale, platform, 128)?;
+            for text in [
+                &property.title,
+                property
+                    .group
+                    .as_ref()
+                    .map(|group| &group.title)
+                    .unwrap_or(&self.title)
+            ] {
+                for value in nanika_localization::text_search_values(
+                    text,
+                    resources,
+                    platform,
+                    128,
+                    |value| validate_text(&value.into(), 128, "search text")
+                )? {
                     if !values.contains(&value) {
                         values.push(value);
                     }
@@ -171,11 +176,16 @@ impl ConfigurationContribution {
         }
         for item in &self.actions {
             let mut values = Vec::new();
-            for locale in locales {
-                for text in std::iter::once(&item.action.title)
-                    .chain(item.action.group.as_ref().map(|group| &group.title))
-                {
-                    let value = _format(text, resources, locale, platform, 128)?;
+            for text in std::iter::once(&item.action.title)
+                .chain(item.action.group.as_ref().map(|group| &group.title))
+            {
+                for value in nanika_localization::text_search_values(
+                    text,
+                    resources,
+                    platform,
+                    128,
+                    |value| validate_text(&value.into(), 128, "search text")
+                )? {
                     if !values.contains(&value) {
                         values.push(value);
                     }
@@ -287,21 +297,15 @@ fn validate_text(
     maximum: usize,
     label: &str
 ) -> Result<(), String> {
-    let value = match value {
-        nanika_protocol::LocalizedText::Literal(value) => value,
-        nanika_protocol::LocalizedText::Message(reference) => {
-            return reference
-                .validate()
-                .map_err(|error| format!("{label}: {error}"));
+    value.validate_literals(|value| {
+        if value.trim().is_empty() {
+            Err(format!("{label} is empty"))
+        } else if value.len() > maximum {
+            Err(format!("{label} exceeds {maximum} bytes"))
+        } else {
+            Ok(())
         }
-    };
-    if value.trim().is_empty() {
-        Err(format!("{label} is empty"))
-    } else if value.len() > maximum {
-        Err(format!("{label} exceeds {maximum} bytes"))
-    } else {
-        Ok(())
-    }
+    })
 }
 
 fn _format(
@@ -311,10 +315,5 @@ fn _format(
     platform: &str,
     maximum: usize
 ) -> Result<String, String> {
-    match text {
-        nanika_protocol::LocalizedText::Literal(value) => Ok(value.clone()),
-        nanika_protocol::LocalizedText::Message(_) => resources
-            .ok_or("message reference requires localization resources")?
-            .format(locale, text, platform, maximum, false)
-    }
+    nanika_localization::format_text(text, resources, locale, platform, maximum, false)
 }

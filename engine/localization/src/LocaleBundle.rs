@@ -77,6 +77,14 @@ impl LocaleBundle {
                 Self::_validate_output(value, maximum_chars, allow_empty)?;
                 return Ok(value.clone());
             }
+            LocalizedText::Translated(value) => {
+                text.validate_literals(|value| {
+                    Self::_validate_output(value, maximum_chars, allow_empty)
+                })?;
+                return Ok(value
+                    .resolve(&self._bundle.locales[0].to_string())
+                    .to_owned());
+            }
             LocalizedText::Message(reference) => {
                 reference.validate()?;
                 let contract = self
@@ -129,7 +137,7 @@ impl LocaleBundle {
         Ok(output)
     }
 
-    fn _validate_output(
+    pub(crate) fn _validate_output(
         value: &str,
         maximum_chars: usize,
         allow_empty: bool

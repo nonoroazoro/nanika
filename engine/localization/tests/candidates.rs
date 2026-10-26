@@ -159,3 +159,61 @@ fn _resources(english: &str, chinese: &str) -> ResourceSet {
     )
     .unwrap()
 }
+
+#[test]
+fn supplied_application_names_are_indexed_together_without_package_resources() {
+    let mut candidate = _candidate();
+    candidate.title = nanika_protocol::LocalizedText::Translated(nanika_protocol::TranslatedText {
+        fallback: "NetEaseMusic".into(),
+        translations: [
+            ("en".into(), "NetEaseMusic".into()),
+            ("zh-Hans".into(), "网易云音乐".into())
+        ]
+        .into()
+    });
+    candidate.aliases.clear();
+    candidate.subtitle = None;
+    assert_eq!(
+        candidate_search_text(&candidate, None, "macos").unwrap(),
+        ["NetEaseMusic", "网易云音乐"]
+    );
+    for locale in [SupportedLocale::English, SupportedLocale::SimplifiedChinese] {
+        let expected = if locale == SupportedLocale::English {
+            "NetEaseMusic"
+        } else {
+            "网易云音乐"
+        };
+        assert_eq!(
+            nanika_localization::format_text(&candidate.title, None, locale, "macos", 128, false)
+                .unwrap(),
+            expected
+        );
+    }
+    let resources = ResourceSet::new(
+        SupportedLocale::English,
+        [(
+            SupportedLocale::English,
+            vec![("en.ftl".into(), "other = Other".into())]
+        )]
+        .into(),
+        false
+    )
+    .unwrap();
+    assert_eq!(
+        resources
+            .format(
+                SupportedLocale::SimplifiedChinese,
+                &candidate.title,
+                "macos",
+                128,
+                false
+            )
+            .unwrap(),
+        "网易云音乐"
+    );
+    let nanika_protocol::LocalizedText::Translated(value) = &mut candidate.title else {
+        unreachable!()
+    };
+    value.translations.insert("ja".into(), "bad\0".into());
+    assert!(candidate_search_text(&candidate, None, "macos").is_err());
+}

@@ -36,7 +36,8 @@ fn schema_contains_only_persistent_application_metadata() {
             "arguments_json",
             "icon_key",
             "icon_source",
-            "priority"
+            "priority",
+            "localized_names"
         ]
     );
     assert!(table_is_strict(&connection, "app_sources"));
@@ -138,6 +139,7 @@ fn corrupt_application_table_fails_explicitly() {
 
 fn entry(entry_id: &str) -> ApplicationEntry {
     ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: entry_id.to_owned(),
         source_key: "source".to_owned(),
         display_name: "Example".to_owned(),

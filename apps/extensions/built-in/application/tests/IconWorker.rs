@@ -398,6 +398,7 @@ fn stale_cached_completions_reject_source_path_and_resource_index_changes() {
 
 fn _entry(id: &str) -> ApplicationEntry {
     ApplicationEntry::new(crate::ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: id.into(),
         source_key: id.into(),
         display_name: id.into(),

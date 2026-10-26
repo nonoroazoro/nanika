@@ -12,19 +12,18 @@ pub struct OperationProgress {
 
 impl OperationProgress {
     pub fn validate(&self) -> Result<(), String> {
-        match &self.label {
-            crate::LocalizedText::Literal(label) => {
-                if label.trim().is_empty()
-                    || label.len() > 128
-                    || label.chars().any(|character| {
-                        character.is_control() && !matches!(character, '\n' | '\r' | '\t')
-                    })
-                {
-                    return Err("progress label must contain 1 to 128 bytes".to_owned());
-                }
+        self.label.validate_literals(|label| {
+            if label.trim().is_empty()
+                || label.len() > 128
+                || label.chars().any(|character| {
+                    character.is_control() && !matches!(character, '\n' | '\r' | '\t')
+                })
+            {
+                Err("progress label must contain 1 to 128 bytes".to_owned())
+            } else {
+                Ok(())
             }
-            crate::LocalizedText::Message(reference) => reference.validate()?
-        }
+        })?;
         match self.total {
             Some(total) if total == 0 || self.completed > total => {
                 Err("invalid progress work units".to_owned())

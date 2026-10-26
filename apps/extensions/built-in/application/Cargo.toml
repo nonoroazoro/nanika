@@ -38,13 +38,16 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSBundle", "NSDictionary", "NSEnumerator", "NSFileManager", "NSLocale", "NSProcessInfo", "NSString", "objc2-core-foundation"] }
+libc.workspace = true
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["std", "NSData", "NSError", "NSPropertyList", "NSLocale", "NSDictionary", "NSEnumerator", "NSProcessInfo", "NSString", "objc2-core-foundation"] }
 plist.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+nanika-localization = { path = "../../../../engine/localization" }
 criterion.workspace = true
 nanika-search = { path = "../../../../engine/search" }
 

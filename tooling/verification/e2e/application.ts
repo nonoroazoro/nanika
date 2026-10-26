@@ -376,6 +376,10 @@ try
         );
         await browser.switchToWindow("settings");
         await _selectLanguage("en", "en");
+        if (process.platform === "darwin")
+        {
+            await _verifyApplicationNames();
+        }
         const marker = identity;
         const copiedHtml = (await Bun.file(
             join(root, "apps/desktop/frontend/tests/syntax/fixtures/inline-chart.txt")
@@ -451,7 +455,7 @@ try
         const previousPaths = await directories.getText();
         const configFile = Bun.file(join(state, "config/extensions/com.nanika.application/settings.jsonc"));
         const previousConfig = await configFile.exists() ? await configFile.text() : null;
-        await (await directories.$("button")).click();
+        await (await directories.$(".directory-toolbar button")).click();
         await _wait(_pickerOpen, "native folder picker");
         await _key("escape", async () =>
         {
@@ -925,4 +929,76 @@ async function _selectLanguage(preference: "en" | "system" | "zh-Hans", locale: 
         },
         "localized native Settings title and tray labels"
     );
+}
+
+async function _verifyApplicationNames(): Promise<void>
+{
+    const driver = browser;
+    if (!driver)
+    {
+        throw new Error("Application driver is unavailable");
+    }
+    await _key("launcher", async () => _window("launcher", true, true));
+    await _launcherReady();
+    const search = await driver.$(".launcher input[role=combobox]");
+    await search.setValue("Nanika NetEaseMusic");
+    await (await driver.$("[role=option] .title[title='Nanika NetEaseMusic']"))
+        .waitForExist({ timeout: 15000 });
+    await driver.execute(`
+        window.__nanikaApplicationNameBaseline = {
+            input: document.querySelector('.launcher input[role=combobox]'),
+            selected: document.querySelector('[role=option][aria-selected=true]')
+        };
+    `);
+    await _key("settings", async () => _window("settings", true, true));
+    await driver.switchToWindow("settings");
+    await _selectLanguage("zh-Hans", "zh-Hans");
+    await driver.switchToWindow("launcher");
+    await (await driver.$("[role=option] .title[title='Nanika 网易云音乐']"))
+        .waitForExist({ timeout: 15000 });
+    await driver.execute(`
+        const before = window.__nanikaApplicationNameBaseline;
+        if (document.querySelector('.launcher input[role=combobox]') !== before.input
+            || before.input.value !== 'Nanika NetEaseMusic'
+            || document.querySelector('[role=option][aria-selected=true]') !== before.selected) {
+            throw new Error('Native application translation replaced query, input or selection');
+        }
+    `);
+    await _key("launcher", async () => _window("launcher", true, true));
+    await _launcherReady();
+    for (const query of ["网易", "音乐", "wy", "yy", "netease", "music", "ミュージック"])
+    {
+        await search.setValue(query);
+        await (await driver.$("[role=option] .title[title='Nanika 网易云音乐']"))
+            .waitForExist({ timeout: 15000 });
+    }
+    for (
+        const [query, title] of [
+            ["網易", "Nanika 網易雲音樂"],
+            ["traditional", "Nanika 網易雲音樂"],
+            ["undetermined", "Nanika 網易雲音樂"],
+            ["american", "Nanika 網易雲音樂"],
+            ["音楽箱", "Nanika 音楽箱"]
+        ] as const
+    )
+    {
+        await search.setValue(query);
+        await (await driver.$(`[role=option] .title[title='${title}']`))
+            .waitForExist({ timeout: 15000 });
+    }
+    await search.setValue("Nanika");
+    await _key("settings", async () => _window("settings", true, true));
+    await driver.switchToWindow("settings");
+    await _selectLanguage("en", "en");
+    await driver.switchToWindow("launcher");
+    await (await driver.$("[role=option] .title[title='Nanika Traditional Music']"))
+        .waitForExist({ timeout: 15000 });
+    await (await driver.$("[role=option] .title[title='Nanika 音楽箱']"))
+        .waitForExist({ timeout: 15000 });
+    await (await driver.$("[role=option] .title[title='Nanika NetEaseMusic']"))
+        .waitForExist({ timeout: 15000 });
+    assertions.push(
+        "English cold-start native App names switch to Chinese without replacing input or selection; all source names remain searchable; Traditional Chinese and Japanese-only entries remain visible; empty defaults survive discovery and unknown languages never outrank English"
+    );
+    await driver.switchToWindow("settings");
 }

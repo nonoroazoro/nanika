@@ -34,6 +34,7 @@ tauri-plugin-dialog.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+icu_locale.workspace = true
 png.workspace = true
 
 [target.'cfg(windows)'.dependencies]

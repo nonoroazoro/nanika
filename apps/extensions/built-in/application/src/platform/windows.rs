@@ -211,6 +211,7 @@ fn read_shell_link(
         crate::IconCache::fallback_key().to_owned()
     });
     Ok(Some(ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,
@@ -249,6 +250,7 @@ fn read_executable(
     let display_name = display_name(path);
     let normalized_name = normalize_name(&display_name);
     Ok(Some(ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,

@@ -1,0 +1,322 @@
+[
+    {
+        "name": "regional English",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-US": "US",
+                "en-GB": "GB"
+            }
+        },
+        "expected": "US"
+    },
+    {
+        "name": "exact English precedes regional English",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-US": "US",
+                "en": "English"
+            }
+        },
+        "expected": "English"
+    },
+    {
+        "name": "Traditional Chinese remains visible",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-TW": "繁體",
+                "en": "English"
+            }
+        },
+        "expected": "繁體"
+    },
+    {
+        "name": "Chinese region chooses script",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-TW": "繁體",
+                "zh-CN": "简体"
+            }
+        },
+        "expected": "简体"
+    },
+    {
+        "name": "Chinese script chooses region",
+        "locale": "zh-Hant",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-TW": "繁體",
+                "zh-CN": "简体"
+            }
+        },
+        "expected": "繁體"
+    },
+    {
+        "name": "explicit script beats region inference",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-Hans-TW": "简体",
+                "zh-Hant-CN": "繁體"
+            }
+        },
+        "expected": "简体"
+    },
+    {
+        "name": "English fallback uses regional English",
+        "locale": "ja",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-GB": "English",
+                "zh-CN": "简体"
+            }
+        },
+        "expected": "English"
+    },
+    {
+        "name": "foreign-only source remains visible",
+        "locale": "en",
+        "text": {
+            "fallback": "音楽箱",
+            "translations": {
+                "ja": "音楽箱"
+            }
+        },
+        "expected": "音楽箱"
+    },
+    {
+        "name": "same-language region fallback",
+        "locale": "ja",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "ja-JP": "音楽箱",
+                "en": "English"
+            }
+        },
+        "expected": "音楽箱"
+    },
+    {
+        "name": "stable tie independent of insertion order",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-ZA": "ZA",
+                "en-AU": "AU"
+            }
+        },
+        "expected": "AU"
+    },
+    {
+        "name": "unknown source does not disappear",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Original",
+            "translations": {
+                "mul": "Original"
+            }
+        },
+        "expected": "Original"
+    },
+    {
+        "name": "noncanonical case is rejected",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "EN": "English"
+            }
+        },
+        "expected": null
+    },
+    {
+        "name": "locale extensions are not language tags",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-u-ca-gregory": "English"
+            }
+        },
+        "expected": null
+    },
+    {
+        "name": "POSIX language variant remains displayable",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-posix": "Music"
+            }
+        },
+        "expected": "Music"
+    },
+    {
+        "name": "host-admitted inactive aliases do not reject English",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en": "Music",
+                "jaw": "Other name"
+            }
+        },
+        "expected": "Music"
+    },
+    {
+        "name": "host-admitted inactive aliases do not reject Chinese",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-posix": "Music",
+                "jaw": "Other name",
+                "zh-Hans": "音乐"
+            }
+        },
+        "expected": "音乐"
+    },
+    {
+        "name": "undetermined names do not acquire an English identity",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und": "Unknown"
+            }
+        },
+        "expected": "Source"
+    },
+    {
+        "name": "undetermined region does not acquire a Chinese identity",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und-CN": "Unknown"
+            }
+        },
+        "expected": "Source"
+    },
+    {
+        "name": "undetermined script does not acquire a Chinese identity",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und-Hans": "Unknown"
+            }
+        },
+        "expected": "Source"
+    },
+    {
+        "name": "undetermined names cannot outrank regional English",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und": "Unknown",
+                "en-GB": "English"
+            }
+        },
+        "expected": "English"
+    },
+    {
+        "name": "English fallback ignores undetermined names",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und": "Unknown",
+                "en-GB": "English"
+            }
+        },
+        "expected": "English"
+    },
+    {
+        "name": "canonical source language identity precedes runtime aliases",
+        "locale": "jv",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "jaw": "Other language",
+                "en-GB": "English"
+            }
+        },
+        "expected": "English"
+    },
+    {
+        "name": "explicit unknown language can still select its exact name",
+        "locale": "und",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und": "Unknown",
+                "en": "English"
+            }
+        },
+        "expected": "Unknown"
+    },
+    {
+        "name": "foreign names cannot replace a Chinese variant",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "und-CN": "Unknown",
+                "ja": "音楽",
+                "zh-TW": "音樂"
+            }
+        },
+        "expected": "音樂"
+    },
+    {
+        "name": "regional script inference preserves explicit English script",
+        "locale": "en",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "en-Cyrl-US": "Cyrillic",
+                "en-Latn-GB": "Latin"
+            }
+        },
+        "expected": "Latin"
+    },
+    {
+        "name": "script inference uses pinned data for zh-US",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-US": "American Chinese",
+                "zh-TW": "Traditional",
+                "en-GB": "English"
+            }
+        },
+        "expected": "Traditional"
+    },
+    {
+        "name": "script inference uses pinned data for zh-Zzzz-US",
+        "locale": "zh-Hans",
+        "text": {
+            "fallback": "Source",
+            "translations": {
+                "zh-Zzzz-US": "American Chinese",
+                "zh-TW": "Traditional",
+                "en-GB": "English"
+            }
+        },
+        "expected": "Traditional"
+    }
+]

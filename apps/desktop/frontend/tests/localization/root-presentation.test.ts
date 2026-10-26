@@ -47,6 +47,45 @@ test("mounted owners survive cache eviction while changed instance or session au
     expect(third.get(nextInstance.extensionId)?.presentation.text(nextInstance.actionTitle, "en")).toBe("Run");
 });
 
+test("host-admitted locale variants preserve the full result batch and warm language switching", async () =>
+{
+    const read = vi.fn(async () =>
+    {
+        throw new Error("Domain names need no package resources");
+    });
+    const cache = new ResourceCache(read);
+    const results = ["en-posix", "jaw"].map((tag, index): SearchResult => ({
+        ..._result("com.nanika.application"),
+        resourceScope: null,
+        entryId: `app.${index}`,
+        actionTitle: "Open",
+        confirmationTitle: null,
+        subtitle: null,
+        title: {
+            fallback: "Source",
+            translations: { en: "Music", "zh-Hans": "音乐", [tag]: "Other name" }
+        }
+    }));
+    const before = structuredClone(results);
+    const prepared = await prepareRootPresentation(
+        results,
+        { sessionId: 1, platform: "macos" },
+        new Map(),
+        cache
+    );
+    const presentation = prepared.get("com.nanika.application")?.presentation;
+    for (let index = 0; index < 100; index++)
+    {
+        for (const result of results)
+        {
+            expect(presentation?.text(result.title, "en")).toBe("Music");
+            expect(presentation?.text(result.title, "zh-Hans")).toBe("音乐");
+        }
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(results).toEqual(before);
+});
+
 function _result(id: string, instanceId = 1): SearchResult
 {
     return {

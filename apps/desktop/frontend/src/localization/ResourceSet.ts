@@ -1,4 +1,5 @@
 import { LocaleBundle } from "./LocaleBundle";
+import { formatTranslatedText } from "./translated-text";
 
 import type { LocalizedText } from "../generated/LocalizedText";
 import type { PreparedResources } from "../generated/PreparedResources";
@@ -51,6 +52,10 @@ export class ResourceSet
         allowEmpty = false
     ): string
     {
+        if (typeof text !== "string" && "translations" in text)
+        {
+            return formatTranslatedText(text, locale, maximumChars, allowEmpty);
+        }
         const current = this._bundles.get(locale);
         const bundle = current && (typeof text === "string" || current.hasMessage(text.message))
             ? current

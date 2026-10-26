@@ -7,7 +7,7 @@ pub fn validate_progress_presentation(
     resources: Option<&ResourceSet>
 ) -> Result<(), String> {
     progress.validate()?;
-    if matches!(progress.label, LocalizedText::Literal(_)) {
+    if !matches!(progress.label, LocalizedText::Message(_)) {
         return Ok(());
     }
     let resources =

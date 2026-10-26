@@ -26,6 +26,7 @@ impl PreparedError {
         for locale in [SupportedLocale::English, SupportedLocale::SimplifiedChinese] {
             let text = match &error.message {
                 LocalizedText::Literal(message) => message.clone(),
+                LocalizedText::Translated(value) => value.resolve(locale.as_str()).to_owned(),
                 LocalizedText::Message(_) => {
                     let resources = resources
                         .ok_or("Error message requires package localization resources.")?;

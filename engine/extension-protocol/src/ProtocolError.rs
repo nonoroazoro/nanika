@@ -37,19 +37,18 @@ impl ProtocolError {
         {
             return Err("Invalid error code.".into());
         }
-        match &self.message {
-            LocalizedText::Literal(message)
-                if message.trim().is_empty()
-                    || message.chars().any(|character| {
-                        character.is_control() && !matches!(character, '\n' | '\r' | '\t')
-                    })
-                    || message.chars().count() > crate::MAX_ERROR_MESSAGE_CHARS =>
+        self.message.validate_literals(|message| {
+            if message.trim().is_empty()
+                || message.chars().any(|character| {
+                    character.is_control() && !matches!(character, '\n' | '\r' | '\t')
+                })
+                || message.chars().count() > crate::MAX_ERROR_MESSAGE_CHARS
             {
-                return Err("Invalid error message.".into());
+                Err("Invalid error message.".into())
+            } else {
+                Ok(())
             }
-            LocalizedText::Message(reference) => reference.validate()?,
-            _ => {}
-        }
+        })?;
         if self.detail.as_ref().is_some_and(|detail| {
             detail.len() > crate::MAX_ERROR_DETAIL_BYTES || detail.contains('\0')
         }) {
@@ -63,7 +62,7 @@ impl std::fmt::Debug for ProtocolError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let reference = match &self.message {
             LocalizedText::Message(reference) => Some(reference.message.as_str()),
-            LocalizedText::Literal(_) => None
+            LocalizedText::Literal(_) | LocalizedText::Translated(_) => None
         };
         formatter
             .debug_struct("ProtocolError")
@@ -79,6 +78,7 @@ impl std::fmt::Display for ProtocolError {
         write!(formatter, "{}: ", self.code)?;
         match &self.message {
             LocalizedText::Literal(message) => formatter.write_str(message)?,
+            LocalizedText::Translated(text) => formatter.write_str(&text.fallback)?,
             // Diagnostics identify the reference without disclosing its argument values.
             LocalizedText::Message(reference) => write!(formatter, "message {}", reference.message)?
         }

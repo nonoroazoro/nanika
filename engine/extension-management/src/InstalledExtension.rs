@@ -179,45 +179,18 @@ impl InstalledExtension {
         manifest: &ExtensionManifest,
         resources: Option<&ResourceSet>
     ) -> Result<Vec<String>, ExtensionPackageError> {
-        if let nanika_protocol::LocalizedText::Literal(name) = &manifest.name {
-            crate::extension_manifest::_validate_name(name)?;
-            return Ok(vec![name.clone()]);
-        }
-        let resources = resources.ok_or_else(|| {
-            ExtensionPackageError::Manifest(format!(
-                "{}: name requires localization resources",
-                manifest.id
-            ))
-        })?;
-        let mut values = Vec::new();
-        for locale in [
-            nanika_localization::SupportedLocale::English,
-            nanika_localization::SupportedLocale::SimplifiedChinese
-        ] {
-            for platform in ["macos", "windows"] {
-                let name = resources
-                    .format(locale, &manifest.name, platform, 128, false)
-                    .map_err(|error| {
-                        ExtensionPackageError::Manifest(format!(
-                            "{}: name: {}: {platform}: {error}",
-                            manifest.id,
-                            locale.as_str()
-                        ))
-                    })?;
-                crate::extension_manifest::_validate_name(&name).map_err(|error| {
-                    ExtensionPackageError::Manifest(format!(
-                        "{}: name: {}: {platform}: {error}",
-                        manifest.id,
-                        locale.as_str()
-                    ))
-                })?;
-                if platform == nanika_platform::target_platform().as_str()
-                    && !values.contains(&name)
-                {
-                    values.push(name);
-                }
+        let values = nanika_localization::text_search_values(
+            &manifest.name,
+            resources,
+            nanika_platform::target_platform().as_str(),
+            128,
+            |name| {
+                crate::extension_manifest::_validate_name(name).map_err(|error| error.to_string())
             }
-        }
+        )
+        .map_err(|error| {
+            ExtensionPackageError::Manifest(format!("{}: name: {error}", manifest.id))
+        })?;
         Ok(values)
     }
 }

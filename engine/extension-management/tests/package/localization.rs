@@ -355,7 +355,7 @@ fn configuration_messages_are_admitted_with_bilingual_search_data_and_original_v
             .unwrap();
     assert_eq!(
         admitted.configuration_search_values["field:enabled"],
-        vec!["Colors", "Appearance", "色彩", "外观"]
+        vec!["Colors", "色彩", "Appearance", "外观"]
     );
     let contribution = admitted.contributes.configuration.unwrap();
     assert_eq!(contribution.defaults()["enabled"], true);
@@ -437,7 +437,7 @@ fn action_messages_share_admission_and_keep_search_targets_and_group_identity_di
     );
     assert_eq!(
         admitted.configuration_search_values["action:enabled"],
-        ["Reset", "Options", "重置", "选项"]
+        ["Reset", "重置", "Options", "选项"]
     );
     let mut action = parsed.contributes.configuration.as_ref().unwrap().actions[0]
         .action
@@ -575,4 +575,30 @@ fn _package(path: &Path, version: &str, declaration: &serde_json::Value, files: 
         archive.write_all(source.as_bytes()).unwrap();
     }
     archive.finish().unwrap();
+}
+
+#[test]
+fn source_names_and_configuration_index_every_translation_and_fallback() {
+    let mut manifest = _manifest("1.0.0", &serde_json::Value::Null);
+    manifest.as_object_mut().unwrap().remove("localization");
+    let names = serde_json::json!({"fallback":"Internal", "translations":{"en":"Music", "ja":"音楽箱", "zh-TW":"音樂盒"}});
+    manifest["name"] = names.clone();
+    manifest["contributes"]["configuration"] = serde_json::json!({
+        "title": names,
+        "properties": {"enabled":{"title":names, "type":"boolean", "default":true, "persistence":"beforeApply"}},
+        "actions":[{"description":"Reset", "action":{"id":"reset", "title":names, "style":"secondary", "enabled":true, "allow_default_execution":false}}]
+    });
+    let parsed = parse_extension_manifest(&manifest.to_string()).unwrap();
+    let installed =
+        InstalledExtension::from_manifest(parsed, "unused".into(), "unused".into(), false).unwrap();
+    let expected = vec!["Internal", "Music", "音楽箱", "音樂盒"];
+    assert_eq!(installed.name_search_values, expected);
+    assert_eq!(
+        installed.configuration_search_values["field:enabled"],
+        expected
+    );
+    assert_eq!(
+        installed.configuration_search_values["action:reset"],
+        expected
+    );
 }

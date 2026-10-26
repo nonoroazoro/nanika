@@ -1,4 +1,5 @@
 import { validOutput } from "./output";
+import { formatTranslatedText } from "./translated-text";
 import {
     MAX_ERROR_DETAIL_BYTES,
     MAX_ERROR_MESSAGE_CHARS,
@@ -236,6 +237,18 @@ function _protocolError(value: unknown): value is ProtocolError
     if (typeof error.message === "string")
     {
         return validOutput(error.message, MAX_ERROR_MESSAGE_CHARS, false);
+    }
+    if (_record(error.message) && "translations" in (error.message as object))
+    {
+        try
+        {
+            formatTranslatedText(error.message, "en", MAX_ERROR_MESSAGE_CHARS);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
     const reference = _record(error.message);
     if (

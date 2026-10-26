@@ -35,7 +35,9 @@ test("foreign, absent, or mismatched resources cannot publish a name", () =>
     expect(() => new ExtensionPresentation("another.extension", name, scope, resources, "macos")).toThrow("owner");
     expect(() => new ExtensionPresentation(scope.extensionId, name, scope, undefined, "macos")).toThrow("owner");
     expect(() => new ExtensionPresentation(scope.extensionId, name, undefined, resources, "macos")).toThrow("owner");
-    expect(() => new ExtensionPresentation(scope.extensionId, name, undefined, undefined, "macos")).toThrow("rendered");
+    expect(() => new ExtensionPresentation(scope.extensionId, name, undefined, undefined, "macos")).toThrow(
+        "requires localization resources"
+    );
     expect(() => new ExtensionPresentation(scope.extensionId, { message: "unknown" }, scope, resources, "macos"))
         .toThrow();
 });
@@ -116,3 +118,11 @@ function _resources(chinese: string): ResourceSet
         }
     });
 }
+
+test("source-owned extension names can switch without package resources", () =>
+{
+    const title = { fallback: "Music", translations: { en: "Music", "zh-Hans": "音乐" } };
+    const prepared = new ExtensionPresentation(scope.extensionId, title, undefined, undefined, "macos");
+    expect(prepared.name("en")).toBe("Music");
+    expect(prepared.name("zh-Hans")).toBe("音乐");
+});

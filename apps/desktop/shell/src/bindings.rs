@@ -3,6 +3,9 @@ use ts_rs::{Config, TS};
 #[path = "../tests/bindings.rs"]
 mod contracts;
 
+#[path = "../tests/locale_matching.rs"]
+mod locale_matching;
+
 /// Explicit tooling entry point. Ordinary tests never rewrite frontend sources.
 #[test]
 #[ignore = "run through bun run types:update or just check"]
@@ -11,6 +14,7 @@ fn export() {
         std::env::var_os("NANIKA_TYPES_OUTPUT").expect("tooling must supply an output directory");
     // Match JSON numbers used by the existing IPC contract, not JavaScript bigint.
     let config = Config::new().with_large_int("number").with_out_dir(output);
+    locale_matching::write(&config.out_dir().join("locale-matching.ts"));
     nanika_localization::PreparedResources::export_all(&config).expect("export PreparedResources");
     nanika_protocol::LocalizedText::export_all(&config).expect("export LocalizedText");
     nanika_localization::SupportedLocale::export_all(&config).expect("export SupportedLocale");

@@ -9,7 +9,7 @@ pub fn validate_action_presentation(
     nanika_protocol::validate_actions(actions)?;
     for action in actions {
         action.visit_texts(&mut |field, text, maximum| {
-            if matches!(text, LocalizedText::Literal(_)) {
+            if !matches!(text, LocalizedText::Message(_)) {
                 return Ok(());
             }
             let resources = resources.ok_or_else(|| {

@@ -360,6 +360,7 @@ fn mixed_query_preserves_exact_prefix_and_infix_order() {
 fn entry(index: usize, name: &str) -> ApplicationEntry {
     let normalized_name = name.to_lowercase();
     ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: format!("app.{index}"),
         source_key: format!("source.{index}"),
         display_name: name.to_owned(),

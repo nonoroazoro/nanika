@@ -45,3 +45,10 @@ describe("ResourceSet", () =>
         expect(() => new ResourceSet({ ...resources, locales: {} })).toThrow();
     });
 });
+
+it("domain translations use the requested UI locale even when package resources fall back", () =>
+{
+    const set = new ResourceSet({ ...resources, locales: { en: resources.locales.en } });
+    const text = { fallback: "NeteaseMusic", translations: { en: "NetEaseMusic", "zh-Hans": "网易云音乐" } };
+    expect(set.format("zh-Hans", text, "macos", 128)).toBe("网易云音乐");
+});

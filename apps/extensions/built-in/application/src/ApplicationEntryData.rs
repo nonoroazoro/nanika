@@ -5,6 +5,7 @@ pub struct ApplicationEntryData {
     pub entry_id: String,
     pub source_key: String,
     pub display_name: String,
+    pub localized_names: std::collections::BTreeMap<String, String>,
     pub normalized_name: String,
     pub normalized_tokens: String,
     pub launch_kind: String,

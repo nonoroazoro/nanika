@@ -42,7 +42,14 @@ impl ApplicationEntry {
         Candidate {
             kind: CandidateKind::Action,
             entry_id: self.entry_id.clone(),
-            title: self.display_name.clone().into(),
+            title: if self.localized_names.is_empty() {
+                self.display_name.clone().into()
+            } else {
+                nanika_protocol::LocalizedText::Translated(nanika_protocol::TranslatedText {
+                    fallback: self.display_name.clone(),
+                    translations: self.localized_names.clone()
+                })
+            },
             subtitle: Some(nanika_protocol::CandidateSubtitle::Label(
                 nanika_protocol::message("candidate-kind", [])
             )),

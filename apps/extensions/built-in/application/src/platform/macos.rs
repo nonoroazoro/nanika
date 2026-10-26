@@ -5,10 +5,10 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use objc2_foundation::{NSBundle, NSFileManager, NSLocale, NSString};
 use plist::Value;
 
 mod icons;
+mod names;
 
 pub(super) use icons::{extract_icons, icon_cache_key};
 
@@ -65,7 +65,7 @@ pub(super) fn is_application_bundle(path: &Path) -> bool {
 }
 
 pub(super) fn read_entry(
-    state: &mut DiscoveryState,
+    _state: &mut DiscoveryState,
     path: &Path,
     priority: usize
 ) -> Result<Option<ApplicationEntry>, ApplicationError> {
@@ -88,15 +88,15 @@ pub(super) fn read_entry(
     }
     let bundle_id = string_value(dictionary.get("CFBundleIdentifier")).map(str::to_owned);
     let bundle_display_name = string_value(dictionary.get("CFBundleDisplayName"))
-        .or_else(|| string_value(dictionary.get("CFBundleName")))
+        .and_then(names::normalize)
+        .or_else(|| string_value(dictionary.get("CFBundleName")).and_then(names::normalize))
         .map(str::to_owned)
-        .or_else(|| {
-            path.file_stem()
-                .map(|value| value.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| path.to_string_lossy().into_owned());
-    let display_name = localized_display_name(path, state.preferred_languages(preferred_languages))
-        .unwrap_or_else(|| bundle_display_name.clone());
+        .unwrap_or_default();
+    let (display_name, localized_names) = names::read(
+        path,
+        &bundle_display_name,
+        string_value(dictionary.get("CFBundleDevelopmentRegion"))
+    );
     let executable_key = path_key(&executable);
     let identity_source = bundle_id.as_deref().unwrap_or(&executable_key);
     let identity = stable_hash(&["macos", identity_source]);
@@ -114,6 +114,7 @@ pub(super) fn read_entry(
     );
     let arguments_json = ApplicationArguments::empty().to_json()?;
     Ok(Some(ApplicationEntry::new(ApplicationEntryData {
+        localized_names,
         entry_id: format!("app.{identity}"),
         source_key: path_key(path),
         display_name,
@@ -131,84 +132,15 @@ pub(super) fn read_entry(
     })))
 }
 
-fn localized_display_name(path: &Path, localizations: &[String]) -> Option<String> {
-    let bundle_path = path;
-    let path = NSString::from_str(&bundle_path.to_string_lossy());
-    let key = NSString::from_str("CFBundleDisplayName");
-    let bundle = NSBundle::bundleWithPath(&path);
-    let display_name = loctable_display_name(bundle_path, localizations)
-        .or_else(|| {
-            bundle
-                .and_then(|bundle| bundle.objectForInfoDictionaryKey(&key))
-                .and_then(|value| value.downcast::<NSString>().ok())
-                .map(|value| value.to_string())
-        })
-        .unwrap_or_else(|| {
-            NSFileManager::defaultManager()
-                .displayNameAtPath(&path)
-                .to_string()
-        });
-    let display_name = display_name.trim();
-    let display_name = display_name
-        .strip_suffix(".app")
-        .or_else(|| display_name.strip_suffix(".APP"))
-        .unwrap_or(display_name)
-        .trim();
-    (!display_name.is_empty()).then(|| display_name.to_owned())
-}
-
-fn preferred_languages() -> Vec<String> {
-    NSLocale::preferredLanguages()
-        .into_iter()
-        .map(|localization| localization.to_string())
-        .collect()
-}
-
-fn loctable_display_name(bundle: &Path, localizations: &[String]) -> Option<String> {
-    let file = fs::File::open(bundle.join("Contents/Resources/InfoPlist.loctable")).ok()?;
-    let table = Value::from_reader(file).ok()?;
-    let table = table.as_dictionary()?;
-    for localization in localizations {
-        for localization in localization_candidates(localization) {
-            let value = table
-                .get(&localization)
-                .and_then(Value::as_dictionary)
-                .and_then(|values| values.get("CFBundleDisplayName"))
-                .and_then(Value::as_string)
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            if let Some(value) = value {
-                return Some(value.to_owned());
-            }
-        }
-    }
-    None
-}
-
-fn localization_candidates(localization: &str) -> Vec<String> {
-    let canonical = localization.replace('-', "_");
-    let lower = canonical.to_ascii_lowercase();
-    let mut candidates = vec![localization.to_owned(), canonical.clone()];
-    if lower.starts_with("zh_hans") {
-        candidates.push("zh_CN".to_owned());
-    } else if lower.starts_with("zh_hant_hk") {
-        candidates.push("zh_HK".to_owned());
-    } else if lower.starts_with("zh_hant") {
-        candidates.push("zh_TW".to_owned());
-    }
-    if let Some((language, _)) = canonical.split_once('_') {
-        candidates.push(language.to_owned());
-    }
-    candidates.dedup();
-    candidates
-}
-
 fn normalized_aliases<'a>(
     normalized_name: &str,
     aliases: impl IntoIterator<Item = &'a str>
 ) -> String {
     let mut normalized = Vec::<String>::new();
     for alias in aliases {
+        let Some(alias) = names::normalize(alias) else {
+            continue;
+        };
         let alias = normalize_name(alias);
         if alias.is_empty()
             || alias == normalized_name

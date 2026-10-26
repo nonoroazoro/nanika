@@ -53,3 +53,6 @@ pub use resource_set::ResourceSet;
 #[path = "PreparedError.rs"]
 mod prepared_error;
 pub use prepared_error::PreparedError;
+
+mod text;
+pub use text::{format_text, text_search_values};

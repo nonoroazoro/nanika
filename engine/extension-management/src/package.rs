@@ -616,6 +616,12 @@ pub fn validate_extension_manifest(
         nanika_protocol::LocalizedText::Literal(name) => {
             crate::extension_manifest::_validate_name(name)?
         }
+        nanika_protocol::LocalizedText::Translated(value) => {
+            value.validate().map_err(ExtensionPackageError::Manifest)?;
+            for name in value.values() {
+                crate::extension_manifest::_validate_name(name)?;
+            }
+        }
         nanika_protocol::LocalizedText::Message(reference) => {
             reference
                 .validate()
@@ -883,18 +889,18 @@ fn validate_contribution_text(
     let error = |detail| {
         ExtensionPackageError::Manifest(format!("extension {contribution} {field}: {detail}"))
     };
-    match value {
-        nanika_protocol::LocalizedText::Literal(value) => {
+    value
+        .validate_literals(|value| {
             if value.trim().is_empty()
                 || value.chars().count() > maximum_chars
                 || value.chars().any(char::is_control)
             {
-                return Err(error("invalid text".to_owned()));
+                Err("invalid text".to_owned())
+            } else {
+                Ok(())
             }
-            Ok(())
-        }
-        nanika_protocol::LocalizedText::Message(reference) => reference.validate().map_err(error)
-    }
+        })
+        .map_err(error)
 }
 
 fn is_valid_contribution_id(value: &str) -> bool {

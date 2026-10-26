@@ -256,7 +256,8 @@ fn dormant_localized_contributions_match_both_languages_without_starting_the_ext
         loop {
             if let Some(snapshot) = handle
                 .latest_snapshot()
-                .filter(|s| s.generation == generation)
+                // Query admission may precede the queued static catalog publication.
+                .filter(|s| s.generation == generation && !s.results.is_empty())
             {
                 assert_eq!(snapshot.results.len(), 1, "{query}");
                 let candidate = &snapshot.results[0].candidate;

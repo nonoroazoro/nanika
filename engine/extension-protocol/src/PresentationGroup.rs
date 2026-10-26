@@ -36,9 +36,7 @@ impl PresentationGroup {
         {
             return Err("presentation group id is invalid".into());
         }
-        if let crate::LocalizedText::Message(reference) = &self.title {
-            reference.validate()?;
-        }
+        self.title.validate_literals(|_| Ok(()))?;
         Ok(())
     }
 }

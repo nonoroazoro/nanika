@@ -193,6 +193,7 @@ fn fallback_icons_are_valid_png_files() {
     .unwrap_or(None)
     .unwrap_or_else(|| {
         crate::ApplicationEntry::new(ApplicationEntryData {
+            localized_names: Default::default(),
             entry_id: "app.missing".to_owned(),
             source_key: "missing".to_owned(),
             display_name: "Missing".to_owned(),
@@ -294,6 +295,7 @@ fn failed_icon_extraction_is_retried_for_the_same_cache_key() {
     let executable = root.join("Invalid.exe");
     std::fs::write(&executable, []).expect("invalid executable should exist");
     let mut entry = crate::ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: "app.invalid".to_owned(),
         source_key: executable.to_string_lossy().into_owned(),
         display_name: "Invalid".to_owned(),
@@ -392,6 +394,7 @@ fn test_root(name: &str) -> PathBuf {
 
 fn test_entry(icon_key: &str) -> crate::ApplicationEntry {
     crate::ApplicationEntry::new(ApplicationEntryData {
+        localized_names: Default::default(),
         entry_id: "app.test".to_owned(),
         source_key: "test".to_owned(),
         display_name: "Test".to_owned(),

@@ -1,5 +1,6 @@
 import { formatBytes } from "./bytes";
 import { validOutput } from "./output";
+import { formatText } from "./text";
 
 import type { PresentationField } from "./PresentationField";
 import type { ResourceSet } from "./ResourceSet";
@@ -35,7 +36,7 @@ export class TextPresentation
                 }
                 else
                 {
-                    text = resources?.format(locale, value, platform, maximum, allowEmpty);
+                    text = formatText(value, resources, locale, platform, maximum, allowEmpty);
                 }
                 if (text === undefined || !validOutput(text, maximum, allowEmpty))
                 {

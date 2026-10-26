@@ -49,6 +49,7 @@ fn _read(cancelled: &mut dyn FnMut() -> bool) -> Result<Vec<ApplicationEntry>, A
                 let id = app.AppUserModelId()?.to_string();
                 let name = app.DisplayInfo()?.DisplayName()?.to_string();
                 entries.push(ApplicationEntry::new(ApplicationEntryData {
+                    localized_names: Default::default(),
                     entry_id: format!("app.{}", stable_hash(&["windows-packaged", &id])),
                     source_key: format!("{SOURCE}/{id}"),
                     normalized_name: normalize_name(&name),

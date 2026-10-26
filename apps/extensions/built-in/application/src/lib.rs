@@ -89,3 +89,5 @@ pub use entry_data::ApplicationEntryData;
 #[path = "ApplicationIconSource.rs"]
 mod application_icon_source;
 pub(crate) use application_icon_source::ApplicationIconSource;
+
+mod migration;
