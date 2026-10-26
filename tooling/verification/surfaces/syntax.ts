@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { verifyScrollGutters } from "../scroll-area.ts";
+
 import type { BrowserCommand } from "../BrowserCommand.ts";
 
 /**
@@ -22,5 +24,6 @@ export async function verifySyntax(browser: BrowserCommand, output: string): Pro
         "eval",
         "(() => { const state = window.syntaxInteractionState(); if (state.focus !== window.selectionStart + 2 || state.anchor !== window.selectionStart) throw new Error('Keyboard selection failed'); return true; })()"
     );
+    await verifyScrollGutters(browser);
     await browser("screenshot", join(output, "syntax-selection.png"));
 }

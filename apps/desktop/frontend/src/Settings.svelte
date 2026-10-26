@@ -904,7 +904,7 @@ function _windowAction(action: SettingsWindowAction): void
 .heading-icon { --icon-size: 48px; display: block; flex-shrink: 0; }
 .content { position: relative; isolation: isolate; min-width: 0; min-height: 100%; }
 .extension-page { max-width: 52rem; margin: 0 auto; padding: var(--space-4) var(--space-6) 0; }
-.extension-page { display: flex; flex-direction: column; min-height: 100%; }
+.extension-page { display: flex; flex-direction: column; min-height: 100%; overflow-wrap: anywhere; }
 header { margin-bottom: var(--settings-group-gap); }
 h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: var(--settings-heading-weight); }
 p { color: var(--text-secondary); font-size: var(--settings-description-size); line-height: var(--settings-description-line-height); }

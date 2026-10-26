@@ -431,6 +431,17 @@ try
         assertions.push("first Clipboard preview remains in the same document and extension after three seconds");
         await (await browser.$("button[aria-label='\u2068Clipboard History\u2069 menu']")).click();
         await (await browser.$("[role=menu]")).waitForExist({ timeout: 5000 });
+        await browser.execute(`
+            const areas = [...document.querySelectorAll('.scroll-area')].filter(area => area.clientWidth && area.clientHeight);
+            if (areas.length < 3) throw new Error('Native list, detail and menu scroll areas were not present');
+            for (const area of areas) {
+                const viewport = area.querySelector(':scope > .scroll-viewport');
+                const rail = area.querySelector(':scope > .scroll-track');
+                if (viewport.getBoundingClientRect().right > rail.getBoundingClientRect().left - 2)
+                    throw new Error('Native scrollbar overlaps content: ' + area.className);
+            }
+        `);
+        assertions.push("native list, detail and menu scrollbars have separate content boundaries");
         const menuItems = await browser.$$("[role=menuitem]");
         const settingsItem = await menuItems.find(async item => (await item.getText()).startsWith("Settings"));
         if (!settingsItem)
@@ -906,6 +917,18 @@ async function _selectLanguage(preference: "en" | "system" | "zh-Hans", locale: 
             );
         });
     }
+    await driver.execute(`
+        const trigger = document.querySelector('[role=combobox][aria-label="Language"], [role=combobox][aria-label="语言"]');
+        const measure = () => { const {x,y,width,height} = trigger.getBoundingClientRect(); return {x,y,width,height}; };
+        const layout = window.__nanikaLanguageLayout = { trigger, initial: measure(), frames: [], done: false };
+        const started = performance.now();
+        const sample = () => {
+            layout.frames.push(measure());
+            if (performance.now() - started < 700) requestAnimationFrame(sample);
+            else layout.done = true;
+        };
+        requestAnimationFrame(sample);
+    `);
     await _key("enter", async () =>
     {
         await _wait(
@@ -919,6 +942,20 @@ async function _selectLanguage(preference: "en" | "system" | "zh-Hans", locale: 
         async () => await driver.execute("return document.documentElement.lang") === locale,
         "Settings language delivery"
     );
+    await _wait(
+        async () => await driver.execute("return window.__nanikaLanguageLayout.done"),
+        "language layout sampling"
+    );
+    await driver.execute(`
+        const layout = window.__nanikaLanguageLayout;
+        if (!layout.trigger.isConnected || document.activeElement !== layout.trigger) throw new Error('Language replaced the native select or its focus');
+        for (const frame of layout.frames) {
+            for (const key of ['x','y','width','height']) {
+                if (Math.abs(frame[key] - layout.initial[key]) > 0.5) throw new Error('Native language trigger shifted: ' + JSON.stringify({initial:layout.initial, frame}));
+            }
+        }
+        delete window.__nanikaLanguageLayout;
+    `);
     await _wait(
         async () =>
         {

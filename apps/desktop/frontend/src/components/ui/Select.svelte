@@ -44,7 +44,7 @@ onMount(() =>
         aria-busy={pending || undefined}
         aria-controls={open ? contentId : undefined}
     >
-        <span>{selected?.label ?? value}</span>
+        <span class="selected-label" title={selected?.label ?? value}>{selected?.label ?? value}</span>
         <ChevronDownIcon size={16} />
     </Select.Trigger>
     {#if $uiActivity.visible && $uiActivity.focused}
@@ -88,7 +88,9 @@ onMount(() =>
 </Select.Root>
 
 <style>
-:global(.select-trigger) { display: flex; justify-content: space-between; gap: var(--space-4); min-width: var(--settings-control-width); font-weight: 400; }
+/* A pending selection and its translated label must share the same right-aligned field. */
+:global(.select-trigger) { display: flex; justify-content: space-between; gap: var(--space-4); width: 160px; max-width: 100%; font-weight: 400; }
+.selected-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :global(.select-trigger svg) { color: var(--text-secondary); flex-shrink: 0; }
 :global(.select-options) { font-size: var(--font-control); line-height: var(--control-line-height); }
 :global(.select-options svg) { color: var(--accent); flex-shrink: 0; }

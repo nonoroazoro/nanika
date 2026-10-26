@@ -101,3 +101,23 @@ if (localizedFiles.kind === "list" && localizedFiles.list.detail)
         }))
     };
 }
+
+export const longLabels: View = structuredClone(localizedList);
+if (longLabels.kind === "list" && longLabels.list.filter && longLabels.list.detail)
+{
+    const title = {
+        fallback: "ExtendedClipboardContentMetadata".repeat(3),
+        translations: {
+            en: "ExtendedClipboardContentMetadata".repeat(3),
+            "zh-Hans": "用于跨语言布局验证的内容类型与详细信息".repeat(2)
+        }
+    };
+    for (const option of longLabels.list.filter.options)
+    {
+        option.title = title;
+    }
+    for (const entry of longLabels.list.detail.metadata)
+    {
+        entry.title = title;
+    }
+}

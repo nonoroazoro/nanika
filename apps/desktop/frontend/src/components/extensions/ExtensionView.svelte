@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Tooltip } from "bits-ui";
 import { operationErrorText, operationFailure } from "../../localization/operation-errors";
 import type { OperationError } from "../../generated/OperationError";
 import { localization } from "../../localization/state.svelte";
@@ -11,6 +12,7 @@ import FolderOpenIcon from "../icons/FolderOpenIcon.svelte";
 import EmptyState from "../ui/EmptyState.svelte";
 import ScrollArea from "../ui/ScrollArea.svelte";
 import Button from "../ui/Button.svelte";
+import TruncatedButton from "../ui/TruncatedButton.svelte";
 import Input from "../ui/Input.svelte";
 import { confirmAction } from "../../ui/confirmation";
 import { onDestroy, onMount, untrack } from "svelte";
@@ -644,29 +646,30 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
                 })}
             />
             {#if list.filter}
-                <div class="filter" role="group" aria-label={localization.text({ message: "view-content-filter" })}>
-                    {#each list.filter.options as option (option.value)}
-                        <Button
-                            aria-pressed={option.value === list.filter.selected_value}
-                            aria-disabled={busy}
-                            onmousedown={(event => event.preventDefault())}
-                            onclick={() =>
-                            {
-                                if (!busy && list?.filter && option.value !== list.filter.selected_value)
+                <Tooltip.Provider>
+                    <div class="filter" role="group" aria-label={localization.text({ message: "view-content-filter" })}>
+                        {#each list.filter.options as option (option.value)}
+                            <TruncatedButton
+                                label={presentation.text(option.title, localization.locale)}
+                                aria-pressed={option.value === list.filter.selected_value}
+                                aria-disabled={busy}
+                                onmousedown={(event => event.preventDefault())}
+                                onclick={() =>
                                 {
-                                    onEvent({
-                                        kind: "filterChanged",
-                                        filter_id: list.filter.id,
-                                        value: option.value,
-                                        minimum_items: _initialItemCount()
-                                    });
-                                }
-                            }}
-                        >
-                            {presentation.text(option.title, localization.locale)}
-                        </Button>
-                    {/each}
-                </div>
+                                    if (!busy && list?.filter && option.value !== list.filter.selected_value)
+                                    {
+                                        onEvent({
+                                            kind: "filterChanged",
+                                            filter_id: list.filter.id,
+                                            value: option.value,
+                                            minimum_items: _initialItemCount()
+                                        });
+                                    }
+                                }}
+                            />
+                        {/each}
+                    </div>
+                </Tooltip.Provider>
             {/if}
         {:else}
             <h1>{detailTitle ?? localization.text({ message: "view-details" })}</h1>
@@ -871,7 +874,7 @@ function _openContextMenu(itemId: string | null, event: MouseEvent): void
 
 <style>
 .extension-view { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 0; border-radius: var(--radius-window); background: var(--surface-window); color: var(--text-primary); }
-header.has-filter { grid-template-columns: var(--icon-size) minmax(0, 1fr) auto; }
+header.has-filter { grid-template-columns: var(--icon-size) minmax(0, 1fr) fit-content(50%); }
 h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-search); line-height: 1.2; }
 /* Pending view requests keep toolbar contrast stable; native disabled and aria-busy still expose the interaction state. */
 header :global(button:disabled) { opacity: 1; }
@@ -894,14 +897,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 h2, .heading-measure { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-meta); font-weight: 500; color: var(--text-secondary); padding: var(--space-2); margin: 0; }
 [role='option'] { min-width: 0; }
 .option-surface { grid-template-columns: var(--icon-size) minmax(0, 1fr); }
-[role='option']:hover:not([aria-disabled='true']) > .option-surface { background: var(--surface-hovered); }
-[role='option'][aria-selected='true'] > .option-surface, [role='option'][aria-selected='true']:hover > .option-surface { background: var(--surface-selected); }
+[role='option']:hover:not([aria-disabled='true']) > .option-surface { background-color: var(--surface-hovered); }
+[role='option'][aria-selected='true'] > .option-surface, [role='option'][aria-selected='true']:hover > .option-surface { background-color: var(--surface-selected); }
 .item-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; line-height: 1.25; }
 .item-copy > span, .item-copy > small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 small { color: var(--text-secondary); font-size: var(--font-meta); margin-top: var(--space-1); }
 .list-empty { display: grid; flex: 1; min-width: 0; place-items: center; }
-.filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); white-space: nowrap; }
-.filter :global(button) { border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
+.filter { display: flex; align-items: center; gap: calc(var(--space-1) / 2); min-width: 0; overflow-x: auto; white-space: nowrap; }
+.filter :global(button) { flex: 0 1 auto; min-width: 0; max-width: 100%; border-color: transparent; border-radius: 999px; background: transparent; padding: 0.35rem var(--space-2); }
 .filter :global(button:hover:not(:disabled, [aria-disabled="true"])) { border-color: transparent; background: var(--surface-hovered); }
 .filter :global(button[aria-pressed='true']) { background: var(--surface-selected); }
 .filter :global(button[aria-pressed='true']:hover) { background: var(--surface-selected); }

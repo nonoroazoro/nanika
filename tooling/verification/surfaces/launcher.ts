@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { verifyScrollGutters } from "../scroll-area.ts";
+
 import type { BrowserCommand } from "../BrowserCommand.ts";
 
 /**
@@ -10,6 +12,8 @@ import type { BrowserCommand } from "../BrowserCommand.ts";
  */
 export async function verifyLauncher(browser: BrowserCommand, output: string): Promise<void>
 {
+    await _verifyScrollLayout(browser, output);
+    await _verifyLongLabels(browser, output);
     const search = "input[aria-label='Search for apps and commands']";
     await browser("fill", search, "Empty");
     await browser("wait", "[role=option][aria-selected=true]");
@@ -155,6 +159,7 @@ export async function verifyLauncher(browser: BrowserCommand, output: string): P
     await browser("screenshot", join(output, "extension.png"));
     await browser("find", "role", "button", "click", "--name", "\u2068Clipboard History\u2069 menu", "--exact");
     await browser("wait", "[role=menu]");
+    await verifyScrollGutters(browser);
     await browser("screenshot", join(output, "extension-menu.png"));
     await browser(
         "eval",
@@ -514,6 +519,9 @@ async function _verifyLocalizedList(browser: BrowserCommand, output: string): Pr
         return true;
     })()`
     );
+    await browser("hover", ".extension-viewport [role=option][aria-selected=true]");
+    await verifyScrollGutters(browser);
+    await _verifyRowSpacing(browser, ".extension-viewport");
     await browser("screenshot", join(output, "extension-list-chinese.png"));
     await browser("eval", "document.querySelector('.extension-viewport').scrollTop = 0; true");
     await browser("screenshot", join(output, "clipboard-facts-chinese.png"));
@@ -870,6 +878,157 @@ async function _verifyQueryFailure(browser: BrowserCommand, output: string): Pro
         if (!document.querySelector('#query-error').textContent.includes('1024')) throw new Error('Length error lost its bound');
         if (window.verificationErrors.length) throw new Error(window.verificationErrors.join('; '));
         return true;
+    })()`
+    );
+}
+
+async function _verifyLongLabels(browser: BrowserCommand, output: string): Promise<void>
+{
+    await browser("eval", "location.search = '?surface=launcher&state=long-labels'; true");
+    await browser("set", "viewport", "460", "360");
+    await browser("wait", "input[aria-label='Search for apps and commands']");
+    await browser("fill", "input[aria-label='Search for apps and commands']", "Clipboard");
+    await browser("wait", ".results[aria-busy=false] [role=option][aria-selected=true]");
+    await browser("press", "Enter");
+    await browser("wait", ".extension-view .filter");
+    for (const locale of ["en", "zh-Hans"])
+    {
+        await browser("eval", `window.changeLauncherLanguage('${locale}')`);
+        await browser("wait", "--fn", `document.documentElement.lang === '${locale}'`);
+        await browser(
+            "eval",
+            `(() => {
+            const header = document.querySelector('.extension-view header');
+            const query = header.querySelector('input');
+            const filter = header.querySelector('.filter');
+            const bad = [...document.querySelectorAll('.detail-pane dt,.detail-pane dd')]
+                .filter(element => element.scrollWidth > element.clientWidth + 1)
+                .map(element => ({tag:element.tagName, width:element.clientWidth, scroll:element.scrollWidth}));
+            if (query.clientWidth < 120 || filter.getBoundingClientRect().right > innerWidth || bad.length)
+                throw new Error('Long translated view text displaced content: ' + JSON.stringify({query:query.clientWidth, filter:filter.getBoundingClientRect().toJSON(), bad}));
+            return true;
+        })()`
+        );
+        await browser("screenshot", join(output, `view-long-labels-${locale}.png`));
+        await browser("click", ".filter button:last-child");
+        await browser("wait", ".filter button:last-child[aria-pressed=true]");
+        await browser("hover", ".extension-view header input");
+        await browser("hover", ".filter button:last-child");
+        await browser("wait", "[role=tooltip]");
+        await browser(
+            "eval",
+            `(() => {
+            const button = document.querySelector('.filter button:last-child');
+            const tooltip = document.querySelector('[role=tooltip]');
+            const bounds = tooltip.getBoundingClientRect();
+            if (tooltip.textContent.trim() !== button.textContent.trim() || bounds.left < 0 || bounds.right > innerWidth)
+                throw new Error('Truncated filter did not expose its full label within the window');
+            return true;
+        })()`
+        );
+        await browser("press", "Escape");
+        await browser("wait", "--fn", "!document.querySelector('[role=tooltip]')");
+        await browser("click", ".filter button:first-child");
+        await browser("wait", ".filter button:first-child[aria-pressed=true]");
+    }
+    await browser("eval", "location.search = '?surface=launcher'; true");
+    await browser("set", "viewport", "920", "680");
+    await browser("wait", "input[aria-label='Search for apps and commands']");
+}
+
+async function _verifyScrollLayout(browser: BrowserCommand, output: string): Promise<void>
+{
+    await browser("eval", "location.search = '?surface=launcher&state=scroll-layout'; true");
+    await browser("set", "viewport", "460", "360");
+    await browser("wait", ".root-viewport [role=option]");
+    await browser("hover", ".root-viewport [role=option][aria-selected=true]");
+    await browser(
+        "eval",
+        `(() => {
+        const viewport = document.querySelector('.root-viewport');
+        const area = viewport.closest('.scroll-area');
+        const track = area.querySelector(':scope > .scroll-track');
+        const row = viewport.querySelector('[role=option][aria-selected=true]');
+        const edge = track.getBoundingClientRect().left;
+        if (viewport.scrollHeight <= viewport.clientHeight) throw new Error('Root scrollbar fixture does not overflow');
+        if (row.getBoundingClientRect().right > edge - 3) throw new Error('Root selection overlaps scrollbar: ' + JSON.stringify({row:row.getBoundingClientRect().toJSON(), track:track.getBoundingClientRect().toJSON()}));
+        window.scrollLayout = {viewport, row, width:row.getBoundingClientRect().width};
+        return true;
+    })()`
+    );
+    await verifyScrollGutters(browser);
+    await _verifyRowSpacing(browser, ".root-viewport");
+    await browser("screenshot", join(output, "root-scrollbar-gutter.png"));
+    await browser("hover", ".collection-header input");
+    await browser(
+        "wait",
+        "--fn",
+        "getComputedStyle(document.querySelector('.root-viewport').closest('.scroll-area').querySelector('.scroll-track')).opacity === '0'"
+    );
+    await browser(
+        "eval",
+        `(() => {
+        const state = window.scrollLayout;
+        if (state.row.getBoundingClientRect().width !== state.width) throw new Error('Scrollbar visibility moved content');
+        state.viewport.scrollTop = 100;
+        return true;
+    })()`
+    );
+    await browser("wait", ".scroll-area[data-revealed]");
+    await browser("drag", ".results .scroll-thumb", ".results .scroll-track");
+    await browser(
+        "eval",
+        `(() => {
+        const state = window.scrollLayout;
+        if (state.viewport.scrollTop <= 100) throw new Error('Dragging the reserved scrollbar did not scroll');
+        if (!document.activeElement.matches('.collection-header input')) throw new Error('Scrollbar drag stole search focus');
+        return true;
+    })()`
+    );
+    await browser("fill", ".collection-header input", "Application 29");
+    await browser("wait", "--fn", "document.querySelectorAll('.root-viewport [role=option]').length === 1");
+    await browser(
+        "eval",
+        `(() => {
+        const state = window.scrollLayout;
+        if (document.querySelector('.root-viewport') !== state.viewport || state.viewport.scrollHeight > state.viewport.clientHeight)
+            throw new Error('Short results did not reuse the viewport without overflow');
+        if (document.querySelector('.root-viewport [role=option]').getBoundingClientRect().width !== state.width)
+            throw new Error('Overflow removal changed result width');
+        return true;
+    })()`
+    );
+    await verifyScrollGutters(browser);
+    await browser("eval", "location.search = '?surface=launcher'; true");
+    await browser("set", "viewport", "920", "680");
+    await browser("wait", "input[aria-label='Search for apps and commands']");
+}
+
+async function _verifyRowSpacing(browser: BrowserCommand, selector: string): Promise<void>
+{
+    await browser("hover", `${selector} [role=option][aria-posinset='2']`);
+    await browser(
+        "eval",
+        `(() => {
+        const items = [...document.querySelectorAll('${selector} [role=option]')].slice(0, 2);
+        if (items.length !== 2 || items[0].getAttribute('aria-selected') !== 'true' || !items[1].matches(':hover'))
+            throw new Error('Spacing fixture needs adjacent selected and hovered rows');
+        const rows = items.map(item => item.matches('.collection-row') ? item : item.querySelector('.collection-row'));
+        const geometry = rows.map(row => {
+            const rect = row.getBoundingClientRect();
+            const style = getComputedStyle(row);
+            const icon = row.querySelector('.collection-icon').getBoundingClientRect();
+            if (style.backgroundClip !== 'padding-box' || style.backgroundColor === 'rgba(0, 0, 0, 0)')
+                throw new Error('Selected/hovered background did not respect the row spacing');
+            return {top:rect.top, height:rect.height, paintTop:rect.top+parseFloat(style.borderTopWidth),
+                paintBottom:rect.bottom-parseFloat(style.borderBottomWidth), iconX:icon.left-rect.left,
+                iconCenter:icon.top+icon.height/2-rect.top};
+        });
+        const [first, second] = geometry;
+        if (geometry.some(row => row.height !== 52 || row.iconCenter !== 26 || row.iconX !== 12)
+            || second.top-first.top !== 52 || second.paintTop-first.paintBottom !== 4)
+            throw new Error('Collection row geometry changed: ' + JSON.stringify(geometry));
+        return geometry;
     })()`
     );
 }

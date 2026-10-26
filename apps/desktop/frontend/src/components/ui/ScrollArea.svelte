@@ -128,7 +128,9 @@ function _release(): void
 </ScrollArea.Root>
 
 <style>
-:global(.scroll-area) { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+/* Keep a separate rail even while its thumb is hidden, so selection surfaces
+   never paint beneath it and overflow changes cannot shift the content. */
+:global(.scroll-area) { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; padding-inline-end: calc(var(--scrollbar-size) + var(--space-1)); overflow: hidden; }
 :global(.scroll-viewport) { width: 100%; min-height: 0; max-height: inherit; flex: 1; }
 :global(.scroll-track) {
   position: absolute;

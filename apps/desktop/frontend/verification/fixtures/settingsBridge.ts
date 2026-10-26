@@ -18,6 +18,11 @@ let localize: Parameters<typeof NativeSettingsBridge.read>[6] | undefined;
 let navigate: Parameters<typeof NativeSettingsBridge.read>[5] | undefined;
 let lifecycle: Parameters<typeof NativeSettingsBridge.read>[4] | undefined;
 const variant = new URLSearchParams(location.search).get("state");
+if (variant === "language-layout")
+{
+    settings.general.language = "en";
+    settings.localization = { preference: "en", locale: "en", revision: 1 };
+}
 let rejectResourceRead = variant === "resource-error";
 if (variant === "resource-error")
 {
@@ -170,12 +175,22 @@ export const settingsBridge: typeof NativeSettingsBridge = {
                 });
             }
         }
+        if (request.key === "language" && variant === "language-layout")
+        {
+            // Preserve the asynchronous native write so intermediate layout is observable.
+            await new Promise(resolve =>
+            {
+                setTimeout(resolve, 120);
+            });
+        }
         settings.general = { ...settings.general, [request.key]: request.value };
         if (request.key === "language")
         {
             settings.localization = {
                 preference: request.value,
-                locale: request.value === "zh-Hans" ? "zh-Hans" : "en",
+                locale: request.value === "zh-Hans" || (request.value === "system" && variant === "language-layout")
+                    ? "zh-Hans"
+                    : "en",
                 revision: settings.localization.revision + 1
             };
             localize?.(settings.sessionId, settings.localization);

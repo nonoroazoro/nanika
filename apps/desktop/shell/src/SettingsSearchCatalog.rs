@@ -22,15 +22,19 @@ impl SettingsSearchCatalog {
             "preferences settings"
         );
         for section in crate::general_settings::sections() {
-            catalog._host(
-                "general",
-                SettingsSearchTarget::Section {
-                    key: section.key.into()
-                },
-                &section.title,
-                &[&general],
-                ""
-            );
+            let mut breadcrumb = vec![&general];
+            if let Some(title) = &section.title {
+                catalog._host(
+                    "general",
+                    SettingsSearchTarget::Section {
+                        key: section.key.into()
+                    },
+                    title,
+                    &breadcrumb,
+                    ""
+                );
+                breadcrumb.push(title);
+            }
             for field in section.fields {
                 catalog._host(
                     "general",
@@ -38,7 +42,7 @@ impl SettingsSearchCatalog {
                         key: field.key.as_str().into()
                     },
                     &field.title,
-                    &[&general, &section.title],
+                    &breadcrumb,
                     field.keywords
                 );
             }

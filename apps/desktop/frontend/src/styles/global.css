@@ -287,7 +287,10 @@ button:focus-visible {
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-3);
+  /* Inset only the paint; keep the shared row pitch, hit area and content center. */
+  border-block: calc(var(--space-1) / 2) solid transparent;
   border-radius: var(--radius-row);
+  background-clip: padding-box;
   color: var(--text-primary);
   cursor: default;
 }

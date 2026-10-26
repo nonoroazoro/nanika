@@ -173,7 +173,7 @@ h2 { margin: 0 0 var(--space-3); font-size: var(--font-meta); font-weight: 600; 
 .files span { min-width: 0; overflow-wrap: anywhere; }
 dl { margin-top: var(--space-6); font-size: var(--font-meta); }
 dl div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); }
-dt { color: var(--text-secondary); }
+dt { min-width: 0; overflow-wrap: anywhere; color: var(--text-secondary); }
 dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .file-paths { display: grid; gap: var(--space-2); -webkit-user-select: text; user-select: text; }
 .file-paths span { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }

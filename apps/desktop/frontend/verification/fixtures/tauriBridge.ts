@@ -10,7 +10,7 @@ import {
 } from "./localization";
 import { clipboard, configuration } from "./settings";
 import { navigateSettings } from "./settingsBridge";
-import { localizedFiles, localizedList, textReadFailure } from "./view";
+import { localizedFiles, localizedList, longLabels, textReadFailure } from "./view";
 import applicationIcon from "../../../../extensions/built-in/application/assets/icon.png?url";
 import { operationFailure } from "../../src/localization/operation-errors";
 import { ResourceSet } from "../../src/localization/ResourceSet";
@@ -38,6 +38,7 @@ let viewCloseFailed = false;
 let finishViewFailure: (() => void) | undefined;
 const localizedViews: Record<string, View> = {
     "localized-list": localizedList,
+    "long-labels": longLabels,
     "localized-files": localizedFiles,
     "text-read-error": textReadFailure,
     "view-error": localizedList
@@ -89,6 +90,19 @@ const results: SearchResult[] = ([
     confirmationDescription: index === 1 ? { message: "action-trash-empty-confirmation-description" } : null,
     kind: "Extension"
 }));
+if (variant === "scroll-layout")
+{
+    const source = results.at(-1);
+    if (!source)
+    {
+        throw new Error("Application fixture is missing");
+    }
+    results.push(...Array.from({ length: 30 }, (_, index) => ({
+        ...source,
+        entryId: `scroll-${index}`,
+        title: `Application ${index}`
+    })));
+}
 const resources = new ResourceSet(systemResources);
 const searchTitles = new Map(
     results.map(result => [
@@ -384,7 +398,7 @@ export const tauriBridge: NanikaBridge = {
         }
         const current = snapshot.navigation.current;
         if (
-            (variant === "localized-list" || variant === "localized-files" || variant === "view-error")
+            localizedViews[variant ?? ""]?.kind === "list"
             && current?.view.kind === "list"
             && request.operation.kind === "event"
         )

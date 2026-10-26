@@ -385,9 +385,11 @@ fn general_matches_follow_section_and_field_order() {
     let results = SettingsSearchCatalog::new(&[]).search("general");
     let mut expected = vec![SettingsSearchTarget::Page];
     for section in crate::general_settings::sections() {
-        expected.push(SettingsSearchTarget::Section {
-            key: section.key.into()
-        });
+        if section.title.is_some() {
+            expected.push(SettingsSearchTarget::Section {
+                key: section.key.into()
+            });
+        }
         for field in section.fields {
             expected.push(SettingsSearchTarget::Field {
                 key: field.key.as_str().into()

@@ -110,6 +110,24 @@ if (new URLSearchParams(location.search).get("state") === "validation")
     };
 }
 
+if (new URLSearchParams(location.search).get("state") === "scroll-layout")
+{
+    for (let index = 0; index < 20; index++)
+    {
+        configuration.properties[`fixture.option${index}`] = configurationProperty({
+            title: `Additional option ${index}`,
+            type: "boolean",
+            default: false,
+            persistence: "beforeApply"
+        });
+    }
+    const directories = configuration.properties.directories;
+    if (directories)
+    {
+        directories.default = Array.from({ length: 16 }, (_, index) => `/Example/Folder ${index}`);
+    }
+}
+
 const values = Object.fromEntries(
     Object.entries(configuration.properties).map(([key, property]) => [key, property.default])
 );
@@ -139,6 +157,29 @@ export const clipboard: ExtensionSettings = {
     configuration: currentConfiguration
 };
 
+if (new URLSearchParams(location.search).get("state") === "long-labels")
+{
+    const title = {
+        fallback: "ExtendedClipboardHistoryConfiguration".repeat(3),
+        translations: {
+            en: "ExtendedClipboardHistoryConfiguration".repeat(3),
+            "zh-Hans": "用于跨语言布局验证的剪贴板历史扩展设置".repeat(2)
+        }
+    };
+    clipboard.name = title;
+    for (const property of Object.values(configuration.properties))
+    {
+        property.title = title;
+        property.description = title;
+    }
+    for (const action of configuration.actions)
+    {
+        action.buttonLabel = title;
+        action.action.title = title;
+        action.description = title;
+    }
+}
+
 export const settings: SettingsSnapshot = {
     sessionId: 1,
     platform: new URLSearchParams(location.search).get("platform") === "windows" ? "windows" : "macos",
@@ -155,6 +196,10 @@ export const settings: SettingsSnapshot = {
         language: "system"
     },
     generalSections: [{
+        key: "language",
+        title: null,
+        fields: [{ key: "language", title: { message: "settings-language" }, description: null }]
+    }, {
         key: "launcher",
         title: { message: "settings-launcher" },
         fields: [{
@@ -169,11 +214,7 @@ export const settings: SettingsSnapshot = {
     }, {
         key: "appearance",
         title: { message: "settings-appearance" },
-        fields: [{ key: "theme", title: { message: "settings-theme" }, description: null }, {
-            key: "language",
-            title: { message: "settings-language" },
-            description: null
-        }]
+        fields: [{ key: "theme", title: { message: "settings-theme" }, description: null }]
     }, {
         key: "startup",
         title: { message: "settings-startup" },

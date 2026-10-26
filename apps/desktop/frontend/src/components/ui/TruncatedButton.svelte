@@ -40,7 +40,13 @@ function _setOpen(next: boolean): void
     </Tooltip.Trigger>
     {#if active}
         <Tooltip.Portal>
-            <Tooltip.Content class="truncated-label-tooltip" side="right" sideOffset={4} collisionPadding={8}>
+            <Tooltip.Content
+                role="tooltip"
+                class="truncated-label-tooltip"
+                side="right"
+                sideOffset={4}
+                collisionPadding={8}
+            >
                 {label}
             </Tooltip.Content>
         </Tooltip.Portal>

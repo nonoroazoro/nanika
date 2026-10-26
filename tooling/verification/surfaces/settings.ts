@@ -1,5 +1,7 @@
 import { join } from "node:path";
 
+import { verifyScrollGutters } from "../scroll-area.ts";
+
 import type { BrowserCommand } from "../BrowserCommand.ts";
 
 /**
@@ -10,6 +12,9 @@ import type { BrowserCommand } from "../BrowserCommand.ts";
  */
 export async function verifySettings(browser: BrowserCommand, output: string): Promise<void>
 {
+    await _verifyScrollLayout(browser, output);
+    await _verifyLanguageLayout(browser, output);
+    await _verifyLongSettingsText(browser, output);
     await _verifyLifecycle(browser, output);
     await browser("fill", "input[aria-label='Maximum history entries']", "75");
     await browser(
@@ -287,6 +292,132 @@ export async function verifySettings(browser: BrowserCommand, output: string): P
     await _verifyHostFailures(browser, output);
     await _verifyPreferenceFailures(browser, output);
     await _verifyResourceFailure(browser, output);
+}
+
+async function _verifyLanguageLayout(browser: BrowserCommand, output: string): Promise<void>
+{
+    for (const [width, height, reduced] of [[920, 680, false], [620, 520, false], [620, 520, true]] as const)
+    {
+        await browser("eval", "location.href = location.origin + '/?surface=settings&state=language-layout'");
+        await browser("set", "viewport", String(width), String(height));
+        await browser("set", "media", "dark", ...(reduced ? ["reduced-motion"] : []));
+        await browser("find", "role", "button", "click", "--name", "General", "--exact");
+        await browser(
+            "eval",
+            `document.fonts.ready.then(() => {
+            const first = document.querySelector('.general-page .row');
+            const language = first?.querySelector('[role=combobox][aria-label="Language"]');
+            if (!language || first.closest('section').querySelector('h2')) throw new Error('Language must be the first standalone setting');
+            if (language.getBoundingClientRect().bottom > innerHeight) throw new Error('Language is not immediately visible');
+            return true;
+        })`
+        );
+        for (
+            const [label, option, locale] of [["Language", "Follow System", "zh-Hans"], [
+                "语言",
+                "English",
+                "en"
+            ]] as const
+        )
+        {
+            await browser("find", "role", "combobox", "click", "--name", label, "--exact");
+            await verifyScrollGutters(browser);
+            await browser(
+                "eval",
+                `(() => {
+                const trigger = document.querySelector('[role=combobox][aria-label="${label}"]');
+                const controls = [...document.querySelectorAll('.general-page fieldset button')];
+                const rect = element => { const {x,y,width,height} = element.getBoundingClientRect(); return {x,y,width,height}; };
+                const sample = () => ({text: trigger.textContent.trim(), rect: rect(trigger), controls: controls.map(rect)});
+                const state = window.languageLayout = { trigger, controls, initial: sample(), frames: [], done: false };
+                const started = performance.now();
+                const frame = () => {
+                    state.frames.push(sample());
+                    if (performance.now() - started < 700) requestAnimationFrame(frame);
+                    else state.done = true;
+                };
+                requestAnimationFrame(frame);
+                return state.initial;
+            })()`
+            );
+            await browser("find", "role", "option", "click", "--name", option, "--exact");
+            await browser(
+                "wait",
+                "--fn",
+                `window.languageLayout.done && document.documentElement.lang === '${locale}'`
+            );
+            await browser(
+                "eval",
+                `(() => {
+                const state = window.languageLayout;
+                if (!state.trigger.isConnected || state.controls.some(control => !control.isConnected)) throw new Error('Language remounted a settings control');
+                if (document.activeElement !== state.trigger) throw new Error('Language moved select focus');
+                const last = state.frames.at(-1);
+                for (const frame of state.frames) {
+                    for (const key of ['x','y','width','height']) {
+                        if (Math.abs(frame.rect[key] - state.initial.rect[key]) > 0.5) {
+                            throw new Error('Language trigger shifted: ' + JSON.stringify({initial:state.initial, frame, last}));
+                        }
+                        for (let index = 0; index < state.controls.length; index++) {
+                            const initial = state.initial.controls[index][key];
+                            const final = last.controls[index][key];
+                            const current = frame.controls[index][key];
+                            if (current < Math.min(initial, final) - 0.5 || current > Math.max(initial, final) + 0.5) {
+                                throw new Error('Settings control had transient reflow: ' + JSON.stringify({index, key, initial, current, final}));
+                            }
+                        }
+                    }
+                }
+                if (document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth) throw new Error('Settings overflowed horizontally');
+                const text = state.trigger.querySelector('span');
+                if (text.scrollWidth > text.clientWidth) throw new Error('Built-in language label was truncated');
+                return {initial:state.initial, last, frames:state.frames.length};
+            })()`
+            );
+            await browser("screenshot", join(output, `language-layout-${width}-${locale}-${reduced}.png`));
+        }
+    }
+    await browser("set", "media", "dark");
+    await browser("eval", "location.href = location.origin + '/?surface=settings'");
+    await browser("set", "viewport", "920", "680");
+    await browser("wait", "input[aria-label='Maximum history entries']");
+}
+
+async function _verifyLongSettingsText(browser: BrowserCommand, output: string): Promise<void>
+{
+    await browser("eval", "location.href = location.origin + '/?surface=settings&state=long-labels'");
+    await browser("set", "viewport", "620", "520");
+    await browser("wait", ".extension-heading h1");
+    for (const locale of ["en", "zh-Hans"])
+    {
+        await browser("eval", `window.changeSettingsLanguage('${locale}')`);
+        await browser("wait", "--fn", `document.documentElement.lang === '${locale}'`);
+        await browser(
+            "eval",
+            `(() => {
+            const page = document.querySelector('.extension-page');
+            const bad = [...page.querySelectorAll('h1,h2,h3,p,.property-copy,.property-control,.property-control button,.directory-toolbar')]
+                .filter(element => element.clientWidth && element.scrollWidth > element.clientWidth + 1)
+                .map(element => ({tag:element.tagName, class:element.className, width:element.clientWidth, scroll:element.scrollWidth}));
+            if (bad.length) throw new Error('Long translated settings text overflowed: ' + JSON.stringify(bad));
+            const columns = [...page.querySelectorAll('.property.scalar')].map(row => {
+                const copy = row.querySelector('.property-copy');
+                const control = row.querySelector('.property-control');
+                return copy && control ? {copy:copy.getBoundingClientRect().width, control:control.getBoundingClientRect().width, row:row.clientWidth} : null;
+            }).filter(Boolean);
+            if (columns.some(column => column.copy < column.row / 4 || column.control > column.row / 2 + 1)) throw new Error('Long action label displaced settings copy: ' + JSON.stringify(columns));
+            return {locale:document.documentElement.lang, columns};
+        })()`
+        );
+        await browser("screenshot", join(output, `settings-long-labels-${locale}.png`));
+        await browser("eval", "document.querySelector('.action-group button').scrollIntoView({block:'center'}); true");
+        await browser("screenshot", join(output, `settings-long-action-${locale}.png`));
+        await browser("eval", "document.querySelector('.extension-heading').scrollIntoView({block:'start'}); true");
+    }
+    await browser("set", "media", "dark");
+    await browser("eval", "location.href = location.origin + '/?surface=settings'");
+    await browser("set", "viewport", "920", "680");
+    await browser("wait", "input[aria-label='Maximum history entries']");
 }
 
 async function _verifyAboutSearch(browser: BrowserCommand, output: string): Promise<void>
@@ -1061,4 +1192,38 @@ async function _verifyHostFailures(browser: BrowserCommand, output: string): Pro
     await browser("click", "nav .search-message + button");
     await browser("wait", "--fn", "!document.querySelector('nav .search-message[role=alert]')");
     await browser("set", "viewport", "920", "680");
+}
+
+async function _verifyScrollLayout(browser: BrowserCommand, output: string): Promise<void>
+{
+    await browser("eval", "location.search = '?surface=settings&state=scroll-layout'; true");
+    await browser("set", "viewport", "620", "520");
+    await browser("wait", "input[aria-label='Maximum history entries']");
+    await browser("fill", ".sidebar input", "Clipboard");
+    await browser("wait", ".sidebar .result-field");
+    await browser("find", "role", "button", "click", "--name", "Syntax highlighting", "--exact");
+    await browser("hover", ".sidebar .result-field.active");
+    await verifyScrollGutters(browser);
+    await browser(
+        "eval",
+        `(() => {
+        const sidebar = document.querySelector('.sidebar .scroll-viewport');
+        if (sidebar.scrollHeight <= sidebar.clientHeight) throw new Error('Sidebar scrollbar fixture does not overflow');
+        const highlight = document.querySelector('.sidebar .selection-highlight');
+        const rail = sidebar.closest('.scroll-area').querySelector('.scroll-track');
+        if (highlight.getBoundingClientRect().right > rail.getBoundingClientRect().left - 2) throw new Error('Sidebar highlight overlaps scrollbar');
+        return true;
+    })()`
+    );
+    await browser("screenshot", join(output, "settings-sidebar-scrollbar.png"));
+    await browser("scrollintoview", ".directory-items");
+    await browser("hover", ".directory-items .directory:first-child");
+    await verifyScrollGutters(browser);
+    await browser("screenshot", join(output, "settings-directory-scrollbar.png"));
+    await browser("eval", "window.changeSettingsLanguage('zh-Hans')");
+    await browser("wait", "--fn", "document.documentElement.lang === 'zh-Hans'");
+    await browser("set", "viewport", "920", "680");
+    await verifyScrollGutters(browser);
+    await browser("eval", "location.search = '?surface=settings'; true");
+    await browser("wait", "input[aria-label='Maximum history entries']");
 }

@@ -5,8 +5,18 @@ use crate::{GeneralSettingsField, GeneralSettingsFieldKey, GeneralSettingsSectio
 pub(crate) fn sections() -> Vec<GeneralSettingsSection> {
     vec![
         GeneralSettingsSection {
+            key: "language",
+            title: None,
+            fields: vec![GeneralSettingsField {
+                key: GeneralSettingsFieldKey::Language,
+                title: nanika_protocol::message("settings-language", []),
+                description: None,
+                keywords: "language locale English Chinese 简体中文 语言"
+            }]
+        },
+        GeneralSettingsSection {
             key: "launcher",
-            title: nanika_protocol::message("settings-launcher", []),
+            title: Some(nanika_protocol::message("settings-launcher", [])),
             fields: vec![
                 GeneralSettingsField {
                     key: GeneralSettingsFieldKey::LauncherShortcut,
@@ -24,25 +34,17 @@ pub(crate) fn sections() -> Vec<GeneralSettingsSection> {
         },
         GeneralSettingsSection {
             key: "appearance",
-            title: nanika_protocol::message("settings-appearance", []),
-            fields: vec![
-                GeneralSettingsField {
-                    key: GeneralSettingsFieldKey::Theme,
-                    title: nanika_protocol::message("settings-theme", []),
-                    description: None,
-                    keywords: "system light dark mode"
-                },
-                GeneralSettingsField {
-                    key: GeneralSettingsFieldKey::Language,
-                    title: nanika_protocol::message("settings-language", []),
-                    description: None,
-                    keywords: "language locale English Chinese 简体中文 语言"
-                },
-            ]
+            title: Some(nanika_protocol::message("settings-appearance", [])),
+            fields: vec![GeneralSettingsField {
+                key: GeneralSettingsFieldKey::Theme,
+                title: nanika_protocol::message("settings-theme", []),
+                description: None,
+                keywords: "system light dark mode"
+            }]
         },
         GeneralSettingsSection {
             key: "startup",
-            title: nanika_protocol::message("settings-startup", []),
+            title: Some(nanika_protocol::message("settings-startup", [])),
             fields: vec![GeneralSettingsField {
                 key: GeneralSettingsFieldKey::LaunchAtLogin,
                 title: nanika_protocol::message("settings-launch-at-login", []),

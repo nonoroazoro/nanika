@@ -38,8 +38,8 @@ const startupStatusMessage = $derived.by(() =>
     <div class="sections">
         {#each sections as section (section.key)}
             {@const sectionId = settingsAnchor("general", { kind: "section", key: section.key })}
-            <section id={sectionId} aria-labelledby={`${sectionId}/label`}>
-                <h2 id={`${sectionId}/label`}>{localization.text(section.title)}</h2>
+            <section id={sectionId} aria-labelledby={section.title ? `${sectionId}/label` : undefined}>
+                {#if section.title}<h2 id={`${sectionId}/label`}>{localization.text(section.title)}</h2>{/if}
                 <div class="group settings-search-target">
                     {#each section.fields as field (field.key)}
                         {@const fieldId = settingsAnchor("general", { kind: "field", key: field.key })}

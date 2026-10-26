@@ -2,4 +2,4 @@
 import type { GeneralSettingsField } from "./GeneralSettingsField";
 import type { LocalizedText } from "./LocalizedText";
 
-export type GeneralSettingsSection = { key: string; title: LocalizedText; fields: Array<GeneralSettingsField>; };
+export type GeneralSettingsSection = { key: string; title: LocalizedText | null; fields: Array<GeneralSettingsField>; };

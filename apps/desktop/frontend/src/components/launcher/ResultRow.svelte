@@ -85,11 +85,11 @@ li {
 }
 
 li:hover:not(.active) {
-  background: var(--surface-hovered);
+  background-color: var(--surface-hovered);
 }
 
 li.active {
-  background: var(--surface-selected);
+  background-color: var(--surface-selected);
 }
 .copy {
   display: flex;
