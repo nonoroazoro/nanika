@@ -1,3 +1,4 @@
+import { detectConfiguration } from "./configuration";
 import { DETECTION_LIMIT } from "./limits";
 
 import type { SyntaxLanguage } from "./SyntaxLanguage";
@@ -5,7 +6,7 @@ import type { SyntaxLanguage } from "./SyntaxLanguage";
 // Ambient files may have no interface or type alias. Declaration punctuation
 // distinguishes these bounded-sample signals from prose about TypeScript.
 const typescriptDeclarations = [
-    /\b(?:interface +\w+\s*(?:extends[^\n{]+)?\{|type +\w+(?:<[^>]+>)? *=)/,
+    /^[ \t]*(?:export[ \t]+)?(?:interface +\w+\s*(?:extends[^\n{]+)?\{|type +\w+(?:<[^>]+>)? *=)/m,
     /^[ \t]*(?:export[ \t]+)?declare[ \t]+(?:(?:module|namespace)[ \t]+(?:[$\w.]+|"[^"\r\n]+"|'[^'\r\n]+')|global)\s*[{;]/m,
     /^[ \t]*import[ \t]+type[ \t]+(?:[$\w]+|\{[^}]+\}|\*[ \t]+as[ \t]+[$\w]+)\s+from\s+["']/m,
     /^[ \t]*(?:export[ \t]+)?(?:declare[ \t]+)?(?:const|let|var)[ \t]+[$A-Z_a-z][$\w]*\s*:[^=;\r\n]+[=;]/m
@@ -27,29 +28,54 @@ const svelteTemplates = [
 const svelteScript =
     /(?:from\s*["']svelte(?:\/[^"']*)?["']|\$(?:state|derived|effect|props|bindable|inspect|host)\s*(?:\.[a-z]+\s*)?\()/;
 
+const sqlIdentifier = String.raw`(?:[\w$]+|"[^"\r\n]+"|\x60[^\x60\r\n]+\x60|\[[^\]\r\n]+\])`;
+const sqlQualifiedIdentifier = `${sqlIdentifier}(?:\\.${sqlIdentifier})*`;
+const sqlStatement = new RegExp(
+    String
+        .raw`^(?:INSERT\s+INTO\s+${sqlQualifiedIdentifier}\s*(?:\([^)]*\)\s*)?(?:VALUES\s*\(|SELECT\s)|CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?${sqlQualifiedIdentifier}\s*\(|UPDATE\s+${sqlQualifiedIdentifier}\s+SET\s+${sqlQualifiedIdentifier}\s*=)`,
+    "i"
+);
+const sqlSelect = new RegExp(String.raw`^SELECT\s+([^;{}]+?)\s+FROM\s+${sqlQualifiedIdentifier}([\s\S]*)$`, "i");
+const sqlAlias = new RegExp(String.raw`^(?:AS\s+)?${sqlIdentifier}(?=\s|;|$)\s*`, "i");
+
 // Strong document prefixes take priority over code embedded in strings. The
 // complete grammars still own tokenization; these signals only choose the outer language.
 const codePrefixes: Array<[SyntaxLanguage, RegExp]> = [
     [
         "objective-c",
-        /^(?:#[ \t]*import[ \t]+[<"]|@(?:interface|implementation|protocol|class)[ \t]+\w+|@autoreleasepool\s*\{)/
+        /^(?:#[ \t]*import[ \t]+(?:<[^<>\s]+>|"[^"\r\n]+")|@(?:interface|implementation|protocol)[ \t]+\w+[ \t]*(?:[:<]|\r?\n)|@class[ \t]+\w+(?:[ \t]*,[ \t]*\w+)*[ \t]*;|@autoreleasepool\s*\{)/
     ],
-    ["php", /^<\?php\b/],
-    ["xml", /^(?:<\?xml\b|<!DOCTYPE\s+(?!html\b)|<[\w:.-]+\b[^>]*\sxmlns(?::\w+)?=)/i],
-    ["go", /^package[ \t]+\w+[ \t]*(?:\r?\n|$)/],
-    ["csharp", /^(?:(?:global[ \t]+)?using[ \t]+(?:static[ \t]+)?[\w.]+[ \t]*;|namespace[ \t]+[\w.]+\s*[;{])/],
-    ["java", /^(?:package[ \t]+[\w.]+[ \t]*;|import[ \t]+(?:static[ \t]+)?[\w.]+\*?[ \t]*;)/],
+    ["php", /^<\?php(?=\s|$)/],
+    [
+        "xml",
+        /^(?:<\?xml[ \t]+[^?]*\?>|<!DOCTYPE\s+(?!html\b)[\w:.-]+\s*(?:\[[\s\S]*?\]|[^<>]*)>|<[\w:.-]+\b[^>]*\sxmlns(?::\w+)?=["'][^<>]*>)/i
+    ],
+    ["go", /^package[ \t]+\w+[ \t]*\r?\n\s*(?:import\s*["'(]|func\s+[\w(]|(?:type|var|const)\s+[\w(])/],
+    [
+        "csharp",
+        /^(?:(?:global[ \t]+)?using[ \t]+(?:static[ \t]+)?[\w.]+[ \t]*;[ \t]*(?:\r?\n|$|(?=(?:using|namespace|class|struct|interface|enum|record|public|internal|static|abstract|sealed)\b))|namespace[ \t]+[\w.]+\s*[;{])/
+    ],
+    [
+        "java",
+        /^(?:package[ \t]+[\w.]+|import[ \t]+(?:static[ \t]+)?\w+(?:\.\w+)+(?:\.\*)?)[ \t]*;[ \t]*(?:\r?\n|$|(?=(?:package|import|public|protected|private|abstract|final|class|interface|enum|record)\b|@))/
+    ],
     [
         "swift",
-        /^(?:import[ \t]+(?:Foundation|SwiftUI|UIKit|AppKit|Swift)\b|(?:public[ \t]+)?func[ \t]+\w+\s*\([^)]*\w+\s*:\s*\w+)/
+        /^(?:import[ \t]+(?:Foundation|SwiftUI|UIKit|AppKit|Swift)[ \t]*(?:\r?\n|$)|(?:public[ \t]+)?func[ \t]+\w+\s*\([^)]*\w+\s*:\s*\w+[^)]*\)\s*(?:->\s*[\w?<>[\]: ]+\s*)?\{)/
     ],
     [
         "powershell",
-        /^(?:param\s*\(|function[ \t]+\w+-\w+|(?:Get|Set|Write|New|Remove|Import|Test|Invoke|Start|Stop)-\w+\b)/i
+        /^(?:param\s*\(\s*(?:\)|(?:\[[\w.\][ ]+\])?\$\w+)|function[ \t]+\w+-\w+\s*(?:\([^)]*\)\s*)?\{|(?:Get|Set|Write|New|Remove|Import|Test|Invoke|Start|Stop)-\w+[ \t]*(?:["'$|;]|-\w|[./\\]|\r?\n|$))/i
     ],
-    ["scss", /^(?:\$[\w-]+\s*:|@(?:mixin|include|use|forward)\b)/],
-    ["less", /^@[\w-]+\s*:/],
-    ["lua", /^(?:local[ \t]+(?:function[ \t]+\w+|\w+[ \t]*=)|--[^\n]*\n\s*local\b)/]
+    [
+        "scss",
+        /^(?:\$[\w-]+\s*:[^;{}]+;|@mixin\s+[\w-]+\s*(?:\([^)]*\)\s*)?\{|@include\s+[\w.-]+\s*(?:\([^)]*\)\s*)?[;{]|@(?:use|forward)\s+["'][^\r\n;]+;)/
+    ],
+    ["less", /^@[\w-]+\s*:[^;{}]+;/],
+    [
+        "lua",
+        /^(?:--[^\n]*\n\s*)*local[ \t]+(?:function[ \t]+\w+\s*\([^)]*\)|\w+\s*=\s*(?:["'][^"'\r\n]*["'][ \t]*(?:\r?\n|$)|[\w.]+[ \t]*(?:\r?\n|$)|\w+\s*\(|\{))/
+    ]
 ];
 
 /**
@@ -66,10 +92,6 @@ export function detectSyntax(text: string): SyntaxLanguage | null
         return null;
     }
     const code = _codeSignals(sample);
-    if (/^(?: {0,3}> ?)* {0,3}(?:`{3,}|~{3,})[^\n]*$/m.test(code))
-    {
-        return "markdown";
-    }
     if (sample.startsWith("{") || sample.startsWith("["))
     {
         try
@@ -103,15 +125,16 @@ export function detectSyntax(text: string): SyntaxLanguage | null
         return interpreter.startsWith("python") ? "python" : "shell";
     }
     const head = code.trimStart();
+    const script = head.replace(/^(?:#[^\r\n]*(?:\r?\n|$)|\s)+/, "");
     for (const [language, prefix] of codePrefixes)
     {
-        if (prefix.test(head))
+        if (prefix.test(language === "powershell" ? script : head))
         {
             return language;
         }
     }
     if (
-        /^(?:#[ \t]*(?:include|pragma)\b|(?:static[ \t]+)?(?:int|void|char|float|double|struct)[ \t]+\w+[ \t]*[(*{])/
+        /^(?:#[ \t]*include[ \t]+(?:<[^<>\s]+>|"[^"\r\n]+")|#[ \t]*pragma[ \t]+once[ \t]*(?:\r?\n|$)|(?:static[ \t]+)?(?:int|void|char|float|double)[ \t]+\w+\s*\([^)]*\)\s*[{;]|struct[ \t]+\w+\s*\{)/
             .test(head)
     )
     {
@@ -119,26 +142,35 @@ export function detectSyntax(text: string): SyntaxLanguage | null
             ? "cpp"
             : "c";
     }
-    if (/^(?:template\s*<|using[ \t]+namespace[ \t]+\w+\s*;|std::)/.test(head))
+    if (
+        /^(?:template\s*<[^>]+>\s*\w+[\s\w:*<>]*[{(]|using[ \t]+namespace[ \t]+\w+\s*;|std::\w+(?:<[^>]+>)?\s+(?:\w+\s*[=;{(]|<<))/
+            .test(head)
+    )
     {
         return "cpp";
     }
     const configuration = sample.replace(/^(?:\s|[#;][^\n]*(?:\n|$))+/, "");
-    if (/^(?:ARG[ \t]+[^\n]+\n\s*)*FROM[ \t]+[\w./:@-]+(?:[ \t]+AS[ \t]+\w+)?[ \t]*(?:\r?\n|$)/i.test(configuration))
+    if (
+        /^(?:ARG[ \t]+\w+(?:=[^\r\n]+)?\r?\n\s*)*FROM[ \t]+[\w./:@-]+(?:[ \t]+AS[ \t]+\w+)?[ \t]*\r?\n\s*(?:RUN|COPY|ADD|WORKDIR|CMD|ENTRYPOINT|ENV|LABEL|EXPOSE|USER|VOLUME|ARG|STOPSIGNAL|HEALTHCHECK|SHELL|ONBUILD)[ \t]+\S/i
+            .test(configuration)
+    )
     {
         return "dockerfile";
     }
-    const assignments = configuration.match(/^[ \t]*[\w."'-]+[ \t]*=[ \t]*[^\n]+/gm) ?? [];
-    const tomlValues = assignments.filter(line => /^[^=]+=[ \t]*(?:["'[{]|(?:true|false)\b|[+-]?\d)/.test(line));
-    if (/^\[\[?[^\]\n]+\]\]?[ \t]*(?:\r?\n|$)/.test(configuration) && assignments.length > 0)
+    const configurationLanguage = detectConfiguration(sample, text.length >= DETECTION_LIMIT);
+    if (configurationLanguage)
     {
-        return tomlValues.length === assignments.length ? "toml" : "ini";
+        return configurationLanguage;
     }
-    if (tomlValues.length >= 2 && assignments.length === tomlValues.length && /^[\w."'-]+[ \t]+=/.test(configuration))
+    if (_sqlSyntax(head))
     {
-        return "toml";
+        return "sql";
     }
-    if (/^(?:require[ \t]+["']|def[ \t]+\w+[^\n:]*\n)[\s\S]*?^[ \t]*end\b/m.test(code))
+    if (/^(?: {0,3}> ?)* {0,3}(?:`{3,}|~{3,})[^\n]*$/m.test(code))
+    {
+        return "markdown";
+    }
+    if (/^(?:require[ \t]+["']|def[ \t]+\w+[^\n:]*\n)/.test(script) && /^[ \t]*end[ \t]*(?:\r?$)/m.test(script))
     {
         return "ruby";
     }
@@ -164,42 +196,66 @@ export function detectSyntax(text: string): SyntaxLanguage | null
     // Svelte-specific template syntax wins over embedded TS/JS and HTML.
     // A script tag alone is shared by other formats and is not sufficient.
     if (
-        svelteTemplates.some(pattern => pattern.test(code))
-        || (/<script\b[^>]*>/.test(code) && svelteScript.test(sample))
+        /^(?:<[A-Za-z]|\{[#@:/])/.test(head)
+        && (svelteTemplates.some(pattern => pattern.test(code))
+            || (/<script\b[^>]*>/.test(code) && svelteScript.test(sample)))
     )
     {
         return "svelte";
     }
-    if (/^(?:async +)?def +\w+\([^\n]*\)\s*(?:->[^\n]+)?\s*:/m.test(code))
+    // A module docstring precedes Python imports and definitions. Its masked body
+    // is opaque, but its delimiters must not become a document-language gate.
+    const pythonHead = script.replace(/^(?:[rRuU])?(?:"[^"]*"|'[^']*')[ \t]*(?:\r?\n|$)\s*/, "")
+        .replace(/^(?:#[^\r\n]*(?:\r?\n|$)|\s)+/, "");
+    const pythonDocument =
+        /^(?:(?:from[ \t]+[\w.]+[ \t]+import[ \t]+[\w.*(), ]+|import[ \t]+[\w., ]+)[ \t]*(?:\r?\n|$)|@\w|(?:async[ \t]+)?def[ \t]+)/
+            .test(pythonHead);
+    if (
+        pythonDocument
+        && /^[ \t]*(?:async +)?def +\w+\([^)]*\)[ \t]*(?:->[^\n:]+)?[ \t]*:[ \t]*(?:\r?\n|(?:return|raise|yield|pass)\b)/m
+            .test(script)
+    )
     {
         return "python";
     }
+    const rustHead = head.replace(/^(?:#!?\[[^\]]*\]\s*)+/, "");
+    const rustItem = /^(?:(?:pub(?:\([^)]*\))?|async|const|unsafe)\s+)*(?:fn|use|mod|struct|enum|trait|impl)\b/.test(
+        rustHead
+    );
+    const rustDocument = rustItem
+        || /^(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|static(?:\s+mut)?)\s+\w+\s*:[^=;]+\s*=|type\s+\w+(?:<[^>]+>)?\s*=|extern\s+crate\s+\w+\s*;)/
+            .test(rustHead);
     if (
-        /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:(?:async|const|unsafe)[ \t]+)*fn[ \t]+\w+\s*[<(]/m.test(code)
-        || /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+\w+::/m.test(code)
-        || /^[ \t]*pub(?:\([^)]*\))?[ \t]+(?:struct|enum|trait)[ \t]+\w+\s*[<{(;]/m.test(code)
-        || /^[ \t]*(?:unsafe[ \t]+)?(?:impl(?:[ \t]+|<)|trait[ \t]+)\w[^;{}]*\{/m.test(code)
+        rustDocument
+        && (/^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:(?:async|const|unsafe)[ \t]+)*fn[ \t]+\w+\s*[<(]/m.test(code)
+            || /^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?use[ \t]+\w+::[\w:{}*, \t]+;/m.test(code)
+            || /^[ \t]*pub(?:\([^)]*\))?[ \t]+(?:struct|enum|trait)[ \t]+\w+\s*[<{(;]/m.test(code)
+            || /^[ \t]*(?:unsafe[ \t]+)?(?:impl(?:[ \t]+|<)|trait[ \t]+)\w[^;{}]*\{/m.test(code))
     )
     {
         return "rust";
     }
-    if (/^(?:<!doctype html\b|<html\b)/i.test(head))
+    if (/^(?:<!doctype[ \t]+html[ \t]*>|<html(?:\s[^<>]*|)>)/i.test(head))
     {
         return "html";
     }
     const jsx = /<>[\s\S]*?<\/>|<[A-Za-z][\w.:-]*\b[^<>]*\/>/.test(code)
         || /<([A-Za-z][\w.:-]*)\b[^<>]*>[\s\S]*?<\/\1\s*>/i.test(code);
-    if (typescriptDeclarations.some(pattern => pattern.test(code)))
+    // JavaScript directive prologues are string expression statements; the
+    // spelling of a directive is not part of language recognition.
+    const scriptHead = head.replace(/^(?:(?:"[^"\r\n]*"|'[^'\r\n]*')[ \t]*(?:;[ \t]*(?:\r?\n)?|\r?\n)\s*)+/, "");
+    const scriptDocument = javascriptModules.some(pattern => pattern.exec(scriptHead)?.index === 0)
+        || /^(?:(?:export|default|declare|abstract|async)\s+)*(?:import|const|let|var|function|class|interface|type|namespace|module|enum|global)\b/
+            .test(scriptHead);
+    if (scriptDocument && typescriptDeclarations.some(pattern => pattern.test(scriptHead)))
     {
         return jsx ? "tsx" : "typescript";
     }
-    if (/\b(?:SELECT\s+[\s\S]+?\s+FROM|INSERT\s+INTO|CREATE\s+TABLE|UPDATE\s+\w+\s+SET)\b/i.test(code))
-    {
-        return "sql";
-    }
     if (
-        javascriptModules.some(pattern => pattern.test(code))
-        || /\b(?:const|let|var) +[$\w]+\s*=|\b(?:export +)?(?:async +)?function +[$\w]*\s*\(/.test(code)
+        scriptDocument
+        && (javascriptModules.some(pattern => pattern.test(scriptHead))
+            || /^[ \t]*(?:(?:export|default|async) +)*(?:(?:const|let|var) +[$\w]+\s*=|function[ \t]*\*?[ \t]*[$\w]*\s*\([^)]*\)\s*\{)/m
+                .test(scriptHead))
     )
     {
         return jsx ? "jsx" : "javascript";
@@ -208,20 +264,9 @@ export function detectSyntax(text: string): SyntaxLanguage | null
     {
         return "html";
     }
-    if (
-        /^[ \t]*[\w.#:*@[][\w\s.#:*[\]="'|~^$>+(),-]*\{\s*(?:--)?[a-zA-Z][\w-]*\s*:[^{};]+[;}]/m.test(code)
-    )
+    if (_cssSyntax(head))
     {
         return "css";
-    }
-    if (
-        /^(?:---\s*\n)?[\w.-]+:\s*[^\n]*\n[ \t]+[\w.-]+:\s/m.test(code)
-        || /^-[ \t]+[\w.-]+:[ \t]+\S/m.test(configuration)
-        || ((configuration.match(/^[a-z][\w.-]*:[ \t]+\S/gm)?.length ?? 0) >= 2
-            && /^[a-z][\w.-]*:[ \t]+(?:true|false|null|[+-]?\d|\[|\{|[|>])/m.test(configuration))
-    )
-    {
-        return "yaml";
     }
     // A document title followed by prose is useful Markdown evidence on its own.
     // Run this after code signals so hash comments cannot outrank actual syntax.
@@ -243,6 +288,75 @@ export function detectSyntax(text: string): SyntaxLanguage | null
         }
     }
     return null;
+}
+
+/**
+ * Recognize a statement, not prose containing SQL verbs. A bare SELECT/FROM pair
+ * is ambiguous without a terminator, expression punctuation or another clause.
+ */
+function _sqlSyntax(code: string): boolean
+{
+    const statement = code.replace(/^(?:--[^\r\n]*(?:\r?\n|$)|\s)+/, "");
+    if (sqlStatement.test(statement))
+    {
+        return true;
+    }
+    const select = sqlSelect.exec(statement);
+    const projection = select?.[1];
+    let tail = select?.[2];
+    if (projection === undefined || tail === undefined)
+    {
+        return false;
+    }
+    tail = tail.trim();
+    // An alias must not consume the clause keyword that supplies our evidence.
+    if (!/^(?:WHERE|LEFT|RIGHT|INNER|OUTER|CROSS|FULL|JOIN|GROUP|ORDER|HAVING|LIMIT|UNION)\b/i.test(tail))
+    {
+        tail = tail.replace(sqlAlias, "");
+    }
+    const clause =
+        /^(?:WHERE|(?:LEFT|RIGHT|INNER|OUTER|CROSS|FULL)\s+JOIN|JOIN|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|UNION)\s+\S/i
+            .test(tail);
+    return clause || /^;(?:\s*(?:SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\b|\s*$)/i.test(tail)
+        || (tail === "" && /[*(),]/.test(projection));
+}
+
+/**
+ * Require the first rule to have selector tokens and a declaration. Do not search
+ * past prose for a later rule. Token scanning avoids backtracking over word runs.
+ */
+function _cssSyntax(code: string): boolean
+{
+    const rules = code
+        .replace(/^(?:@(?:charset|import|namespace)\s+[^{};]+;\s*)+/, "")
+        .replace(
+            /^(?:@(?:media|supports|container|layer|scope|starting-style|keyframes|-webkit-keyframes)\b[^{};]*\{\s*)+/,
+            ""
+        );
+    const rule = /^([^{};]+)\{\s*(?:--)?[a-zA-Z][\w-]*\s*:[^{};]+([;}])/.exec(rules);
+    const selector = rule?.[1]?.trim();
+    if (!rule || !selector)
+    {
+        return false;
+    }
+    if (/^@(?:font-face|page|property|counter-style)\b[\w\s:-]*$/.test(selector))
+    {
+        return true;
+    }
+    // Colons belong to adjacent pseudo names; dots and hashes need identifiers.
+    const token = /(?:[.#]?[-_a-zA-Z][\w-]*|::?[\w-]+|\*|\[[^\]\r\n]+\]|\([^{}]*\)|\d+(?:\.\d+)?%|[>+~|,])\s*/y;
+    let position = 0;
+    while (position < selector.length)
+    {
+        token.lastIndex = position;
+        if (!token.test(selector))
+        {
+            return false;
+        }
+        position = token.lastIndex;
+    }
+    // Several plain words plus an object-shaped example also occur in prose.
+    return !/^[\w-]+(?:\s+[\w-]+)+$/.test(selector) || rule[2] === ";";
 }
 
 /**

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
+import { languageNegativeSamples } from "./language-negative-samples";
 import { syntaxSamples } from "./language-samples";
 import { detectSyntax } from "../../src/syntax/detect";
 import { DETECTION_LIMIT } from "../../src/syntax/limits";
@@ -138,6 +139,15 @@ describe("syntax detection", () =>
 
 describe("syntax detection regression corpus", () =>
 {
+    describe.each(Object.entries(languageNegativeSamples))("%s false positives", (_language, samples) =>
+    {
+        it.each(samples)("keeps ambiguous text unclassified: %s", text =>
+        {
+            expect(detectSyntax(text)).toBeNull();
+            expect(detectSyntax(`\uFEFF \t\n${text.replaceAll("\n", "\r\n")}`)).toBeNull();
+        });
+    });
+
     describe.each(syntaxSamples)("$language / $name", ({ language, text }) =>
     {
         // JSONC supports embedded tokenization, but is not guessed from comments.
@@ -157,6 +167,25 @@ describe("syntax detection regression corpus", () =>
         {
             expect(detectSyntax(JSON.stringify({ source: text }))).toBe("json");
         });
+
+        it("keeps a TOML string as TOML", () =>
+        {
+            expect(detectSyntax(`[example]\nsource = ${JSON.stringify(text)}\nenabled = true`)).toBe("toml");
+        });
+
+        it("keeps a YAML block scalar as YAML", () =>
+        {
+            const source = text.split("\n").map(line => `  ${line}`).join("\n");
+            expect(detectSyntax(`source: |\n${source}\nenabled: true`)).toBe("yaml");
+        });
+
+        if (language !== "markdown")
+        {
+            it("does not promote code inside a prose report to the document language", () =>
+            {
+                expect(detectSyntax(`Diagnostic message.\n${text}`)).toBeNull();
+            });
+        }
 
         it("keeps a Markdown fence as Markdown", () =>
         {
@@ -319,10 +348,31 @@ it.each([
     "body { color: red; }",
     "* { box-sizing: border-box; }",
     "button:hover { color: red; }",
+    "::selection { color: white; }",
+    "button:hover::before { content: 'Hello'; }",
+    ".button,\nbutton:focus-visible\n{\n    color: red;\n}",
+    ":is(button, a):not([disabled]) { color: red; }",
     '@font-face { font-family: "Example"; src: url(example.woff2); }',
     "@media (width < 800px) {\n  :root { --size: 12px; }\n}",
     '[data-state="open"] { opacity: 1; }'
 ])("recognizes CSS selectors and declarations: %s", text =>
 {
     expect(detectSyntax(text)).toBe("css");
+});
+
+it("keeps an error report containing object examples as plain text", async () =>
+{
+    const text = await readFile(new URL("./fixtures/chart-input-error.txt", import.meta.url), "utf8");
+    expect(detectSyntax(text)).toBeNull();
+    expect(detectSyntax(text.replaceAll("\n", "\r\n"))).toBeNull();
+});
+
+it.each([
+    "Expected: an array of row objects or { values: [...] } after input adaptation",
+    "Example: use { color: red; } as the input",
+    "Output: object { value: 42 }",
+    "Expected:\n  { values: [...] }"
+])("does not treat a prose label as a CSS pseudo-class: %s", text =>
+{
+    expect(detectSyntax(text)).toBeNull();
 });

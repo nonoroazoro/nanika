@@ -3,11 +3,13 @@ import type { SyntaxLanguage } from "../../src/syntax/SyntaxLanguage";
 export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     c: {
         basic: '#include <stdio.h>\nint main(void) { printf("hello"); return 0; }',
-        function: "static int sum(int a, int b) { return a + b; }"
+        function: "static int sum(int a, int b) { return a + b; }",
+        pragma: "#pragma once\nstruct Entry { int value; };"
     },
     cpp: {
         basic: "#include <vector>\nstd::vector<int> values = {1, 2};",
-        template: "template <typename T>\nT twice(T value) { return value + value; }"
+        template: "template <typename T>\nT twice(T value) { return value + value; }",
+        qualified: "std::vector<int> values = {1, 2};"
     },
     csharp: {
         basic: 'using System;\nclass Example { static void Main() { Console.WriteLine("hello"); } }',
@@ -15,7 +17,10 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     css: {
         basic: ".example { color: red; }",
-        id: "#panel { display: grid; gap: 12px; }"
+        id: "#panel { display: grid; gap: 12px; }",
+        descendants: "main article p { color: red; }",
+        nestedRules: "@media (width < 800px) { @supports (display: grid) { .panel { display: grid; } } }",
+        attribute: 'a[href^="https:"]:hover { color: red; }'
     },
     dockerfile: {
         basic: 'FROM alpine:3\nRUN echo "hello"\nCOPY . /app',
@@ -35,12 +40,16 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     ini: {
         basic: "[server]\nhost = localhost\nport = 8080",
-        comments: "; server configuration\n[network]\nhost=example.com\nport=443"
+        comments: "; server configuration\n[network]\nhost=example.com\nport=443",
+        proseValue: "[messages]\nreminder = don't stop\nstatus = ready",
+        apostrophes: "[messages]\nreminder = don't stop, it's fine\nstatus = ready",
+        punctuation: "[messages]\ntext = Keep [this] and {that}; don't remove them.\npath = //server/share"
     },
     java: {
         basic:
             'package example;\npublic class Main { public static void main(String[] args) { System.out.println("hello"); } }',
-        import: "import java.util.List;\nclass Example { List<String> names; }"
+        import: "import java.util.List;\nclass Example { List<String> names; }",
+        singleLine: "package example; public class Example {}"
     },
     javascript: {
         longTemplate: `const docs = \`\n~~~rust\n${"example\n".repeat(600)}\n~~~\n\`;`,
@@ -48,7 +57,10 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
         basic: 'const message = "hello";',
         module: 'import { defineConfig } from "tool";\nexport default defineConfig({ enabled: true });',
         template: "const documentation = `\n# Heading\n\nDescription\n`;",
-        fence: "const documentation = `\n~~~rust\nfn main() {}\n~~~\n`;"
+        fence: "const documentation = `\n~~~rust\nfn main() {}\n~~~\n`;",
+        generator: "function* entries() { yield 1; }",
+        directive: '"use strict";\nconst count = 1;',
+        inlineDirective: '"use strict"; const count = 1;'
     },
     json: {
         basic: '{"message":"hello", "enabled":true}',
@@ -63,7 +75,8 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
         native: "export function View() { return <main>Hello</main>; }",
         div: "export function View() { return <div>Hello</div>; }",
         fragment: "const view = <><span>Hello</span><Widget /></>;",
-        mixed: "const view = <section><UI.Button disabled={false} /></section>;"
+        mixed: "const view = <section><UI.Button disabled={false} /></section>;",
+        directive: '"use client";\nexport function View() { return <div>Hello</div>; }'
     },
     just: {
         shellSetting: 'set shell := ["bash", "-cu"]\n\n# Build application\nbuild:\n    cargo build',
@@ -79,7 +92,8 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     lua: {
         basic: 'local message = "hello"\nprint(message)',
-        function: 'local function greet(name)\n  return "hello " .. name\nend'
+        function: 'local function greet(name)\n  return "hello " .. name\nend',
+        reference: "local cached = value\nprint(cached)"
     },
     markdown: {
         contractions: "Here's an example:\n\n```ts\nconst value = 1;\n```\n\nThat's all.",
@@ -90,7 +104,8 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     "objective-c": {
         basic: '#import <Foundation/Foundation.h>\n@interface Example : NSObject\n@end\nNSString *message = @"hello";',
-        implementation: '@implementation Example\n- (NSString *)message { return @"hello"; }\n@end'
+        implementation: '@implementation Example\n- (NSString *)message { return @"hello"; }\n@end',
+        forward: "@class Example, Another;"
     },
     php: {
         basic: '<?php\n$message = "hello";\necho $message;',
@@ -98,12 +113,18 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     powershell: {
         basic: 'Write-Host "hello"\nGet-ChildItem -Path .',
-        parameters: "param([string]$Path)\nGet-Content -Path $Path | Write-Output"
+        parameters: "param([string]$Path)\nGet-Content -Path $Path | Write-Output",
+        function: "function Get-Example { param([string]$Name) Write-Output $Name }",
+        standalone: "Get-ChildItem"
     },
     python: {
         docstring: 'def greet():\n    """\n# Description\n\nA Markdown example.\n    """\n    return "hello"',
         basic: 'def greet(name):\n    return "hello"',
-        async: 'async def fetch(client):\n    return await client.get("/items")'
+        async: 'async def fetch(client):\n    return await client.get("/items")',
+        imports: "# Helpers\nimport os\n\ndef current():\n    return os.getcwd()",
+        decorator: "@cache\ndef value():\n    return 42",
+        moduleDocstring: '"""Application helpers."""\nimport os\n\ndef current():\n    return os.getcwd()',
+        rawDocstring: 'r"""Module documentation.\nSecond line.\n"""\n# Helpers\ndef current():\n    return 1'
     },
     ruby: {
         basic: 'def greet(name)\n  puts "hello"\nend',
@@ -118,11 +139,16 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
         tupleStruct: "pub struct Entry(String);",
         genericImpl: "impl<T> From<T> for Entry<T> {\n    fn from(value: T) -> Self { Self(value) }\n}",
         trait: "trait Render {\n    fn render(&self) -> String;\n}",
-        nestedFunction: "mod inner {\n    pub(crate) async unsafe fn run() {}\n}"
+        nestedFunction: "mod inner {\n    pub(crate) async unsafe fn run() {}\n}",
+        constant: "const LIMIT: usize = 10;\nfn main() {}",
+        attributedConstant: "#[allow(dead_code)]\nconst LIMIT: usize = 10;\nfn main() {}",
+        static: "static VALUE: i32 = 1;\nfn main() {}",
+        alias: "type Count = usize;\nfn count() -> Count { 1 }"
     },
     scss: {
         basic: "$color: red;\n.example { color: $color; }",
-        mixin: "@mixin panel($gap) { display: grid; gap: $gap; }\n.panel { @include panel(12px); }"
+        mixin: "@mixin panel($gap) { display: grid; gap: $gap; }\n.panel { @include panel(12px); }",
+        module: '@use "theme";\n.panel { color: theme.$accent; }'
     },
     shell: {
         basic: '#!/bin/sh\necho "hello"',
@@ -130,7 +156,13 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     sql: {
         basic: "SELECT name FROM entries WHERE enabled = true;",
-        update: "UPDATE entries SET enabled = false WHERE id = 1;"
+        update: "UPDATE entries SET enabled = false WHERE id = 1;",
+        projection: "select * from entries",
+        insert: "INSERT INTO entries (name) VALUES ('example');",
+        create: "CREATE TABLE entries (id INTEGER PRIMARY KEY);",
+        comments: "-- Read entries\nSELECT name FROM entries WHERE id = 1",
+        quotedNames: 'SELECT e."name" FROM "entries" AS e WHERE e."id" = 1;',
+        multiple: "SELECT name FROM entries;\nSELECT id FROM entries;"
     },
     svelte: {
         basic: "<script>let count = $state(0);</script>\n<button>{count}</button>",
@@ -143,7 +175,9 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     toml: {
         basic: '# Settings\n[package]\nname = "example"\nversion = "1.0.0"',
-        arrayTables: '[[items]]\nname = "first"\nenabled = true\n[[items]]\nname = "second"'
+        arrayTables: '[[items]]\nname = "first"\nenabled = true\n[[items]]\nname = "second"',
+        multiline: '[settings]\nnames = [\n  "first",\n  "second",\n]\ntext = """\nSome prose.\n"""',
+        comments: "[settings]\nenabled = true # keep active\ncount = 2"
     },
     tsx: {
         basic: 'const view: JSX.Element = <Example title="hello" />;',
@@ -163,7 +197,14 @@ export const languageSamples: Record<SyntaxLanguage, Record<string, string>> = {
     },
     yaml: {
         basic: "server:\n  host: localhost\n  enabled: true",
-        sequence: "- name: first\n  enabled: true\n- name: second\n  enabled: false"
+        sequence: "- name: first\n  enabled: true\n- name: second\n  enabled: false",
+        blockCode: "script: |\n  const value = 1;\n  interface Entry { name: string }\nenabled: true",
+        comments: "# Settings\nenabled: true # keep active\nretries: 3",
+        scalarSequence: "items:\n  - alpha\n  - beta\nretries: 3\nenabled: true",
+        flowSequence: "items: [\n  alpha,\n  beta\n]\nretries: 3\nenabled: true",
+        flowMapping: "server: {\n  host: localhost,\n  port: 8080\n}",
+        stringMapping: "server:\n  host: localhost\n  mode: production",
+        quotedValues: "server:\n  name: 'It''s fine'\n  note: \"Keep # and [brackets]\""
     }
 };
 

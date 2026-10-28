@@ -87,6 +87,7 @@ for (
         "themes/dark.json",
         "themes/manifest.json",
         "detect.ts",
+        "configuration.ts",
         "languages.ts",
         "limits.ts",
         "SyntaxEngine.ts"

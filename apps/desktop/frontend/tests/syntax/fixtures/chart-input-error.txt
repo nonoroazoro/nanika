@@ -1,0 +1,12 @@
+[INVALID_INPUT] Cannot render the preview because the input has an unexpected shape.
+Path: data
+Expected: an array of row objects or { values: [...] } after input adaptation
+Received: object (keys: values)
+Hint: Provide normalized rows instead of a response envelope.
+Component stack:
+    at Preview (https://example.invalid/assets/preview.js:20:15)
+    at div (<anonymous>)
+    at Container (https://example.invalid/assets/preview.js:10:5)
+Error stack: InputError: [INVALID_INPUT] Unexpected input shape.
+    at validateInput (https://example.invalid/assets/preview.js:30:10)
+    at renderPreview (https://example.invalid/assets/preview.js:40:20)
