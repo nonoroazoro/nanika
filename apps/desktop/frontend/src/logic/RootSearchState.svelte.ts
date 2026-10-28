@@ -60,11 +60,12 @@ export class RootSearchState
             return null;
         }
         this.select(this.snapshot.resultOffset + index);
-        if (result.confirmationTitle)
+        const action = result.actions.find(item => item.id === result.actionId && item.enabled);
+        if (action?.confirmation_title)
         {
             return "confirmation";
         }
-        return result.allowDefaultExecution ? "default" : null;
+        return action?.allow_default_execution ? "default" : null;
     }
 
     /**

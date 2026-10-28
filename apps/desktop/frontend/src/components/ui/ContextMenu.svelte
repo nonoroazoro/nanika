@@ -154,8 +154,8 @@ function _keydown(event: KeyboardEvent): void
                     style={`--menu-anchor-inset: ${-attachedAlignOffset}px; --menu-anchor-width: ${
                         anchor?.offsetWidth ?? 0
                     }px; --menu-anchor-height: ${anchor?.offsetHeight ?? 0}px; width: ${
-                        anchor ? "17.5rem" : "16rem"
-                    }; max-height: min(var(--bits-context-menu-content-available-height), calc(100vh - 16px));`}
+                        anchor ? "17.5rem" : "max-content"
+                    }; min-width: min(16rem, calc(100vw - 16px)); max-width: min(28rem, calc(100vw - 16px)); max-height: min(var(--bits-context-menu-content-available-height), calc(100vh - 16px));`}
                 >
                     <ScrollArea
                         style="max-height: min(calc(var(--bits-context-menu-content-available-height) - var(--menu-footer-height, 0px) - 2 * var(--popup-padding) - 2px), calc(100vh - 16px - var(--menu-footer-height, 0px) - 2 * var(--popup-padding) - 2px)); flex: none;"
@@ -180,7 +180,9 @@ function _keydown(event: KeyboardEvent): void
                                                 closeOnSelect={false}
                                                 onSelect={() => _activate(action)}
                                             >
-                                                <span>{text(action.title)}</span>
+                                                <span class="action-label" title={text(action.title)}>{
+                                                    text(action.title)
+                                                }</span>
                                                 {#if action.checked}<CheckIcon size={16} />{/if}
                                             </Menu.CheckboxItem>
                                         {:else}
@@ -191,7 +193,9 @@ function _keydown(event: KeyboardEvent): void
                                                 closeOnSelect={false}
                                                 onSelect={() => _activate(action)}
                                             >
-                                                <span>{text(action.title)}</span>
+                                                <span class="action-label" title={text(action.title)}>{
+                                                    text(action.title)
+                                                }</span>
                                                 {#if keys}<ShortcutKeys {keys} />{/if}
                                             </Menu.Item>
                                         {/if}
@@ -208,6 +212,8 @@ function _keydown(event: KeyboardEvent): void
 </Menu.Root>
 
 <style>
+.action-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* The menu keeps one scale/fade recipe; its origin follows the invocation. */
 :global(.context-menu) { transform: scale(1); box-shadow: var(--shadow-menu); }
 :global(.context-menu[data-state="closed"]) { opacity: 0; transform: scale(0.96); }

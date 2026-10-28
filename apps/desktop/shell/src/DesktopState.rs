@@ -72,18 +72,15 @@ impl DesktopState {
                 entry_id,
                 result_revision
             } => self
-                .run_invocation(
-                    &InvokeCandidateRequest {
-                        session_id: request.session_id,
-                        request_id: *request_id,
-                        result_revision: *result_revision,
-                        extension_id: extension_id.clone(),
-                        entry_id: entry_id.clone(),
-                        action_id,
-                        confirmed
-                    },
+                .run_invocation(&InvokeCandidateRequest {
+                    session_id: request.session_id,
+                    request_id: *request_id,
+                    result_revision: *result_revision,
+                    extension_id: extension_id.clone(),
+                    entry_id: entry_id.clone(),
+                    action_id,
                     invocation
-                )
+                })
                 .map(|()| None),
             crate::MenuTarget::View {
                 route_id,
@@ -473,8 +470,7 @@ impl DesktopState {
 
     pub(crate) fn run_invocation(
         &self,
-        request: &InvokeCandidateRequest,
-        invocation: nanika_protocol::ActionInvocation
+        request: &InvokeCandidateRequest
     ) -> Result<(), OperationError> {
         let _operation = self
             .begin_operation()
@@ -524,7 +520,7 @@ impl DesktopState {
                 &request.entry_id,
                 &request.action_id,
                 &query,
-                invocation
+                request.invocation
             )?;
             let instance_id = completion.instance_id;
             apply_invocation_completion(completion, |effect| {

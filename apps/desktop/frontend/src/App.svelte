@@ -23,6 +23,7 @@ import ExtensionMenuIdentity from "./components/extensions/ExtensionMenuIdentity
 import Button from "./components/ui/Button.svelte";
 import LauncherFailure from "./components/launcher/LauncherFailure.svelte";
 import type { OperationError } from "./generated/OperationError";
+import { resolveActionShortcut } from "./logic/action-shortcuts";
 import { RootSearchState } from "./logic/RootSearchState.svelte";
 import { onMount, tick } from "svelte";
 
@@ -224,6 +225,11 @@ async function showContextMenu(target: MenuTarget, position: [number, number] | 
     try
     {
         const actions = await tauriBridge.readContextMenu(request);
+        const keyboardLayout = target.kind === "search" && actions.some(action =>
+                action.shortcut?.key.kind === "physical"
+            )
+            ? await tauriBridge.readKeyboardLayout()
+            : {};
         if (token !== menuRequest || !document.hasFocus() || actions.length === 0)
         {
             return;
@@ -232,7 +238,15 @@ async function showContextMenu(target: MenuTarget, position: [number, number] | 
             ? viewPresentation?.resources
             : rootPresentations.get(target.extensionId)?.presentation.resources;
         const presentation = new TextPresentation(bundle, application.platform, actionFields(actions));
-        contextMenu = { request, actions, position, presentation };
+        const platform = application.platform;
+        const shortcuts = target.kind === "search"
+            ? Object.fromEntries(actions.flatMap(action =>
+                action.shortcut
+                    ? [[action.id, resolveActionShortcut(action.shortcut, platform, keyboardLayout).keys]]
+                    : []
+            ))
+            : {};
+        contextMenu = { request, actions, position, presentation, shortcuts };
         menuOpen = true;
     }
     catch (error)
@@ -550,11 +564,19 @@ async function submitQuery(requestId: number, query: string): Promise<void>
     }
 }
 
-async function invokeCandidate(result: SearchResult, confirmed: boolean): Promise<void>
+async function invokeCandidate(
+    result: SearchResult,
+    actionId: string,
+    invocation: "default" | "explicit"
+): Promise<void>
 {
+    const action = result.actions.find(item => item.id === actionId && item.enabled);
     if (
-        invoking || navigation.busy || !application || rootSearch.requestId !== latestRequestId
-        || rootSearch.phase !== "ready" || (confirmed ? !result.confirmationTitle : !result.allowDefaultExecution)
+        !action || !rootSearch.results.includes(result) || menuOpen || confirmationPending()
+        || invoking || navigation.busy || !application || rootSearch.requestId !== latestRequestId
+        || rootSearch.phase !== "ready"
+        || (invocation === "default"
+            && (actionId !== result.actionId || (!action.confirmation_title && !action.allow_default_execution)))
     )
     {
         return;
@@ -569,19 +591,19 @@ async function invokeCandidate(result: SearchResult, confirmed: boolean): Promis
             resultRevision: rootSearch.resultRevision,
             extensionId: result.extensionId,
             entryId: result.entryId,
-            actionId: result.actionId,
-            confirmed
+            actionId,
+            invocation: action.confirmation_title ? "confirmed" as const : invocation
         };
         const prepared = rootPresentations.get(result.extensionId)?.presentation;
         if (
-            confirmed
+            action.confirmation_title
             && !await confirmAction({
-                destructive: result.actionStyle === "destructive",
+                destructive: action.style === "destructive",
                 content: () => ({
-                    title: prepared!.text(result.confirmationTitle!, localization.locale),
-                    label: prepared!.text(result.actionTitle, localization.locale),
-                    message: result.confirmationDescription
-                        ? prepared!.text(result.confirmationDescription, localization.locale)
+                    title: prepared!.text(action.confirmation_title!, localization.locale),
+                    label: prepared!.text(action.title, localization.locale),
+                    message: action.confirmation_description
+                        ? prepared!.text(action.confirmation_description, localization.locale)
                         : ""
                 }),
                 icon: result.icon

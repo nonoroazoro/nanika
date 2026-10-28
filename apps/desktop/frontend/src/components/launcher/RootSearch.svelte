@@ -2,6 +2,7 @@
 import { localization } from "../../localization/state.svelte";
 import { operationErrorText } from "../../localization/operation-errors";
 import type { RootPresentation } from "../../types/RootPresentation";
+import { matchActionShortcut } from "../../logic/action-shortcuts";
 import { isCompositionKey } from "../../ui/keyboard";
 import SearchIcon from "../icons/SearchIcon.svelte";
 import EmptyState from "../ui/EmptyState.svelte";
@@ -31,7 +32,7 @@ interface Props
     onQuery: (query: string) => void;
     onRange: (request: ReadResultsRequest) => void;
     onDismiss: () => void;
-    onInvoke: (result: SearchResult, confirmed: boolean) => void;
+    onInvoke: (result: SearchResult, actionId: string, invocation: "default" | "explicit") => void;
     onContextMenu: (result: SearchResult, position: [number, number] | null) => Promise<void>;
 }
 
@@ -158,11 +159,22 @@ function invoke(result: SearchResult): void
         return;
     }
     selectOnNextFocus = true;
-    onInvoke(result, invocation === "confirmation");
+    onInvoke(result, result.actionId, "default");
 }
 
 function handleKeydown(event: KeyboardEvent): void
 {
+    if (!appMenuOpen && !busy && activeResult)
+    {
+        const action = matchActionShortcut(event, activeResult.actions, platform);
+        if (action)
+        {
+            event.preventDefault();
+            selectOnNextFocus = true;
+            onInvoke(activeResult, action.id, "explicit");
+            return;
+        }
+    }
     if (
         isCompositionKey(event)
         || (["Enter", "ArrowUp", "ArrowDown"].includes(event.key)

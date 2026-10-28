@@ -9,6 +9,7 @@
     "allow-close-session",
     "allow-dismiss-launcher",
     "allow-read-context-menu",
+    "allow-read-keyboard-layout",
     "allow-read-configuration-menu",
     "allow-invoke-configuration-menu",
     "allow-invoke-context-menu",

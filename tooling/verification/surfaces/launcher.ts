@@ -206,6 +206,7 @@ export async function verifyLauncher(browser: BrowserCommand, output: string): P
     await _verifyStartupDiagnosticFailure(browser);
     await _verifyIsolatedTitle(browser, output);
     await _verifyQueryFailure(browser, output);
+    await _verifyActionShortcuts(browser, output);
 }
 
 async function _verifyViewFailure(browser: BrowserCommand, output: string): Promise<void>
@@ -1030,5 +1031,143 @@ async function _verifyRowSpacing(browser: BrowserCommand, selector: string): Pro
             throw new Error('Collection row geometry changed: ' + JSON.stringify(geometry));
         return geometry;
     })()`
+    );
+}
+
+async function _verifyActionShortcuts(browser: BrowserCommand, output: string): Promise<void>
+{
+    const search = "input[aria-label='Search for apps and commands']";
+    for (const platform of ["macos", "windows"])
+    {
+        await browser("eval", `location.search = '?surface=launcher&state=shortcuts&platform=${platform}'`);
+        await browser("wait", search);
+        await browser("fill", search, "long application");
+        await browser("wait", "[role=option][aria-selected=true]");
+        await browser(
+            "eval",
+            `(() => {
+            window.shortcutEvent = { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true,
+                ${platform === "macos" ? "metaKey" : "ctrlKey"}: true };
+            const input = document.querySelector('[role=combobox]');
+            for (const patch of [{repeat:true}, {isComposing:true}, {keyCode:229}, {altKey:true},
+                {metaKey:${platform !== "macos"}, ctrlKey:${platform !== "windows"}}]) {
+                input.dispatchEvent(new KeyboardEvent('keydown', {...window.shortcutEvent, ...patch}));
+            }
+            if (document.documentElement.dataset.shortcutInvocations) throw new Error('Unrelated or repeated key invoked an action');
+            document.documentElement.dataset.shortcutPaused = 'true';
+            for (let i = 0; i < 3; i++) input.dispatchEvent(new KeyboardEvent('keydown', window.shortcutEvent));
+            if (document.documentElement.dataset.shortcutInvocations !== '1') throw new Error('Repeated input was not bounded');
+            document.documentElement.dataset.shortcutPaused = 'false';
+        })()`
+        );
+        await browser("wait", "--fn", "document.querySelector('.results').getAttribute('aria-busy') === 'false'");
+        await browser(
+            "eval",
+            `(() => {
+            const request = JSON.parse(document.documentElement.dataset.shortcutRequest);
+            if (request.extensionId !== 'external.shortcuts' || request.actionId !== 'custom.location'
+                || request.invocation !== 'explicit') throw new Error('Host did not forward the declared external action');
+            if (document.querySelector('[role=menu]')) throw new Error('Shortcut flashed a menu');
+        })()`
+        );
+        await _dispatchActionShortcut(browser, { key: "K", code: "KeyK", keyCode: 75, shiftKey: true });
+        await browser(
+            "wait",
+            "--fn",
+            "JSON.parse(document.documentElement.dataset.shortcutRequest).actionId === 'custom.inspect'"
+        );
+        await _dispatchActionShortcut(browser, { key: "9", code: "Digit9", keyCode: 57 });
+        await browser(
+            "eval",
+            "if (document.documentElement.dataset.shortcutInvocations !== '2') throw new Error('Disabled action was invoked');"
+        );
+        await browser("hover", "[role=option][aria-selected=true]");
+        await browser("mouse", "down", "right");
+        await browser("mouse", "up", "right");
+        await browser("wait", "[role=menuitem]");
+        await browser("wait", "--fn", "getComputedStyle(document.querySelector('[role=menu]')).opacity === '1'");
+        await browser(
+            "eval",
+            `(() => {
+            const menu = document.querySelector('[role=menu]');
+            const inspect = [...menu.querySelectorAll('[role=menuitem]')].find(item => item.textContent.includes('Inspect'));
+            if (inspect?.querySelector('.shortcut-keys kbd:last-child')?.textContent.trim() !== 'T') {
+                throw new Error('Physical shortcut label did not use the native layout');
+            }
+            for (const label of menu.querySelectorAll('kbd .key-label')) {
+                if (label.getBoundingClientRect().height > parseFloat(getComputedStyle(label).lineHeight) + 1) throw new Error('Shortcut key wrapped');
+            }
+            if (menu.scrollWidth > menu.clientWidth) throw new Error('Shortcut menu overflowed');
+            if (!menu.textContent.includes('${
+                platform === "macos" ? "⌘" : "Ctrl"
+            }') || !menu.querySelector('kbd svg')) throw new Error('Menu omitted shortcut hints');
+        })()`
+        );
+        await browser("screenshot", join(output, `action-shortcuts-${platform}.png`));
+        await browser("press", "Escape");
+        await browser("wait", "--fn", "!document.querySelector('[role=menu]')");
+        await _dispatchActionShortcut(browser, { shiftKey: true });
+        await browser("wait", "[role=alertdialog]");
+        await browser("press", "Escape");
+        await browser("wait", "--fn", "!document.querySelector('[role=alertdialog]')");
+        await browser(
+            "eval",
+            "if (document.documentElement.dataset.shortcutInvocations !== '2') throw new Error('Cancelled action was invoked');"
+        );
+        await _dispatchActionShortcut(browser, { shiftKey: true });
+        await browser("wait", "[role=alertdialog]");
+        await browser("find", "role", "button", "click", "--name", "Confirm action", "--exact");
+        await browser(
+            "wait",
+            "--fn",
+            "JSON.parse(document.documentElement.dataset.shortcutRequest).invocation === 'confirmed'"
+        );
+        await browser("fill", search, "Clipboard");
+        await browser("wait", "--text", "Clipboard History");
+        await _dispatchActionShortcut(browser);
+        await browser(
+            "eval",
+            "if (document.documentElement.dataset.shortcutInvocations !== '3' || !document.querySelector('.launcher')) throw new Error('Item without a binding reacted');"
+        );
+        await browser("press", "Enter");
+        await browser("wait", "--text", "Code preview");
+        await browser(
+            "eval",
+            `(() => {
+                document.activeElement.dispatchEvent(new KeyboardEvent('keydown', window.shortcutEvent));
+                if (document.documentElement.dataset.shortcutInvocations !== '3') throw new Error('Root shortcut leaked into extension view');
+            })()`
+        );
+        await browser("press", "Escape");
+        await browser("wait", search);
+        await browser("fill", search, "long application");
+        await browser("wait", "[role=option][aria-selected=true]");
+        await browser("eval", "document.documentElement.dataset.shortcutFailure = 'true'");
+        await _dispatchActionShortcut(browser);
+        await browser("wait", ".operation-failure");
+        await browser(
+            "eval",
+            "if (document.querySelector('[role=combobox]').value !== 'long application') throw new Error('Action failure discarded query');"
+        );
+    }
+}
+
+/**
+ * Exercise cross-platform UI handling without invoking browser or OS menu accelerators.
+ * Real shortcut input is verified by the native application E2E.
+ *
+ * @param browser The owned browser session
+ * @param changes Key identity and modifier changes relative to the fixture's primary+Enter event
+ */
+async function _dispatchActionShortcut(
+    browser: BrowserCommand,
+    changes: { code?: string; key?: string; keyCode?: number; shiftKey?: boolean; } = {}
+): Promise<void>
+{
+    await browser(
+        "eval",
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {
+            ...window.shortcutEvent, ...${JSON.stringify(changes)}
+        }))`
     );
 }

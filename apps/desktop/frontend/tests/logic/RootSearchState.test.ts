@@ -12,13 +12,16 @@ function _result(id: string): SearchResult
         extensionId: "test",
         entryId: id,
         actionId: "open",
-        actionStyle: "primary",
-        allowDefaultExecution: true,
-        confirmationTitle: null,
+        actions: [{
+            id: "open",
+            title: "Open",
+            style: "primary",
+            enabled: true,
+            allow_default_execution: true,
+            group: null
+        }],
         instanceId: 1,
         resourceScope: null,
-        actionTitle: "Open",
-        confirmationDescription: null,
         title: id,
         subtitle: null,
         icon: null,
@@ -154,7 +157,9 @@ test("dangerous activation always requests a dialog and never confirms by repeat
 
 test("unavailable actions cannot be activated", () =>
 {
-    const disabled = { ..._result("disabled"), allowDefaultExecution: false };
+    const disabled = _result("disabled");
+    assert.ok(disabled.actions[0]);
+    disabled.actions[0].enabled = false;
     const state = new RootSearchState(_snapshot([], { results: [disabled], totalResults: 1 }));
     assert.equal(state.activate(disabled), null);
 });
@@ -166,5 +171,9 @@ function _selectedEntry(state: RootSearchState): string | undefined
 
 function _dangerous(): SearchResult
 {
-    return { ..._result("shutdown"), allowDefaultExecution: false, confirmationTitle: "Confirm Shut Down" };
+    const result = _result("shutdown");
+    assert.ok(result.actions[0]);
+    result.actions[0].allow_default_execution = false;
+    result.actions[0].confirmation_title = "Confirm Shut Down";
+    return result;
 }

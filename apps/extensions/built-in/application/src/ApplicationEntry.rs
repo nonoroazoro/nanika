@@ -106,6 +106,7 @@ impl ApplicationEntry {
                 _ => "action-reveal-file"
             };
             actions.push(nanika_protocol::Action {
+                shortcut: Some(Box::new(nanika_protocol::ActionShortcut::primary("Enter"))),
                 icon: None,
                 id: "application.reveal".to_owned(),
                 title: nanika_protocol::message(title, []),
@@ -121,6 +122,7 @@ impl ApplicationEntry {
             });
             if self.launch_kind == "windows-shell-link" {
                 actions.push(nanika_protocol::Action {
+                    shortcut: None,
                     icon: None,
                     id: "application.revealTarget".to_owned(),
                     title: nanika_protocol::message("action-reveal-target", []),

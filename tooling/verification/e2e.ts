@@ -8,9 +8,9 @@ import { buildExtensions } from "../build/build-extensions.ts";
 import { withBuildTarget } from "../build/with-build-target.ts";
 
 const scenario = process.argv[2] ?? "application";
-if (!["application", "activation", "ime"].includes(scenario))
+if (!["application", "activation", "ime", "shortcuts"].includes(scenario))
 {
-    throw new Error("Usage: just verify-e2e <application|activation|ime>");
+    throw new Error("Usage: just verify-e2e <application|activation|ime|shortcuts>");
 }
 const root = fileURLToPath(new URL("../..", import.meta.url));
 await withBuildTarget(root, "verification", async (target, run) =>

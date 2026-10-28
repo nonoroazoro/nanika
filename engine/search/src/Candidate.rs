@@ -130,6 +130,7 @@ impl Candidate {
                     && a.confirmation_title == b.confirmation_title
                     && a.confirmation_description == b.confirmation_description
                     && a.style == b.style
+                    && a.shortcut == b.shortcut
                     && a.enabled == b.enabled
                     && a.allow_default_execution == b.allow_default_execution
                     && a.group == b.group

@@ -3,6 +3,7 @@ const allowedCommands = new Set([
   'close_session',
   'dismiss_launcher',
   'read_context_menu',
+  'read_keyboard_layout',
   'read_configuration_menu',
   'invoke_configuration_menu',
   'invoke_context_menu',

@@ -116,3 +116,106 @@ fn localized_actions_keep_policy_and_reject_conflicting_group_definitions() {
     assert!(!first.allows_invocation(ActionInvocation::Explicit));
     assert!(first.allows_invocation(ActionInvocation::Confirmed));
 }
+
+#[test]
+fn shortcuts_are_optional_structured_and_validate_key_identity() {
+    use nanika_protocol::{ActionShortcut, ShortcutModifier};
+    let mut action = Action::primary("custom.reveal", "Reveal");
+    assert!(
+        serde_json::to_value(&action)
+            .unwrap()
+            .get("shortcut")
+            .is_none()
+    );
+    action.shortcut = Some(Box::new(ActionShortcut::primary("Enter")));
+    action.allow_default_execution = false;
+    validate_actions(&[action.clone()]).unwrap();
+    let encoded = serde_json::to_value(&action).unwrap();
+    assert_eq!(
+        encoded["shortcut"],
+        serde_json::json!({"key":{"kind":"virtual","value":"Enter"},"modifiers":["primary"]})
+    );
+    assert_eq!(serde_json::from_value::<Action>(encoded).unwrap(), action);
+    assert!(!action.allows_invocation(ActionInvocation::Default));
+    assert!(action.allows_invocation(ActionInvocation::Explicit));
+    for key in [
+        "Escape",
+        "Tab",
+        "ArrowDown",
+        "Comma",
+        "KeyAA",
+        "Digit10",
+        "enter"
+    ] {
+        action.shortcut = Some(Box::new(ActionShortcut::primary(key)));
+        assert!(validate_actions(&[action.clone()]).is_err(), "{key}");
+    }
+    for modifiers in [
+        vec![],
+        vec![ShortcutModifier::Shift],
+        vec![ShortcutModifier::Primary; 2]
+    ] {
+        action.shortcut = Some(Box::new(ActionShortcut {
+            key: nanika_protocol::ShortcutKey::Virtual("K".into()),
+            modifiers
+        }));
+        assert!(validate_actions(&[action.clone()]).is_err());
+    }
+    assert!(
+        serde_json::from_value::<ActionShortcut>(
+            serde_json::json!({"key":{"kind":"virtual","value":"K"}, "modifiers":["unknown"]})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn shortcuts_are_unique_per_item_regardless_of_modifier_order() {
+    use nanika_protocol::{
+        ActionShortcut,
+        ShortcutModifier::{Primary, Shift}
+    };
+    let mut first = Action::primary("first", "First");
+    first.shortcut = Some(Box::new(ActionShortcut {
+        key: nanika_protocol::ShortcutKey::Virtual("K".into()),
+        modifiers: vec![Primary, Shift]
+    }));
+    let mut second = Action::primary("second", "Second");
+    second.shortcut = Some(Box::new(ActionShortcut {
+        key: nanika_protocol::ShortcutKey::Virtual("K".into()),
+        modifiers: vec![Shift, Primary]
+    }));
+    assert!(
+        validate_actions(&[first.clone(), second.clone()])
+            .unwrap_err()
+            .contains("shortcuts must be unique")
+    );
+    second.shortcut.as_mut().unwrap().key = nanika_protocol::ShortcutKey::Virtual("1".into());
+    validate_actions(&[first.clone(), second.clone()]).unwrap();
+    validate_actions(&[first]).unwrap();
+    validate_actions(&[second]).unwrap();
+}
+
+#[test]
+fn extensions_can_bind_editing_keys_and_distinguish_physical_keys() {
+    use nanika_protocol::{ActionShortcut, ShortcutKey};
+    for key in ["A", "C", "V", "X", "Z", "Q", "W"] {
+        let mut action = Action::primary("custom", "Custom");
+        action.shortcut = Some(Box::new(ActionShortcut::primary(key)));
+        validate_actions(&[action]).unwrap();
+    }
+    let mut logical = Action::primary("logical", "Logical");
+    logical.shortcut = Some(Box::new(ActionShortcut::primary("I")));
+    let mut physical = Action::primary("physical", "Physical");
+    physical.shortcut = Some(Box::new(ActionShortcut {
+        key: ShortcutKey::Physical("KeyI".into()),
+        modifiers: vec![nanika_protocol::ShortcutModifier::Primary]
+    }));
+    validate_actions(&[logical, physical.clone()]).unwrap();
+    assert_eq!(
+        serde_json::from_value::<Action>(serde_json::to_value(&physical).unwrap()).unwrap(),
+        physical
+    );
+    physical.shortcut.as_mut().unwrap().key = ShortcutKey::Physical("I".into());
+    assert!(validate_actions(&[physical]).is_err());
+}

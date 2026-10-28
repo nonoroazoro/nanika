@@ -127,14 +127,7 @@ pub(crate) async fn invoke_candidate(
     authorize_launcher(&window)?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<DesktopState>().run_invocation(
-            &request,
-            if request.confirmed {
-                nanika_protocol::ActionInvocation::Confirmed
-            } else {
-                nanika_protocol::ActionInvocation::Default
-            }
-        )
+        app.state::<DesktopState>().run_invocation(&request)
     })
     .await
     .map_err(|error| OperationError::with_detail(Code::InvocationUnconfirmed, error.to_string()))?
@@ -587,4 +580,12 @@ pub(crate) async fn read_results(
 ) -> Result<(), OperationError> {
     authorize_launcher(&window)?;
     state.read_results(request)
+}
+
+#[tauri::command]
+pub(crate) fn read_keyboard_layout(
+    window: tauri::WebviewWindow
+) -> Result<std::collections::BTreeMap<String, String>, OperationError> {
+    authorize_launcher(&window)?;
+    Ok(nanika_platform::keyboard_layout_labels())
 }

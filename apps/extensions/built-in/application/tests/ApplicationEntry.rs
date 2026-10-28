@@ -18,11 +18,24 @@ fn location_actions_follow_the_application_kind_without_launching() {
                 .any(|action| action.id == "application.revealTarget"),
             kind == "windows-shell-link"
         );
+        let actions = app.actions();
+        let bindings = actions
+            .iter()
+            .filter(|action| action.shortcut.is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].id, "application.reveal");
+        assert_eq!(
+            bindings[0].shortcut,
+            Some(Box::new(nanika_protocol::ActionShortcut::primary("Enter")))
+        );
+        nanika_protocol::validate_actions(&actions).unwrap();
         assert!(matches!(app.host_request("application.reveal").unwrap(),
             nanika_protocol::HostServiceRequest::RevealPath { path } if path == app.target_path));
     }
     app.launch_kind = "windows-packaged".to_owned();
     assert_eq!(app.actions().len(), 1);
+    assert!(app.actions().iter().all(|action| action.shortcut.is_none()));
     assert!(app.host_request("application.reveal").is_err());
     assert!(app.host_request("application.revealTarget").is_err());
     assert!(app.host_request("unknown").is_err());

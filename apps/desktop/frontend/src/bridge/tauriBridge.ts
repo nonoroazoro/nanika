@@ -12,6 +12,7 @@ export const tauriBridge: NanikaBridge = {
     readConfigurationMenu: async request => invoke("read_configuration_menu", { request }),
     invokeConfigurationMenu: async (request, operation) => invoke("invoke_configuration_menu", { request, operation }),
     readText: async request => invoke("read_text", { request }),
+    readKeyboardLayout: async () => invoke("read_keyboard_layout"),
     readContextMenu: async request => invoke("read_context_menu", { request }),
     invokeContextMenu: async (request, actionId, confirmed) =>
         invoke("invoke_context_menu", { request, actionId, confirmed }),

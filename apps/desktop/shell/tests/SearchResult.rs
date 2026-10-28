@@ -109,7 +109,7 @@ fn result_subtitles_preserve_declared_layout_semantics() {
 }
 
 #[test]
-fn root_confirmation_is_exposed_only_for_the_enabled_primary_action() {
+fn root_actions_preserve_availability_and_confirmation_policy() {
     let mut action = nanika_protocol::Action::primary("power", "Shut Down");
     action.style = nanika_protocol::ActionStyle::Destructive;
     action.allow_default_execution = false;
@@ -126,10 +126,11 @@ fn root_confirmation_is_exposed_only_for_the_enabled_primary_action() {
             Vec::new()
         );
         let result = SearchResult::from_candidate(&candidate, None);
-        assert!(!result.allow_default_execution);
+        assert!(!result.actions[0].allow_default_execution);
+        assert_eq!(result.actions[0].enabled, enabled);
         assert_eq!(
-            result.confirmation_title,
-            enabled.then_some("Confirm Shut Down".into())
+            result.actions[0].confirmation_title,
+            Some("Confirm Shut Down".into())
         );
     }
 }
@@ -157,13 +158,16 @@ fn results_preserve_confirmation_style_and_consequences() {
             Vec::new()
         );
         let result = SearchResult::from_candidate(&candidate, None);
-        assert_eq!(result.action_style, style);
-        assert_eq!(result.confirmation_title, Some("Run this action?".into()));
+        assert_eq!(result.actions[0].style, style);
         assert_eq!(
-            result.confirmation_description,
+            result.actions[0].confirmation_title,
+            Some("Run this action?".into())
+        );
+        assert_eq!(
+            result.actions[0].confirmation_description,
             Some("The selected operation will be executed.".into())
         );
-        assert!(!result.allow_default_execution);
+        assert!(!result.actions[0].allow_default_execution);
     }
 }
 
@@ -198,4 +202,29 @@ fn native_images_take_priority_over_semantic_action_symbols() {
         result.icon,
         Some(crate::result_icon::ResultIcon::Image { .. })
     ));
+}
+
+#[test]
+fn root_results_preserve_extension_defined_shortcuts_and_nonprimary_actions() {
+    let mut extra = nanika_protocol::Action::primary("custom.inspect", "Inspect");
+    extra.allow_default_execution = false;
+    extra.shortcut = Some(Box::new(nanika_protocol::ActionShortcut::primary("K")));
+    let actions = vec![nanika_protocol::Action::primary("open", "Open"), extra];
+    let candidate = Candidate::new(
+        CandidateKind::Action,
+        "external.example",
+        "item",
+        "Item",
+        "open",
+        actions.clone(),
+        vec![]
+    );
+    let result = SearchResult::from_candidate(&candidate, None);
+    assert_eq!(result.actions, actions);
+    let wire = serde_json::to_value(result).unwrap();
+    assert_eq!(
+        wire["actions"][1]["shortcut"]["key"],
+        serde_json::json!({"kind":"virtual","value":"K"})
+    );
+    assert!(wire.get("allowDefaultExecution").is_none());
 }

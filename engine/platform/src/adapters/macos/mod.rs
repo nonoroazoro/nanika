@@ -1,3 +1,5 @@
+mod keyboard_layout;
+pub use keyboard_layout::keyboard_layout_labels;
 mod fatal_error;
 mod filesystem;
 pub(crate) mod hotkey_timing;

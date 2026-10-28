@@ -160,6 +160,7 @@ fn detail_view(
 
 fn copy_action() -> Action {
     Action {
+        shortcut: None,
         icon: None,
         id: COPY_ACTION_ID.to_owned(),
         title: nanika_protocol::message("action-copy", []),

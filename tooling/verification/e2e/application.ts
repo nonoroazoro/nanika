@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
 
+import { FileRevealFixture } from "./FileRevealFixture.ts";
 import { NativeFixture } from "./NativeFixture.ts";
 import { OwnedProcess } from "../../quality/OwnedProcess.ts";
 import { processRunner, stopProcessTree } from "../../quality/process-tree.ts";
@@ -12,9 +13,9 @@ import { processRunner, stopProcessTree } from "../../quality/process-tree.ts";
 import type { NativeState } from "./NativeState.ts";
 
 const scenario = process.argv[2] ?? "application";
-if (!["application", "activation", "ime"].includes(scenario))
+if (!["application", "activation", "ime", "shortcuts"].includes(scenario))
 {
-    throw new Error("Expected application, activation or ime scenario");
+    throw new Error("Expected application, activation, ime or shortcuts scenario");
 }
 // Some Windows installations start Pinyin in Latin mode. The optional shortcut
 // is an explicit session preference, not an assumption about every user's IME.
@@ -71,6 +72,7 @@ const child = await OwnedProcess.spawn(
 let browser: Awaited<ReturnType<typeof remote>> | undefined;
 let clipboard: NativeFixture | undefined;
 let ime: NativeFixture | undefined;
+let fileReveal: FileRevealFixture | undefined;
 let imeShortcutActive = false;
 const assertions: string[] = [];
 const failures: unknown[] = [];
@@ -250,6 +252,10 @@ try
             )
         );
     }
+    if (scenario === "shortcuts")
+    {
+        await _verifyApplicationReveal();
+    }
     if (scenario === "application")
     {
         await _key("launcher", async () => _window("launcher", true, true));
@@ -376,6 +382,7 @@ try
         );
         await browser.switchToWindow("settings");
         await _selectLanguage("en", "en");
+        await _verifyApplicationReveal();
         if (process.platform === "darwin")
         {
             await _verifyApplicationNames();
@@ -528,6 +535,18 @@ finally
 {
     // Cancellation stops the scenario, but must not cancel OS-state restoration.
     restoring = true;
+    if (fileReveal)
+    {
+        try
+        {
+            await fileReveal.close();
+            assertions.push("owned file reveal windows closed");
+        }
+        catch (error)
+        {
+            failures.push(error);
+        }
+    }
     if (process.platform === "win32" && child.exitCode === null)
     {
         try
@@ -968,6 +987,79 @@ async function _selectLanguage(preference: "en" | "system" | "zh-Hans", locale: 
     );
 }
 
+async function _verifyApplicationReveal(): Promise<void>
+{
+    const driver = browser;
+    if (!driver)
+    {
+        throw new Error("Application driver is unavailable");
+    }
+    const macos = process.platform === "darwin";
+    const query = macos ? "Nanika NetEaseMusic" : "Nanika Reveal";
+    const file = macos ? "Nanika Music.app" : "Nanika Reveal.exe";
+    const fixture = await FileRevealFixture.open(join(state, "applications", file));
+    fileReveal = fixture;
+    await _key("launcher", async () => _window("launcher", true, true));
+    await _launcherReady();
+    const search = await driver.$(".launcher input[role=combobox]");
+    await search.setValue(query);
+    await (await driver.$(`[role=option][aria-selected=true] .title[title='${query}']`))
+        .waitForExist({ timeout: 15000 });
+    await driver.execute(`
+        document.querySelector('[role=option][aria-selected=true]').dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 80, clientY: 110 })
+        );
+    `);
+    const menu = await driver.$("[role=menu]");
+    await menu.waitForDisplayed({ timeout: 5000 });
+    await driver.waitUntil(async () =>
+        await driver.execute(`
+        return getComputedStyle(document.querySelector('[role=menu]')).opacity === '1';
+    `) === true, { timeout: 5000 });
+    const hints = await menu.$(".shortcut-keys");
+    const keys = await hints.$$("kbd");
+    // Enter is rendered as an SVG keycap, so getText() cannot observe its glyph.
+    if (
+        keys.length !== 2 || (await hints.$(".key-label").getText()) !== (macos ? "⌘" : "Ctrl")
+        || !await hints.$("kbd:last-child svg").isExisting()
+    )
+    {
+        throw new Error(
+            "Application menu did not render its declared reveal shortcut"
+        );
+    }
+    await _key("escape", async () =>
+    {
+        await menu.waitForExist({ reverse: true, timeout: 5000 });
+    });
+    try
+    {
+        await _key("primary-enter", async () => _window("launcher", false));
+        await _wait(async () => fixture.selected(), "file manager selection of the fixture application");
+        await driver.execute(`
+            if (!window.__nanikaE2eInput.some(event => event.type === 'keydown'
+                    && event.key === 'Enter' && event.${macos ? "meta" : "control"} && event.trusted)) {
+                throw new Error('Reveal did not receive a trusted primary+Enter event');
+            }
+        `);
+    }
+    finally
+    {
+        await fixture.close();
+        fileReveal = undefined;
+    }
+    assertions.push("native primary+Enter reveals the fixture application; owned file manager windows closed");
+    await _key("launcher", async () => _window("launcher", true, true));
+    await _launcherReady();
+    if (await search.getValue() !== query)
+    {
+        throw new Error("Reveal shortcut discarded the search query");
+    }
+    assertions.push("OS shortcut restores the retained query after application reveal");
+    await _key("settings", async () => _window("settings", true, true));
+    await driver.switchToWindow("settings");
+}
+
 async function _verifyApplicationNames(): Promise<void>
 {
     const driver = browser;
@@ -978,9 +1070,6 @@ async function _verifyApplicationNames(): Promise<void>
     await _key("launcher", async () => _window("launcher", true, true));
     await _launcherReady();
     const search = await driver.$(".launcher input[role=combobox]");
-    await search.setValue("Nanika NetEaseMusic");
-    await (await driver.$("[role=option] .title[title='Nanika NetEaseMusic']"))
-        .waitForExist({ timeout: 15000 });
     await driver.execute(`
         window.__nanikaApplicationNameBaseline = {
             input: document.querySelector('.launcher input[role=combobox]'),

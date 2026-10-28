@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { expect, test, vi } from "vitest";
 
 import { ResourceCache } from "../../src/localization/ResourceCache";
@@ -34,6 +35,7 @@ test("mounted owners survive cache eviction while changed instance or session au
         expect(value.presentation.text({ message: "label" }, "zh-Hans")).toBe("运行");
     }
     const nextInstance = _result("example.owner0", 2);
+    assert.ok(nextInstance.actions[0]);
     const third = await prepareRootPresentation([nextInstance], session, second, cache);
     expect(read).toHaveBeenCalledTimes(13);
     await prepareRootPresentation([nextInstance], { ...session, sessionId: 2 }, third, cache);
@@ -41,10 +43,15 @@ test("mounted owners survive cache eviction while changed instance or session au
     const foreign = { ...nextInstance, resourceScope: { extensionId: "foreign.owner", identity: "a".repeat(64) } };
     await expect(prepareRootPresentation([foreign], session, third, cache)).rejects.toThrow("owner");
     await expect(
-        prepareRootPresentation([{ ...nextInstance, actionTitle: { message: "missing" } }], session, third, cache)
+        prepareRootPresentation(
+            [{ ...nextInstance, actions: [{ ...nextInstance.actions[0], title: { message: "missing" } }] }],
+            session,
+            third,
+            cache
+        )
     )
         .rejects.toThrow();
-    expect(third.get(nextInstance.extensionId)?.presentation.text(nextInstance.actionTitle, "en")).toBe("Run");
+    expect(third.get(nextInstance.extensionId)?.presentation.text(nextInstance.actions[0].title, "en")).toBe("Run");
 });
 
 test("host-admitted locale variants preserve the full result batch and warm language switching", async () =>
@@ -58,8 +65,14 @@ test("host-admitted locale variants preserve the full result batch and warm lang
         ..._result("com.nanika.application"),
         resourceScope: null,
         entryId: `app.${index}`,
-        actionTitle: "Open",
-        confirmationTitle: null,
+        actions: [{
+            id: "run",
+            title: "Open",
+            style: "primary",
+            enabled: true,
+            allow_default_execution: true,
+            group: null
+        }],
         subtitle: null,
         title: {
             fallback: "Source",
@@ -94,11 +107,15 @@ function _result(id: string, instanceId = 1): SearchResult
         resourceScope: { extensionId: id, identity: "a".repeat(64) },
         entryId: "entry",
         actionId: "run",
-        actionTitle: { message: "label" },
-        actionStyle: "destructive",
-        allowDefaultExecution: false,
-        confirmationTitle: { message: "label" },
-        confirmationDescription: null,
+        actions: [{
+            id: "run",
+            title: { message: "label" },
+            style: "destructive",
+            enabled: true,
+            allow_default_execution: false,
+            confirmation_title: { message: "label" },
+            group: null
+        }],
         title: { message: "label" },
         subtitle: { kind: "label", text: { message: "label" } },
         icon: null,

@@ -10,6 +10,10 @@ pub struct Action {
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<crate::ActionIcon>,
+    /// Optional explicit shortcut, scoped to the selected root-search item.
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shortcut: Option<Box<crate::ActionShortcut>>,
     /// Question displayed in a confirmation dialog before explicit invocation.
     #[cfg_attr(feature = "typescript", ts(optional))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,6 +49,7 @@ impl Action {
             id: id.into(),
             title: title.into(),
             icon: None,
+            shortcut: None,
             confirmation_description: None,
             confirmation_title: None,
             style: ActionStyle::Primary,

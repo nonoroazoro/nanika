@@ -676,6 +676,8 @@ fn reviewed_metadata_and_order_revoke_authority_while_score_only_changes_do_not(
         "consequences",
         [("count".into(), nanika_protocol::MessageArgument::Integer(2))]
     ));
+    let mut changed_shortcut = changed_arguments.clone();
+    changed_shortcut.shortcut = Some(Box::new(nanika_protocol::ActionShortcut::primary("Enter")));
     for changed in [
         candidate("b", "Needle renamed", action.clone()),
         candidate("b", "Needle renamed", action.clone()).with_subtitle(Some(
@@ -684,7 +686,8 @@ fn reviewed_metadata_and_order_revoke_authority_while_score_only_changes_do_not(
         candidate("b", "Needle renamed", disabled),
         candidate("b", "Needle renamed", confirmed),
         candidate("b", "Needle renamed", changed_consequences),
-        candidate("b", "Needle renamed", changed_arguments)
+        candidate("b", "Needle renamed", changed_arguments),
+        candidate("b", "Needle renamed", changed_shortcut)
     ] {
         let reviewed = handle.latest_snapshot().unwrap();
         source.commit_catalog(false, vec![changed], vec![]).unwrap();

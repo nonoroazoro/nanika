@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum ActionInvocation {
     /// Activate a result or a view's primary action without choosing an action.
     Default,
-    /// Choose a specific action in a menu or status bar.
+    /// Choose a specific action through a menu, status bar or declared shortcut.
     Explicit,
     /// Choose an action and accept its confirmation in the host UI.
     Confirmed

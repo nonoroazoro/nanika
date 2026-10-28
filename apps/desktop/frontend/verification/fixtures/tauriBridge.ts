@@ -81,15 +81,72 @@ const results: SearchResult[] = ([
     ...entry,
     instanceId: 1,
     resourceScope: entry.extensionId === systemScope.extensionId ? systemScope : null,
-    actionTitle: index === 1 ? { message: "action-trash-empty-title" } : entry.title,
     entryId: String(index),
     actionId: "open",
-    actionStyle: index === 1 ? "destructive" : "primary",
-    allowDefaultExecution: index !== 1,
-    confirmationTitle: index === 1 ? { message: "action-trash-empty-confirmation-title" } : null,
-    confirmationDescription: index === 1 ? { message: "action-trash-empty-confirmation-description" } : null,
+    actions: [{
+        id: "open",
+        title: index === 1 ? { message: "action-trash-empty-title" } : entry.title,
+        style: index === 1 ? "destructive" : "primary",
+        enabled: true,
+        allow_default_execution: index !== 1,
+        group: null,
+        ...(index === 1
+            ? {
+                confirmation_title: { message: "action-trash-empty-confirmation-title" },
+                confirmation_description: { message: "action-trash-empty-confirmation-description" }
+            }
+            : {})
+    }],
     kind: "Extension"
 }));
+if (variant === "shortcuts")
+{
+    const result = results[3];
+    if (!result)
+    {
+        throw new Error("Shortcut result fixture is missing");
+    }
+    result.extensionId = "external.shortcuts";
+    result.actions.push(
+        {
+            id: "custom.location",
+            title: "Show location",
+            style: "secondary",
+            enabled: true,
+            allow_default_execution: false,
+            group: null,
+            shortcut: { key: { kind: "virtual", value: "Enter" }, modifiers: ["primary"] }
+        },
+        {
+            id: "custom.inspect",
+            title: "Inspect",
+            style: "secondary",
+            enabled: true,
+            allow_default_execution: false,
+            group: null,
+            shortcut: { key: { kind: "physical", value: "KeyK" }, modifiers: ["primary", "shift"] }
+        },
+        {
+            id: "custom.disabled",
+            title: "Unavailable",
+            style: "secondary",
+            enabled: false,
+            allow_default_execution: false,
+            group: null,
+            shortcut: { key: { kind: "virtual", value: "9" }, modifiers: ["primary"] }
+        },
+        {
+            id: "custom.confirm",
+            title: "Confirm action",
+            style: "destructive",
+            enabled: true,
+            allow_default_execution: false,
+            confirmation_title: "Proceed with this action?",
+            group: null,
+            shortcut: { key: { kind: "virtual", value: "Enter" }, modifiers: ["primary", "shift"] }
+        }
+    );
+}
 if (variant === "scroll-layout")
 {
     const source = results.at(-1);
@@ -252,6 +309,25 @@ export const tauriBridge: NanikaBridge = {
     {},
     invokeCandidate: async request =>
     {
+        if (variant === "shortcuts" && request.entryId === "3")
+        {
+            document.documentElement.dataset.shortcutInvocations = String(
+                Number(document.documentElement.dataset.shortcutInvocations ?? 0) + 1
+            );
+            document.documentElement.dataset.shortcutRequest = JSON.stringify(request);
+            while (document.documentElement.dataset.shortcutPaused === "true")
+            {
+                await new Promise(resolve =>
+                {
+                    requestAnimationFrame(resolve);
+                });
+            }
+            if (document.documentElement.dataset.shortcutFailure === "true")
+            {
+                throw Object.assign(new Error("Fixture action failed"), { kind: "host", code: "actionUnavailable" });
+            }
+            return;
+        }
         if (variant === "invocation-error" || variant === "host-service-error")
         {
             snapshot.navigation = {
@@ -284,7 +360,7 @@ export const tauriBridge: NanikaBridge = {
         {
             const dialog = document.querySelector("[role=alertdialog]");
             document.documentElement.dataset.confirmationAtInvoke = JSON.stringify({
-                confirmed: request.confirmed,
+                confirmed: request.invocation === "confirmed",
                 opacity: dialog ? Number(getComputedStyle(dialog).opacity) : 0
             });
             document.documentElement.dataset.invocationCount = String(
@@ -442,7 +518,17 @@ export const tauriBridge: NanikaBridge = {
         navigateSettings(extensionId);
         location.assign(`?surface=settings${extensionId ? `&extension=${encodeURIComponent(extensionId)}` : ""}`);
     },
-    readContextMenu: async () => [],
+    readKeyboardLayout: async () => ({ KeyK: "T" }),
+    readContextMenu: async request =>
+    {
+        const target = request.target;
+        if (variant !== "shortcuts" || target.kind !== "search")
+        {
+            return [];
+        }
+        return results.find(result => result.entryId === target.entryId)?.actions.filter(action => action.id !== "open")
+            ?? [];
+    },
     invokeContextMenu: async () => null,
     readText: async request =>
     {

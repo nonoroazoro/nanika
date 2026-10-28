@@ -13,6 +13,15 @@ mod action_icon;
 pub use action_icon::*;
 #[path = "ActionInvocation.rs"]
 mod action_invocation;
+#[path = "ActionShortcut.rs"]
+mod action_shortcut;
+pub use action_shortcut::*;
+#[path = "ShortcutKey.rs"]
+mod shortcut_key;
+pub use shortcut_key::*;
+#[path = "ShortcutModifier.rs"]
+mod shortcut_modifier;
+pub use shortcut_modifier::*;
 #[path = "ActionStyle.rs"]
 mod action_style;
 #[path = "Candidate.rs"]

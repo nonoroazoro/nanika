@@ -1,3 +1,4 @@
+import { actionFields } from "./action-fields";
 import { TextPresentation } from "./TextPresentation";
 import { MAX_EXPANDED_BYTES } from "../generated/localization-limits";
 
@@ -36,15 +37,7 @@ export async function prepareRootPresentation(
                 allowEmpty: typeof result.subtitle.text === "string"
             });
         }
-        owner.fields.push({ value: result.actionTitle, maximum: 128 });
-        if (result.confirmationTitle)
-        {
-            owner.fields.push({ value: result.confirmationTitle, maximum: 128 });
-        }
-        if (result.confirmationDescription)
-        {
-            owner.fields.push({ value: result.confirmationDescription, maximum: 512 });
-        }
+        owner.fields.push(...actionFields(result.actions));
         owners.set(result.extensionId, owner);
     }
     const prepared = new Map<string, RootPresentation>();

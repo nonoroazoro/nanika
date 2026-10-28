@@ -32,7 +32,7 @@ function needsOpticalLift(key: string): boolean
 </span>
 
 <style>
-.shortcut-keys { display: inline-flex; min-width: 0; align-items: center; gap: var(--space-1); }
+.shortcut-keys { display: inline-flex; flex-shrink: 0; min-width: 0; white-space: nowrap; align-items: center; gap: var(--space-1); }
 kbd { display: inline-flex; min-width: 1.25rem; height: 1.25rem; align-items: center; justify-content: center; padding: 0 0.3125rem; border: 0; border-radius: 0.25rem; background: var(--surface-hovered); color: var(--text-secondary); font: inherit; font-size: 0.75rem; font-weight: 500; line-height: 1; }
 .key-label { display: block; line-height: 1; }
 .key-label.optical-lift { transform: translateY(-0.125em); }

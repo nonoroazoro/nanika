@@ -27,6 +27,7 @@ pub(crate) fn press(key: &str) -> Result<Vec<u16>, String> {
         "switch-app" => &[VK_MENU, VK_TAB],
         "escape" => &[VK_ESCAPE],
         "enter" => &[VK_RETURN],
+        "primary-enter" => &[VK_CONTROL, VK_RETURN],
         "down" => &[VK_DOWN],
         "up" => &[VK_UP],
         "n" => &[VK_N],

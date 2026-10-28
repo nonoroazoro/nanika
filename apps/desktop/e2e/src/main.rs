@@ -1,7 +1,6 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-#[cfg(target_os = "macos")]
 mod application_names;
 mod clipboard;
 #[allow(unsafe_code)]
@@ -51,7 +50,7 @@ fn _run() -> Result<(), Box<dyn std::error::Error>> {
         [command, directory, identity, port] if command == "run" => {
             _launch(PathBuf::from(directory), identity, port.parse()?)
         }
-        _ => Err("Usage: nanika-e2e <run|activate> <directory> <identity> <port|pid>, nanika-e2e key <launcher|settings|switch-app|escape|enter|down|up|n|i>, nanika-e2e clipboard <marker>, or nanika-e2e ime <pid>".into())
+        _ => Err("Usage: nanika-e2e <run|activate> <directory> <identity> <port|pid>, nanika-e2e key <launcher|settings|switch-app|escape|enter|primary-enter|down|up|n|i>, nanika-e2e clipboard <marker>, or nanika-e2e ime <pid>".into())
     }
 }
 
@@ -84,7 +83,6 @@ fn _launch(
     preferences.launcher_shortcut = "Ctrl+Alt+Shift+F12".into();
     preferences.language = nanika_localization::LanguagePreference::English;
     preferences.save(&store)?;
-    #[cfg(target_os = "macos")]
     application_names::seed(&directory, &store)?;
     let mut context = nanika_desktop::context();
     context.config_mut().identifier = identity.to_owned();

@@ -22,6 +22,11 @@ export interface NanikaBridge
     readConfigurationMenu(request: ConfigurationMenuRequest): Promise<ConfigurationMenu>;
     invokeConfigurationMenu(request: ConfigurationMenuRequest, operation: ConfigurationMenuOperation): Promise<void>;
     readText(request: ReadTextRequest): Promise<TextChunk>;
+
+    /**
+     * Read physical-key labels for primary-modifier chords. Keys are UI Events codes.
+     */
+    readKeyboardLayout(): Promise<Record<string, string>>;
     readContextMenu(request: ContextMenuRequest): Promise<Action[]>;
     invokeContextMenu(
         request: ContextMenuRequest,

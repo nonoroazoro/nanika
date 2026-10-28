@@ -211,6 +211,7 @@ pub fn run_with(
         .invoke_handler(tauri::generate_handler![
             dismiss_launcher,
             read_context_menu,
+            read_keyboard_layout,
             read_configuration_menu,
             invoke_configuration_menu,
             invoke_context_menu,

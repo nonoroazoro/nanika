@@ -11,11 +11,7 @@ pub(crate) struct SearchResult {
     pub(crate) extension_id: String,
     pub(crate) entry_id: String,
     pub(crate) action_id: String,
-    pub(crate) action_title: nanika_protocol::LocalizedText,
-    pub(crate) action_style: nanika_protocol::ActionStyle,
-    pub(crate) allow_default_execution: bool,
-    pub(crate) confirmation_title: Option<nanika_protocol::LocalizedText>,
-    pub(crate) confirmation_description: Option<nanika_protocol::LocalizedText>,
+    pub(crate) actions: Vec<nanika_protocol::Action>,
     pub(crate) title: nanika_protocol::LocalizedText,
     pub(crate) subtitle: Option<nanika_protocol::CandidateSubtitle>,
     pub(crate) icon: Option<crate::result_icon::ResultIcon>,
@@ -49,23 +45,7 @@ impl SearchResult {
             extension_id: candidate.extension_id().to_owned(),
             entry_id: candidate.entry_id().to_owned(),
             action_id: candidate.action_id().to_owned(),
-            action_title: primary
-                .map(|action| action.title.clone())
-                .unwrap_or_else(|| candidate.title().clone()),
-            action_style: primary
-                .map_or(nanika_protocol::ActionStyle::Primary, |action| action.style),
-            allow_default_execution: candidate.actions().iter().any(|action| {
-                action.id == candidate.action_id()
-                    && action.allows_invocation(nanika_protocol::ActionInvocation::Default)
-            }),
-            confirmation_title: candidate
-                .actions()
-                .iter()
-                .find(|action| action.id == candidate.action_id() && action.enabled)
-                .and_then(|action| action.confirmation_title.clone()),
-            confirmation_description: primary
-                .filter(|action| action.enabled)
-                .and_then(|action| action.confirmation_description.clone()),
+            actions: candidate.actions().to_vec(),
             title: candidate.title().to_owned(),
             subtitle: candidate.subtitle().cloned(),
             icon,

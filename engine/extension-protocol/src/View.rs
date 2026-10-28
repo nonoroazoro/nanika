@@ -233,11 +233,18 @@ pub fn validate_actions(actions: &[Action]) -> Result<(), String> {
         return Err("view exposes too many actions".to_owned());
     }
     let mut ids = HashSet::new();
+    let mut shortcuts = HashSet::new();
     crate::PresentationGroup::validate_definitions(
         actions.iter().filter_map(|action| action.group.as_ref())
     )?;
     for action in actions {
         validate_id("view action id", &action.id)?;
+        if let Some(shortcut) = &action.shortcut {
+            shortcut.validate()?;
+            if !shortcuts.insert(shortcut.identity()) {
+                return Err("action shortcuts must be unique within an item".into());
+            }
+        }
         action.visit_texts(&mut |field, text, maximum| {
             text.validate_literals(|value| validate_text(field, value, maximum, false))
         })?;

@@ -100,18 +100,13 @@ fn navigation_only_payload_is_independent_of_unchanged_catalog_and_view_size() {
         .map(|index| crate::SearchResult {
             instance_id: 0,
             resource_scope: None,
-            allow_default_execution: true,
             extension_id: "test.extension".to_owned(),
             entry_id: format!("entry-{index}"),
             action_id: "open".to_owned(),
-            action_title: "Open".into(),
+            actions: vec![nanika_protocol::Action::primary("open", "Open")],
             title: format!("Application {index}").into(),
             subtitle: None,
             icon: None,
-            confirmation_description: None,
-            action_style: nanika_protocol::ActionStyle::Primary,
-            confirmation_title: None,
-
             kind: "Extension".to_owned(),
             entry_type: nanika_search::CandidateKind::Action
         })

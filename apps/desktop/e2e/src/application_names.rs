@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -7,35 +8,7 @@ pub fn seed(
     store: &nanika_config::ConfigStore
 ) -> Result<(), Box<dyn std::error::Error>> {
     let applications = directory.join("applications");
-    _bundle(
-        &applications,
-        "Music",
-        "Nanika Music",
-        &[
-            ("eng", "Nanika NetEaseMusic"),
-            ("en-posix", "Nanika POSIX Music"),
-            ("jaw", "Nanika Alternate Music"),
-            ("zh-Hans", "Nanika 网易云音乐"),
-            ("ja", "Nanika ミュージック")
-        ]
-    )?;
-    _bundle(
-        &applications,
-        "Traditional",
-        "",
-        &[
-            ("en_GB", "Nanika Traditional Music"),
-            ("und", "Nanika Undetermined Music"),
-            ("zh-US", "Nanika American Chinese"),
-            ("zh-TW", "Nanika 網易雲音樂")
-        ]
-    )?;
-    _bundle(
-        &applications,
-        "Japanese",
-        "Nanika 音楽箱",
-        &[("ja", "Nanika 音楽箱")]
-    )?;
+    _seed(&applications)?;
     store.save(
         store.extension_configuration_file("com.nanika.application"),
         &nanika_config::ExtensionConfigurationFile::new(
@@ -49,6 +22,52 @@ pub fn seed(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn _seed(applications: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(applications)?;
+    // A real PE fixture exercises discovery without depending on installed applications.
+    std::fs::copy(
+        std::env::current_exe()?,
+        applications.join("Nanika Reveal.exe")
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn _seed(applications: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    _bundle(
+        applications,
+        "Music",
+        "Nanika Music",
+        &[
+            ("eng", "Nanika NetEaseMusic"),
+            ("en-posix", "Nanika POSIX Music"),
+            ("jaw", "Nanika Alternate Music"),
+            ("zh-Hans", "Nanika 网易云音乐"),
+            ("ja", "Nanika ミュージック")
+        ]
+    )?;
+    _bundle(
+        applications,
+        "Traditional",
+        "",
+        &[
+            ("en_GB", "Nanika Traditional Music"),
+            ("und", "Nanika Undetermined Music"),
+            ("zh-US", "Nanika American Chinese"),
+            ("zh-TW", "Nanika 網易雲音樂")
+        ]
+    )?;
+    _bundle(
+        applications,
+        "Japanese",
+        "Nanika 音楽箱",
+        &[("ja", "Nanika 音楽箱")]
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 fn _bundle(
     applications: &Path,
     id: &str,

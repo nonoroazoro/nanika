@@ -83,6 +83,7 @@ fn pushed_views_are_bounded_host_rendered_documents() {
                     subtitle: Some("Text".into()),
                     icon: Some(ViewItemIcon::Text),
                     actions: vec![Action {
+                        shortcut: None,
                         icon: None,
                         id: "paste".to_owned(),
                         title: "Paste".into(),
@@ -171,6 +172,7 @@ fn view_action_confirmation_titles_are_validated() {
             },
             metadata: Vec::new(),
             actions: vec![Action {
+                shortcut: None,
                 icon: None,
                 id: "example.clear".to_owned(),
                 title: "Clear".into(),
@@ -209,6 +211,7 @@ fn view_action_confirmation_is_independent_of_visual_style() {
             },
             metadata: Vec::new(),
             actions: vec![Action {
+                shortcut: None,
                 icon: None,
                 id: "example.open".to_owned(),
                 title: "Open".into(),
@@ -361,6 +364,7 @@ fn list_detail_actions_must_belong_to_the_selected_item() {
                 },
                 metadata: Vec::new(),
                 actions: vec![Action {
+                    shortcut: None,
                     icon: None,
                     id: "example.open".to_owned(),
                     title: "Open".into(),
