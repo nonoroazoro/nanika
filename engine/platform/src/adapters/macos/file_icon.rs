@@ -137,8 +137,7 @@ fn cg_image_pixels(image: &CGImage, size: usize) -> std::io::Result<Vec<u8>> {
         }
         .ok_or_else(|| std::io::Error::other("could not create the thumbnail bitmap context"))?;
         CGContext::set_interpolation_quality(Some(&context), CGInterpolationQuality::High);
-        CGContext::translate_ctm(Some(&context), 0.0, side);
-        CGContext::scale_ctm(Some(&context), 1.0, -1.0);
+        // Drawing into a raw bitmap already preserves the row order required by PNG encoding.
         CGContext::draw_image(Some(&context), rectangle, Some(image));
     }
     unpremultiply(&mut pixels);

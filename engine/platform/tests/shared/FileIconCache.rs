@@ -95,7 +95,7 @@ fn native_file_icons_are_cached_at_both_sizes_without_rewriting_complete_entries
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 #[test]
-fn clipboard_images_use_content_thumbnails() {
+fn clipboard_images_use_upright_content_thumbnails() {
     let root = std::env::temp_dir().join(format!("nanika-file-thumbnail-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("fixture root");
     let source = root.join("thumbnail.png");
@@ -104,31 +104,56 @@ fn clipboard_images_use_content_thumbnails() {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().expect("PNG header");
-    writer
-        .write_image_data(&[220, 20, 30, 255].repeat(8 * 8))
-        .expect("PNG pixels");
+    let mut source_pixels = [220, 20, 30, 255].repeat(8 * 4);
+    source_pixels.extend([20, 30, 220, 255].repeat(8 * 4));
+    writer.write_image_data(&source_pixels).expect("PNG pixels");
     writer.finish().expect("PNG finish");
 
     let pixels = shell_file_icon_pixels(&source, 128).expect("native image thumbnail");
-    assert!(
-        pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|pixel| { pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200 })
-    );
+    let cache_root = root.join("icons");
+    let mut cache = FileIconCache::new(cache_root.clone());
+    let reference = cache.get(&source).expect("cached content thumbnail");
+    let bytes = std::fs::read(cache_root.join(reference.key()).join("512.png"))
+        .expect("cached thumbnail PNG");
+    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
+        .read_info()
+        .expect("cached PNG header");
+    let mut cached_pixels = vec![0; reader.output_buffer_size().expect("output size")];
+    reader
+        .next_frame(&mut cached_pixels)
+        .expect("cached PNG pixels");
+    // Sample away from edges and the color boundary to allow native resampling.
+    for (pixels, size) in [(&pixels, 128), (&cached_pixels, 512)] {
+        for (y, expected) in [
+            (size / 4, [220, 20, 30, 255]),
+            (size * 3 / 4, [20, 30, 220, 255])
+        ] {
+            let offset = (y * size + size / 2) * 4;
+            for (actual, expected) in pixels[offset..offset + 4].iter().zip(expected) {
+                assert!(
+                    actual.abs_diff(expected) < 10,
+                    "thumbnail row {y}: {:?}",
+                    &pixels[offset..offset + 4]
+                );
+            }
+        }
+    }
 
     let list_pixels = crate::file_icon::cached_list_pixels(&source, &[]).expect("list icon");
     assert_eq!(list_pixels.len(), 128 * 128 * 4);
-    // A solid red image must not become a solid red list thumbnail. Its row represents
+    // A red/blue image must not become a content thumbnail in the list. Its row represents
     // the native file association, while the collection preview represents content.
-    let red_count = list_pixels
+    let content_color_count = list_pixels
         .as_chunks::<4>()
         .0
         .iter()
-        .filter(|pixel| pixel[0] > 180 && pixel[1] < 60 && pixel[2] < 70 && pixel[3] > 200)
+        .filter(|pixel| {
+            pixel[3] > 200
+                && pixel[1] < 60
+                && ((pixel[0] > 180 && pixel[2] < 70) || (pixel[2] > 180 && pixel[0] < 70))
+        })
         .count();
-    assert!(red_count < 128 * 128 / 2);
+    assert!(content_color_count < 128 * 128 / 2);
 
     std::fs::remove_dir_all(root).expect("cleanup");
 }
